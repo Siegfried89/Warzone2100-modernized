@@ -4375,7 +4375,7 @@ enum STRUCTURE_PACKABILITY
 
 static inline bool canPack(STRUCTURE_PACKABILITY a, STRUCTURE_PACKABILITY b)
 {
-	return (int)a + (int)b <= 3;  // Defense can be put next to anything except repair facilities, normal base structures can't be put next to each other, and anything goes next to empty tiles.
+	(void)a; (void)b; return true;  // MOD: keine Abstandsregeln, alles darf direkt nebeneinander stehen. Original: (int)a + (int)b <= 3; // Defense can be put next to anything except repair facilities, normal base structures can't be put next to each other, and anything goes next to empty tiles.
 }
 
 static STRUCTURE_PACKABILITY baseStructureTypePackability(STRUCTURE_TYPE type)

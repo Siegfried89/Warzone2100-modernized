@@ -80,6 +80,8 @@ static inline bool canLineBuild()
 	return ((STRUCTURE_STATS *)sBuildDetails.psStats)->upgrade[selectedPlayer].limit > 1;
 }
 
+extern bool buildRotateDrag;      // MOD: Ziehen beim Platzieren bestimmt die Richtung
+extern int buildRotateAnchorX, buildRotateAnchorY;
 extern int brushSize;
 extern bool quickQueueMode;
 

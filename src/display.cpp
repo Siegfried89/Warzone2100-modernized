@@ -164,7 +164,7 @@ static bool	ignoreOrder = false;
 static bool	ignoreRMBC	= true;
 static DROID	*psSelectedVtol;
 static DROID	*psDominantSelected;
-static bool cameraAccel = true;
+static bool cameraAccel = false;   // MOD: keine Kamera-Traegheit, Stopp sofort
 
 void displayVisitUiObjectRefs(const UiObjectRefVisitor &visit)
 {
@@ -227,6 +227,9 @@ void animateToViewDistance(float target, float speed)
 		.start();
 }
 
+// MOD: stufenloser, proportionaler Zoom. Jede Mausrad-Raste aendert die Distanz um ~8 % (statt fester grober Stufen);
+// nahe am Boden werden die Schritte dadurch automatisch fein, weit weg grosszuegig.
+static const float MOD_ZOOM_MIN_DISTANCE = 40.0f;
 void incrementViewDistance(float amount)
 {
 	if (InGameOpUp || bDisplayMultiJoiningStatus || realTime < viewDistanceIncrementCooldownTime)
@@ -236,10 +239,12 @@ void incrementViewDistance(float amount)
 
 	viewDistanceIncrementCooldownTime = realTime + GAME_TICKS_PER_SEC / 50;
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
-	auto target = (viewDistanceAnimation.isActive() ? viewDistanceAnimation.getFinalData() : getViewDistance()) + amount;
+	const float current = viewDistanceAnimation.isActive() ? viewDistanceAnimation.getFinalData() : getViewDistance();
+	const float notches = amount / static_cast<float>(MAP_ZOOM_RATE_DEFAULT);          // +-1 pro Raste
+	float target = std::max(current, MOD_ZOOM_MIN_DISTANCE) * std::pow(1.08f, notches * 1.0f);
 	if (!dbgInputManager.debugMappingsAllowed())
 	{
-		CLIP(target, MINDISTANCE, (!NETisReplay()) ? MAXDISTANCE : MAXDISTANCE_REPLAY);
+		CLIP(target, MOD_ZOOM_MIN_DISTANCE, (!NETisReplay()) ? static_cast<float>(MAXDISTANCE) : static_cast<float>(MAXDISTANCE_REPLAY));
 	}
 
 	animateToViewDistance(target);
@@ -317,7 +322,8 @@ bool	getCameraAccel()
 
 void	setCameraAccel(bool val)
 {
-	cameraAccel = val;
+	(void)val;
+	cameraAccel = false;   // MOD: Config-Wert wird ignoriert, Kamera bremst immer sofort
 }
 
 bool	getInvertMouseStatus()
@@ -337,6 +343,7 @@ bool	getRightClickOrders()
 
 void	setRightClickOrders(bool val)
 {
+	val = true;   // MOD: Linksklick waehlt nur aus, Rechtsklick gibt Befehle (Config-Wert wird ignoriert)
 	if (val == bRightClickOrders)
 	{
 		return;
@@ -633,6 +640,12 @@ static void CheckStartWallDrag()
 				debug(LOG_NEVER, "Start Wall Drag\n");
 			}
 		}
+		else if ((buildState == BUILD3D_POS || buildState == BUILD3D_VALID) && sBuildDetails.psStats->hasType(STAT_STRUCTURE))
+		{
+			// MOD: normales Gebaeude - Position beim Klick merken, Ziehen dreht es
+			buildRotateAnchorX = mousePos.x;
+			buildRotateAnchorY = mousePos.y;
+		}
 		else if (intBuildSelectMode())//if we were in build select mode
 		{
 			//uhoh no place to build here
@@ -677,6 +690,21 @@ static void HandleDrag()
 
 	if (mouseDrag(MOUSE_LMB, &dragX, &dragY) && !isMouseOverRadar() && !mouseDown(MOUSE_RMB))
 	{
+		if ((buildState == BUILD3D_POS || buildState == BUILD3D_VALID) && sBuildDetails.psStats->hasType(STAT_STRUCTURE) && !canLineBuild())
+		{
+			// MOD: Klicken und ziehen legt die Richtung des Gebaeudes fest (statt Auswahlrahmen)
+			buildRotateDrag = true;
+			const int dx = (int)mouseX() - (int)dragX;
+			const int dy = (int)mouseY() - (int)dragY;
+			if (dx * dx + dy * dy > 20 * 20)
+			{
+				int q;
+				if ((dy < 0 ? -dy : dy) >= (dx < 0 ? -dx : dx)) { q = dy > 0 ? 0 : 2; }
+				else { q = dx > 0 ? 1 : 3; }
+				sBuildDetails.directionShift = (uint16_t)(q * 0x4000);
+			}
+			return;
+		}
 		dragBox3D.x1 = dragX;
 		dragBox3D.x2 = mouseX();
 		dragBox3D.y1 = dragY;
@@ -1358,7 +1386,7 @@ static void handleCameraScrolling()
 	int	xDif, yDif;
 	double scroll_zoom_factor = 1.0 + 2.0 * ((getViewDistance() - MINDISTANCE) / ((float)(MAXDISTANCE - MINDISTANCE)));
 
-	double scaled_max_scroll_speed = scroll_zoom_factor * (cameraAccel ? war_GetCameraSpeed() : war_GetCameraSpeed() / 2.0);
+	double scaled_max_scroll_speed = scroll_zoom_factor * war_GetCameraSpeed();   // MOD: volle Geschwindigkeit ohne Traegheit
 	double scaled_accel = scaled_max_scroll_speed / 2.0;
 
 	if (InGameOpUp || bDisplayMultiJoiningStatus)		// cant scroll when menu up. or when over radar

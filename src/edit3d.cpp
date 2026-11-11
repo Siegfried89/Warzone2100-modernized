@@ -25,6 +25,7 @@ Alex McLean, Pumpkin Studios, EIDOS Interactive, 1997
 
 #include "lib/framework/frame.h"
 #include "lib/framework/math_ext.h"
+#include "lib/framework/input.h"
 #include "map.h"
 #include "edit3d.h"
 #include "display3d.h"
@@ -41,6 +42,8 @@ is invalid (not currently being used)
 */
 
 BuildState buildState = BUILD3D_NONE;
+bool buildRotateDrag = false;
+int buildRotateAnchorX = 0, buildRotateAnchorY = 0;
 HIGHLIGHT buildSite;
 BUILDDETAILS sBuildDetails;
 int brushSize = 1;
@@ -151,6 +154,7 @@ bool process3DBuilding()
 	//if not trying to build ignore
 	if (buildState == BUILD3D_NONE)
 	{
+		buildRotateDrag = false;
 		if (quickQueueMode && !ctrlShiftDown())
 		{
 			quickQueueMode = false;
@@ -161,7 +165,9 @@ bool process3DBuilding()
 
 	/* Need to update the building locations if we're building */
 	int border = 5*TILE_UNITS/2;
-	Vector2i bv = {clip(mousePos.x, border, gameWorld.map.width*TILE_UNITS - border), clip(mousePos.y, border, gameWorld.map.height*TILE_UNITS - border)};
+	if (buildRotateDrag && !mouseDown(MOUSE_LMB)) { buildRotateDrag = false; }
+	const Vector2i placePos = buildRotateDrag ? Vector2i(buildRotateAnchorX, buildRotateAnchorY) : Vector2i(mousePos.x, mousePos.y);
+	Vector2i bv = {clip(placePos.x, border, gameWorld.map.width*TILE_UNITS - border), clip(placePos.y, border, gameWorld.map.height*TILE_UNITS - border)};
 	Vector2i size = getStatsSize(sBuildDetails.psStats, getBuildingDirection());
 	Vector2i worldSize = world_coord(size);
 	bv = round_to_nearest_tile(bv - worldSize/2) + worldSize/2;

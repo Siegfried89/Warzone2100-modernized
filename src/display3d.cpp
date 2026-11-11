@@ -3539,6 +3539,17 @@ bool	eitherSelected(DROID *psDroid)
 	return false;
 }
 
+// MOD: Balken in Abschnitte teilen (wie StarCraft): duenne schwarze Trennstriche ueber der Balkenmitte
+static void modQueueBarSegments(BatchedMultiRectRenderer& renderer, size_t rectGroup, int xLeft, int width, int yTop, int yBottom)
+{
+	const int segments = 5;
+	for (int seg = 1; seg < segments; ++seg)
+	{
+		const int sx = xLeft + (width * seg) / segments;
+		renderer.addRect(PIERECT_DrawRequest(sx, yTop, sx + 1, yBottom, WZCOL_BLACK), rectGroup);
+	}
+}
+
 static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup)
 {
 	UDWORD damage = PERCENT(psDroid->body, psDroid->originalBody);
@@ -3594,6 +3605,7 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 1, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 2, psDroid->sDisplay.screenX + psDroid->sDisplay.screenR + 1, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 6, WZCOL_RELOAD_BACKGROUND), rectGroup);
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX - psDroid->sDisplay.screenR, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 3, psDroid->sDisplay.screenX - psDroid->sDisplay.screenR + damage, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 4, powerCol), rectGroup);
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX - psDroid->sDisplay.screenR, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 4, psDroid->sDisplay.screenX - psDroid->sDisplay.screenR + damage, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 5, powerColShadow), rectGroup);
+	modQueueBarSegments(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX) - static_cast<int>(psDroid->sDisplay.screenR), 2 * static_cast<int>(psDroid->sDisplay.screenR), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR) + 3, static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR) + 5);
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(
 		psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 3,
 		psDroid->sDisplay.screenY + psDroid->sDisplay.screenR,
@@ -3687,6 +3699,7 @@ static void queueDroidEnemyHealthBarsRects(DROID *psDroid, BatchedMultiRectRende
 		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(scrX - scrR - 1, scrY + scrR + 2, scrX + scrR + 1, scrY + scrR + 6, WZCOL_RELOAD_BACKGROUND), rectGroup);
 		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(scrX - scrR, scrY + scrR + 3, scrX - scrR + damage, scrY + scrR + 4, powerCol), rectGroup);
 		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(scrX - scrR, scrY + scrR + 4, scrX - scrR + damage, scrY + scrR + 5, powerColShadow), rectGroup);
+		modQueueBarSegments(batchedMultiRectRenderer, rectGroup, static_cast<int>(scrX) - static_cast<int>(scrR), 2 * static_cast<int>(scrR), static_cast<int>(scrY) + static_cast<int>(scrR) + 3, static_cast<int>(scrY) + static_cast<int>(scrR) + 5);
 	}
 }
 
@@ -4019,7 +4032,8 @@ void calcScreenCoords(DROID *psDroid, const glm::mat4 &perspectiveViewMatrix)
 	/* Store away the screen coordinates so we can select the droids without doing a transform */
 	psDroid->sDisplay.screenX = center.x;
 	psDroid->sDisplay.screenY = center.y;
-	psDroid->sDisplay.screenR = static_cast<UDWORD>(radius);
+	// MOD: einheitliche Balkenlaenge/Auswahlgroesse, unabhaengig von Modellgroesse und Zoom (leicht anklickbar, Balken immer kurz)
+	psDroid->sDisplay.screenR = static_cast<UDWORD>(std::min(16.0f, std::max(9.0f, static_cast<float>(radius))));
 }
 
 void screenCoordToWorld(Vector2i screenCoord, Vector2i &worldCoord, SDWORD &tileX, SDWORD &tileY)
@@ -4113,7 +4127,11 @@ static void renderSurroundings(const glm::mat4& projectionMatrix, const glm::mat
 /// (raised by half of HEIGHT_TRACK_INCREMENTS to keep the established framing)
 static float calculateCameraHeight(float averageTerrainHeight)
 {
-	return averageTerrainHeight + static_cast<float>(CAMERA_PIVOT_HEIGHT + HEIGHT_TRACK_INCREMENTS / 2);
+	// MOD: Der Drehpunkt der Kamera sinkt beim Hineinzoomen auf Bodenhoehe, so sieht man kleine Einheiten
+	// nahe am Boden, ohne dass die Kamera ins Gelaende rutscht. Ab ~2000 Distanz ist alles wie im Original.
+	float k = std::min(1.0f, std::max(0.0f, distance / 2000.0f));
+	k = k * k * (3.0f - 2.0f * k);   // glatte Kurve
+	return averageTerrainHeight + static_cast<float>(HEIGHT_TRACK_INCREMENTS / 2) + static_cast<float>(CAMERA_PIVOT_HEIGHT) * (0.04f + 0.96f * k);
 }
 
 int calculateCameraHeightAt(WorldMapState& mapState, int worldX, int worldZ)
