@@ -49,6 +49,11 @@ constexpr int GRID_SECS = 180;              // ein Fass haelt das Kraftwerk / St
 constexpr int START_FUEL = 120;             // neues Kraftwerk startet mit 2 Minuten
 constexpr int PULL_BELOW = 60;              // das Kraftwerk holt ein Fass aus dem Lager, wenn der Vorrat darunter faellt
 constexpr int STORAGE_CAP = 8;              // Fass-Plaetze im Wasserturm
+constexpr int REF_CAP = 10;                 // Fass-Plaetze in der Raffinerie (je Eingang und Ausgang)
+constexpr int REF_SECS = 20;                // Sekunden je veredeltes Fass
+constexpr int REFINED_ENERGY = 150;         // Treibstoff-Fass direkt ins Kraftwerk
+constexpr int REFINED_STORED = 165;         // Treibstoff-Fass nach dem Lager (+10 %)
+constexpr int REFINED_GRID_SECS = 270;      // Treibstoff-Fass haelt das Netz 4,5 Minuten
 constexpr int64_t STORAGE_RANGE = 12 * 128; // Lager und Kraftwerk gehoeren zusammen bis zu dieser Entfernung
 constexpr int64_t LOAD_RANGE = 320;         // Lkw laedt / entlaedt in dieser Naehe
 
@@ -59,7 +64,8 @@ struct CargoState
 	int n = 0;
 	int mode = 0;               // 0 frei, 1 unterwegs zum Oelturm, 2 unterwegs zum Abladen
 	uint32_t target = 0;
-	bool targetFeature = false;
+	int kind = 0;               // Ziel: 0 Kraftwerk, 1 Wasserturm, 2 Raffinerie, 3 Oelturm
+	bool tank = false;          // Oeltransporter (holt veredelte Faesser an der Raffinerie)
 	int tx = 0, ty = 0;
 	int stuck = 0;
 	int pause = 0;
@@ -85,7 +91,9 @@ struct Replace
 std::map<uint32_t, int> s_barrels;          // Oelturm -> Faesser
 std::map<uint32_t, int64_t> s_progress;     // Oelturm -> Fortschritt zum naechsten Fass (Festkomma)
 std::map<uint32_t, int> s_fuel;             // Kraftwerk -> Sekunden
-std::map<uint32_t, int> s_store;            // Wasserturm (Feature) -> Faesser
+std::map<uint32_t, int> s_store;            // Wasserturm (Feature) -> rohe Faesser
+std::map<uint32_t, int> s_storeR;           // Wasserturm (Feature) -> veredelte Faesser
+std::map<uint32_t, int> s_refIn, s_refOut, s_refT;   // Raffinerie: Eingang, Ausgang, Sekunden im laufenden Fass
 std::map<uint32_t, CargoState> s_cargo;     // Lkw -> Zustand
 std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
@@ -98,6 +106,11 @@ bool idStarts(const WzString &id, const char *s) { return id.toUtf8().rfind(s, 0
 bool isPipe(const STRUCTURE_STATS *st)
 {
 	return st != nullptr && st->type == REF_WALL && idStarts(st->id, "A0BaBaPipeline");
+}
+
+bool isRefinery(const STRUCTURE_STATS *st)
+{
+	return st != nullptr && st->type == REF_GENERIC && idIs(st->id, "A0BaBaRefinery");
 }
 
 bool isBroken(const STRUCTURE_STATS *st)
@@ -127,7 +140,14 @@ int cargoCapacity(const DROID *d)
 	if (idIs(cs->id, "ScavBed3")) { return 3; }
 	if (idIs(cs->id, "ScavBed2")) { return 4; }
 	if (idIs(cs->id, "ScavBucket")) { return 6; }
+	if (idIs(cs->id, "ScavTank")) { return 10; }
 	return 0;
+}
+
+bool isTank(const DROID *d)
+{
+	const CONSTRUCT_STATS *cs = d->getConstructStats();
+	return cs != nullptr && idIs(cs->id, "ScavTank");
 }
 
 int64_t d2(int ax, int ay, int bx, int by)
@@ -300,6 +320,10 @@ void reset()
 	s_progress.clear();
 	s_fuel.clear();
 	s_store.clear();
+	s_storeR.clear();
+	s_refIn.clear();
+	s_refOut.clear();
+	s_refT.clear();
 	s_cargo.clear();
 	s_booms.clear();
 	s_repl.clear();
@@ -348,6 +372,14 @@ void onStructureDestroyed(const STRUCTURE *psDel)
 		}
 		s_progress.erase(psDel->id);
 	}
+	else if (isRefinery(st))
+	{
+		const int n = s_refIn[psDel->id] + s_refOut[psDel->id];
+		if (n > 0 && psDel->status == SS_BUILT) { queueBoom(psDel->pos.x, psDel->pos.y, psDel->pos.z, n, true, 100); }
+		s_refIn.erase(psDel->id);
+		s_refOut.erase(psDel->id);
+		s_refT.erase(psDel->id);
+	}
 	else if (isPipe(st) && !isBroken(st) && psDel->status == SS_BUILT)
 	{
 		s_repl.push_back({psDel->pos.x, psDel->pos.y, psDel->rot.direction, static_cast<int>(psDel->player), true});
@@ -365,6 +397,8 @@ void onFeatureDestroyed(const FEATURE *psDel)
 	{
 		const auto it = s_store.find(psDel->id);
 		if (it != s_store.end()) { n = it->second; s_store.erase(it); }
+		const auto ir = s_storeR.find(psDel->id);
+		if (ir != s_storeR.end()) { n += ir->second; s_storeR.erase(ir); }
 	}
 	if (n > 0)
 	{
@@ -391,16 +425,21 @@ namespace
 
 struct Snap
 {
-	std::vector<STRUCTURE *> derricks, gens, pipes;
+	std::vector<STRUCTURE *> derricks, gens, pipes, refs;
 };
 
-void deliverToGenerator(int player, STRUCTURE *gen, int barrels)
+void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool refined)
 {
 	for (int i = 0; i < barrels; i++)
 	{
-		addPower(player, BARREL_ENERGY);
-		s_fuel[gen->id] += GRID_SECS;
+		addPower(player, refined ? REFINED_ENERGY : BARREL_ENERGY);
+		s_fuel[gen->id] += refined ? REFINED_GRID_SECS : GRID_SECS;
 	}
+}
+
+int storeRoom(uint32_t id)
+{
+	return std::max(0, STORAGE_CAP - s_store[id] - s_storeR[id]);
 }
 
 void logistics()
@@ -415,16 +454,20 @@ void logistics()
 
 	std::set<uint32_t> liveStruct, liveDroid;
 	std::vector<STRUCTURE *> brokenPieces;
+	const int64_t SR2 = STORAGE_RANGE * STORAGE_RANGE;
+	const int64_t LR2 = LOAD_RANGE * LOAD_RANGE;
 
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		Snap sn;
+		std::map<uint32_t, STRUCTURE *> sById;
 		for (STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s == nullptr || s->died || s->status != SS_BUILT) { continue; }
 			const STRUCTURE_STATS *st = s->pStructureType;
-			if (st->type == REF_RESOURCE_EXTRACTOR) { sn.derricks.push_back(s); liveStruct.insert(s->id); }
-			else if (st->type == REF_POWER_GEN) { sn.gens.push_back(s); liveStruct.insert(s->id); }
+			if (st->type == REF_RESOURCE_EXTRACTOR) { sn.derricks.push_back(s); liveStruct.insert(s->id); sById[s->id] = s; }
+			else if (st->type == REF_POWER_GEN) { sn.gens.push_back(s); liveStruct.insert(s->id); sById[s->id] = s; }
+			else if (isRefinery(st)) { sn.refs.push_back(s); liveStruct.insert(s->id); sById[s->id] = s; }
 			else if (isPipe(st))
 			{
 				if (isBroken(st)) { brokenPieces.push_back(s); }
@@ -441,7 +484,20 @@ void logistics()
 			else if (it->second > 0) { it->second--; }
 		}
 
-		// Kraftwerk holt Fass aus dem Lager (Lager zuerst: nur aus dem Lager)
+		// Raffinerien: ein Fass je REF_SECS Sekunden veredeln
+		for (STRUCTURE *r : sn.refs)
+		{
+			int &in = s_refIn[r->id];
+			int &out = s_refOut[r->id];
+			int &t = s_refT[r->id];
+			if (in > 0 && out < REF_CAP)
+			{
+				if (++t >= REF_SECS) { t = 0; in--; out++; }
+			}
+			else { t = 0; }
+		}
+
+		// Kraftwerk holt Fass aus dem Lager (veredelte zuerst)
 		for (STRUCTURE *g : sn.gens)
 		{
 			if (s_fuel[g->id] > PULL_BELOW) { continue; }
@@ -449,21 +505,29 @@ void logistics()
 			int64_t bd = INT64_MAX;
 			for (FEATURE *t : towers)
 			{
-				const auto it = s_store.find(t->id);
-				if (it == s_store.end() || it->second <= 0) { continue; }
+				if (s_store[t->id] + s_storeR[t->id] <= 0) { continue; }
 				const int64_t dd = d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y);
-				if (dd > STORAGE_RANGE * STORAGE_RANGE) { continue; }
+				if (dd > SR2) { continue; }
 				if (dd < bd) { bd = dd; best = t; }
 			}
 			if (best != nullptr)
 			{
-				s_store[best->id]--;
-				addPower(p, STORED_ENERGY);
-				s_fuel[g->id] += GRID_SECS;
+				if (s_storeR[best->id] > 0)
+				{
+					s_storeR[best->id]--;
+					addPower(p, REFINED_STORED);
+					s_fuel[g->id] += REFINED_GRID_SECS;
+				}
+				else
+				{
+					s_store[best->id]--;
+					addPower(p, STORED_ENERGY);
+					s_fuel[g->id] += GRID_SECS;
+				}
 			}
 		}
 
-		// Pipeline-Netz: verbindet Oeltuerme mit Kraftwerk / Lager, ein Fass je Sekunde und Turm
+		// Pipeline-Netz: Oeltuerme -> Raffinerie (sonst Lager, sonst Kraftwerk), ein Fass je Sekunde und Turm
 		if (!sn.pipes.empty())
 		{
 			std::map<std::pair<int, int>, int> pidx;
@@ -488,6 +552,20 @@ void logistics()
 			{
 				std::set<int> roots;
 				const int tx = map_coord(wx), ty = map_coord(wy);
+				for (int dx = -2; dx <= 2; dx++)       // Raffinerie ist 3x3: Rohr darf bis 2 Felder neben der Mitte liegen
+				{
+					for (int dy = -2; dy <= 2; dy++)
+					{
+						const auto it = pidx.find(std::make_pair(tx + dx, ty + dy));
+						if (it != pidx.end()) { roots.insert(ufind(par, it->second)); }
+					}
+				}
+				return roots;
+			};
+			auto touchSmall = [&](int wx, int wy)
+			{
+				std::set<int> roots;
+				const int tx = map_coord(wx), ty = map_coord(wy);
 				for (int dx = -1; dx <= 1; dx++)
 				{
 					for (int dy = -1; dy <= 1; dy++)
@@ -507,14 +585,29 @@ void logistics()
 			{
 				int &barrels = s_barrels[der->id];
 				if (barrels <= 0) { continue; }
-				const std::set<int> rd = touch(der->pos.x, der->pos.y);
+				const std::set<int> rd = touchSmall(der->pos.x, der->pos.y);
 				if (rd.empty()) { continue; }
-				FEATURE *bt = nullptr;
+				STRUCTURE *br = nullptr;
 				int64_t bd = INT64_MAX;
+				for (STRUCTURE *r : sn.refs)
+				{
+					if (s_refIn[r->id] >= REF_CAP) { continue; }
+					if (!shares(rd, touch(r->pos.x, r->pos.y))) { continue; }
+					const int64_t dd = d2(r->pos.x, r->pos.y, der->pos.x, der->pos.y);
+					if (dd < bd) { bd = dd; br = r; }
+				}
+				if (br != nullptr)
+				{
+					barrels--;
+					s_refIn[br->id]++;
+					continue;
+				}
+				FEATURE *bt = nullptr;
+				bd = INT64_MAX;
 				for (FEATURE *t : towers)
 				{
-					if (s_store[t->id] >= STORAGE_CAP) { continue; }
-					if (!shares(rd, touch(t->pos.x, t->pos.y))) { continue; }
+					if (storeRoom(t->id) <= 0) { continue; }
+					if (!shares(rd, touchSmall(t->pos.x, t->pos.y))) { continue; }
 					const int64_t dd = d2(t->pos.x, t->pos.y, der->pos.x, der->pos.y);
 					if (dd < bd) { bd = dd; bt = t; }
 				}
@@ -528,26 +621,25 @@ void logistics()
 				bd = INT64_MAX;
 				for (STRUCTURE *g : sn.gens)
 				{
-					if (!shares(rd, touch(g->pos.x, g->pos.y))) { continue; }
+					if (!shares(rd, touchSmall(g->pos.x, g->pos.y))) { continue; }
 					const int64_t dd = d2(g->pos.x, g->pos.y, der->pos.x, der->pos.y);
 					if (dd < bd) { bd = dd; bg = g; }
 				}
 				if (bg != nullptr)
 				{
 					barrels--;
-					deliverToGenerator(p, bg, 1);
+					deliverToGenerator(p, bg, 1, false);
 				}
 			}
 		}
 
-		// Lkw-Autopilot
-		std::map<uint32_t, STRUCTURE *> derrickById, genById;
-		std::map<uint32_t, int> avail;
-		for (STRUCTURE *d : sn.derricks) { derrickById[d->id] = d; avail[d->id] = s_barrels[d->id]; }
-		for (STRUCTURE *g : sn.gens) { genById[g->id] = g; }
+		// Lkw- und Tanker-Autopilot
+		std::map<uint32_t, int> avail;      // abholbare Faesser: Oelturm (roh) bzw. Raffinerie (veredelt)
+		for (STRUCTURE *d : sn.derricks) { avail[d->id] = s_barrels[d->id]; }
+		for (STRUCTURE *r : sn.refs) { avail[r->id] = s_refOut[r->id]; }
 		for (const auto &kv : s_cargo)
 		{
-			if (kv.second.player == p && kv.second.mode == 1)
+			if (kv.second.player == p && kv.second.mode == 1 && (kv.second.kind == 3 || kv.second.kind == 2))
 			{
 				const auto it = avail.find(kv.second.target);
 				if (it != avail.end()) { it->second -= std::max(0, kv.second.cap - kv.second.n); }
@@ -562,6 +654,7 @@ void logistics()
 			CargoState &c = s_cargo[d->id];
 			c.player = p;
 			c.cap = cap;
+			c.tank = isTank(d);
 			c.x = d->pos.x; c.y = d->pos.y; c.z = d->pos.z;
 			liveDroid.insert(d->id);
 			if (c.pause > 0) { c.pause--; continue; }
@@ -575,63 +668,53 @@ void logistics()
 			}
 			if (c.mode == 0 && d->order.type != DORDER_NONE) { continue; }
 
-			auto go = [&](int mode, uint32_t target, bool isFeature, int wx, int wy)
+			// kind: 0 Kraftwerk, 1 Wasserturm (Lager), 2 Raffinerie, 3 Oelturm
+			auto go = [&](int mode, int kind, uint32_t target, int wx, int wy)
 			{
 				orderDroidLoc(d, DORDER_MOVE, static_cast<UDWORD>(wx), static_cast<UDWORD>(wy), ModeImmediate);
-				c.mode = mode; c.target = target; c.targetFeature = isFeature; c.tx = wx; c.ty = wy; c.stuck = 0;
+				c.mode = mode; c.kind = kind; c.target = target; c.tx = wx; c.ty = wy; c.stuck = 0;
 			};
 
-			if (c.mode == 1)
-			{
-				const auto it = derrickById.find(c.target);
-				if (it == derrickById.end()) { c.mode = 0; }
-				else
-				{
-					STRUCTURE *der = it->second;
-					if (d2(d->pos.x, d->pos.y, der->pos.x, der->pos.y) <= LOAD_RANGE * LOAD_RANGE)
-					{
-						int &b = s_barrels[der->id];
-						const int take = std::min(cap - c.n, b);
-						c.n += take;
-						b -= take;
-						c.mode = 0;
-					}
-					else if (d->order.type == DORDER_NONE)
-					{
-						if (++c.stuck >= 3) { c.mode = 0; c.pause = 10; continue; }
-						go(1, der->id, false, der->pos.x, der->pos.y);
-						continue;
-					}
-					else { continue; }
-				}
-			}
-			else if (c.mode == 2)
+			if (c.mode != 0)
 			{
 				bool exists = false;
 				int wx = 0, wy = 0;
-				if (c.targetFeature)
+				STRUCTURE *ts = nullptr;
+				if (c.kind == 1)
 				{
 					const auto it = towerById.find(c.target);
 					if (it != towerById.end()) { exists = true; wx = it->second->pos.x; wy = it->second->pos.y; }
 				}
 				else
 				{
-					const auto it = genById.find(c.target);
-					if (it != genById.end()) { exists = true; wx = it->second->pos.x; wy = it->second->pos.y; }
+					const auto it = sById.find(c.target);
+					if (it != sById.end()) { exists = true; ts = it->second; wx = ts->pos.x; wy = ts->pos.y; }
 				}
 				if (!exists) { c.mode = 0; }
-				else if (d2(d->pos.x, d->pos.y, wx, wy) <= LOAD_RANGE * LOAD_RANGE)
+				else if (d2(d->pos.x, d->pos.y, wx, wy) <= LR2)
 				{
-					if (c.targetFeature)
+					if (c.mode == 1)
 					{
-						int &st = s_store[c.target];
-						const int m = std::min(c.n, std::max(0, STORAGE_CAP - st));
-						st += m;
+						int &stock = (c.kind == 3) ? s_barrels[c.target] : s_refOut[c.target];
+						const int take = std::min(cap - c.n, stock);
+						c.n += take;
+						stock -= take;
+					}
+					else if (c.kind == 1)
+					{
+						const int m = std::min(c.n, storeRoom(c.target));
+						if (c.tank) { s_storeR[c.target] += m; } else { s_store[c.target] += m; }
+						c.n -= m;
+					}
+					else if (c.kind == 2)
+					{
+						const int m = std::min(c.n, std::max(0, REF_CAP - s_refIn[c.target]));
+						s_refIn[c.target] += m;
 						c.n -= m;
 					}
 					else
 					{
-						deliverToGenerator(p, genById[c.target], c.n);
+						deliverToGenerator(p, ts, c.n, c.tank);
 						c.n = 0;
 					}
 					c.mode = 0;
@@ -639,7 +722,7 @@ void logistics()
 				else if (d->order.type == DORDER_NONE)
 				{
 					if (++c.stuck >= 3) { c.mode = 0; c.pause = 10; continue; }
-					go(2, c.target, c.targetFeature, wx, wy);
+					go(c.mode, c.kind, c.target, wx, wy);
 					continue;
 				}
 				else { continue; }
@@ -647,35 +730,47 @@ void logistics()
 
 			if (c.mode != 0) { continue; }
 
-			// neu entscheiden
+			// neu entscheiden: erst Fass holen (falls Platz und Vorrat), sonst abliefern
 			if (cap - c.n > 0)
 			{
 				STRUCTURE *best = nullptr;
 				int64_t bd = INT64_MAX;
-				for (STRUCTURE *der : sn.derricks)
+				for (STRUCTURE *s : (c.tank ? sn.refs : sn.derricks))
 				{
-					if (avail[der->id] <= 0) { continue; }
-					const int64_t dd = d2(d->pos.x, d->pos.y, der->pos.x, der->pos.y);
-					if (dd < bd) { bd = dd; best = der; }
+					if (avail[s->id] <= 0) { continue; }
+					const int64_t dd = d2(d->pos.x, d->pos.y, s->pos.x, s->pos.y);
+					if (dd < bd) { bd = dd; best = s; }
 				}
 				if (best != nullptr)
 				{
 					avail[best->id] -= (cap - c.n);
-					go(1, best->id, false, best->pos.x, best->pos.y);
+					go(1, c.tank ? 2 : 3, best->id, best->pos.x, best->pos.y);
 					continue;
 				}
 			}
 			if (c.n > 0)
 			{
+				if (!c.tank)
+				{
+					STRUCTURE *br = nullptr;
+					int64_t bd = INT64_MAX;
+					for (STRUCTURE *r : sn.refs)
+					{
+						if (s_refIn[r->id] >= REF_CAP) { continue; }
+						const int64_t dd = d2(d->pos.x, d->pos.y, r->pos.x, r->pos.y);
+						if (dd < bd) { bd = dd; br = r; }
+					}
+					if (br != nullptr) { go(2, 2, br->id, br->pos.x, br->pos.y); continue; }
+				}
 				FEATURE *bt = nullptr;
 				int64_t bd = INT64_MAX;
 				for (FEATURE *t : towers)
 				{
-					if (s_store[t->id] >= STORAGE_CAP) { continue; }
+					if (storeRoom(t->id) <= 0) { continue; }
 					bool near = false;
 					for (STRUCTURE *g : sn.gens)
 					{
-						if (d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y) <= STORAGE_RANGE * STORAGE_RANGE) { near = true; break; }
+						if (d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y) <= SR2) { near = true; break; }
 					}
 					if (!near) { continue; }
 					const int64_t dd = d2(d->pos.x, d->pos.y, t->pos.x, t->pos.y);
@@ -683,7 +778,7 @@ void logistics()
 				}
 				if (bt != nullptr)
 				{
-					go(2, bt->id, true, bt->pos.x, bt->pos.y);
+					go(2, 1, bt->id, bt->pos.x, bt->pos.y);
 					continue;
 				}
 				STRUCTURE *bg = nullptr;
@@ -693,7 +788,7 @@ void logistics()
 					const int64_t dd = d2(d->pos.x, d->pos.y, g->pos.x, g->pos.y);
 					if (dd < bd) { bd = dd; bg = g; }
 				}
-				if (bg != nullptr) { go(2, bg->id, false, bg->pos.x, bg->pos.y); }
+				if (bg != nullptr) { go(2, 0, bg->id, bg->pos.x, bg->pos.y); }
 			}
 		}
 	}
@@ -702,6 +797,9 @@ void logistics()
 	for (auto it = s_fuel.begin(); it != s_fuel.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_fuel.erase(it); }
 	for (auto it = s_barrels.begin(); it != s_barrels.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_barrels.erase(it); }
 	for (auto it = s_progress.begin(); it != s_progress.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_progress.erase(it); }
+	for (auto it = s_refIn.begin(); it != s_refIn.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_refIn.erase(it); }
+	for (auto it = s_refOut.begin(); it != s_refOut.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_refOut.erase(it); }
+	for (auto it = s_refT.begin(); it != s_refT.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_refT.erase(it); }
 	for (auto it = s_cargo.begin(); it != s_cargo.end();) { it = liveDroid.count(it->first) ? std::next(it) : s_cargo.erase(it); }
 
 	// Bruchstuecke: Rauch, und bei vollstaendiger Reparatur wieder durch die heile Pipeline ersetzen
@@ -782,7 +880,7 @@ void drawOverlay(const glm::mat4 &m)
 	if (range_rings::getMode() != 4 || !manages(static_cast<int>(selectedPlayer))) { return; }
 	const int p = static_cast<int>(selectedPlayer);
 	const PIELIGHT barrelOn = pal_RGBA(255, 214, 40, 255), barrelOff = pal_RGBA(60, 50, 20, 255);
-	const PIELIGHT storeOn = pal_RGBA(90, 190, 255, 255), storeOff = pal_RGBA(20, 40, 60, 255);
+	const PIELIGHT storeOn = pal_RGBA(90, 190, 255, 255), storeOff = pal_RGBA(20, 40, 60, 255), refinedOn = pal_RGBA(255, 130, 30, 255);
 	const PIELIGHT okOn = pal_RGBA(70, 255, 90, 255), lowOn = pal_RGBA(255, 60, 50, 255), barOff = pal_RGBA(30, 30, 30, 255);
 
 	std::vector<const STRUCTURE *> gens;
@@ -793,6 +891,13 @@ void drawOverlay(const glm::mat4 &m)
 		{
 			const auto it = s_barrels.find(s->id);
 			squares(m, s->pos.x, s->pos.y, s->pos.z + 200, it == s_barrels.end() ? 0 : it->second, DERRICK_CAP, barrelOn, barrelOff);
+		}
+		else if (isRefinery(s->pStructureType))
+		{
+			const auto ri = s_refIn.find(s->id);
+			const auto ro = s_refOut.find(s->id);
+			squares(m, s->pos.x, s->pos.y, s->pos.z + 300, ri == s_refIn.end() ? 0 : ri->second, REF_CAP, barrelOn, barrelOff);
+			squares(m, s->pos.x, s->pos.y, s->pos.z + 330, ro == s_refOut.end() ? 0 : ro->second, REF_CAP, refinedOn, storeOff);
 		}
 		else if (s->pStructureType->type == REF_POWER_GEN)
 		{
@@ -811,8 +916,10 @@ void drawOverlay(const glm::mat4 &m)
 			if (d2(f->pos.x, f->pos.y, g->pos.x, g->pos.y) <= STORAGE_RANGE * STORAGE_RANGE) { near = true; break; }
 		}
 		const auto it = s_store.find(f->id);
-		if (!near && (it == s_store.end() || it->second <= 0)) { continue; }
-		squares(m, f->pos.x, f->pos.y, f->pos.z + 330, it == s_store.end() ? 0 : it->second, STORAGE_CAP, storeOn, storeOff);
+		const auto ir = s_storeR.find(f->id);
+		const int have = (it == s_store.end() ? 0 : it->second) + (ir == s_storeR.end() ? 0 : ir->second);
+		if (!near && have <= 0) { continue; }
+		squares(m, f->pos.x, f->pos.y, f->pos.z + 330, have, STORAGE_CAP, storeOn, storeOff);
 	}
 	for (const DROID *d : gameWorld.objects.droids[p])
 	{
