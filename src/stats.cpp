@@ -692,6 +692,11 @@ bool loadBodyStats(WzConfig &ini)
 			return false;
 		}
 		psStats->pIMD = statsGetIMD(ini, psStats, "model");
+		// MOD: Modell-Leiter (Scavenger-Infanterie)
+		psStats->variantGroup = ini.value("variantGroup", "").toWzString();
+		psStats->variantWeight = ini.value("variantWeight", 0).toInt();
+		psStats->variantRank = ini.value("variantRank", 0).toInt();
+		psStats->variantRoll = ini.value("variantRoll", false).toBool();
 		if (ini.contains("alternativeModels")) // MOD: weitere Modelle fuer abwechselnde Darstellung
 		{
 			const auto alts = ini.json("alternativeModels");

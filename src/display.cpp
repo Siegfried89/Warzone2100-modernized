@@ -68,6 +68,7 @@
 #include "map.h"
 #include "intimage.h"
 #include "mechanics.h"
+#include "modoil.h"
 #include "lighting.h"
 #include "ingameop.h"
 #include "oprint.h"
@@ -1168,6 +1169,10 @@ void processMouseClickInput()
 			         (((STRUCTURE*)ObjUnderMouse)->getWeaponStats(0)->weaponSubClass == WSC_LAS_SAT))
 			{
 				wzSetCursor(CURSOR_SELECT); // Special casing for LasSat
+			}
+			else if (psDominantSelected != nullptr && modoil::trenchForInfantry(ObjUnderMouse, psDominantSelected))
+			{
+				wzSetCursor(CURSOR_EMBARK);   // MOD: Graben/Grube "hier bemannen"
 			}
 			else
 			{
@@ -2300,6 +2305,13 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 		psStructure->selected = true;
 		triggerEventSelected();
 		jsDebugSelected(psStructure);
+	}
+	// MOD: Infanterie auf einen eigenen Graben/eine Grube klicken = dort einruecken (bemannen)
+	if (psDominantSelected != nullptr && modoil::trenchForInfantry(psStructure, psDominantSelected))
+	{
+		orderSelectedLoc(selectedPlayer, psStructure->pos.x, psStructure->pos.y, ctrlShiftDown());
+		FeedbackOrderGiven();
+		return;
 	}
 	bSensorAssigned = false;
 	orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psStructure, ctrlShiftDown());

@@ -26,6 +26,7 @@
 #include "power.h"
 #include "range_rings.h"
 #include "structure.h"
+#include "template.h"
 
 #include <algorithm>
 #include <climits>
@@ -358,6 +359,15 @@ bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY
 	return s->pStructureType != nullptr && s->pStructureType->infantryPassable && s->status == SS_BUILT;
 }
 
+bool trenchForInfantry(const BASE_OBJECT *obj, const DROID *dominant)
+{
+	if (obj == nullptr || dominant == nullptr || obj->type != OBJ_STRUCTURE || obj->player != selectedPlayer) { return false; }
+	const STRUCTURE *s = static_cast<const STRUCTURE *>(obj);
+	if (s->pStructureType == nullptr || !s->pStructureType->infantryPassable || s->status != SS_BUILT) { return false; }
+	const PROPULSION_STATS *prop = dominant->getPropulsionStats();
+	return prop != nullptr && prop->propulsionType == PROPULSION_TYPE_LEGGED;
+}
+
 bool droidInTrench(const DROID *d)
 {
 	if (d == nullptr || d->getPropulsionStats() == nullptr || d->getPropulsionStats()->propulsionType != PROPULSION_TYPE_LEGGED) { return false; }
@@ -463,6 +473,45 @@ void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool refined)
 int storeRoom(uint32_t id)
 {
 	return std::max(0, STORAGE_CAP - s_store[id] - s_storeR[id]);
+}
+
+// Automatische Ausbildung: fehlen Fracht-Lkw (bzw. Tanker), startet eine freie Fabrik selbst einen (normale Kosten, normaler Bau)
+void autoTrain(int p, const Snap &sn)
+{
+	const int wantTruck = std::min(4, (static_cast<int>(sn.derricks.size()) + 1) / 2);
+	const int wantTank = std::min(2, static_cast<int>(sn.refs.size()));
+	if (wantTruck <= 0 && wantTank <= 0) { return; }
+	int haveTruck = 0, haveTank = 0;
+	for (const auto &kv : s_cargo)
+	{
+		if (kv.second.player != p) { continue; }
+		if (kv.second.tank) { haveTank++; } else { haveTruck++; }
+	}
+	std::vector<STRUCTURE *> idle;
+	for (STRUCTURE *f : gameWorld.objects.structures[p])
+	{
+		if (f == nullptr || f->died || f->status != SS_BUILT || f->pStructureType == nullptr || f->pStructureType->type != REF_FACTORY || f->pFunctionality == nullptr) { continue; }
+		const FACTORY &fac = f->pFunctionality->factory;
+		const DROID_TEMPLATE *sub = fac.psSubject != nullptr ? fac.psSubject : fac.psSubjectPending;
+		if (sub == nullptr) { idle.push_back(f); continue; }
+		if (idIs(sub->id, "ScavTanker") || idIs(sub->id, "ScavTankerB")) { haveTank++; }
+		else if (idIs(sub->id, "ScavPickup") || idIs(sub->id, "ScavLkw") || idIs(sub->id, "ScavTraktor") || idIs(sub->id, "ScavRadlader")) { haveTruck++; }
+	}
+	auto train = [&](const char *name)
+	{
+		if (idle.empty()) { return; }
+		STRUCTURE *f = idle.back();
+		for (DROID_TEMPLATE *t : fillTemplateList(f))
+		{
+			if (t != nullptr && idIs(t->id, name))
+			{
+				if (structSetManufacture(f, t, ModeImmediate)) { idle.pop_back(); }
+				return;
+			}
+		}
+	};
+	if (haveTruck < wantTruck) { train("ScavLkw"); }
+	if (haveTank < wantTank) { train("ScavTanker"); }
 }
 
 void logistics()
@@ -814,6 +863,8 @@ void logistics()
 				if (bg != nullptr) { go(2, 0, bg->id, bg->pos.x, bg->pos.y); }
 			}
 		}
+
+		autoTrain(p, sn);   // MOD: fehlende Fracht-Lkw / Tanker automatisch ausbilden
 	}
 
 	// Aufraeumen: Eintraege nicht mehr vorhandener Objekte

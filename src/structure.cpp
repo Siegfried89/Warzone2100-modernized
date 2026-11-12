@@ -28,6 +28,7 @@
 #include <string.h>
 #include <algorithm>
 #include <cctype>
+#include "modvariant.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/gamepad_input.h"
@@ -2785,6 +2786,7 @@ static bool structPlaceDroid(STRUCTURE *psStructure, DROID_TEMPLATE *psTempl, DR
 			*ppsDroid = nullptr;
 			return false;
 		}
+		modvariant::onFactoryDroid(psNewDroid);   // MOD: Ausbildung wuerfelt das Modell (Scav-Infanterie), seltene mit Erfahrungsbonus
 		psFact = &psStructure->pFunctionality->factory;
 		bool hasCommander = psFact->psCommander != nullptr;
 		// assign a group to the manufactured droid

@@ -10,6 +10,7 @@
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
 
+struct BASE_OBJECT;
 struct STRUCTURE;
 struct FEATURE;
 struct DROID;
@@ -27,6 +28,8 @@ void tick();
 bool generatorRunning(const STRUCTURE *psGen);
 /// steht auf diesem Feld ein fertiges Bauwerk mit "infantryPassable" (Graben, Grube)?
 bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY);
+/// ist das ein eigener, fertiger Graben/eine Grube, in die die gewaehlte Infanterie (Beine) einruecken kann? (Mauszeiger "bemannen")
+bool trenchForInfantry(const BASE_OBJECT *obj, const DROID *dominantSelected);
 /// steht die Infanterie (Beine) im Graben / in der Grube? (Schadensminderung)
 bool droidInTrench(const DROID *psDroid);
 /// ist das ein Lkw im Fass-Autopilot? (Ebenen-Schaechte duerfen ihn nicht umschalten)

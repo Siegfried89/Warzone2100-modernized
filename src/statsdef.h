@@ -526,6 +526,11 @@ struct BODY_STATS : public COMPONENT_STATS
 	std::vector<iIMDBaseShape *> ppMoveIMDList;	///< list of IMDs to use when droid is moving - up to numPropulsionStats
 	std::vector<iIMDBaseShape *> ppStillIMDList;///< list of IMDs to use when droid is still - up to numPropulsionStats
 	WzString         bodyClass;		///< rules hint to script about its classification
+	// MOD: Modell-Leiter fuer Scavenger-Infanterie (modvariant.cpp)
+	WzString         variantGroup;		///< Gruppenname (leer = keine Leiter)
+	int              variantWeight = 0;	///< Gewicht beim Wuerfeln in der Fabrik (0 = wird nie gewuerfelt)
+	int              variantRank = 0;	///< Stufe/Rang, ab der das Modell gilt (Startrang beim Wuerfeln, Ziel beim Aufleveln)
+	bool             variantRoll = false;	///< Vorlagen mit diesem Koerper wuerfeln in der Fabrik unter allen Modellen der Gruppe
 
 	struct UPGRADE : COMPONENT_STATS::UPGRADE
 	{

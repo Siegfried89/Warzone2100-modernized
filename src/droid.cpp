@@ -48,6 +48,7 @@
 #include "modlayer.h"
 #include "modoil.h"
 #include "modwreck.h"
+#include "modvariant.h"
 #include "hci.h"
 #include "power.h"
 #include "effects.h"
@@ -2683,6 +2684,7 @@ void droidIncreaseExperience(DROID *psDroid, uint32_t experienceInc)
 	{
 		// Trigger new event - unit rank increased
 		triggerEventDroidRankGained(psDroid, finalDroidRank);
+		if (finalDroidRank > startingDroidRank) { modvariant::onRankGained(psDroid, static_cast<unsigned>(finalDroidRank)); }   // MOD: Modell wechselt beim Aufleveln
 	}
 }
 

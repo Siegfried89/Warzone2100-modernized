@@ -8,6 +8,7 @@
 #include "lib/framework/fixedpoint.h"
 #include "lib/framework/trig.h"
 #include "lib/gamelib/gtime.h"
+#include "lib/ivis_opengl/ivisdef.h"
 #include "lib/sound/audio.h"
 #include "lib/sound/audio_id.h"
 
