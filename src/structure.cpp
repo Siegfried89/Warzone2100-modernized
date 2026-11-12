@@ -4307,8 +4307,8 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 					continue;
 				}
 
-				// MOD: Original-Duplikate der Kampagnen-Gegner ("-Orig") und die klobigen Project-Stellungen (Sechseck-Sockel) nie im Baumenue anbieten
-				if (psBuilding->id.endsWith("-Orig"))
+				// MOD: Original-Duplikate der Kampagnen-Gegner ("-Orig"), die klobigen Project-Betonfestungen und -Stellungen (Sechseck-Sockel) nie im Baumenue anbieten
+				if (psBuilding->id.endsWith("-Orig") || psBuilding->type == REF_FORTRESS)
 				{
 					continue;
 				}
@@ -4316,7 +4316,7 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 				{
 					std::string mn = psBuilding->pIMD[0]->filename.toUtf8();
 					std::transform(mn.begin(), mn.end(), mn.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-					if (mn.rfind("blmrtpit", 0) == 0 || mn.rfind("blhowmnt", 0) == 0 || mn.rfind("blhardpt", 0) == 0 || mn.rfind("blaamnt", 0) == 0)
+					if (mn.rfind("blmrtpit", 0) == 0 || mn.rfind("blhowmnt", 0) == 0 || mn.rfind("blhardpt", 0) == 0 || mn.rfind("blaamnt", 0) == 0 || mn.rfind("stwpf", 0) == 0)
 					{
 						continue;
 					}
@@ -4389,6 +4389,26 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 				}
 			}
 		}
+	}
+	// MOD: Duplikate im Baumenue aufraeumen: gleiche Art, gleiches Modell, gleiche Waffe (z.B. zwei MG-Tuerme mit identischem Aussehen) -> nur der letzte (beste) Eintrag bleibt
+	{
+		std::vector<STRUCTURE_STATS *> unique;
+		for (size_t i = 0; i < structureList.size(); ++i)
+		{
+			const STRUCTURE_STATS *a = structureList[i];
+			bool superseded = false;
+			if ((a->type == REF_DEFENSE && a->numWeaps > 0 && a->psWeapStat[0] != nullptr) || a->type == REF_WALL)
+			{
+				for (size_t j = i + 1; j < structureList.size() && !superseded; ++j)
+				{
+					const STRUCTURE_STATS *b = structureList[j];
+					superseded = a->type == b->type && !a->pIMD.empty() && !b->pIMD.empty() && a->pIMD[0] == b->pIMD[0] && a->pBaseIMD == b->pBaseIMD
+					             && a->numWeaps == b->numWeaps && (a->numWeaps == 0 || a->psWeapStat[0] == b->psWeapStat[0]);
+				}
+			}
+			if (!superseded) { unique.push_back(structureList[i]); }
+		}
+		structureList.swap(unique);
 	}
 	// MOD: Protokoll der angebotenen Gebaeude (einmal pro Aenderung), damit man in der Logdatei sieht, was im Baumenue steht
 	{
