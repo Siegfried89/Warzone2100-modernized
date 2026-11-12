@@ -41,6 +41,7 @@
 #include "astar.h"
 
 #include "fpath.h"
+#include "modlayer.h"
 #include "modoil.h"
 #include "pathfinding_backend.h"
 #include "congestion_overlay.h"
@@ -402,7 +403,7 @@ bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PR
 
 bool fpathDroidBlockingTile(DROID *psDroid, const WorldMapState& mapState, int x, int y, FPATH_MOVETYPE moveType)
 {
-	return fpathBaseBlockingTile(mapState, x, y, psDroid->getPropulsionStats()->propulsionType, psDroid->player, moveType);
+	return fpathBaseBlockingTile(mapState, x, y, modlayer::effectivePropulsion(psDroid, psDroid->getPropulsionStats()->propulsionType), psDroid->player, moveType);
 }
 
 // Check if the map tile at a location blocks a droid
@@ -725,7 +726,7 @@ protected:
 		Position startPos = psDroid->pos;
 		Position endPos = Position(tX, tY, 0);
 		StructureBounds dstStructure = getStructureBounds(worldTile(mapState, endPos.xy())->psObject);
-		const auto droidPropulsionType = psDroid->getPropulsionStats()->propulsionType;
+		const auto droidPropulsionType = modlayer::effectivePropulsion(psDroid, psDroid->getPropulsionStats()->propulsionType);   // MOD: Ebenen
 		startPos = findNonblockingPosition(mapState, startPos, droidPropulsionType, psDroid->player, moveType);
 		if (!dstStructure.valid())  // If there's a structure over the destination, ignore it, otherwise pathfind from somewhere around the obstruction.
 		{
@@ -747,7 +748,7 @@ protected:
 			acceptNearest = true;
 			break;
 		}
-		return fpathRoute(mapState, &psDroid->sMove, psDroid->id, startPos.x, startPos.y, endPos.x, endPos.y, psPropStats->propulsionType,
+		return fpathRoute(mapState, &psDroid->sMove, psDroid->id, startPos.x, startPos.y, endPos.x, endPos.y, droidPropulsionType,
 		                  psDroid->droidType, moveType, psDroid->player, acceptNearest, dstStructure, collectImmediately);
 	}
 

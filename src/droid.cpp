@@ -45,6 +45,7 @@
 #include "modduel.h"
 #include "modcombot.h"
 #include "droid.h"
+#include "modlayer.h"
 #include "modoil.h"
 #include "hci.h"
 #include "power.h"
@@ -738,6 +739,7 @@ bool destroyDroid(DROID *psDel, unsigned impactTime, GameWorld& world)
 	removeDroidFX(psDel, impactTime);
 	removeDroidBase(psDel, world.objects);
 	psDel->died = impactTime;
+	modlayer::forget(psDel->id);   // MOD: Ebenen
 	return true;
 }
 

@@ -62,6 +62,7 @@
 #include "game_world.h"
 #include "wrappers.h"
 #include "perfcounters.h"
+#include "modlayer.h"
 
 #include <algorithm>
 #include <functional>
@@ -985,6 +986,10 @@ static PROJECTILE* proj_InFlightFunc(PROJECTILE *psProj)
 			ASSERT(psTempObj->type < OBJ_NUM_TYPES, "Bad pointer! type=%u", psTempObj->type);
 			continue;
 		}
+		if (!modlayer::projectileCanHit(psProj, psTempObj))
+		{
+			continue;  // MOD: Geschosse treffen nur Objekte ihrer Ebene
+		}
 		if (psTempObj->type == OBJ_FEATURE && !((FEATURE *)psTempObj)->psStats->damageable)
 		{
 			// Ignore oil resources, artifacts and other pickups
@@ -1143,6 +1148,11 @@ static void proj_radiusSweep(PROJECTILE *psObj, WEAPON_STATS *psStats, Vector3i 
 		if (psCurr == psObj->psDest)
 		{
 			continue;  // Don't hit main target twice.
+		}
+
+		if (!modlayer::projectileCanHit(psObj, psCurr))
+		{
+			continue;  // MOD: Splash trifft nur Objekte der Ebene des Geschosses
 		}
 
 		if (psObj->psSource && psObj->psSource->player == psCurr->player && psStats->flags.test(WEAPON_FLAG_NO_FRIENDLY_FIRE))
@@ -1622,6 +1632,11 @@ static void proj_checkPeriodicalDamage(PROJECTILE *psProj)
 		if (aiCheckAlliances(psProj->player, psCurr->player))
 		{
 			continue;  // Don't damage your own droids, nor ally droids - unrealistic, but better.
+		}
+
+		if (!modlayer::projectileCanHit(psProj, psCurr))
+		{
+			continue;  // MOD: Ebenen
 		}
 
 		if (psCurr->type == OBJ_DROID && ((DROID *)psCurr)->isFlying())

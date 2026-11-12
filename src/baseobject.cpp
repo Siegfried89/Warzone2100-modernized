@@ -29,6 +29,7 @@
 #include "feature.h"
 #include "intdisplay.h"
 #include "map.h"
+#include "modlayer.h"
 #include "uiobjectrefs.h"
 #include "game_world.h"
 
@@ -159,6 +160,10 @@ WEAPON_STATS* BASE_OBJECT::getWeaponStats(int weaponSlot) const
 // *DO NOT USE TO QUERY VISIBILITY FOR CALCULATIONS INVOLVING GAME / SIMULATION STATE*
 UBYTE BASE_OBJECT::visibleForLocalDisplay() const
 {
+	if (modlayer::hiddenInView(this))   // MOD: Objekte anderer Ebenen werden nicht angezeigt
+	{
+		return 0;
+	}
 	if (godMode)
 	{
 		// is visible to selectedPlayer

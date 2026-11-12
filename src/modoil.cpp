@@ -364,6 +364,11 @@ bool droidInTrench(const DROID *d)
 	return tilePassableForInfantry(gameWorld.map, map_coord(d->pos.x), map_coord(d->pos.y));
 }
 
+bool isCargo(uint32_t droidId)
+{
+	return s_cargo.find(droidId) != s_cargo.end();
+}
+
 bool generatorRunning(const STRUCTURE *psGen)
 {
 	if (!manages(psGen->player)) { return true; }

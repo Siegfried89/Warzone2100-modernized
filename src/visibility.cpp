@@ -53,6 +53,7 @@
 #include "perfcounters.h"
 #include "game_world.h"
 #include "mission.h"
+#include "modlayer.h"
 
 // rate to change visibility level
 static const int VIS_LEVEL_INC = 255 * 2;
@@ -551,6 +552,11 @@ int visibleObject(const BASE_OBJECT *psViewer, const BASE_OBJECT *psTarget, bool
 	ASSERT_OR_RETURN(0, psViewer != nullptr, "Invalid viewer pointer!");
 	ASSERT_OR_RETURN(0, psTarget != nullptr, "Invalid viewed pointer!");
 
+	if (!modlayer::canInteract(psViewer, psTarget))   // MOD: Objekte verschiedener Ebenen sehen sich nicht
+	{
+		return 0;
+	}
+
 	int range = objSensorRange(psViewer);
 
 	if (!worldOnMap(gameWorld.map, psViewer->pos.x, psViewer->pos.y) || !worldOnMap(gameWorld.map, psTarget->pos.x, psTarget->pos.y))
@@ -1010,6 +1016,16 @@ bool lineOfFire(const SIMPLE_OBJECT *psViewer, const BASE_OBJECT *psTarget, int 
 	ASSERT_OR_RETURN(false, psViewer != nullptr, "Invalid shooter pointer!");
 	ASSERT_OR_RETURN(false, psTarget != nullptr, "Invalid target pointer!");
 	ASSERT_OR_RETURN(false, psViewer->type == OBJ_DROID || psViewer->type == OBJ_STRUCTURE, "Bad viewer type");
+
+	// MOD: Ebenen - Objekte verschiedener Ebenen schiessen nicht aufeinander; Untergrund-Einheiten schiessen durch Bauwerke der Oberflaeche
+	if (!modlayer::canInteract(psViewer, psTarget))
+	{
+		return false;
+	}
+	if (modlayer::layerOf(psViewer) != modlayer::SURFACE)
+	{
+		wallsBlock = false;
+	}
 
 	if (psViewer->type == OBJ_DROID)
 	{

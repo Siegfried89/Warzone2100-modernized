@@ -28,6 +28,8 @@ bool generatorRunning(const STRUCTURE *psGen);
 bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY);
 /// steht die Infanterie (Beine) im Graben / in der Grube? (Schadensminderung)
 bool droidInTrench(const DROID *psDroid);
+/// ist das ein Lkw im Fass-Autopilot? (Ebenen-Schaechte duerfen ihn nicht umschalten)
+bool isCargo(uint32_t droidId);
 /// Hooks beim Zerstoeren (vor dem Entfernen aufrufen)
 void onStructureDestroyed(const STRUCTURE *psDel);
 void onFeatureDestroyed(const FEATURE *psDel);

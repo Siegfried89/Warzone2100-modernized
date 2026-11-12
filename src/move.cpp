@@ -34,6 +34,7 @@
 #include "console.h"
 
 #include "modduel.h"
+#include "modlayer.h"
 #include "move.h"
 
 #include "objects.h"
@@ -444,7 +445,7 @@ static void moveShuffleDroid(DROID *psDroid, Vector2i s)
 	rvx = svy;   // shuffleDir + 90°
 	rvy = -svx;
 
-	const auto droidPropType = psDroid->getPropulsionStats()->propulsionType;
+	const auto droidPropType = modlayer::effectivePropulsion(psDroid, psDroid->getPropulsionStats()->propulsionType);   // MOD: Ebenen
 	// check for blocking tiles
 	if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + lvx),
 	                      map_coord((SDWORD)psDroid->pos.y + lvy), droidPropType))
@@ -466,7 +467,7 @@ static void moveShuffleDroid(DROID *psDroid, Vector2i s)
 	for (BASE_OBJECT *gridObj : gridStartIterate(psDroid->pos.x, psDroid->pos.y, SHUFFLE_DIST))
 	{
 		DROID *psCurr = castDroid(gridObj);
-		if (psCurr == nullptr || psCurr->died || psCurr == psDroid)
+		if (psCurr == nullptr || psCurr->died || psCurr == psDroid || !modlayer::canInteract(psDroid, psCurr))
 		{
 			continue;
 		}
@@ -651,7 +652,7 @@ static int32_t moveDirectPathToWaypoint(DROID *psDroid, unsigned positionIndex)
 	Vector2i delta = dst - src;
 	int32_t dist = iHypot(delta);
 	BLOCKING_CALLBACK_DATA data;
-	data.propulsionType = psDroid->getPropulsionStats()->propulsionType;
+	data.propulsionType = modlayer::effectivePropulsion(psDroid, psDroid->getPropulsionStats()->propulsionType);   // MOD: Ebenen
 	data.blocking = false;
 	data.src = src;
 	data.dst = dst;
@@ -1044,7 +1045,7 @@ static void moveOpenGates(DROID *psDroid)
 // TODO See if this function can be simplified.
 static void moveCalcBlockingSlide(DROID *psDroid, int32_t *pmx, int32_t *pmy, uint16_t tarDir, uint16_t *pSlideDir)
 {
-	PROPULSION_TYPE	propulsion = psDroid->getPropulsionStats()->propulsionType;
+	PROPULSION_TYPE	propulsion = modlayer::effectivePropulsion(psDroid, psDroid->getPropulsionStats()->propulsionType);   // MOD: Ebenen
 	SDWORD	horizX, horizY, vertX, vertY;
 	uint16_t slideDir;
 	// calculate the new coords and see if they are on a different tile
@@ -1363,6 +1364,10 @@ static void moveCalcDroidSlide(DROID *psDroid, int *pmx, int *pmy)
 			{
 				// ignore transporters
 				continue;
+			}
+			if (!modlayer::canInteract(psDroid, psObjcast))
+			{
+				continue;  // MOD: Einheiten anderer Ebenen behindern sich nicht
 			}
 			objR = moveObjRadius(psObj);
 			const bool objFlying = psObjcast->isFlying();

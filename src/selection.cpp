@@ -39,6 +39,7 @@
 #include "uiobjectrefs.h"
 #include "hci.h"
 #include "map.h"
+#include "modlayer.h"
 #include "selection.h"
 #include "display3d.h"
 #include "warcam.h"
@@ -64,6 +65,7 @@ static unsigned selSelectUnitsIf(WorldObjectState& objState, unsigned player, T 
 	for (DROID *psDroid : objState.droids[player])
 	{
 		bool shouldSelect = (!onlyOnScreen || objectOnScreen(psDroid, 0)) &&
+		                    (player != selectedPlayer || !modlayer::hiddenInView(psDroid)) &&   // MOD: Ebenen - nur Einheiten der angezeigten Ebene
 		                    condition(psDroid);
 		count += shouldSelect;
 		if (shouldSelect && !psDroid->selected && !psDroid->flags.test(OBJECT_FLAG_UNSELECTABLE))

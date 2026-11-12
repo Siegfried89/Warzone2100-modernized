@@ -42,6 +42,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "modlayer.h"
 #include "modoil.h"
 #include "research.h"
 #include "hci.h"
@@ -998,6 +999,10 @@ void structureBuild(GameWorld& world, STRUCTURE *psStruct, DROID *psDroid, int b
 				}
 			}
 		}
+	}
+	if (psDroid != nullptr)
+	{
+		modlayer::inheritFromBuilder(psStruct, psDroid);   // MOD: Bauwerk entsteht auf der Ebene des Baumeisters
 	}
 	psStruct->buildRate += buildRate;  // buildRate = buildPoints/GAME_UPDATES_PER_SEC, but might be rounded up or down each tick, so can't use buildPoints to get a stable number.
 	if (psStruct->currentBuildPts <= 0 && buildPoints > 0)
@@ -5065,6 +5070,8 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 	{
 		technologyGiveAway(psDel);  // Drop an artifact, if applicable.
 	}
+
+	modlayer::forget(psDel->id);   // MOD: Ebenen
 
 	// updates score stats only if not wall
 	if (!bMinor)

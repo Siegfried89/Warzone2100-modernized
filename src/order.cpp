@@ -34,6 +34,7 @@
 
 #include "objects.h"
 #include "order.h"
+#include "modlayer.h"
 #include "ordersource.h"
 #include "action.h"
 #include "map.h"
@@ -2625,7 +2626,9 @@ DROID_ORDER chooseOrderLoc(DROID *psDroid, UDWORD x, UDWORD y, bool altOrder)
 	{
 		propulsion = PROPULSION_TYPE_WHEELED;
 	}
-	if (!fpathBlockingTile(gameWorld.map, map_coord(x), map_coord(y), propulsion))
+	propulsion = modlayer::effectivePropulsion(psDroid, propulsion);   // MOD: Untergrund-Einheiten duerfen ueberall hin
+	if (!fpathBlockingTile(gameWorld.map, map_coord(x), map_coord(y), propulsion)
+	    || modlayer::isPortalTile(psDroid->player, map_coord(x), map_coord(y)))   // MOD: Schacht anklicken = hinfahren
 	{
 		order = DORDER_MOVE;
 	}
@@ -3053,6 +3056,15 @@ void orderSelectedObjAdd(UDWORD player, BASE_OBJECT *psObj, bool add)
 					// Help watch the structure being built.
 					orderDroidLocAdd(psCurr, DORDER_MOVE, psObj->pos.x, psObj->pos.y, add);
 				}
+				continue;
+			}
+
+			// MOD: Schacht angeklickt -> hinfahren (dort wechselt die Einheit die Ebene)
+			if (psObj->type == OBJ_STRUCTURE && !psCurr->isVtol() && !psCurr->isTransporter()
+			    && modlayer::isPortalTile(psCurr->player, map_coord(psObj->pos.x), map_coord(psObj->pos.y))
+			    && !(psCurr->isConstructionDroid() && (intDemolishSelectMode() || castStructure(psObj)->body < castStructure(psObj)->structureBody())))   // Baumeister: Abriss/Reparatur geht vor
+			{
+				orderDroidLocAdd(psCurr, DORDER_MOVE, psObj->pos.x, psObj->pos.y, add);
 				continue;
 			}
 

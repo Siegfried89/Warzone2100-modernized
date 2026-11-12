@@ -34,6 +34,7 @@
 #include "mapgrid.h"
 #include "map.h"
 #include "projectile.h"
+#include "modlayer.h"
 #include "objmem.h"
 #include "order.h"
 #include "visibility.h"
@@ -1297,6 +1298,11 @@ bool validTarget(BASE_OBJECT const *psObject, BASE_OBJECT const *psTarget, int w
 	UBYTE	surfaceToAir = 0;
 
 	if (!psTarget)
+	{
+		return false;
+	}
+
+	if (!modlayer::canInteract(psObject, psTarget))   // MOD: Ebenen
 	{
 		return false;
 	}

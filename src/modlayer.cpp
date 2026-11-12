@@ -4,6 +4,7 @@
 #include "modlayer.h"
 #include "modui.h"
 #include "modcombot.h"
+#include "modoil.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -14,11 +15,22 @@
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/screen.h"
 
+#include "lib/netplay/sync_debug.h"
+
+#include "ai.h"
+#include "droid.h"
+#include "effects.h"
+#include "game_world.h"
 #include "hci.h"
+#include "map.h"
+#include "order.h"
+#include "projectile.h"
+#include "structure.h"
 
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace modlayer
@@ -59,9 +71,9 @@ const char *layerTip(Layer l)
 {
 	switch (l)
 	{
-	case ORBIT: return "Orbit layer: floating asteroids and solar panels, only aerial units travel here (view only for now)";
-	case SURFACE: return "Surface layer: the battlefield (view only for now)";
-	default: return "Underground layer: lava caverns and drilled tunnels (view only for now)";
+	case ORBIT: return "Orbit layer: floating asteroids and solar panels, only aerial units will travel here (not playable yet)";
+	case SURFACE: return "Surface layer: the battlefield";
+	default: return "Underground layer: units that drive into a Shaft (build one with a truck) travel here unseen; right-click a Shaft to enter or leave";
 	}
 }
 
@@ -83,11 +95,44 @@ float progress()
 	return std::min(1.f, static_cast<float>(el) / static_cast<float>(FADE_TOTAL_MS));
 }
 
+// Spielzustand: Ebene je Objekt-Kennung (nur Objekte ausserhalb der Oberflaeche), Abklingzeit nach einem Schachtwechsel
+std::unordered_map<uint32_t, Layer> s_layerOf;
+std::unordered_map<uint32_t, UDWORD> s_cool;
+
+constexpr int PORTAL_ORDER_RANGE = 192;   // Zielpunkt des Marschbefehls liegt am Schacht
+constexpr int PORTAL_REACH = 240;         // so nah muss die Einheit am Schacht sein (Weg endet neben dem blockierten Feld)
+constexpr UDWORD PORTAL_COOLDOWN = 4000;  // ms bis die Einheit wieder wechseln darf
+
+bool isShaft(const STRUCTURE_STATS *st)
+{
+	return st != nullptr && st->type == REF_GENERIC && st->id.startsWith("A0LayerShaft");
+}
+
+Layer layerOfId(uint32_t id)
+{
+	const auto it = s_layerOf.find(id);
+	return it == s_layerOf.end() ? SURFACE : it->second;
+}
+
+// beim Umschalten der Anzeige: ausgewaehlte Einheiten, die in der neuen Ebene nicht sichtbar sind, abwaehlen
+void deselectOtherLayers(Layer shown)
+{
+	if (selectedPlayer >= MAX_PLAYERS || s_layerOf.empty()) { return; }
+	for (DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d->selected && layerOfId(d->id) != shown) { DeSelectDroid(d); }
+	}
+}
+
 void update()
 {
 	if (!s_busy) { return; }
 	const float p = progress();
-	if (p >= 0.5f) { s_current = s_target; }
+	if (p >= 0.5f && s_current != s_target)
+	{
+		s_current = s_target;
+		deselectOtherLayers(s_current);
+	}
 	if (p >= 1.f) { s_busy = false; }
 }
 
@@ -96,7 +141,7 @@ void drawVeil()
 {
 	const int w = static_cast<int>(screenWidth), h = static_cast<int>(screenHeight);
 	if (s_current == ORBIT) { pie_BoxFill_alpha(0, 0, w, h, pal_RGBA(10, 30, 90, 50)); }
-	else if (s_current == UNDERGROUND) { pie_BoxFill_alpha(0, 0, w, h, pal_RGBA(50, 20, 0, 70)); }
+	else if (s_current == UNDERGROUND) { pie_BoxFill_alpha(0, 0, w, h, pal_RGBA(44, 18, 0, 140)); }
 	if (s_busy)
 	{
 		const float p = progress();
@@ -210,8 +255,133 @@ void tick()
 	if (want) { layout(); }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Spielzustand
+// ---------------------------------------------------------------------------------------------------------------------
+
+Layer layerOf(const SIMPLE_OBJECT *obj)
+{
+	if (s_layerOf.empty() || obj == nullptr) { return SURFACE; }
+	return layerOfId(obj->id);
+}
+
+bool active()
+{
+	return !s_layerOf.empty();
+}
+
+bool canInteract(const SIMPLE_OBJECT *a, const SIMPLE_OBJECT *b)
+{
+	if (s_layerOf.empty()) { return true; }
+	return layerOf(a) == layerOf(b);
+}
+
+bool projectileCanHit(const PROJECTILE *proj, const SIMPLE_OBJECT *target)
+{
+	if (s_layerOf.empty() || proj == nullptr) { return true; }
+	const SIMPLE_OBJECT *ref = proj->psSource != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psSource)
+	                           : (proj->psDest != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psDest) : nullptr);
+	if (ref == nullptr) { return true; }
+	return layerOf(ref) == layerOf(target);
+}
+
+bool hiddenInView(const BASE_OBJECT *obj)
+{
+	if (s_layerOf.empty() && s_current == SURFACE) { return false; }
+	if (obj == nullptr) { return false; }
+	if (obj->type == OBJ_STRUCTURE && isShaft(static_cast<const STRUCTURE *>(obj)->pStructureType)) { return false; }   // Schaechte in jeder Ebene sichtbar
+	return layerOf(obj) != s_current;
+}
+
+PROPULSION_TYPE effectivePropulsion(const DROID *psDroid, PROPULSION_TYPE realType)
+{
+	if (s_layerOf.empty() || realType == PROPULSION_TYPE_LIFT || psDroid == nullptr) { return realType; }
+	return layerOfId(psDroid->id) == SURFACE ? realType : PROPULSION_TYPE_LIFT;
+}
+
+bool isPortalTile(int player, int tileX, int tileY)
+{
+	if (tileX < 0 || tileY < 0 || tileX >= gameWorld.map.width || tileY >= gameWorld.map.height) { return false; }
+	const MAPTILE *tile = mapTile(gameWorld.map, tileX, tileY);
+	if (tile == nullptr || tile->psObject == nullptr || tile->psObject->type != OBJ_STRUCTURE) { return false; }
+	const STRUCTURE *s = static_cast<const STRUCTURE *>(tile->psObject);
+	return s->status == SS_BUILT && isShaft(s->pStructureType) && aiCheckAlliances(s->player, player);
+}
+
+void gameTick()
+{
+	// Schaechte einsammeln (ohne Schacht passiert nichts und nichts kostet Zeit)
+	std::vector<const STRUCTURE *> shafts;
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s->died == 0 && s->status == SS_BUILT && isShaft(s->pStructureType)) { shafts.push_back(s); }
+		}
+	}
+	if (shafts.empty()) { return; }
+
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		for (DROID *d : gameWorld.objects.droids[p])
+		{
+			if (d->died != 0 || d->order.type != DORDER_MOVE) { continue; }
+			if (d->isVtol() || d->isTransporter() || modoil::isCargo(d->id)) { continue; }
+			const auto cool = s_cool.find(d->id);
+			if (cool != s_cool.end())
+			{
+				if (gameTime < cool->second) { continue; }
+				s_cool.erase(cool);
+			}
+			for (const STRUCTURE *s : shafts)
+			{
+				if (!aiCheckAlliances(s->player, d->player)) { continue; }
+				if (iHypot(d->order.pos - s->pos.xy()) > PORTAL_ORDER_RANGE) { continue; }
+				if (iHypot(d->pos.xy() - s->pos.xy()) > PORTAL_REACH) { continue; }
+				const Layer next = layerOfId(d->id) == SURFACE ? UNDERGROUND : SURFACE;
+				if (next == SURFACE) { s_layerOf.erase(d->id); } else { s_layerOf[d->id] = next; }
+				s_cool[d->id] = gameTime + PORTAL_COOLDOWN;
+				syncDebug("modlayer: droid %u -> layer %d", d->id, static_cast<int>(next));
+				orderDroid(d, DORDER_STOP, ModeImmediate);
+				// Staubwolke am Schacht
+				const unsigned it = gameTime - deltaGameTime / 2 + 1;
+				for (int i = 0; i < 3; i++)
+				{
+					Vector3i sp(s->pos.x + (i - 1) * 24, s->pos.z + 40 + i * 18, s->pos.y + (1 - i) * 16);
+					addEffect(&sp, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_HIGH, false, nullptr, 0, it);
+				}
+				// die Anzeige folgt der gewaehlten Einheit
+				if (static_cast<unsigned>(d->player) == selectedPlayer && d->selected) { request(next); }
+				break;
+			}
+		}
+	}
+}
+
+void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder)
+{
+	if (s_layerOf.empty() || psStruct == nullptr || psBuilder == nullptr) { return; }
+	if (psStruct->currentBuildPts > 0) { return; }   // nur beim Baubeginn
+	const Layer l = layerOfId(psBuilder->id);
+	if (l == SURFACE) { s_layerOf.erase(psStruct->id); } else { s_layerOf[psStruct->id] = l; }
+}
+
+void forget(uint32_t id)
+{
+	if (s_layerOf.empty() && s_cool.empty()) { return; }
+	s_layerOf.erase(id);
+	s_cool.erase(id);
+}
+
+void resetState()
+{
+	s_layerOf.clear();
+	s_cool.clear();
+}
+
 void shutdown()
 {
+	resetState();
 	if (s_screen)
 	{
 		widgRemoveOverlayScreen(s_screen);
