@@ -51,6 +51,8 @@ void featureUpdate(FEATURE *psFeat);
 
 // free up a feature with no visual effects
 bool removeFeature(FEATURE *psDel, GameWorld& world);
+/// MOD: Wrack-Lage setzen (Richtung, Rollwinkel, Hoehe der Drehachse); Wracks liegen frei, ohne Kachelbindung
+void featureSetWreckPose(FEATURE *psFeature, uint16_t direction, int roll, int z);
 
 /* Remove a Feature and free it's memory */
 bool destroyFeature(FEATURE *psDel, unsigned impactTime, GameWorld& world);

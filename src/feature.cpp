@@ -33,6 +33,7 @@
 
 #include "feature.h"
 #include "modoil.h"
+#include "modwreck.h"
 #include "map.h"
 #include "hci.h"
 #include "power.h"
@@ -240,8 +241,14 @@ FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD
 	ASSERT_OR_RETURN(nullptr, psStats != nullptr, "Invalid feature stats");
 	ASSERT_OR_RETURN(nullptr, psStats->psImd != nullptr, "No IMD for feature %s", getStatsName(psStats));
 
+	const bool modWreck = modwreck::isWreckStats(psStats);   // MOD: Wracks liegen frei (keine Kachelbindung, kein Einebnen)
+
 	// snap the coords to a tile
-	if (!FromSave)
+	if (modWreck)
+	{
+		// Wrack: genaue Lage beibehalten
+	}
+	else if (!FromSave)
 	{
 		x = (x & ~TILE_MASK) + psStats->baseWidth  % 2 * TILE_UNITS / 2;
 		y = (y & ~TILE_MASK) + psStats->baseBreadth % 2 * TILE_UNITS / 2;
@@ -320,6 +327,8 @@ FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD
 			const int tileY = b.map.y + breadth;
 			MAPTILE *psTile = mapTile(world.map, tileX, tileY);
 
+			if (modWreck) { continue; }
+
 			if (width != psStats->baseWidth && breadth != psStats->baseBreadth)
 			{
 				if (TileHasFeature(psTile))
@@ -358,9 +367,18 @@ FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD
 		}
 	}
 	psFeature->pos.z = map_TileHeight(world.map, psFeature->pos.x, psFeature->pos.y);//jps 18july97
-	updateFeatureOrientation(psFeature, world.map);
+	if (!modWreck) { updateFeatureOrientation(psFeature, world.map); }
 
 	return psFeature;
+}
+
+void featureSetWreckPose(FEATURE *psFeature, uint16_t direction, int roll, int z)
+{
+	ASSERT_OR_RETURN(, psFeature != nullptr, "Invalid feature pointer");
+	psFeature->rot.direction = direction;
+	psFeature->rot.pitch = 0;
+	psFeature->rot.roll = static_cast<uint16_t>(roll & 0xFFFF);
+	psFeature->pos.z = z;
 }
 
 

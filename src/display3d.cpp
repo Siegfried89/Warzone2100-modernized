@@ -95,6 +95,7 @@
 #include "range_rings.h"
 #include "modgrid.h"
 #include "modoil.h"
+#include "modwreck.h"
 #include "scene_effect_surfaces.h"
 #include "multistat.h"
 #include "animation.h"
@@ -2591,8 +2592,13 @@ void	renderFeature(FEATURE *psFeature, const glm::mat4 &viewMatrix, const glm::m
 	/* Mark it as having been drawn */
 	psFeature->sDisplay.frameNumber = currentGameFrame;
 
+	// MOD: Wracks liegen frei (ohne Kachelbindung) und werden waehrend ihrer Todesanimation gesondert bewegt
+	const bool isWreck = modwreck::isWreckStats(psFeature->psStats);
+	modwreck::Placement wreckPose;
+	const bool wreckAnimated = isWreck && modwreck::pose(psFeature, graphicsTime, wreckPose);
+
 	/* Daft hack to get around the oil derrick issue */
-	if (!TileHasFeature(mapTile(gameWorld.map, map_coord(psFeature->pos.xy()))))
+	if (!isWreck && !TileHasFeature(mapTile(gameWorld.map, map_coord(psFeature->pos.xy()))))
 	{
 		return;
 	}
@@ -2608,6 +2614,12 @@ void	renderFeature(FEATURE *psFeature, const glm::mat4 &viewMatrix, const glm::m
 	rotation.y = -psFeature->rot.direction;
 	rotation.x = psFeature->rot.pitch;
 	rotation.z = psFeature->rot.roll;
+	if (wreckAnimated)
+	{
+		dv = Vector3i(wreckPose.x, wreckPose.z, -wreckPose.y);
+		rotation.x = wreckPose.pitch;
+		rotation.z = wreckPose.roll;
+	}
 
 	glm::mat4 modelMatrix = glm::translate(glm::vec3(dv)) *
 		glm::rotate(UNDEG(rotation.y), glm::vec3(0.f, 1.f, 0.f)) *
@@ -4594,8 +4606,18 @@ static void	drawDroidSensorLock(DROID *psDroid)
 	//if on fire support duty - must be locked to a Sensor Droid/Structure
 	if (orderState(psDroid, DORDER_FIRESUPPORT))
 	{
-		/* Render the sensor graphic at the correct location - which is what?!*/
-		iV_DrawImage(IntImages, IMAGE_GN_STAR, psDroid->sDisplay.screenX, psDroid->sDisplay.screenY);
+		/* MOD: das Sternchen der zugewiesenen Artillerie ist deutlich groesser, weiss und hat einen dunklen Rand */
+		const float sz = 24.f;
+		const float sx = static_cast<float>(psDroid->sDisplay.screenX) - 8.f, sy = static_cast<float>(psDroid->sDisplay.screenY) - 8.f;
+		const Vector2f starSize(sz, sz);
+		for (int dy = -1; dy <= 1; dy += 2)
+		{
+			for (int dx = -1; dx <= 1; dx += 2)
+			{
+				iV_DrawImageTint(IntImages, IMAGE_GN_STAR, sx + static_cast<float>(dx), sy + static_cast<float>(dy), pal_RGBA(0, 0, 0, 220), starSize);
+			}
+		}
+		iV_DrawImageTint(IntImages, IMAGE_GN_STAR, sx, sy, pal_RGBA(255, 255, 255, 255), starSize);
 	}
 }
 

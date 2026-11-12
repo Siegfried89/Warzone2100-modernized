@@ -47,6 +47,7 @@
 #include "droid.h"
 #include "modlayer.h"
 #include "modoil.h"
+#include "modwreck.h"
 #include "hci.h"
 #include "power.h"
 #include "effects.h"
@@ -736,7 +737,11 @@ bool destroyDroid(DROID *psDel, unsigned impactTime, GameWorld& world)
 		}
 	}
 
-	removeDroidFX(psDel, impactTime);
+	// MOD: Wracks: ein Teil der Fahrzeuge zerplatzt nicht, sondern rollt aus und bleibt als Wrack liegen
+	if (!modwreck::onDroidDestroyed(psDel, world))
+	{
+		removeDroidFX(psDel, impactTime);
+	}
 	removeDroidBase(psDel, world.objects);
 	psDel->died = impactTime;
 	modlayer::forget(psDel->id);   // MOD: Ebenen

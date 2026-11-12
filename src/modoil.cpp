@@ -141,14 +141,14 @@ int cargoCapacity(const DROID *d)
 	if (idIs(cs->id, "ScavBed3")) { return 3; }
 	if (idIs(cs->id, "ScavBed2")) { return 4; }
 	if (idIs(cs->id, "ScavBucket")) { return 6; }
-	if (idIs(cs->id, "ScavTank")) { return 10; }
+	if (idIs(cs->id, "ScavTank") || idIs(cs->id, "ScavTankB")) { return 10; }
 	return 0;
 }
 
 bool isTank(const DROID *d)
 {
 	const CONSTRUCT_STATS *cs = d->getConstructStats();
-	return cs != nullptr && idIs(cs->id, "ScavTank");
+	return cs != nullptr && (idIs(cs->id, "ScavTank") || idIs(cs->id, "ScavTankB"));
 }
 
 int64_t d2(int ax, int ay, int bx, int by)

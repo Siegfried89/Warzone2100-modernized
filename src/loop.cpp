@@ -112,6 +112,7 @@
 #include "modgrid.h"
 #include "modlayer.h"
 #include "modoil.h"
+#include "modwreck.h"
 
 #include <numeric>
 
@@ -573,6 +574,7 @@ static void gameStateUpdate()
 	// MOD: Stromnetz neu berechnen (hoechstens einmal je Spielsekunde), bevor Sichtbarkeit und Strukturen es lesen
 	modlayer::gameTick();   // MOD: Ebenen (Schacht-Wechsel)
 	modoil::tick();     // MOD: Oelkreislauf (Explosionen, Lkw-Autopilot, Pipeline, Kraftwerk-Laufzeit)
+	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
 	modgrid::update();
 
 	if (!paused && !scriptPaused())
