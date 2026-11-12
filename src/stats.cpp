@@ -37,6 +37,7 @@
 #include "map.h"
 #include "main.h"
 #include "lib/sound/audio_id.h"
+SDWORD sound_GetTrackIDByName(const char *fileName); // MOD: definiert in lib/sound/track.cpp
 #include "projectile.h"
 #include "text.h"
 #include "notifications.h"
@@ -1299,6 +1300,13 @@ static bool statsGetAudioIDFromString(const WzString &szStatName, const WzString
 	}
 	else if ((*piWavID = audio_GetIDFromStr(szWavName.toUtf8().c_str())) == NO_SOUND)
 	{
+		// MOD: Sounds, die ein Mod ueber audio.json nachlaedt (nicht in der festen Tabelle), ueber den Track-Namen suchen
+		const SDWORD dynamicID = sound_GetTrackIDByName(szWavName.toUtf8().c_str());
+		if (dynamicID > 0)
+		{
+			*piWavID = dynamicID;
+			return true;
+		}
 		debug(LOG_FATAL, "Could not get ID %d for sound %s", *piWavID, szWavName.toUtf8().c_str());
 		return false;
 	}

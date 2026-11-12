@@ -106,6 +106,7 @@ void	sound_FinishedCallback(AUDIO_SAMPLE *psSample);
 
 bool	sound_GetSystemActive();
 SDWORD	sound_GetTrackID(TRACK *psTrack);
+SDWORD	sound_GetTrackIDByName(const char *fileName); // MOD
 UDWORD 	sound_GetAvailableID();
 SDWORD	sound_GetNumPlaying(SDWORD iTrack);
 

@@ -416,6 +416,20 @@ SDWORD sound_GetTrackID(TRACK *psTrack)
 	return SAMPLE_NOT_FOUND;
 }
 
+// MOD: Track ueber den Dateinamen finden (Sounds, die ein Mod ueber audio.json nachlaedt und die nicht in der festen ID-Tabelle stehen)
+SDWORD sound_GetTrackIDByName(const char *fileName)
+{
+	if (fileName == nullptr) { return SAMPLE_NOT_FOUND; }
+	for (size_t i = 0; i < g_apTrack.size(); ++i)
+	{
+		if (g_apTrack[i] != nullptr && g_apTrack[i]->fileName != nullptr && strcmp(g_apTrack[i]->fileName, fileName) == 0)
+		{
+			return static_cast<SDWORD>(i);
+		}
+	}
+	return SAMPLE_NOT_FOUND;
+}
+
 //*
 // =======================================================================================================================
 // =======================================================================================================================
