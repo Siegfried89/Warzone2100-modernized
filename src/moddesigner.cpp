@@ -560,18 +560,18 @@ void drawBay(const Ctx &c)
 	pie_SetGeometricOffset(bx + bw / 2, by + bh / 2 + c.L(14));
 	const float sc = 3.2f * c.S;
 	const float cy = 24.f;     // Mittelhoehe des Combots
-	const glm::mat4 base = glm::translate(glm::vec3(0.f, 0.f, BAY_DEPTH))
-	                       * glm::rotate(glm::radians(-28.f), glm::vec3(1.f, 0.f, 0.f))
-	                       * glm::rotate(glm::radians(yaw), glm::vec3(0.f, 1.f, 0.f))
-	                       * glm::scale(glm::vec3(sc))
-	                       * glm::translate(glm::vec3(0.f, -cy, 0.f));
+	const glm::mat4 base = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, BAY_DEPTH))
+	                       * glm::rotate(glm::mat4(1.f), glm::radians(-28.f), glm::vec3(1.f, 0.f, 0.f))
+	                       * glm::rotate(glm::mat4(1.f), glm::radians(yaw), glm::vec3(0.f, 1.f, 0.f))
+	                       * glm::scale(glm::mat4(1.f), glm::vec3(sc))
+	                       * glm::translate(glm::mat4(1.f), glm::vec3(0.f, -cy, 0.f));
 	const glm::mat4 view(1.f);
 
 	// Montageplattform (Oberkante bei y = 0)
 	iIMDBaseShape *pad = modelGet(WzString::fromUtf8("mfs_x25.pie"));
 	if (pad != nullptr && pad->displayModel() != nullptr)
 	{
-		pie_Draw3DShape(pad->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * glm::translate(glm::vec3(0.f, -6.56f, 0.f)), view);
+		pie_Draw3DShape(pad->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * glm::translate(glm::mat4(1.f), glm::vec3(0.f, -6.56f, 0.f)), view);
 	}
 
 	modcombot::Loadout lo;
@@ -590,7 +590,7 @@ void drawBay(const Ctx &c)
 			{
 				float dx, dy;
 				slotOffset(s, now, dx, dy);
-				mm = glm::translate(glm::vec3(dx * unit * c.S, dy * unit * c.S, 0.f)) * m;
+				mm = glm::translate(glm::mat4(1.f), glm::vec3(dx * unit * c.S, dy * unit * c.S, 0.f)) * m;
 				break;
 			}
 		}
