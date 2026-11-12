@@ -27,6 +27,7 @@
  */
 #include <string.h>
 #include <algorithm>
+#include <cctype>
 
 #include "lib/framework/frame.h"
 #include "lib/framework/gamepad_input.h"
@@ -4306,6 +4307,21 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 					continue;
 				}
 
+				// MOD: Original-Duplikate der Kampagnen-Gegner ("-Orig") und die klobigen Project-Stellungen (Sechseck-Sockel) nie im Baumenue anbieten
+				if (psBuilding->id.endsWith("-Orig"))
+				{
+					continue;
+				}
+				if (!psBuilding->pIMD.empty() && psBuilding->pIMD[0] != nullptr)
+				{
+					std::string mn = psBuilding->pIMD[0]->filename.toUtf8();
+					std::transform(mn.begin(), mn.end(), mn.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+					if (mn.rfind("blmrtpit", 0) == 0 || mn.rfind("blhowmnt", 0) == 0 || mn.rfind("blhardpt", 0) == 0 || mn.rfind("blaamnt", 0) == 0)
+					{
+						continue;
+					}
+				}
+
 				// Remove the demolish stat from the list for tutorial
 				// tjc 4-dec-98  ...
 				if (bInTutorial)
@@ -4372,6 +4388,21 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 					return structureList;
 				}
 			}
+		}
+	}
+	// MOD: Protokoll der angebotenen Gebaeude (einmal pro Aenderung), damit man in der Logdatei sieht, was im Baumenue steht
+	{
+		static std::string s_lastMenu;
+		std::string menu;
+		for (const STRUCTURE_STATS *st : structureList)
+		{
+			menu += st->id.toUtf8();
+			menu += ' ';
+		}
+		if (menu != s_lastMenu)
+		{
+			s_lastMenu = menu;
+			wz_info("MOD build menu (%u): %s", static_cast<unsigned>(structureList.size()), menu.c_str());
 		}
 	}
 	return structureList;

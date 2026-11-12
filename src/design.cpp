@@ -484,13 +484,29 @@ static ComponentIterator propulsionIterator()
 	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer: %" PRIu32 "", selectedPlayer);
 	ComponentIterator all = componentIterator(asPropulsionStats.data(), sizeof(PROPULSION_STATS), apCompLists[selectedPlayer][COMP_PROPULSION], asPropulsionStats.size());
 	// MOD: Antriebe ohne Modell (Scavenger-Fahrzeuge, die nur ueber die Fabrik gebaut werden) nicht im Entwurfsbildschirm anbieten
+	// MOD: ausserdem Duplikate aufraeumen: Antriebe derselben Art mit demselben Modell (z.B. VTOL I/II/III) erscheinen nur einmal, und zwar die beste Stufe
 	return [all](std::function<bool(COMPONENT_STATS &, size_t)> callback)
 	{
-		return all([&callback](COMPONENT_STATS &stats, size_t index)
+		std::vector<std::pair<COMPONENT_STATS *, size_t>> list;
+		all([&list](COMPONENT_STATS &stats, size_t index)
 		{
 			if (stats.pIMD == nullptr) { return true; }
-			return callback(stats, index);
+			list.emplace_back(&stats, index);
+			return true;
 		});
+		for (size_t i = 0; i < list.size(); ++i)
+		{
+			const PROPULSION_STATS *a = static_cast<const PROPULSION_STATS *>(list[i].first);
+			bool superseded = false;
+			for (size_t j = i + 1; j < list.size() && !superseded; ++j)
+			{
+				const PROPULSION_STATS *b = static_cast<const PROPULSION_STATS *>(list[j].first);
+				superseded = (a->propulsionType == b->propulsionType && a->pIMD == b->pIMD);
+			}
+			if (superseded) { continue; }
+			if (!callback(*list[i].first, list[i].second)) { return false; }
+		}
+		return true;
 	};
 }
 
