@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
 
 struct STRUCTURE;

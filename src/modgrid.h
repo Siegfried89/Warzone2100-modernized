@@ -4,6 +4,7 @@
 // Das Kabel zwischen verbundenen Masten wird als schwarze, durchhaengende Linie gezeichnet.
 #pragma once
 
+#include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
 
 struct STRUCTURE;
