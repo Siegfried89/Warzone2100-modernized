@@ -38,6 +38,7 @@
 #include "stats.h"
 #include "template.h"
 
+#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cmath>
 #include <functional>
