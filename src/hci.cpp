@@ -82,6 +82,7 @@
 #include "modgrid.h"
 #include "modoil.h"
 #include "modwreck.h"
+#include "modradio.h"
 #include "moddesigner.h"
 #include "qtscript.h"
 #include "chat.h"
@@ -715,6 +716,7 @@ void interfaceShutDown()
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
+	modradio::reset();       // MOD
 	modgrid::reset();        // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed
 

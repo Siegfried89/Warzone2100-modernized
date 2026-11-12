@@ -2594,7 +2594,7 @@ void	renderFeature(FEATURE *psFeature, const glm::mat4 &viewMatrix, const glm::m
 
 	// MOD: Wracks liegen frei (ohne Kachelbindung) und werden waehrend ihrer Todesanimation gesondert bewegt
 	const bool isWreck = modwreck::isWreckStats(psFeature->psStats);
-	modwreck::Placement wreckPose;
+	modwreck::Placement wreckPose{};
 	const bool wreckAnimated = isWreck && modwreck::pose(psFeature, graphicsTime, wreckPose);
 
 	/* Daft hack to get around the oil derrick issue */

@@ -112,6 +112,7 @@
 #include "modgrid.h"
 #include "modlayer.h"
 #include "modoil.h"
+#include "modradio.h"
 #include "modwreck.h"
 
 #include <numeric>
@@ -575,6 +576,7 @@ static void gameStateUpdate()
 	modlayer::gameTick();   // MOD: Ebenen (Schacht-Wechsel)
 	modoil::tick();     // MOD: Oelkreislauf (Explosionen, Lkw-Autopilot, Pipeline, Kraftwerk-Laufzeit)
 	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
+	modradio::tick(gameWorld);   // MOD: Funkgebrabbel am Kommandozentrum / ATC-Turm
 	modgrid::update();
 
 	if (!paused && !scriptPaused())
