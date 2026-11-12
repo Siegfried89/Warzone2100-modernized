@@ -33,6 +33,7 @@
 
 #include "../keybind.h"
 #include "../display3d.h"   // For playerPos
+#include "../warzoneconfig.h" // MOD: war_getModDefaultsPending
 #include "lib/netplay/nettypes.h"	// For NETisReplay()
 
 
@@ -82,6 +83,12 @@ bool InputManager::mappingsSortRequired() const
 
 void InputManager::resetMappings(bool bForceDefaults, const KeyFunctionConfiguration& keyFuncConfig)
 {
+	// MOD: einmalig die Standard-Tastenbelegung (u.a. WASD fuer die Kamera) uebernehmen, auch wenn eine alte keymap.json existiert
+	if (!bForceDefaults && war_getModDefaultsPending())
+	{
+		bForceDefaults = true;
+		war_setModDefaultsPending(false);
+	}
 	contextManager.resetStates();
 	keyMappings.clear();
 	markerKeyFunctions.clear();

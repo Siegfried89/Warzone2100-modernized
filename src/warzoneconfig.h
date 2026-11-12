@@ -35,6 +35,8 @@
 #define	CAMERASPEED_MAX		(5000)
 #define	CAMERASPEED_MIN		(100)
 #define	CAMERASPEED_DEFAULT	(2400)
+/// MOD: Version der Mod-Standardwerte; steigt sie, werden Kameratempo und Tastenbelegung einmalig auf die Standardwerte gesetzt
+#define MOD_DEFAULTS_REV	(1)
 #define	CAMERASPEED_STEP	(100)
 
 #define GAMEPAD_CURSOR_SPEED_MIN          (200)
@@ -170,6 +172,8 @@ void war_SetRadarZoom(int radarZoom);
 bool war_GetRadarJump();
 void war_SetRadarJump(bool radarJump);
 int war_GetCameraSpeed();
+bool war_getModDefaultsPending();
+void war_setModDefaultsPending(bool pending);
 void war_SetCameraSpeed(int cameraSpeed);
 int8_t war_GetSPcolor();
 void war_SetSPcolor(int color);

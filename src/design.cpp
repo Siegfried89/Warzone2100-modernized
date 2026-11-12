@@ -482,7 +482,16 @@ static ComponentIterator weaponIterator()
 static ComponentIterator propulsionIterator()
 {
 	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer: %" PRIu32 "", selectedPlayer);
-	return componentIterator(asPropulsionStats.data(), sizeof(PROPULSION_STATS), apCompLists[selectedPlayer][COMP_PROPULSION], asPropulsionStats.size());
+	ComponentIterator all = componentIterator(asPropulsionStats.data(), sizeof(PROPULSION_STATS), apCompLists[selectedPlayer][COMP_PROPULSION], asPropulsionStats.size());
+	// MOD: Antriebe ohne Modell (Scavenger-Fahrzeuge, die nur ueber die Fabrik gebaut werden) nicht im Entwurfsbildschirm anbieten
+	return [all](std::function<bool(COMPONENT_STATS &, size_t)> callback)
+	{
+		return all([&callback](COMPONENT_STATS &stats, size_t index)
+		{
+			if (stats.pIMD == nullptr) { return true; }
+			return callback(stats, index);
+		});
+	};
 }
 
 static ComponentIterator sensorIterator()

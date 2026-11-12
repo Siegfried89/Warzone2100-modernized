@@ -435,6 +435,15 @@ bool loadConfig()
 		int v = value.value();
 		war_SetCameraSpeed((v % CAMERASPEED_STEP != 0) ? CAMERASPEED_DEFAULT : v);
 	}
+	// MOD: einmalige Umstellung auf die Mod-Standardwerte (Kameratempo, WASD) - der Spieler muss keine Datei von Hand aendern
+	{
+		const auto savedRev = iniGetIntegerOpt("modDefaultsRev");
+		if (!savedRev.has_value() || savedRev.value() < MOD_DEFAULTS_REV)
+		{
+			war_SetCameraSpeed(CAMERASPEED_DEFAULT);
+			war_setModDefaultsPending(true);
+		}
+	}
 	setShakeStatus(iniGetBool("shake", false).value());
 	atmosSetWeatherEnabled(iniGetBool("weather", true).value());
 	war_setGroupsMenuEnabled(iniGetBool("groupmenu", true).value());
@@ -1043,6 +1052,7 @@ bool saveConfig()
 	iniSetString("language", getLanguage());
 	iniSetInteger("difficulty", getDifficultyLevel());		// level
 	iniSetInteger("cameraSpeed", war_GetCameraSpeed());	// camera speed
+	iniSetInteger("modDefaultsRev", MOD_DEFAULTS_REV);	// MOD
 	iniSetBool("radarJump", war_GetRadarJump());		// radar jump
 	iniSetInteger("lodDistanceBias", war_getLODDistanceBiasPercentage());
 	iniSetBool("cameraAccel", getCameraAccel());		// camera acceleration

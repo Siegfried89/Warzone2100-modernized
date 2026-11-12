@@ -551,6 +551,18 @@ void war_SetRadarZoom(int radarZoom)
 	}
 }
 
+static bool s_modDefaultsPending = false;
+
+bool war_getModDefaultsPending()
+{
+	return s_modDefaultsPending;
+}
+
+void war_setModDefaultsPending(bool pending)
+{
+	s_modDefaultsPending = pending;
+}
+
 int war_GetCameraSpeed()
 {
 	return warGlobs.cameraSpeed;
