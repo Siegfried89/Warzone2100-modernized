@@ -467,11 +467,6 @@ static ComponentIterator componentIterator(COMPONENT_STATS *psStats, unsigned si
 	};
 }
 
-static ComponentIterator bodyIterator()
-{
-	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer: %" PRIu32 "", selectedPlayer);
-	return componentIterator(asBodyStats.data(), sizeof(BODY_STATS), apCompLists[selectedPlayer][COMP_BODY], asBodyStats.size());
-}
 
 static ComponentIterator weaponIterator()
 {
@@ -479,13 +474,10 @@ static ComponentIterator weaponIterator()
 	return componentIterator(asWeaponStats.data(), sizeof(WEAPON_STATS), apCompLists[selectedPlayer][COMP_WEAPON], asWeaponStats.size());
 }
 
-static ComponentIterator propulsionIterator()
+// MOD: Liste aufraeumen: Eintraege ohne Modell weglassen und Duplikate (gleiche Gruppe laut `same`) nur einmal anbieten, und zwar den letzten (beste Stufe)
+static ComponentIterator uniqueIterator(ComponentIterator all, std::function<bool(const COMPONENT_STATS &, const COMPONENT_STATS &)> same)
 {
-	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer: %" PRIu32 "", selectedPlayer);
-	ComponentIterator all = componentIterator(asPropulsionStats.data(), sizeof(PROPULSION_STATS), apCompLists[selectedPlayer][COMP_PROPULSION], asPropulsionStats.size());
-	// MOD: Antriebe ohne Modell (Scavenger-Fahrzeuge, die nur ueber die Fabrik gebaut werden) nicht im Entwurfsbildschirm anbieten
-	// MOD: ausserdem Duplikate aufraeumen: Antriebe derselben Art mit demselben Modell (z.B. VTOL I/II/III) erscheinen nur einmal, und zwar die beste Stufe
-	return [all](std::function<bool(COMPONENT_STATS &, size_t)> callback)
+	return [all, same](std::function<bool(COMPONENT_STATS &, size_t)> callback)
 	{
 		std::vector<std::pair<COMPONENT_STATS *, size_t>> list;
 		all([&list](COMPONENT_STATS &stats, size_t index)
@@ -496,18 +488,37 @@ static ComponentIterator propulsionIterator()
 		});
 		for (size_t i = 0; i < list.size(); ++i)
 		{
-			const PROPULSION_STATS *a = static_cast<const PROPULSION_STATS *>(list[i].first);
 			bool superseded = false;
 			for (size_t j = i + 1; j < list.size() && !superseded; ++j)
 			{
-				const PROPULSION_STATS *b = static_cast<const PROPULSION_STATS *>(list[j].first);
-				superseded = (a->propulsionType == b->propulsionType && a->pIMD == b->pIMD);
+				superseded = same(*list[i].first, *list[j].first);
 			}
 			if (superseded) { continue; }
 			if (!callback(*list[i].first, list[i].second)) { return false; }
 		}
 		return true;
 	};
+}
+
+static ComponentIterator propulsionIterator()
+{
+	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer: %" PRIu32 "", selectedPlayer);
+	ComponentIterator all = componentIterator(asPropulsionStats.data(), sizeof(PROPULSION_STATS), apCompLists[selectedPlayer][COMP_PROPULSION], asPropulsionStats.size());
+	return uniqueIterator(all, [](const COMPONENT_STATS &a, const COMPONENT_STATS &b)
+	{
+		return static_cast<const PROPULSION_STATS &>(a).propulsionType == static_cast<const PROPULSION_STATS &>(b).propulsionType && a.pIMD == b.pIMD;
+	});
+}
+
+static ComponentIterator bodyIterator()
+{
+	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer: %" PRIu32 "", selectedPlayer);
+	ComponentIterator all = componentIterator(asBodyStats.data(), sizeof(BODY_STATS), apCompLists[selectedPlayer][COMP_BODY], asBodyStats.size());
+	// MOD: Koerper mit demselben Modell (z.B. Jeep/Raider) nur einmal anbieten
+	return uniqueIterator(all, [](const COMPONENT_STATS &a, const COMPONENT_STATS &b)
+	{
+		return a.pIMD == b.pIMD;
+	});
 }
 
 static ComponentIterator sensorIterator()
