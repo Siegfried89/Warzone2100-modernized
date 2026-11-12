@@ -72,6 +72,9 @@ python3 -I mayday.py out_u
 python3 -I hall.py out_u
 python3 -I mfwrf.py out_u   # NACH hall.py/mayday.py: traegt alle audio/mf/*.ogg (auch die Hall-Fassungen) in die Ladeliste ein
 python3 -I wrecks.py out_u
+python3 -I radio.py out_u   # Funkgebrabbel (NACH mfwrf.py wegen audio.wrf)
 python3 -I mftcmask.py out_u
 python3 -I mfstruct.py out_u
+python3 -I civilians.py out_u
+python3 -I citytiles.py out_u
 python3 -I clean.py out_u

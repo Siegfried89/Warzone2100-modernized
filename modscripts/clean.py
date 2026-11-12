@@ -9,7 +9,7 @@ def clean(n):
     n = re.sub(r"\s*Cyborg\b", "", n)
     return re.sub(r"\s+", " ", n).strip()
 # 1) Sprite-Infanterie, Zivilist, Vorlagen ohne Waffe (ausser Bau/Reparatur/Sensor) raus
-for k in ("BaBaPeople", "BaBaCivilian", "BaBaPeopleR", "BabaPickUp"):
+for k in ("BaBaCivilian", "BaBaPeopleR", "BabaPickUp"):   # BaBaPeople bleibt sichtbar: Fabrik-Eintrag "Scavenger" der Modell-Leiter (scavladder.py)
     if k in T: T[k]["available"] = False
 # 2) KI-Vorlagen (Kollektiv/Nexus/NP/Skirmish-KI) nicht in der Spielerliste
 AI = ("CO-", "NX-", "NP-", "SK-", "P0")
@@ -23,7 +23,7 @@ for k in cons:
     if k != keep: T[k]["available"] = False
 # 4) Namen
 SUF = {"Half-Tracked": " HT", "Tracked": " TR", "Hover": " HV"}
-INF = {"BaBaVest": "Marauder", "BaBaPunk": "Punk", "BaBaPunkR": "Hellpunk", "BaBaPunkW": "Wildmane", "BaBaSun": "Sunpunk", "BaBaSunB": "Sunpunk RPG", "BaBaVestS": "Spikeguard", "BaBaDread": "Dreadhawk", "BaBaDreadB": "Dreadhawk RPG", "BaBaVestSB": "Spikeguard RPG", "BaBaDreadV": "Dread Raider"}
+INF = {"BaBaVest": "Marauder", "BaBaPunk": "Punk", "BaBaPunkR": "Hellpunk", "BaBaPunkW": "Wildmane", "BaBaSun": "Sunpunk", "BaBaSunB": "Scavenger Bazooka", "BaBaVestS": "Spikeguard", "BaBaDread": "Dreadhawk", "BaBaDreadB": "Dreadhawk RPG", "BaBaVestSB": "Spikeguard RPG", "BaBaDreadV": "Dread Raider"}
 for k, t in T.items():
     if not isinstance(t, dict): continue
     if k in INF: t["name"] = INF[k]; continue
