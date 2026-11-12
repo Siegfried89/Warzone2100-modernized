@@ -790,12 +790,12 @@ void logistics()
 				for (FEATURE *t : towers)
 				{
 					if (storeRoom(t->id) <= 0) { continue; }
-					bool near = false;
+					bool closeBy = false;
 					for (STRUCTURE *g : sn.gens)
 					{
-						if (d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y) <= SR2) { near = true; break; }
+						if (d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y) <= SR2) { closeBy = true; break; }
 					}
-					if (!near) { continue; }
+					if (!closeBy) { continue; }
 					const int64_t dd = d2(d->pos.x, d->pos.y, t->pos.x, t->pos.y);
 					if (dd < bd) { bd = dd; bt = t; }
 				}
@@ -988,15 +988,15 @@ void drawOverlay(const glm::mat4 &m)
 	for (const FEATURE *f : gameWorld.objects.features[0])
 	{
 		if (f->died || f->psStats == nullptr || !idIs(f->psStats->id, "WaterTower")) { continue; }
-		bool near = false;
+		bool closeBy = false;
 		for (const STRUCTURE *g : gens)
 		{
-			if (d2(f->pos.x, f->pos.y, g->pos.x, g->pos.y) <= STORAGE_RANGE * STORAGE_RANGE) { near = true; break; }
+			if (d2(f->pos.x, f->pos.y, g->pos.x, g->pos.y) <= STORAGE_RANGE * STORAGE_RANGE) { closeBy = true; break; }
 		}
 		const auto it = s_store.find(f->id);
 		const auto ir = s_storeR.find(f->id);
 		const int have = (it == s_store.end() ? 0 : it->second) + (ir == s_storeR.end() ? 0 : ir->second);
-		if (!near && have <= 0) { continue; }
+		if (!closeBy && have <= 0) { continue; }
 		squares(m, f->pos.x, f->pos.y, f->pos.z + 330, have, STORAGE_CAP, storeOn, storeOff);
 	}
 	for (const DROID *d : gameWorld.objects.droids[p])
