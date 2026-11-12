@@ -31,9 +31,11 @@ def main():
     os.makedirs(os.path.join(OUT, "structs"), exist_ok=True)
     m = build_shaft()
     open(os.path.join(OUT, "structs", "scavshaft.pie"), "w", encoding="latin-1", newline="").write(m.text("0 0 116"))
+    # Standardmodell: Original-MF-Aufzug (Sockel). Mein Foerdergeruest bleibt als Alternative (scavshaft.pie) erhalten.
+    model = "mfshaft_a.pie" if os.path.exists(os.path.join(OUT, "structs", "mfshaft_a.pie")) else "scavshaft.pie"
     sp = os.path.join(OUT, "stats", "structure.json"); S = json.load(open(sp, encoding="utf-8"))
     e = copy.deepcopy(S["A0PowerPole"])
-    e.update({"id": "A0LayerShaft", "name": "Shaft", "type": "GENERIC", "structureModel": ["scavshaft.pie"], "width": 1, "breadth": 1,
+    e.update({"id": "A0LayerShaft", "name": "Shaft", "type": "GENERIC", "structureModel": [model], "width": 1, "breadth": 1,
               "hitpoints": 500, "buildPoints": 30, "buildPower": 120, "armour": 10, "thermal": 6, "height": 4})
     e.pop("sensorID", None)
     S["A0LayerShaft"] = e
@@ -42,6 +44,19 @@ def main():
     rs = R["R-Sys-Spade1Mk1"].setdefault("resultStructures", [])
     if "A0LayerShaft" not in rs: rs.append("A0LayerShaft")
     json.dump(R, open(rp, "w", encoding="utf-8"), indent="\t", sort_keys=True)
+    # Von Spielbeginn an baubar (keine Forschung noetig): Skirmish-gameinit.js und Kampagnen-rules.js
+    for rel, anchor in (("multiplay/script/rules/events/gameinit.js", "\t\tsetupBase(playnum);"), ("script/rules.js", None)):
+        f = os.path.join(OUT, *rel.split("/"))
+        if not os.path.exists(f): continue
+        t = open(f, encoding="utf-8").read()
+        if "A0LayerShaft" in t: continue
+        if anchor and anchor in t:
+            t = t.replace(anchor, anchor + "\n\t\ttry { enableStructure(\"A0LayerShaft\", playnum); } catch (e) {}", 1)
+        elif not anchor:
+            a = "function eventGameInit()\n{"
+            if a in t: t = t.replace(a, a + "\n\ttry { enableStructure(\"A0LayerShaft\", selectedPlayer); } catch (e) {}", 1)
+        open(f, "w", encoding="utf-8").write(t)
+    print("Schacht: Modell %s, ohne Forschung baubar" % model)
     print("Schacht: A0LayerShaft angelegt (%d Punkte, %d Flaechen)" % (len(m.pts), len(m.pol)))
 
 

@@ -155,6 +155,34 @@ m, TOWER_TOP = build(True, "scavoutpost.pie")
 m2, _ = build(False, "scavoutpost_g.pie")
 OUTPOST_TOP = TOWER_TOP
 
+# ------------------------------------------------------------------ dritte Variante: graues Wellblechdach + rote Backstein-Untermauer
+BRICKPAGE = "page-7-barbarians-arizona-brick.png"
+def brick_page():
+    """Seite page-7 kopieren; die Untermauer-Flaeche (874..918 x 398..522: x = Hoehe, y = Laenge) bekommt rote Backsteine, schwarze Stellen bleiben schwarz"""
+    from PIL import Image
+    src = Image.open(os.path.join(BASE, "texpages", PAGE)).convert("RGBA"); px = src.load()
+    X0, X1, Y0, Y1 = 874, 918, 398, 522
+    dark = {(x, y) for x in range(X0 - 2, X1 + 3) for y in range(Y0 - 2, Y1 + 3) if max(px[x, y][:3]) < 22}
+    for y in range(Y0, Y1 + 1):
+        for x in range(X0, X1 + 1):
+            if (x, y) in dark: px[x, y] = (0, 0, 0, 255); continue
+            cx, cy = x - X0, y - Y0
+            course = cx // 6; off = 10 if course % 2 else 0
+            if cx % 6 == 5 or (cy + off) % 20 == 19: col = (122, 112, 100)                                # Moertelfuge
+            else:
+                h = (course * 7919 + ((cy + off) // 20) * 104729) % 1000 / 1000.0                          # jeder Stein etwas anders
+                col = (int(150 + 45 * h), int(48 + 22 * h), int(36 + 14 * h))
+            near = any((x + dx, y + dy) in dark for dx in (-2, -1, 0, 1, 2) for dy in (-2, -1, 0, 1, 2))
+            k = 0.55 if near else (0.88 + 0.12 * ((cx * 13 + cy * 7) % 5) / 4.0)                            # dunkler am Lochrand, leichtes Rauschen
+            px[x, y] = (int(col[0] * k), int(col[1] * k), int(col[2] * k), 255)
+    os.makedirs(os.path.join(OUT, "texpages"), exist_ok=True)
+    src.save(os.path.join(OUT, "texpages", BRICKPAGE), optimize=True)
+
+_PAGE_STD = PAGE
+brick_page(); PAGE = BRICKPAGE
+m3, _ = build(False, "scavoutpost_b.pie")
+PAGE = _PAGE_STD
+
 # ------------------------------------------------------------------ Stats
 sp = os.path.join(OUT, "stats", "sensor.json"); sens = json.load(open(sp, encoding="utf-8"))
 sens["ScavOutpostSensor"] = {"buildPoints": 25, "buildPower": 5, "hitpoints": 300, "id": "ScavOutpostSensor", "location": "TURRET",
@@ -162,7 +190,7 @@ sens["ScavOutpostSensor"] = {"buildPoints": 25, "buildPower": 5, "hitpoints": 30
 json.dump(sens, open(sp, "w", encoding="utf-8"), indent="\t", sort_keys=True)
 
 tp = os.path.join(OUT, "stats", "structure.json"); st = json.load(open(tp, encoding="utf-8"))
-for sid, nm, mdl in (("A0BaBaOutpost", "Scavenger Outpost (brown roof)", "scavoutpost.pie"), ("A0BaBaOutpostG", "Scavenger Outpost (grey roof)", "scavoutpost_g.pie")):
+for sid, nm, mdl in (("A0BaBaOutpost", "Scavenger Outpost (brown roof)", "scavoutpost.pie"), ("A0BaBaOutpostG", "Scavenger Outpost (grey roof)", "scavoutpost_g.pie"), ("A0BaBaOutpostB", "Scavenger Outpost (brick walls)", "scavoutpost_b.pie")):
     st[sid] = {"armour": 15, "breadth": 2, "buildPoints": 60, "buildPower": 220, "ecmID": "ZNULLECM", "height": 3, "hitpoints": 700,
                "id": sid, "name": nm, "resistance": 150, "sensorID": "ScavOutpostSensor", "strength": "HARD",
                "structureModel": [mdl], "thermal": 15, "type": "DEFENSE", "width": 2}
@@ -170,7 +198,7 @@ json.dump(st, open(tp, "w", encoding="utf-8"), indent="\t", sort_keys=True)
 
 rp = os.path.join(OUT, "stats", "research.json"); rs = json.load(open(rp, encoding="utf-8"))
 res = rs["R-Sys-Spade1Mk1"]["resultStructures"]
-for sid in ("A0BaBaOutpost", "A0BaBaOutpostG"):
+for sid in ("A0BaBaOutpost", "A0BaBaOutpostG", "A0BaBaOutpostB"):
     if sid not in res: res.append(sid)
 json.dump(rs, open(rp, "w", encoding="utf-8"), indent="\t", sort_keys=True)
 print("Aussenposten: %d Punkte %d Flaechen; Anschluss (%d, %d, %d)" % (len(m.pts), len(m.pol), TX, TZ, OUTPOST_TOP))

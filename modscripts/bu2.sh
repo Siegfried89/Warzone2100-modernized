@@ -44,26 +44,34 @@ python3 -I newguys.py out_u
 python3 -I more.py out_u
 python3 -I pits.py out_u
 python3 -I scavyel.py out_u
+python3 -I scavyelbb.py out_u
+python3 -I scavladder.py out_u
 python3 -I mfveh.py out_u
 python3 -I mfparts.py out_u
 python3 -I mfui.py out_u
 python3 -I mfsound.py out_u
-python3 -I mfwrf.py out_u
+python3 -I tanker.py out_u geo
 python3 -I landfill.py out_u
 python3 -I outpost.py out_u
 python3 -I sandbag.py out_u
+python3 -I container.py out_u
 python3 -I pipeline.py out_u
 python3 -I trench.py out_u
 python3 -I drums.py out_u
 python3 -I power.py out_u
 python3 -I refinery.py out_u
+python3 -I mfshaft.py out_u
 python3 -I shaft.py out_u
 python3 -I passable.py out_u
 python3 -I mgimpact.py out_u
 python3 -I projspeed.py out_u
 python3 -I cannonimpact.py out_u
 python3 -I scavtruck.py out_u
+python3 -I tanker.py out_u stats
+python3 -I mayday.py out_u
 python3 -I hall.py out_u
+python3 -I mfwrf.py out_u   # NACH hall.py/mayday.py: traegt alle audio/mf/*.ogg (auch die Hall-Fassungen) in die Ladeliste ein
+python3 -I wrecks.py out_u
 python3 -I mftcmask.py out_u
 python3 -I mfstruct.py out_u
 python3 -I clean.py out_u

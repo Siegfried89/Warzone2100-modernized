@@ -78,7 +78,7 @@ def process(x, P, seed):
 
 
 def encode(y, dst):
-    r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "1", "-i", "-", "-c:a", "libvorbis", "-q:a", "4", dst],
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "1", "-i", "-", "-c:a", "libvorbis", "-q:a", "4", "-fflags", "+bitexact", "-flags:a", "+bitexact", dst],
                        input=y.astype("<f4").tobytes(), capture_output=True)
     if r.returncode != 0: raise RuntimeError(r.stderr.decode())
 

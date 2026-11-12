@@ -16,14 +16,14 @@ AI = ("CO-", "NX-", "NP-", "SK-", "P0")
 for k, t in T.items():
     if isinstance(t, dict) and t.get("available") and (k.startswith(AI) or str(t.get("name", "")).startswith("*")): t["available"] = False
 # 3) Bagger: nur eine Vorlage (Raeder)
-SCAVTRUCKS = ("ScavPickup", "ScavLkw", "ScavTraktor", "ScavRadlader", "ScavTanker")   # Fracht-Lkw bleiben alle verfuegbar
+SCAVTRUCKS = ("ScavPickup", "ScavLkw", "ScavTraktor", "ScavRadlader", "ScavTanker", "ScavTankerB")   # Fracht-Lkw bleiben alle verfuegbar
 cons = [k for k, t in T.items() if isinstance(t, dict) and t.get("available") and t.get("type") == "CONSTRUCT" and k not in SCAVTRUCKS]
 keep = next((k for k in sorted(cons, key=len) if "heel" in T[k].get("propulsion", "") or T[k].get("propulsion", "").startswith("wheeled01")), None)
 for k in cons:
     if k != keep: T[k]["available"] = False
 # 4) Namen
 SUF = {"Half-Tracked": " HT", "Tracked": " TR", "Hover": " HV"}
-INF = {"BaBaVest": "Marauder", "BaBaPunk": "Punk", "BaBaPunkR": "Hellpunk", "BaBaPunkW": "Wildmane", "BaBaSun": "Sunpunk", "BaBaVestS": "Spikeguard", "BaBaDread": "Dreadhawk", "BaBaDreadB": "Dreadhawk RPG", "BaBaVestSB": "Spikeguard RPG", "BaBaDreadV": "Dread Raider"}
+INF = {"BaBaVest": "Marauder", "BaBaPunk": "Punk", "BaBaPunkR": "Hellpunk", "BaBaPunkW": "Wildmane", "BaBaSun": "Sunpunk", "BaBaSunB": "Sunpunk RPG", "BaBaVestS": "Spikeguard", "BaBaDread": "Dreadhawk", "BaBaDreadB": "Dreadhawk RPG", "BaBaVestSB": "Spikeguard RPG", "BaBaDreadV": "Dread Raider"}
 for k, t in T.items():
     if not isinstance(t, dict): continue
     if k in INF: t["name"] = INF[k]; continue

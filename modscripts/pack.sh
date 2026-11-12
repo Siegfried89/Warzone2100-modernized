@@ -14,4 +14,5 @@ for f in glob.glob("/tmp/out_s/stats/*.json"):
 Q
 (cd /tmp/out_s && rm -f /home/claude/w/$1_stumm.wz.zip && zip -qr -X /home/claude/w/$1_stumm.wz.zip .)
 cp $1.wz.zip $1_stumm.wz.zip /mnt/user-data/outputs/
+python3 -I splitzip.py $1 && cp $1_core_stumm.wz.zip scale_mf_assets.wz.zip /mnt/user-data/outputs/
 echo "fertig $1"

@@ -10,11 +10,14 @@ LVL = int(os.environ.get('LVL', '1'))
 
 def load_pie(moddir, path):
     txt = open(path, encoding='utf-8', errors='replace').read().replace('\r', '').split('\n')
-    page = None; pts = []; polys = []; i = 0; lvl = 0
+    page = None; pts = []; polys = []; i = 0; lvl = 0; ver = 3; tw = th = 1.0
     while i < len(txt):
         t = txt[i].split()
         if not t: i += 1; continue
-        if t[0] == 'TEXTURE' and page is None: page = t[2]
+        if t[0] == 'PIE': ver = int(t[1])
+        if t[0] == 'TEXTURE' and page is None:
+            page = t[2]
+            if len(t) >= 5: tw, th = float(t[3]), float(t[4])
         if t[0] == 'LEVEL': lvl += 1
         if lvl == LVL and t[0] == 'POINTS':
             n = int(t[1])
@@ -24,13 +27,13 @@ def load_pie(moddir, path):
             n = int(t[1])
             for k in range(n):
                 v = txt[i+1+k].split()
-                fl = int(v[0], 16) if v[0].startswith('0x') else int(v[0])
+                fl = int(v[0], 16)
                 nv = int(v[1]); idx = [int(x) for x in v[2:2+nv]]
                 rest = v[2+nv:]
                 if fl & 0x4000 and len(rest) >= 2: rest = rest[2:]  # texanim
                 uv = [float(x) for x in rest[:2*nv]]
                 if len(uv) == 2*nv:
-                    polys.append((idx, [(uv[2*j], uv[2*j+1]) for j in range(nv)]))
+                    polys.append((idx, [(uv[2*j] / (tw if ver < 3 else 1.0), uv[2*j+1] / (th if ver < 3 else 1.0)) for j in range(nv)]))
             i += n
         i += 1
     tex = None
@@ -39,9 +42,11 @@ def load_pie(moddir, path):
             f = os.path.join(base, page)
             if os.path.exists(f):
                 tex = np.array(Image.open(f).convert('RGBA'))
-                mf = re.sub(r'(page-\d+)[^/\\]*\.png$', r'\1_tcmask.png', f)
+                mf = re.sub(r'(page-\d+)[^/\\]*\.png$', r'\1_tcmask.png', f); m = None
                 if os.path.exists(mf) and TEAM is not None:
                     m = np.array(Image.open(mf).convert('L')).astype(float) / 255.0
+                    if m.shape != tex.shape[:2]: m = None
+                if m is not None and os.path.exists(mf) and TEAM is not None:
                     rgb = tex[..., :3].astype(float) / 255.0 + (np.array(TEAM) - 0.5)[None, None, :] * m[..., None]
                     tex[..., :3] = (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
     return np.array(pts, float), polys, tex, page

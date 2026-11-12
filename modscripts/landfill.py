@@ -118,7 +118,7 @@ CARS = [
     ("michevy.pie", FEAT + "/michevy.pie", 23.0, 3, 28, 1.0),
     ("miarthov.pie", FEAT + "/miarthov.pie", 30.0, 1, 44, 1.0),
     ("icevan.pie", src("components/bodies/icevan.pie"), 33.0, 1, 42, 1.0),
-    ("mitanker.pie", FEAT + "/mitanker.pie", 27.0, 1, 50, 0.5),
+    ("mitanker.pie", FEAT + "/mitanker_straight.pie", 22.0, 1, 44, 0.5),   # geradegebogener Original-Tanker (tanker.py geo)
     ("scavtruck.pie", src("components/bodies/scavtruck.pie"), 25.0, 1, 52, 0.55),
     ("bus", None, 28.0, 1, 40, 1.0),
     ("fire", None, 26.0, 1, 38, 1.0),

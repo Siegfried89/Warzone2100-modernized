@@ -20,7 +20,7 @@ for p in pos[1:]:
 print(len(feat),'PCM-Sounds')
 def cvt(s):
     wavf=os.path.join(AD,'mfs%03d.wav'%s['n']);open(wavf,'wb').write(s['blob'])
-    subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',wavf,'-ac','1','-c:a','libvorbis','-q:a','3',os.path.join(AD,'mfs%03d.ogg'%s['n'])],check=True);os.remove(wavf)
+    subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',wavf,'-ac','1','-c:a','libvorbis','-q:a','3','-fflags','+bitexact','-flags:a','+bitexact',os.path.join(AD,'mfs%03d.ogg'%s['n'])],check=True);os.remove(wavf)
 shots=sorted([s for s in feat if s['dur']<=0.9 and s['att']<0.1 and s['cen']>1300 and s['mod']<2.0],key=lambda s:-s['cen'])
 heavy=sorted([s for s in feat if 0.4<=s['dur']<=2.5 and s['att']<0.15 and s['dec']>0.3 and s['cen']<1500 and s['mod']<2.0],key=lambda s:s['cen'])
 print('Schuss-Kandidaten',[s['n'] for s in shots][:20],'Explosion-Kandidaten',[s['n'] for s in heavy][:20])
