@@ -23,6 +23,8 @@
 */
 
 #include "lib/framework/frame.h"
+#include <algorithm>
+#include <cmath>
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/ivisdef.h"
 #include "lib/netplay/netplay.h"
@@ -204,6 +206,18 @@ static void sharedStructureButton(const STRUCTURE_STATS *Stats, const iIMDBaseSh
 	if (!strImd->connectors.empty() && scale == SMALL_STRUCT_SCALE && getStructureStatHeight(Stats) > TOWER_HEIGHT)
 	{
 		pos.y -= 20;
+	}
+
+	/* MOD: Metal-Fatigue-Gebaeude sind sehr unterschiedlich gross - Icon automatisch auf die Modellgroesse einpassen
+	   (Skalierung nach Bounding-Box-Diagonale, senkrecht zentriert), damit nichts aus dem Knopf ragt */
+	if (Stats->id.startsWith("MFS_"))
+	{
+		const float dx = static_cast<float>(strImd->max.x - strImd->min.x);
+		const float dy = static_cast<float>(strImd->max.y - strImd->min.y);
+		const float dz = static_cast<float>(strImd->max.z - strImd->min.z);
+		const float diag = std::max(24.f, std::sqrt(dx * dx + dy * dy + dz * dz));
+		scale = std::max(4, std::min(160, static_cast<int>(100.f * 118.f / diag)));
+		pos.y -= static_cast<int>((strImd->min.y + strImd->max.y) * 0.5f * scale / 100.f);
 	}
 
 	const glm::mat4 matrix = setMatrix(&pos, Rotation, scale);

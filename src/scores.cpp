@@ -449,14 +449,7 @@ void scoreDataToScreen(WIDGET *psWidget, ScoreDataToScreenCache& cache)
 	snprintf(text, sizeof(text), _("Total Game Time - %s"), text2);
 	cache.wzInfoText_TotalGameTime.setText(text, font_regular);
 	cache.wzInfoText_TotalGameTime.render((pie_GetVideoBufferWidth() - cache.wzInfoText_TotalGameTime.width()) / 2, 340 + D_H, WZCOL_FORM_TEXT);
-	if (Cheated)
-	{
-		// A quick way to flash the text
-		PIELIGHT cheatedTextColor = ((realTime / 250) % 2) ? WZCOL_RED : WZCOL_YELLOW;
-		snprintf(text, sizeof(text), "%s", _("You cheated!"));
-		cache.wzInfoText_Cheated.setText(text, font_regular);
-		cache.wzInfoText_Cheated.render((pie_GetVideoBufferWidth() - cache.wzInfoText_Cheated.width()) / 2, 360 + D_H, cheatedTextColor);
-	}
+	// MOD: keine "You cheated!"-Meldung mehr
 }
 
 // -----------------------------------------------------------------------------------

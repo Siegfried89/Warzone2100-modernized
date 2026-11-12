@@ -692,6 +692,20 @@ bool loadBodyStats(WzConfig &ini)
 			return false;
 		}
 		psStats->pIMD = statsGetIMD(ini, psStats, "model");
+		if (ini.contains("alternativeModels")) // MOD: weitere Modelle fuer abwechselnde Darstellung
+		{
+			const auto alts = ini.json("alternativeModels");
+			if (alts.is_array())
+			{
+				for (const auto &entry : alts)
+				{
+					WzString filename = json_variant(entry).toWzString();
+					iIMDBaseShape *alt = modelGet(filename);
+					if (alt != nullptr) { psStats->altIMDs.push_back(alt); }
+					else { ++statModelLoadingFailures; ASSERT(false, "Cannot find the alternative PIE model %s for body %s", filename.toUtf8().c_str(), getStatsName(psStats)); }
+				}
+			}
+		}
 
 		ini.endGroup();
 	}

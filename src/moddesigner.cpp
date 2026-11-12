@@ -12,6 +12,7 @@
 #include "moddesigner.h"
 #include "modcombot.h"
 #include "modpanel.h"
+#include "modlayer.h"
 #include "modui.h"
 
 #include "lib/framework/frame.h"
@@ -481,9 +482,9 @@ void box(int x0, int y0, int x1, int y1, PIELIGHT col)
 
 void drawFrame(int x, int y, int w, int h)
 {
-	pie_BoxFill_alpha(x, y, x + w, y + h, pal_RGBA(4, 10, 24, 235));
-	box(x, y, x + w - 1, y + h - 1, modui::cyan(210));
-	box(x + 1, y + 1, x + w - 2, y + h - 2, pal_RGBA(20, 90, 130, 255));
+	// schlicht: dunkle Flaeche mit einem feinen Rand (keine leuchtenden Rahmen mehr)
+	pie_BoxFill_alpha(x, y, x + w, y + h, pal_RGBA(4, 9, 20, 232));
+	box(x, y, x + w - 1, y + h - 1, pal_RGBA(46, 84, 112, 255));
 }
 
 struct PartInfo
@@ -540,18 +541,13 @@ void drawBay(const Ctx &c)
 {
 	const int bx = c.X(168), by = c.Y(6), bw = c.L(304), bh = c.L(330);
 	drawFrame(bx, by, bw, bh);
-	// Hintergrundstreifen und Rasterboden
-	for (int i = 1; i < 12; ++i)
+	// Name des gewaehlten Teils unten links in der Halle (kein Text mehr ueber den Werteleisten)
 	{
-		const int ly = by + bh * i / 12;
-		pie_BoxFill_alpha(bx + 2, ly, bx + bw - 2, ly + 1, pal_RGBA(20, 70, 100, 70));
+		const Part *np = nullptr;
+		if (s_hoverShown >= 0 && s_scroll + s_hoverShown < static_cast<int>(s_list.size())) { np = s_list[static_cast<size_t>(s_scroll + s_hoverShown)].part; }
+		if (np == nullptr) { np = s_tab == TAB_TORSO ? s_target[modcombot::SLOT_TORSO] : (s_tab == TAB_LEGS ? s_target[modcombot::SLOT_LEGS] : s_target[s_side > 0 ? modcombot::SLOT_RARM : modcombot::SLOT_LARM]); }
+		if (np != nullptr) { modui::text(modui::fit(np->name, bw - c.L(12.f), modui::sizeClassFor(c.S)), bx + c.L(7), by + bh - c.L(15), pal_RGBA(255, 255, 255, 255), modui::sizeClassFor(c.S)); }
 	}
-	// Abtast-Strahl
-	const float ph = static_cast<float>(realTime % 3600u) / 3600.f;
-	const int sy = by + 2 + static_cast<int>((bh - 4) * ph);
-	pie_BoxFill_alpha(bx + 2, sy, bx + bw - 2, sy + std::max(1, c.L(1.f)), pal_RGBA(40, 235, 255, 110));
-	pie_BoxFill_alpha(bx + 2, sy - c.L(3), bx + bw - 2, sy, pal_RGBA(40, 235, 255, 25));
-	modui::text("COMBOT ASSEMBLY BAY", bx + c.L(6), by + c.L(5), modui::cyan(), modui::sizeClassFor(c.S));
 
 	if (modcombot::ready() == false) { return; }
 	const unsigned now = realTime;
@@ -613,6 +609,7 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int mw = c.L(320.f), mh = c.L(480.f);
 	modui::drawSized(modui::METALPANEL, c.ox, c.oy, mw, mh);
 	modui::drawSized(modui::METALPANEL, c.ox + mw, c.oy, mw, mh);
+	pie_BoxFill_alpha(c.ox, c.oy, c.ox + 2 * mw, c.oy + mh, pal_RGBA(2, 5, 12, 150));   // Metall-Muster abdunkeln, damit der Bildschirm ruhig wirkt
 
 	// Reiter
 	const modui::Img tabImg = s_tab == TAB_ARMS ? modui::TAB_ARMS : (s_tab == TAB_LEGS ? modui::TAB_LEGS : (s_tab == TAB_TORSO ? modui::TAB_TORSO : modui::TAB_ALL));
@@ -679,7 +676,6 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	}
 	const PartInfo pi = infoOf(hoverPart);
 	drawStrip(c, 340, hoverPart != nullptr && hoverPart->kind == modcombot::KIND_ARM ? modui::STAT_B : modui::STAT_A, pi, sc);
-	modui::text(hoverPart ? hoverPart->name : std::string("-"), c.X(300), c.Y(341) , pal_RGBA(255, 255, 255, 255), sc);
 
 	PartInfo total2;
 	DROID_TEMPLATE tpl;
@@ -707,7 +703,6 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		}
 	}
 	drawStrip(c, 366, modui::STAT_A, total2, sc);
-	modui::text("TOTAL", c.X(300), c.Y(367), modui::cyan(), sc);
 
 	// Kosten
 	{
@@ -917,6 +912,7 @@ bool open()
 	rebuildList();
 	resetAssembly(true);
 	modpanel::setSuppressed(true);
+	modlayer::setSuppressed(true);
 	s_root->show(true);
 	layout();
 	return true;
@@ -934,6 +930,7 @@ void close()
 		s_tabBtn.clear(); s_rowBtn.clear(); s_arrBtn.clear(); s_sideBtn.clear(); s_hotBtn.clear(); s_actBtn.clear();
 	}
 	modpanel::setSuppressed(false);
+	modlayer::setSuppressed(false);
 }
 
 void tick()

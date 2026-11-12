@@ -78,6 +78,7 @@
 #include "range_rings.h"
 #include "modformation.h"
 #include "modpanel.h"
+#include "modlayer.h"
 #include "moddesigner.h"
 #include "qtscript.h"
 #include "chat.h"
@@ -708,6 +709,7 @@ void interfaceShutDown()
 {
 	moddesigner::shutdown(); // MOD
 	modpanel::shutdown();    // MOD
+	modlayer::shutdown();    // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed
 
 	destroyReplayControllerOverlay();
@@ -1145,6 +1147,7 @@ INT_RETVAL intRunWidgets()
 	bool			quitting = false;
 
 	modpanel::tick();      // MOD: Combot-Auswahlfeld
+	modlayer::tick();      // MOD: Ebenen-Knoepfe
 	moddesigner::tick();   // MOD: Combot-Designer
 
 	if (quitToMainMenuRequested)

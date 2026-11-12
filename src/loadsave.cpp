@@ -668,7 +668,7 @@ static WzString suggestSaveName(const char *saveGamePath)
 {
 	const WzString levelName = getLevelName();
 	const std::string levelNameStr = levelName.toStdString();
-	const std::string cheatedSuffix = Cheated ? _("cheated") : "";
+	const std::string cheatedSuffix = ""; // MOD: nie mehr "cheated" im Namen eines Spielstands
 	char saveNamePartial[64] = "\0";
 
 	if (!bMultiPlayer)

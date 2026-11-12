@@ -854,7 +854,7 @@ static nlohmann::ordered_json writeLocalState()
 	cam["rx"] = playerPos.r.x; cam["ry"] = playerPos.r.y; cam["rz"] = playerPos.r.z;
 	j["camera"] = std::move(cam);
 	j["radarZoom"] = GetRadarZoom();
-	j["cheated"] = Cheated; // meta: disables autosave / flags scores - not networked, not sim
+	// MOD: kein "cheated"-Eintrag mehr in Spielstaenden
 	// Whether the local player has ever built an HQ: the factories offer only trucks until then.
 	// It stays set when the HQ is destroyed, so it can't be derived from the restored world.
 	j["playerBuiltHQ"] = playerBuiltHQ;
@@ -900,7 +900,7 @@ static void readLocalState(const nlohmann::ordered_json &j)
 	{
 		SetRadarZoom(gameWorld.map, j.at("radarZoom").get<uint8_t>());
 	}
-	Cheated = j.value("cheated", Cheated);
+	// MOD: ein evtl. vorhandener alter "cheated"-Eintrag wird ignoriert
 	// Older documents: whether the local player has an HQ now, as a game start does
 	playerBuiltHQ = j.contains("playerBuiltHQ") ? j.at("playerBuiltHQ").get<bool>() : structureExists(gameWorld.objects, selectedPlayer, REF_HQ, true);
 

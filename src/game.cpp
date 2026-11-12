@@ -7004,7 +7004,7 @@ bool writeGameInfo(const char *pFileName)
 	ini.setValue("playing_time", ourtime);
 	ini.setValue("version", version_getVersionString());
 	ini.setValue("full_version", version_getFormattedVersionString());
-	ini.setValue("cheated", Cheated);
+	// MOD: kein "cheated"-Eintrag mehr in Spielstaenden
 	ini.setValue("debug", dbgInputManager.debugMappingsAllowed());
 	ini.setValue("level/map", getLevelName());
 	ini.setValue("mods", !getModList().empty() ? getModList().c_str() : "None");

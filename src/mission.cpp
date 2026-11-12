@@ -2637,13 +2637,13 @@ static bool _intAddMissionResult(bool result, bool bPlaySuccess, bool showBackDr
 		//don't bother adding the text if haven't played the audio
 		if (bPlaySuccess)
 		{
-			sLabInit.pText = WzString::fromUtf8(Cheated ? _("OBJECTIVE ACHIEVED by cheating!") : _("OBJECTIVE ACHIEVED"));//"Objective Achieved";
+			sLabInit.pText = WzString::fromUtf8(_("OBJECTIVE ACHIEVED"));//"Objective Achieved";
 		}
 
 	}
 	else
 	{
-		sLabInit.pText = WzString::fromUtf8(Cheated ? _("OBJECTIVE FAILED--and you cheated!") : _("OBJECTIVE FAILED")); //"Objective Failed;
+		sLabInit.pText = WzString::fromUtf8(_("OBJECTIVE FAILED")); //"Objective Failed;
 	}
 	sLabInit.FontID = font_regular;
 	if (!widgAddLabel(psWScreen, &sLabInit))

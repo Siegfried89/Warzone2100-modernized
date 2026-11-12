@@ -1078,14 +1078,7 @@ private:
 			char lastString[20] = {0};
 
 			// Let's use the real score for MP games
-			if (Cheated && NetPlay.bComms)
-			{
-				sstrcpy(scoreString, "(cheated)");
-			}
-			else
-			{
-				ssprintf(scoreString, "%d", getMultiStats(playerWidget.player).recentScore);
-			}
+			ssprintf(scoreString, "%d", getMultiStats(playerWidget.player).recentScore); // MOD: kein "(cheated)" mehr
 			ssprintf(killsString, "%d", getMultiStats(playerWidget.player).recentKills);
 
 			//only show player's and allies' unit counts, and nobody elses.

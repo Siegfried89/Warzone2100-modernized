@@ -324,6 +324,14 @@ struct COMPONENT_STATS : public BASE_STATS
 	UPGRADE &getBase() { return const_cast<UPGRADE &>(const_cast<COMPONENT_STATS const *>(this)->getBase()); }
 
 	iIMDBaseShape *pIMD = nullptr;				/**< The IMD to draw for this component */
+	std::vector<iIMDBaseShape *> altIMDs;		///< MOD: weitere Modell-Varianten (JSON "alternativeModels"); Einheiten bekommen sie abwechselnd
+	/// MOD: Modell fuer eine bestimmte Einheit (Auswahl ueber die Einheiten-ID -> auf allen Rechnern gleich)
+	iIMDBaseShape *pickIMD(unsigned objId) const
+	{
+		if (altIMDs.empty()) { return pIMD; }
+		const size_t k = objId % (altIMDs.size() + 1);
+		return k == 0 ? pIMD : altIMDs[k - 1];
+	}
 	unsigned buildPower = 0;			/**< Power required to build the component */
 	unsigned buildPoints = 0;		/**< Time required to build the component */
 	unsigned weight = 0;				/**< Component's weight */
