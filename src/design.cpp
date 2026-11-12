@@ -60,6 +60,7 @@
 #include "intimage.h"
 #include "intdisplay.h"
 #include "design.h"
+#include "moddesigner.h" // MOD
 #include "component.h"
 #include "main.h"
 #include "display.h"
@@ -694,6 +695,24 @@ bool intAddDesign(bool bShowCentreScreen)
 	if (!widgAddForm(psWScreen, &sFormInit))
 	{
 		return false;
+	}
+
+	/* MOD: tall blue Combot designer button (right of the 3D view) */
+	{
+		W_BUTINIT sComButInit;
+		sComButInit.formID = IDDES_FORM;
+		sComButInit.id = IDDES_COMBOT;
+		sComButInit.style = WBUT_PLAIN;
+		sComButInit.x = DES_3DVIEWX + DES_3DVIEWWIDTH + 8;
+		sComButInit.y = DES_3DVIEWY;
+		sComButInit.width = 57;
+		sComButInit.height = 95;
+		sComButInit.pTip = _("Combot Designer");
+		sComButInit.pDisplay = moddesigner::displayEntryButton;
+		if (!widgAddButton(psWScreen, &sComButInit))
+		{
+			return false;
+		}
 	}
 
 	/* Add the part button form */
@@ -3428,6 +3447,9 @@ void intProcessDesign(UDWORD id)
 				}
 				break;
 			}
+		case IDDES_COMBOT:
+			moddesigner::open(); // MOD
+			break;
 		case IDDES_STOREBUTTON:
 			sCurrDesign.stored = !sCurrDesign.stored;	// Invert the current status
 			if (saveTemplate())
@@ -4026,4 +4048,55 @@ void updateStoreButton(bool isStored)
 	}
 
 	widgSetUserData2(psWScreen, IDDES_STOREBUTTON, imageset);
+}
+
+
+/// MOD: Vorlage aus dem Combot-Designer uebernehmen. Entspricht dem "neuer Entwurf"-Zweig von saveTemplate(), ohne die
+/// Design-Pruefung fuer Mehrspieler (die Combot-Teile sind nicht im normalen Design-Bildschirm waehlbar).
+bool desStoreCombotTemplate(const DROID_TEMPLATE &design, std::string &error)
+{
+	if (selectedPlayer >= MAX_PLAYERS) { error = "No player."; return false; }
+	DROID_TEMPLATE tpl = design;
+	if (tpl.asParts[COMP_BODY] == 0 || tpl.asParts[COMP_PROPULSION] == 0) { error = "Torso or legs are missing."; return false; }
+	if (tpl.numWeaps <= 0) { error = "A combot needs at least one arm."; return false; }
+	if (static_cast<unsigned>(tpl.numWeaps) > tpl.getBodyStats()->weaponSlots) { error = "Too many arms for this torso."; return false; }
+	for (int i = 0; i < tpl.numWeaps; ++i)
+	{
+		if (tpl.asWeaps[i] == 0 || tpl.asWeaps[i] >= asWeaponStats.size()) { error = "Invalid arm."; return false; }
+	}
+	tpl.asParts[COMP_SENSOR] = aDefaultSensor[selectedPlayer];
+	tpl.asParts[COMP_ECM] = aDefaultECM[selectedPlayer];
+	tpl.asParts[COMP_REPAIRUNIT] = aDefaultRepair[selectedPlayer];
+	tpl.ref = STAT_TEMPLATE;
+	tpl.droidType = droidTemplateType(&tpl);
+	tpl.enabled = true;
+	tpl.stored = false;
+	tpl.hidden = false;
+
+	// Gleiche Bauteile schon vorhanden? Dann keine zweite Vorlage anlegen.
+	for (DROID_TEMPLATE &known : localTemplates)
+	{
+		if (!known.hidden && templatesHaveSameComponents(known, tpl))
+		{
+			error = "You already have this design: " + known.name.toUtf8();
+			return false;
+		}
+	}
+
+	localTemplates.push_back(DROID_TEMPLATE());
+	DROID_TEMPLATE *psTempl = &localTemplates.back();
+	*psTempl = tpl;
+	psTempl->multiPlayerID = generateNewObjectId();
+	if (widgGetFromID(psWScreen, IDDES_FORM) != nullptr)
+	{
+		apsTemplateList.push_back(psTempl);   // Liste des Design-Bildschirms (nur fuer die Oberflaeche)
+	}
+	copyTemplate(selectedPlayer, psTempl);    // Vorlage im Spiel eintragen
+
+	if (widgGetFromID(psWScreen, IDDES_TEMPLBASE) != nullptr)
+	{
+		widgDelete(psWScreen, IDDES_TEMPLBASE);
+		intAddTemplateForm(nullptr);
+	}
+	return true;
 }

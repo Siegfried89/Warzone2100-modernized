@@ -1938,6 +1938,29 @@ static bool droidHasLeader(DROID *psDroid)
 }
 
 
+// MOD: Combot-Erkennung und exklusiver MF-Klick
+static bool modIsCombot(const DROID *psDroid)
+{
+	if (psDroid == nullptr) { return false; }
+	const BODY_STATS *b = psDroid->getBodyStats();
+	return b != nullptr && b->id.toUtf8().rfind("MFW_", 0) == 0;
+}
+static bool modAnySelectedCombot()
+{
+	for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d != nullptr && d->selected && modIsCombot(d)) { return true; }
+	}
+	return false;
+}
+static void modPlayCombotClick(bool attack = false)
+{
+	static int trackMove = -2, trackAttack = -2;
+	if (trackMove == -2) { trackMove = audio_GetTrackID("mfclick_move.ogg"); trackAttack = audio_GetTrackID("mfclick_attack.ogg"); }
+	const int t = attack ? trackAttack : trackMove;
+	if (t >= 0) { audio_PlayTrack(t); }
+}
+
 // deal with selecting a droid
 void dealWithDroidSelect(DROID *psDroid, bool bDragBox)
 {
@@ -1961,6 +1984,7 @@ void dealWithDroidSelect(DROID *psDroid, bool bDragBox)
 		{
 			SelectDroid(psDroid);
 		}
+		if (modIsCombot(psDroid)) { modPlayCombotClick(); }
 	}
 }
 
@@ -1972,7 +1996,7 @@ static void FeedbackOrderGiven()
 	// Ensure only played once per game cycle.
 	if (ThisFrame != LastFrame)
 	{
-		audio_PlayTrack(ID_SOUND_SELECT);
+		if (modAnySelectedCombot()) { modPlayCombotClick(true); } else { audio_PlayTrack(ID_SOUND_SELECT); }
 		LastFrame = ThisFrame;
 	}
 }
@@ -2460,7 +2484,7 @@ void	dealWithLMB()
 	if (getNumDroidsSelected())
 	{
 		assignDestTarget();
-		audio_PlayTrack(ID_SOUND_SELECT);
+		if (modAnySelectedCombot()) { modPlayCombotClick(); } else { audio_PlayTrack(ID_SOUND_SELECT); }
 	}
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();

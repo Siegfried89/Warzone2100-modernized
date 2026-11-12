@@ -42,6 +42,8 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "map.h"
+#include "modduel.h"
+#include "modcombot.h"
 #include "droid.h"
 #include "hci.h"
 #include "power.h"
@@ -281,7 +283,8 @@ void addDroidDeathAnimationEffect(DROID *psDroid)
 			}
 
 			SetEffectForPlayer(psDroid->player);
-			effectSetSize(100);
+			// MOD: modulare Combots: Abbild (Kennung) statt Standardgroesse, wird in effects.cpp gezeichnet
+			effectSetSize(modcombot::isModular(psDroid) ? modcombot::registerCorpse(psDroid, graphicsTime) : 100);
 			addEffect(&position, EFFECT_DROID_ANIMEVENT_DYING, type, true, strImd, 0, graphicsTime, &rotation, &velocity);
 		}
 	}
@@ -311,7 +314,12 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 		damage *= 3;
 	}
 
+	const UDWORD modBodyBefore = psDroid->body;
 	relativeDamage = objDamage(psDroid, psProjectile, damage, psDroid->originalBody, weaponClass, weaponSubClass, isDamagePerSecond, minDamage, empRadiusHit);
+	if (relativeDamage > 0 && psDroid->body < modBodyBefore && modcombot::isModular(psDroid))
+	{
+		modcombot::hitRandomPart(psDroid, static_cast<int>(modBodyBefore - psDroid->body)); // MOD: Teil nimmt Schaden, kann abgeschlagen werden
+	}
 
 	if (relativeDamage != 0 && psDroid->player == selectedPlayer && psDroid->timeLastHit == gameTime)
 	{
@@ -455,6 +463,7 @@ DROID::DROID(uint32_t id, unsigned player)
 DROID::~DROID()
 {
 	DROID *psDroid = this;
+	modcombot::forget(psDroid->id); // MOD
 
 	if (psDroid->isTransporter())
 	{
@@ -941,6 +950,7 @@ void droidUpdate(DROID *psDroid)
 
 	// ai update droid
 	aiUpdateDroid(psDroid);
+	modduel::update(psDroid); // MOD: MF-Duellsystem
 
 	// Update the droids order.
 	if (!orderUpdateDroid(psDroid))

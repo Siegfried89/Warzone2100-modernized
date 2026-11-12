@@ -42,6 +42,7 @@
 #include "transporter.h"
 #include "mission.h"
 #include "faction.h"
+#include "modcombot.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
 #endif
@@ -567,6 +568,12 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	{
 		// FIXME: change when adding submarines to the game
 		modifiedModelMatrix *= glm::translate(glm::vec3(0.f, -world_coord(1) / 2.3f, 0.f));
+	}
+
+	// MOD: modulare Combots (Torso/Beine/Arme) werden Teil fuer Teil mit den Original-MF-Animationen zusammengesetzt
+	if (modcombot::isModular(psDroid))
+	{
+		return modcombot::draw(const_cast<DROID *>(psDroid), bButton, modifiedModelMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, iPieData);
 	}
 
 	const iIMDBaseShape *psShapeProp = (leftFirst ? getLeftPropulsionIMD(psDroid) : getRightPropulsionIMD(psDroid));

@@ -75,6 +75,10 @@
 #include "template.h"
 #include "wrappers.h"
 #include "keybind.h"
+#include "range_rings.h"
+#include "modformation.h"
+#include "modpanel.h"
+#include "moddesigner.h"
 #include "qtscript.h"
 #include "chat.h"
 #include "radar.h"
@@ -702,6 +706,8 @@ bool intInitialise()
 /* Shut down the in game interface */
 void interfaceShutDown()
 {
+	moddesigner::shutdown(); // MOD
+	modpanel::shutdown();    // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed
 
 	destroyReplayControllerOverlay();
@@ -1137,6 +1143,9 @@ INT_RETVAL intRunWidgets()
 		: OrderSource::widget());
 
 	bool			quitting = false;
+
+	modpanel::tick();      // MOD: Combot-Auswahlfeld
+	moddesigner::tick();   // MOD: Combot-Designer
 
 	if (quitToMainMenuRequested)
 	{
@@ -2073,6 +2082,135 @@ void intHideInGameOptionsButton()
 	}
 }
 
+// MARK: MOD sensor ring button (above the reticule)
+static void intDisplaySensorModeButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	const int x0 = xOffset + psWidget->x();
+	const int y0 = yOffset + psWidget->y();
+	const int w = psWidget->width();
+	const int h = psWidget->height();
+	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
+	const bool down = (b->getState() & (WBUT_DOWN | WBUT_CLICKLOCK)) != 0;
+	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
+	const int mode = range_rings::getMode();
+	const PIELIGHT frame = hl ? pal_RGBA(255, 255, 255, 230) : pal_RGBA(150, 170, 190, 200);
+	pie_BoxFill_alpha(x0, y0, x0 + w, y0 + h, down ? pal_RGBA(30, 40, 60, 220) : pal_RGBA(10, 16, 28, 190));
+	iV_Box(x0, y0, x0 + w, y0 + h, frame);
+	const PIELIGHT blue = pal_RGBA(70, 140, 255, 255), red = pal_RGBA(255, 50, 40, 255), grey = pal_RGBA(110, 120, 130, 255);
+	const PIELIGHT ringCol = (mode & 1) ? blue : grey;
+	const PIELIGHT sweepCol = (mode & 2) ? red : grey;
+	const float cx = x0 + w * 0.5f, cy = y0 + h * 0.5f, r = std::min(w, h) * 0.36f;
+	for (int k = 0; k < 2; k++) // zwei Ringe
+	{
+		const float rr = k == 0 ? r : r * 0.55f;
+		for (int i = 0; i < 24; i++)
+		{
+			const float a0 = i * 6.2831853f / 24, a1 = (i + 1) * 6.2831853f / 24;
+			iV_Line(int(cx + rr * std::cos(a0)), int(cy + rr * std::sin(a0)), int(cx + rr * std::cos(a1)), int(cy + rr * std::sin(a1)), ringCol);
+		}
+	}
+	iV_Line(int(cx), int(cy), int(cx + r * 0.75f), int(cy - r * 0.75f), sweepCol); // Radarstrahl
+	iV_Line(int(cx - r), int(cy), int(cx + r), int(cy), pal_RGBA(60, 70, 80, 160));
+	iV_Line(int(cx), int(cy - r), int(cx), int(cy + r), pal_RGBA(60, 70, 80, 160));
+}
+
+// MOD: Formations-Buttons, Vogelperspektive schraeg (Punkte = Einheiten)
+static void intDisplayFormationButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	const int x0 = xOffset + psWidget->x();
+	const int y0 = yOffset + psWidget->y();
+	const int w = psWidget->width();
+	const int h = psWidget->height();
+	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
+	const bool down = (b->getState() & (WBUT_DOWN | WBUT_CLICKLOCK)) != 0;
+	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
+	pie_BoxFill_alpha(x0, y0, x0 + w, y0 + h, down ? pal_RGBA(30, 40, 60, 220) : pal_RGBA(10, 16, 28, 190));
+	iV_Box(x0, y0, x0 + w, y0 + h, hl ? pal_RGBA(255, 255, 255, 230) : pal_RGBA(150, 170, 190, 200));
+	const PIELIGHT dot = pal_RGBA(220, 230, 240, 255), lead = pal_RGBA(255, 200, 60, 255), gun = pal_RGBA(255, 80, 60, 255);
+	const float cx = x0 + w * 0.5f, cy = y0 + h * 0.5f, u = w * 0.11f;
+	auto P = [&](float gx, float gy, PIELIGHT c) { // Boden-Raster -> Schraegansicht (2:1 isometrisch)
+		const int px = int(cx + (gx - gy) * u), py = int(cy + (gx + gy) * u * 0.5f);
+		pie_BoxFill(px - 1, py - 1, px + 1, py + 1, c);
+	};
+	switch (psWidget->UserData)
+	{
+	case modformation::RING:
+		P(0, 0, lead);
+		for (int i = 0; i < 8; i++) { const float a = i * 0.785398f; P(2.6f * std::cos(a), 2.6f * std::sin(a), dot); }
+		break;
+	case modformation::LINE:
+		for (int i = -2; i <= 2; i++) { P(i * 1.3f, -i * 1.3f, i == 0 ? lead : dot); }
+		break;
+	case modformation::WEDGE:
+		P(2.4f, 2.4f, lead);
+		for (int i = 1; i <= 2; i++) { P(2.4f - i * 1.6f, 2.4f - i * 1.6f + i * 1.6f * 1.0f, dot); P(2.4f - i * 1.6f + i * 1.6f * 1.0f, 2.4f - i * 1.6f, dot); }
+		break;
+	case modformation::COLUMN:
+		for (int i = -2; i <= 2; i++) { P(i * 1.3f, i * 1.3f, i == 2 ? lead : dot); }
+		break;
+	case modformation::ARTY:
+		P(2.2f, 2.2f, lead); P(1.2f, 3.0f, dot); P(3.0f, 1.2f, dot);
+		P(-2.0f, -2.0f, gun); P(-3.2f, -0.8f, gun); P(-0.8f, -3.2f, gun);
+		break;
+	default: break;
+	}
+}
+
+static void intAddFormationButtons()
+{
+	for (int t = 0; t < modformation::COUNT; t++)
+	{
+		const int id = IDRET_SENSORMODE + 1 + t;
+		if (widgGetFromID(psWScreen, id) != nullptr) { continue; }
+		W_BUTINIT sButInit;
+		sButInit.formID = 0;
+		sButInit.id = id;
+		sButInit.width = 28;
+		sButInit.height = 28;
+		sButInit.pDisplay = intDisplayFormationButton;
+		sButInit.UserData = t;
+		sButInit.pTip = modformation::tip(static_cast<modformation::Type>(t));
+		sButInit.x = RET_X + 32 + t * 30;
+		sButInit.y = RET_Y - 32;
+		auto pButton = widgAddButton(psWScreen, &sButInit);
+		if (pButton)
+		{
+			const int xx = RET_X + 32 + t * 30;
+			pButton->setCalcLayout([xx](WIDGET *psWidget) { psWidget->setGeometry(xx, RET_Y - 32, 28, 28); });
+			std::dynamic_pointer_cast<W_BUTTON>(pButton->shared_from_this())->addOnClickHandler([t](W_BUTTON &) {
+				widgScheduleTask([t]() { modformation::apply(static_cast<modformation::Type>(t)); });
+			});
+		}
+	}
+}
+
+static void intAddSensorModeButton()
+{
+	if (widgGetFromID(psWScreen, IDRET_SENSORMODE) != nullptr)
+	{
+		return;
+	}
+	W_BUTINIT sButInit;
+	sButInit.formID = 0;
+	sButInit.id = IDRET_SENSORMODE;
+	sButInit.width = 28;
+	sButInit.height = 28;
+	sButInit.pDisplay = intDisplaySensorModeButton;
+	sButInit.pTip = _("Range rings: off / sensor / weapons / both");
+	sButInit.x = RET_X;
+	sButInit.y = RET_Y - 32;
+	auto pButton = widgAddButton(psWScreen, &sButInit);
+	if (pButton)
+	{
+		pButton->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
+			psWidget->setGeometry(RET_X, RET_Y - 32, 28, 28);
+		}));
+		std::dynamic_pointer_cast<W_BUTTON>(pButton->shared_from_this())->addOnClickHandler([](W_BUTTON &) {
+			widgScheduleTask([]() { kf_ToggleSensorDisplay(); });
+		});
+	}
+}
+
 /* Add the reticule widgets to the widget screen */
 bool intAddReticule()
 {
@@ -2119,6 +2257,8 @@ bool intAddReticule()
 			setReticuleButtonDimensions(*retbutstats[i].button, retbutstats[i].filename);
 		}
 	}
+	intAddSensorModeButton();
+	intAddFormationButtons();
 	ReticuleUp = true;
 	return true;
 }
@@ -2128,6 +2268,8 @@ void intRemoveReticule()
 	if (ReticuleUp == true)
 	{
 		widgDelete(psWScreen, IDRET_FORM);		// remove reticule
+		widgDelete(psWScreen, IDRET_SENSORMODE);
+		for (int t = 0; t < modformation::COUNT; t++) { widgDelete(psWScreen, IDRET_SENSORMODE + 1 + t); }
 		ReticuleUp = false;
 	}
 }

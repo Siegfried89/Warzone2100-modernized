@@ -34,6 +34,7 @@
 #include "console.h"
 #include "display.h"
 #include "display3d.h"
+#include "range_rings.h"
 #include "edit3d.h"
 #include "keybind.h"
 #include "screens/researchtreescreen.h"
@@ -320,16 +321,9 @@ void	kf_TraceObject()
 //===================================================
 void kf_ToggleSensorDisplay()
 {
-	setRangeOnScreen(!rangeOnScreen);
-
-	if (rangeOnScreen)
-	{
-		addConsoleMessage(_("Unit range rings display enabled"), LEFT_JUSTIFY, SYSTEM_MESSAGE);
-	}
-	else
-	{
-		addConsoleMessage(_("Unit range rings display disabled"), LEFT_JUSTIFY, SYSTEM_MESSAGE);
-	}
+	const int m = range_rings::cycleMode();
+	const char *txt = m == 0 ? _("Range rings: off") : m == 1 ? _("Range rings: sensor") : m == 2 ? _("Range rings: weapons") : _("Range rings: sensor + weapons");
+	addConsoleMessage(txt, LEFT_JUSTIFY, SYSTEM_MESSAGE);
 }
 //===================================================
 /* Halves all the heights of the map tiles */

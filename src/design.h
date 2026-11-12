@@ -23,6 +23,7 @@
 
 #include "lib/widget/widgbase.h"
 #include "src/droiddef.h"
+#include <string>
 
 /* Design screen ID's */
 #define IDDES_FORM			5000		// The base form for the design screen
@@ -47,6 +48,7 @@
 #define IDDES_WEAPONS_B		5029		// The weapon TURRET_B button for the Component form (right)
 
 #define IDDES_STOREBUTTON	5905		// Stored template button
+#define IDDES_COMBOT		5906		// MOD: Combot-Designer (hohe blaue Taste)
 
 /* Design screen bar graph IDs */
 #define IDDES_BODYARMOUR_K	5100		// The body armour bar graph for kinetic weapons
@@ -119,5 +121,8 @@ void intRunDesign();
 const char *GetDefaultTemplateName(DROID_TEMPLATE *psTemplate);
 
 bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complain, int player);
+
+/// MOD: Vorlage aus dem Combot-Designer uebernehmen (Einzelspieler und Mehrspieler). false + Meldung, wenn sie nicht zulaessig ist.
+bool desStoreCombotTemplate(const DROID_TEMPLATE &design, std::string &error);
 
 #endif // __INCLUDED_SRC_DESIGN_H__

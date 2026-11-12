@@ -81,6 +81,7 @@
 
 #include "multiplay.h"
 #include "component.h"
+#include "modcombot.h"
 #include "profiling.h"
 #include "game_world.h"
 #include "wrappers.h"
@@ -352,6 +353,12 @@ static void renderDroidDeathAnimationEffect(const EFFECT *psEffect, const glm::m
 		glm::rotate(UNDEG(psEffect->rotation.x), glm::vec3(1.f, 0.f, 0.f)) *
 		glm::rotate(UNDEG(psEffect->rotation.y), glm::vec3(0.f, 1.f, 0.f)) *
 		glm::rotate(UNDEG(psEffect->rotation.z), glm::vec3(0.f, 0.f, 1.f));
+
+	// MOD: modularer Combot: Abbild mit den zum Todeszeitpunkt vorhandenen Teilen
+	if (psEffect->size >= 1000 && modcombot::drawCorpse(psEffect->size, modelMatrix, viewMatrix, static_cast<int>(getPlayerColour(psEffect->player))))
+	{
+		return;
+	}
 
 	// If original (psDroid->droidType == DROID_PERSON)
 	if (psEffect->type == DROID_ANIMEVENT_DYING_NORMAL_ST)

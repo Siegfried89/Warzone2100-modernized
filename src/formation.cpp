@@ -40,13 +40,13 @@
 #include "objmem.h"
 
 // radius for the different body sizes
-static SDWORD	fmLtRad = 80, fmMedRad = 100, fmHvyRad = 110;
+static SDWORD	fmLtRad = 40, fmMedRad = 50, fmHvyRad = 55;  // MOD: halbe Einheitengroesse -> halber Formationsabstand
 
 // default length of a formation line
 #define F_DEFLENGTH		(4*fmLtRad)
 
 // how close to the formation a unit has to be to receive a formation point
-#define F_JOINRANGE		(TILE_UNITS * 3)
+#define F_JOINRANGE		(TILE_UNITS * 3 / 2)
 
 // how far apart to keep the ranks in a formation
 #define RANK_DIST		(2*fmLtRad)
@@ -55,7 +55,7 @@ static SDWORD	fmLtRad = 80, fmMedRad = 100, fmHvyRad = 110;
 #define MAX_RANK		15
 
 // the distance for finding formations
-#define FIND_RANGE		(TILE_UNITS/2)
+#define FIND_RANGE		(TILE_UNITS/4)
 
 #define FORMATION_SPEED_INIT	100000L
 

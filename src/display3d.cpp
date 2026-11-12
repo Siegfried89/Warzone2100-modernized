@@ -626,6 +626,53 @@ float interpolateAngleDegrees(int a, int b, float t)
 	return a + d * t;
 }
 
+// Berechnet die Animationsmatrix einer einzelnen Ebene; false = Ebene in diesem Bild ausgeblendet
+static bool levelAnimMatrix(const iIMDShape *lvl, UDWORD timeAnimationStarted, glm::mat4 &modelMatrix)
+{
+	if (!lvl->objanimframes)
+	{
+		return true;
+	}
+	int elapsed = graphicsTime - timeAnimationStarted;
+	if (elapsed < 0)
+	{
+		elapsed = 0; // Animation hasn't started yet.
+	}
+
+	const int frame = (elapsed / lvl->objanimtime) % lvl->objanimframes;
+	ASSERT(frame < lvl->objanimframes, "Bad index %d >= %d", frame, lvl->objanimframes);
+
+	const ANIMFRAME &state = lvl->objanimdata.at(frame);
+
+	if (state.scale.x == -1.0f) // disabled frame, for implementing key frame animation
+	{
+		return false;
+	}
+
+	if (lvl->interpolate == 1)
+	{
+		const float frameFraction = static_cast<float>(fmod(elapsed / (float)lvl->objanimtime, lvl->objanimframes) - frame);
+		const int nextFrame = (frame + 1) % lvl->objanimframes;
+		const ANIMFRAME &nextState = lvl->objanimdata.at(nextFrame);
+
+		modelMatrix *=
+			glm::interpolate(glm::translate(glm::vec3(state.pos)), glm::translate(glm::vec3(nextState.pos)), frameFraction) *
+			glm::rotate(RADIANS(interpolateAngleDegrees(state.rot.pitch / DEG(1), nextState.rot.pitch / DEG(1), frameFraction)), glm::vec3(1.f, 0.f, 0.f)) *
+			glm::rotate(RADIANS(interpolateAngleDegrees(state.rot.direction / DEG(1), nextState.rot.direction / DEG(1), frameFraction)), glm::vec3(0.f, 1.f, 0.f)) *
+			glm::rotate(RADIANS(interpolateAngleDegrees(state.rot.roll / DEG(1), nextState.rot.roll / DEG(1), frameFraction)), glm::vec3(0.f, 0.f, 1.f)) *
+			glm::scale(state.scale);
+	}
+	else
+	{
+		modelMatrix *= glm::translate(glm::vec3(state.pos)) *
+			glm::rotate(UNDEG(state.rot.pitch), glm::vec3(1.f, 0.f, 0.f)) *
+			glm::rotate(UNDEG(state.rot.direction), glm::vec3(0.f, 1.f, 0.f)) *
+			glm::rotate(UNDEG(state.rot.roll), glm::vec3(0.f, 0.f, 1.f)) *
+			glm::scale(state.scale);
+	}
+	return true;
+}
+
 bool drawShape(const iIMDShape *strImd, UDWORD timeAnimationStarted, int colour, PIELIGHT buildingBrightness, int pieFlag, int pieFlagData, const glm::mat4& modelMatrix, const glm::mat4& viewMatrix, float stretchDepth)
 {
 	glm::mat4 modifiedModelMatrix = modelMatrix;
@@ -634,45 +681,27 @@ bool drawShape(const iIMDShape *strImd, UDWORD timeAnimationStarted, int colour,
 	{
 		animFrame = getModularScaledGraphicsTime(strImd->animInterval, strImd->numFrames);
 	}
-	if (strImd->objanimframes)
+
+	// Skelett-Animation (Combots): hat die zweite Ebene eine eigene Animation, werden ALLE Ebenen
+	// gezeichnet, jede mit ihrer eigenen Animationsmatrix (jedes Gelenk ist eine Ebene).
+	if (strImd->next && strImd->next->objanimframes > 0)
 	{
-		int elapsed = graphicsTime - timeAnimationStarted;
-		if (elapsed < 0)
+		bool drawn = false;
+		for (const iIMDShape *lvl = strImd; lvl != nullptr; lvl = lvl->next.get())
 		{
-			elapsed = 0; // Animation hasn't started yet.
+			glm::mat4 levelMatrix = modelMatrix;
+			if (!levelAnimMatrix(lvl, timeAnimationStarted, levelMatrix))
+			{
+				continue;
+			}
+			drawn |= pie_Draw3DShape(lvl, animFrame, colour, buildingBrightness, pieFlag, pieFlagData, levelMatrix, viewMatrix, stretchDepth, true);
 		}
+		return drawn;
+	}
 
-		const int frame = (elapsed / strImd->objanimtime) % strImd->objanimframes;
-		ASSERT(frame < strImd->objanimframes, "Bad index %d >= %d", frame, strImd->objanimframes);
-
-		const ANIMFRAME &state = strImd->objanimdata.at(frame);
-
-		if (state.scale.x == -1.0f) // disabled frame, for implementing key frame animation
-		{
-			return false;
-		}
-
-		if (strImd->interpolate == 1)
-		{
-			const float frameFraction = static_cast<float>(fmod(elapsed / (float)strImd->objanimtime, strImd->objanimframes) - frame);
-			const int nextFrame = (frame + 1) % strImd->objanimframes;
-			const ANIMFRAME &nextState = strImd->objanimdata.at(nextFrame);
-
-			modifiedModelMatrix *=
-				glm::interpolate(glm::translate(glm::vec3(state.pos)), glm::translate(glm::vec3(nextState.pos)), frameFraction) *
-				glm::rotate(RADIANS(interpolateAngleDegrees(state.rot.pitch / DEG(1), nextState.rot.pitch / DEG(1), frameFraction)), glm::vec3(1.f, 0.f, 0.f)) *
-				glm::rotate(RADIANS(interpolateAngleDegrees(state.rot.direction / DEG(1), nextState.rot.direction / DEG(1), frameFraction)), glm::vec3(0.f, 1.f, 0.f)) *
-				glm::rotate(RADIANS(interpolateAngleDegrees(state.rot.roll / DEG(1), nextState.rot.roll / DEG(1), frameFraction)), glm::vec3(0.f, 0.f, 1.f)) *
-				glm::scale(state.scale);
-		}
-		else
-		{
-			modifiedModelMatrix *= glm::translate(glm::vec3(state.pos)) *
-				glm::rotate(UNDEG(state.rot.pitch), glm::vec3(1.f, 0.f, 0.f)) *
-				glm::rotate(UNDEG(state.rot.direction), glm::vec3(0.f, 1.f, 0.f)) *
-				glm::rotate(UNDEG(state.rot.roll), glm::vec3(0.f, 0.f, 1.f)) *
-				glm::scale(state.scale);
-		}
+	if (!levelAnimMatrix(strImd, timeAnimationStarted, modifiedModelMatrix))
+	{
+		return false;
 	}
 
 	return pie_Draw3DShape(strImd, animFrame, colour, buildingBrightness, pieFlag, pieFlagData, modifiedModelMatrix, viewMatrix, stretchDepth, true);

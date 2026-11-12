@@ -73,7 +73,7 @@ struct SIMPLE_OBJECT
 	uint32_t        time;                           ///< Game time of given space-time position.
 };
 
-#define MAX_WEAPONS 3
+#define MAX_WEAPONS 6 // MOD: Combots brauchen mehr Waffenplaetze
 
 enum OBJECT_FLAG
 {
