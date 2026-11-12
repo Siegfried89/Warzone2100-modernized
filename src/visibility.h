@@ -25,6 +25,7 @@
 #include "raycast.h"
 #include "stats.h"
 #include "droid.h"
+#include "modgrid.h"
 
 #include <string>
 #include <vector>
@@ -116,6 +117,10 @@ inline int objSensorRange(const BASE_OBJECT *psObj)
 	}
 	else if (psObj->type == OBJ_STRUCTURE)
 	{
+		if (((const STRUCTURE *)psObj)->pStructureType->requiresPower && !modgrid::isPowered((const STRUCTURE *)psObj))
+		{
+			return 0;   // MOD: ohne Strom keine Sensorreichweite
+		}
 		const int ecmrange = ((const STRUCTURE *)psObj)->pStructureType->pECM->upgrade[psObj->player].range;
 		if (ecmrange)
 		{

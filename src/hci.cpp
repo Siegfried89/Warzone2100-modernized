@@ -79,6 +79,7 @@
 #include "modformation.h"
 #include "modpanel.h"
 #include "modlayer.h"
+#include "modgrid.h"
 #include "moddesigner.h"
 #include "qtscript.h"
 #include "chat.h"
@@ -710,6 +711,7 @@ void interfaceShutDown()
 	moddesigner::shutdown(); // MOD
 	modpanel::shutdown();    // MOD
 	modlayer::shutdown();    // MOD
+	modgrid::reset();        // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed
 
 	destroyReplayControllerOverlay();
@@ -2113,6 +2115,13 @@ static void intDisplaySensorModeButton(WIDGET *psWidget, UDWORD xOffset, UDWORD 
 		}
 	}
 	iV_Line(int(cx), int(cy), int(cx + r * 0.75f), int(cy - r * 0.75f), sweepCol); // Radarstrahl
+	if (mode == 4) // MOD: Stromnetz-Anzeige: gelber Blitz
+	{
+		const PIELIGHT yel = pal_RGBA(255, 220, 60, 255);
+		iV_Line(int(cx + r * 0.3f), int(cy - r), int(cx - r * 0.4f), int(cy + r * 0.1f), yel);
+		iV_Line(int(cx - r * 0.4f), int(cy + r * 0.1f), int(cx + r * 0.35f), int(cy + r * 0.1f), yel);
+		iV_Line(int(cx + r * 0.35f), int(cy + r * 0.1f), int(cx - r * 0.3f), int(cy + r), yel);
+	}
 	iV_Line(int(cx - r), int(cy), int(cx + r), int(cy), pal_RGBA(60, 70, 80, 160));
 	iV_Line(int(cx), int(cy - r), int(cx), int(cy + r), pal_RGBA(60, 70, 80, 160));
 }
@@ -2199,7 +2208,7 @@ static void intAddSensorModeButton()
 	sButInit.width = 28;
 	sButInit.height = 28;
 	sButInit.pDisplay = intDisplaySensorModeButton;
-	sButInit.pTip = _("Range rings: off / sensor / weapons / both");
+	sButInit.pTip = _("Range rings: off / sensor / weapons / both / power grid");
 	sButInit.x = RET_X;
 	sButInit.y = RET_Y - 32;
 	auto pButton = widgAddButton(psWScreen, &sButInit);

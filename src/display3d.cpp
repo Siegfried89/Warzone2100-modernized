@@ -93,6 +93,7 @@
 #include "ssao.h"
 #include "ssr.h"
 #include "range_rings.h"
+#include "modgrid.h"
 #include "scene_effect_surfaces.h"
 #include "multistat.h"
 #include "animation.h"
@@ -4965,6 +4966,7 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 		dragBox3D.status = DRAG_INACTIVE;
 	}
 
+	modgrid::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Stromkabel / Stromnetz-Anzeige
 	drawDroidAndStructureSelections();
 
 	pie_SetFogStatus(false);

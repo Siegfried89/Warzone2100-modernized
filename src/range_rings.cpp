@@ -483,13 +483,13 @@ int getMode() { return s_mode; }
 void setMode(int mode)
 {
 	s_modeTouched = true;
-	s_mode = mode & 3;
+	s_mode = (mode < 0 || mode > 4) ? 0 : mode;   // 0 aus, 1 Sensor, 2 Waffen, 3 beides, 4 Stromnetz
 	setRangeOnScreen(s_mode != 0);
 }
 int cycleMode()
 {
-	// Reihenfolge: aus -> nur Sensor -> nur Waffen -> beides -> aus
-	setMode((s_mode + 1) & 3);
+	// Reihenfolge: aus -> nur Sensor -> nur Waffen -> beides -> Stromnetz -> aus
+	setMode((s_mode + 1) % 5);
 	return s_mode;
 }
 

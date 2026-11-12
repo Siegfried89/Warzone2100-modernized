@@ -769,6 +769,7 @@ bool loadStructureStats(WzConfig &ini)
 		ASSERT(types <= 1, "Too many turret types for structure '%s'", getID(psStats));
 
 		psStats->combinesWithWall = ini.value("combinesWithWall", false).toBool();
+		psStats->requiresPower = ini.value("requiresPower", false).toBool();   // MOD
 
 		ini.endGroup();
 

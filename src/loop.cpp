@@ -108,6 +108,7 @@
 
 #ifdef DEBUG
 #include "objmem.h"
+#include "modgrid.h"
 #endif
 
 #include <numeric>
@@ -566,6 +567,9 @@ static void gameStateUpdate()
 	// Every client has processed the same messages at this point,
 	// unlike right after recvMessage, which runs at frame-dependent times.
 	visFlushCoverageChanges();
+
+	// MOD: Stromnetz neu berechnen (hoechstens einmal je Spielsekunde), bevor Sichtbarkeit und Strukturen es lesen
+	modgrid::update();
 
 	if (!paused && !scriptPaused())
 	{

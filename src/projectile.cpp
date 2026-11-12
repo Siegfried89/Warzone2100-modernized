@@ -968,7 +968,14 @@ static PROJECTILE* proj_InFlightFunc(PROJECTILE *psProj)
 	closestCollisionSpacetime.time = 0xFFFFFFFF;
 
 	/* Check nearby objects for possible collisions */
-	for (BASE_OBJECT *psTempObj : gridStartIterate(psProj->pos.x, psProj->pos.y, PROJ_NEIGHBOUR_RANGE))
+	// Mod: very fast projectiles (flightSpeed far above the original values) cover many tiles per game tick.
+	// Search around the middle of the swept segment with a radius that includes half of the segment,
+	// otherwise targets between the previous and the current position would be skipped (tunnelling).
+	const Vector3i sweepStart = psProj->prevSpacetime.pos;
+	const int32_t sweepMidX = (sweepStart.x + psProj->pos.x) / 2;
+	const int32_t sweepMidY = (sweepStart.y + psProj->pos.y) / 2;
+	const uint32_t sweepRadius = PROJ_NEIGHBOUR_RANGE + iHypot((psProj->pos - sweepStart).xy()) / 2;
+	for (BASE_OBJECT *psTempObj : gridStartIterate(sweepMidX, sweepMidY, sweepRadius))
 	{
 		CHECK_OBJECT(psTempObj);
 
