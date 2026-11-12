@@ -974,55 +974,78 @@ void displayEntryButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int w = psWidget->width(), h = psWidget->height();
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
 	const bool down = (b->getState() & WBUT_DOWN) != 0;
-	const int lift = hl ? 28 : 0;
-	// Farbverlauf im WZ-Blau
-	for (int i = 0; i < h; ++i)
-	{
-		const float t = h > 1 ? static_cast<float>(i) / static_cast<float>(h - 1) : 0.f;
-		const int r = static_cast<int>(8 + 6 * t) + lift / 3;
-		const int g = static_cast<int>(40 + 52 * t) + lift;
-		const int bl = static_cast<int>(112 + 84 * t) + lift;
-		pie_BoxFill(x0, y0 + i, x0 + w, y0 + i + 1, pal_RGBA(static_cast<uint8_t>(std::min(255, r)), static_cast<uint8_t>(std::min(255, g)), static_cast<uint8_t>(std::min(255, bl)), 255));
-	}
-	// Rand: hell oben/links, dunkel unten/rechts (bei gedrueckter Taste umgekehrt)
-	const PIELIGHT light = pal_RGBA(150, 215, 255, 255), dark = pal_RGBA(0, 18, 56, 255);
-	iV_Line(x0, y0, x0 + w - 1, y0, down ? dark : light);
-	iV_Line(x0, y0, x0, y0 + h - 1, down ? dark : light);
-	iV_Line(x0 + w - 1, y0, x0 + w - 1, y0 + h - 1, down ? light : dark);
-	iV_Line(x0, y0 + h - 1, x0 + w - 1, y0 + h - 1, down ? light : dark);
-	if (hl) { iV_Box(x0 + 1, y0 + 1, x0 + w - 2, y0 + h - 2, pal_RGBA(40, 235, 255, 230)); }
+	const int lift = hl ? 26 : 0;
+	const unsigned now = realTime;
 
-	// weisse Combot-Silhouette auf einem 24 x 40 Raster
+	// Aussenrahmen (dunkel) und Schatten
+	pie_BoxFill_alpha(x0 + 3, y0 + 3, x0 + w + 3, y0 + h + 3, pal_RGBA(0, 0, 0, 90));
+	pie_BoxFill(x0, y0, x0 + w, y0 + h, pal_RGBA(2, 10, 30, 255));
+	// Farbverlauf im WZ-Blau, innen
+	const int in = 3;
+	for (int i = in; i < h - in; ++i)
+	{
+		const float t = static_cast<float>(i - in) / static_cast<float>(h - 2 * in - 1);
+		const int r = static_cast<int>(6 + 10 * t) + lift / 3;
+		const int g = static_cast<int>(36 + 58 * t) + lift;
+		const int bl = static_cast<int>(104 + 96 * t) + lift;
+		pie_BoxFill(x0 + in, y0 + i, x0 + w - in, y0 + i + 1, pal_RGBA(static_cast<uint8_t>(std::min(255, r)), static_cast<uint8_t>(std::min(255, g)), static_cast<uint8_t>(std::min(255, bl)), 255));
+	}
+	// dunkle Bildflaeche fuer die Silhouette mit feinem Raster
+	const int px0 = x0 + 8, py0 = y0 + 8, px1 = x0 + w - 8, py1 = y0 + h - 36;
+	pie_BoxFill_alpha(px0, py0, px1, py1, pal_RGBA(2, 14, 44, 200));
+	for (int gy = py0 + 8; gy < py1; gy += 8) { pie_BoxFill_alpha(px0, gy, px1, gy + 1, pal_RGBA(40, 150, 220, 40)); }
+	for (int gx = px0 + 8; gx < px1; gx += 8) { pie_BoxFill_alpha(gx, py0, gx + 1, py1, pal_RGBA(40, 150, 220, 40)); }
+	// wandernder Abtast-Strahl
+	{
+		const int span = std::max(1, py1 - py0 - 2);
+		const int sy = py0 + 1 + static_cast<int>((now % 2600u) * static_cast<unsigned>(span) / 2600u);
+		pie_BoxFill_alpha(px0, sy, px1, sy + 2, pal_RGBA(60, 240, 255, hl ? 120 : 70));
+	}
+	// weisse Combot-Silhouette (24 x 40 Raster), links hell, rechts leicht abgedunkelt = Plastizitaet
 	struct R { int x0, y0, x1, y1; };
 	static const R body[] = {
-		{ 10, 1, 14, 5 },    // Kopf
-		{ 11, 5, 13, 6 },    // Hals
-		{ 5, 6, 19, 9 },     // Schultern
-		{ 7, 9, 17, 17 },    // Brust
-		{ 8, 17, 16, 22 },   // Bauch
-		{ 8, 22, 16, 25 },   // Becken
-		{ 3, 8, 6, 19 },     // rechter Arm
-		{ 18, 8, 21, 19 },   // linker Arm
-		{ 2, 19, 6, 27 },    // rechte Waffe
-		{ 18, 19, 22, 27 },  // linke Waffe
-		{ 8, 25, 11, 34 },   // rechtes Bein
-		{ 13, 25, 16, 34 },  // linkes Bein
-		{ 7, 34, 11, 38 },   // rechter Fuss
-		{ 13, 34, 17, 38 },  // linker Fuss
+		{ 10, 1, 14, 5 }, { 11, 5, 13, 6 }, { 5, 6, 19, 9 }, { 7, 9, 17, 17 }, { 8, 17, 16, 22 }, { 8, 22, 16, 25 },
+		{ 3, 8, 6, 19 }, { 18, 8, 21, 19 }, { 2, 19, 6, 27 }, { 18, 19, 22, 27 },
+		{ 8, 25, 11, 34 }, { 13, 25, 16, 34 }, { 7, 34, 11, 38 }, { 13, 34, 17, 38 },
 	};
-	const float k = std::min(static_cast<float>(w) / 27.f, static_cast<float>(h - 14) / 40.f);
-	const int ox = x0 + static_cast<int>((w - 24 * k) / 2.f), oy = y0 + 4 + (down ? 1 : 0);
-	const PIELIGHT white = pal_RGBA(255, 255, 255, hl ? 255 : 235);
+	const float k = std::min(static_cast<float>(px1 - px0 - 4) / 24.f, static_cast<float>(py1 - py0 - 4) / 40.f);
+	const int ox = px0 + static_cast<int>(((px1 - px0) - 24 * k) / 2.f), oy = py0 + 2 + (down ? 1 : 0);
+	const unsigned char wa = hl ? 255 : 238;
+	const PIELIGHT white = pal_RGBA(255, 255, 255, wa), shade = pal_RGBA(150, 195, 235, wa);
 	for (const R &r : body)
 	{
-		pie_BoxFill(ox + static_cast<int>(r.x0 * k), oy + static_cast<int>(r.y0 * k), ox + static_cast<int>(r.x1 * k), oy + static_cast<int>(r.y1 * k), white);
+		const int ax = ox + static_cast<int>(r.x0 * k), ay = oy + static_cast<int>(r.y0 * k);
+		const int bx = ox + static_cast<int>(r.x1 * k), by = oy + static_cast<int>(r.y1 * k);
+		const int mx = (ax + bx) / 2;
+		pie_BoxFill(ax, ay, mx, by, white);
+		pie_BoxFill(mx, ay, bx, by, shade);
 	}
 	// Sichtband im Kopf
 	pie_BoxFill(ox + static_cast<int>(10.8f * k), oy + static_cast<int>(2.6f * k), ox + static_cast<int>(13.2f * k), oy + static_cast<int>(3.6f * k), pal_RGBA(8, 40, 112, 255));
+
+	// Rahmen: hell oben/links, dunkel unten/rechts (gedrueckt umgekehrt), Ecken abgeschraegt
+	const PIELIGHT edgeL = pal_RGBA(170, 230, 255, 255), edgeD = pal_RGBA(0, 20, 60, 255);
+	const PIELIGHT cyanEdge = hl ? pal_RGBA(70, 245, 255, 255) : pal_RGBA(40, 170, 230, 255);
+	iV_Line(x0 + 1, y0 + 1, x0 + w - 2, y0 + 1, down ? edgeD : edgeL);
+	iV_Line(x0 + 1, y0 + 1, x0 + 1, y0 + h - 2, down ? edgeD : edgeL);
+	iV_Line(x0 + w - 2, y0 + 1, x0 + w - 2, y0 + h - 2, down ? edgeL : edgeD);
+	iV_Line(x0 + 1, y0 + h - 2, x0 + w - 2, y0 + h - 2, down ? edgeL : edgeD);
+	iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, cyanEdge);
+	// Eckenwinkel (Leuchtmarken) in der Bildflaeche
+	const PIELIGHT mark = pal_RGBA(90, 250, 255, 230);
+	const int L = 6;
+	iV_Line(px0, py0, px0 + L, py0, mark); iV_Line(px0, py0, px0, py0 + L, mark);
+	iV_Line(px1 - 1, py0, px1 - 1 - L, py0, mark); iV_Line(px1 - 1, py0, px1 - 1, py0 + L, mark);
+	iV_Line(px0, py1 - 1, px0 + L, py1 - 1, mark); iV_Line(px0, py1 - 1, px0, py1 - 1 - L, mark);
+	iV_Line(px1 - 1, py1 - 1, px1 - 1 - L, py1 - 1, mark); iV_Line(px1 - 1, py1 - 1, px1 - 1, py1 - 1 - L, mark);
+	if (hl) { iV_Box(x0 + 2, y0 + 2, x0 + w - 3, y0 + h - 3, pal_RGBA(40, 235, 255, 150)); }
+
+	// Beschriftung zweizeilig
 	if (modui::ready())
 	{
-		const std::string t = "COMBOT";
-		modui::text(t, x0 + (w - modui::textWidth(t)) / 2, y0 + h - 12, pal_RGBA(235, 250, 255, 255));
+		const std::string t1 = "COMBOT", t2 = "DESIGNER";
+		modui::text(t1, x0 + (w - modui::textWidth(t1)) / 2, y0 + h - 31, pal_RGBA(235, 250, 255, 255));
+		modui::text(t2, x0 + (w - modui::textWidth(t2)) / 2, y0 + h - 18, hl ? pal_RGBA(120, 250, 255, 255) : pal_RGBA(150, 215, 255, 255));
 	}
 }
 

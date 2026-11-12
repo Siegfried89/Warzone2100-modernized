@@ -697,22 +697,22 @@ bool intAddDesign(bool bShowCentreScreen)
 		return false;
 	}
 
-	/* MOD: tall blue Combot designer button (right of the 3D view) */
+	/* MOD: Combot-Designer-Knopf: ausserhalb des blauen Design-Fensters, rechts daneben (eigenes Widget am Bildschirm) */
 	{
 		W_BUTINIT sComButInit;
-		sComButInit.formID = IDDES_FORM;
 		sComButInit.id = IDDES_COMBOT;
 		sComButInit.style = WBUT_PLAIN;
-		sComButInit.x = DES_3DVIEWX + DES_3DVIEWWIDTH + 8;
-		sComButInit.y = DES_3DVIEWY;
-		sComButInit.width = 57;
-		sComButInit.height = 95;
+		sComButInit.x = DES_CENTERFORMX + DES_CENTERFORMWIDTH + 8;
+		sComButInit.y = DES_CENTERFORMY + DES_3DVIEWY;
+		sComButInit.width = 74;
+		sComButInit.height = 128;
 		sComButInit.pTip = _("Combot Designer");
 		sComButInit.pDisplay = moddesigner::displayEntryButton;
-		if (!widgAddButton(psWScreen, &sComButInit))
-		{
-			return false;
-		}
+		auto comBtn = std::make_shared<W_BUTTON>(&sComButInit);
+		parent->attach(comBtn);
+		comBtn->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
+			psWidget->setGeometry(DES_CENTERFORMX + DES_CENTERFORMWIDTH + 8, DES_CENTERFORMY + DES_3DVIEWY, 74, 128);
+		}));
 	}
 
 	/* Add the part button form */
@@ -2990,6 +2990,7 @@ void intRemoveDesign()
 	widgDelete(psWScreen, IDDES_PROPFORM);
 	widgDelete(psWScreen, IDDES_SYSTEMFORM);
 
+	widgDelete(psWScreen, IDDES_COMBOT); // MOD
 	widgDelete(psWScreen, IDDES_FORM);
 	widgDelete(psWScreen, IDDES_STATSFORM);
 

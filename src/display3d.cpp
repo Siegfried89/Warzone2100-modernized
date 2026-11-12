@@ -3579,6 +3579,22 @@ static void modQueueBarSegments(BatchedMultiRectRenderer& renderer, size_t rectG
 	}
 }
 
+// MOD: Lebensbalken: breiter (mind. 22 Pixel je Seite) und 9 Pixel hoch, damit er wie ein Balken aussieht und nicht wie ein Strich
+static int modBarHalf(UDWORD screenR)
+{
+	return std::max(static_cast<int>(screenR), 22);
+}
+
+static void modQueueHealthBar(BatchedMultiRectRenderer& renderer, size_t rectGroup, int cx, int cy, int half, int fillPx, PIELIGHT col, PIELIGHT colShadow)
+{
+	const int x0 = cx - half;
+	const int y0 = cy + 2;
+	renderer.addRect(PIERECT_DrawRequest(x0 - 1, y0, cx + half + 1, y0 + 10, WZCOL_RELOAD_BACKGROUND), rectGroup);
+	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fillPx, y0 + 6, col), rectGroup);
+	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 6, x0 + fillPx, y0 + 9, colShadow), rectGroup);
+	modQueueBarSegments(renderer, rectGroup, x0, 2 * half, y0 + 1, y0 + 9);
+}
+
 static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup)
 {
 	UDWORD damage = PERCENT(psDroid->body, psDroid->originalBody);
@@ -3614,10 +3630,11 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 		powerColShadow = WZCOL_HEALTH_LOW_SHADOW;
 	}
 
-	damage = static_cast<UDWORD>((float)psDroid->body / (float)psDroid->originalBody * (float)psDroid->sDisplay.screenR);
-	if (damage > psDroid->sDisplay.screenR)
+	const int barHalf = modBarHalf(psDroid->sDisplay.screenR);
+	damage = static_cast<UDWORD>((float)psDroid->body / (float)psDroid->originalBody * (float)barHalf);
+	if (damage > static_cast<UDWORD>(barHalf))
 	{
-		damage = psDroid->sDisplay.screenR;
+		damage = static_cast<UDWORD>(barHalf);
 	}
 
 	damage *= 2;
@@ -3631,10 +3648,7 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 	}
 
 	/* Power bars */
-	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 1, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 2, psDroid->sDisplay.screenX + psDroid->sDisplay.screenR + 1, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 6, WZCOL_RELOAD_BACKGROUND), rectGroup);
-	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX - psDroid->sDisplay.screenR, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 3, psDroid->sDisplay.screenX - psDroid->sDisplay.screenR + damage, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 4, powerCol), rectGroup);
-	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX - psDroid->sDisplay.screenR, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 4, psDroid->sDisplay.screenX - psDroid->sDisplay.screenR + damage, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 5, powerColShadow), rectGroup);
-	modQueueBarSegments(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX) - static_cast<int>(psDroid->sDisplay.screenR), 2 * static_cast<int>(psDroid->sDisplay.screenR), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR) + 3, static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR) + 5);
+	modQueueHealthBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), barHalf, static_cast<int>(damage), powerCol, powerColShadow);
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(
 		psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 3,
 		psDroid->sDisplay.screenY + psDroid->sDisplay.screenR,
@@ -3706,10 +3720,11 @@ static void queueDroidEnemyHealthBarsRects(DROID *psDroid, BatchedMultiRectRende
 	{
 		mulH = (float)psDroid->body / (float)psDroid->originalBody;
 	}
-	damage = static_cast<UDWORD>(mulH * (float)psDroid->sDisplay.screenR);// (((psDroid->sDisplay.screenR*10000)/100)*damage)/10000;
-	if (damage > psDroid->sDisplay.screenR)
+	const int barHalf = modBarHalf(psDroid->sDisplay.screenR);
+	damage = static_cast<UDWORD>(mulH * (float)barHalf);
+	if (damage > static_cast<UDWORD>(barHalf))
 	{
-		damage = psDroid->sDisplay.screenR;
+		damage = static_cast<UDWORD>(barHalf);
 	}
 	damage *= 2;
 	auto scrX = psDroid->sDisplay.screenX;
@@ -3725,10 +3740,7 @@ static void queueDroidEnemyHealthBarsRects(DROID *psDroid, BatchedMultiRectRende
 		boxCol = WZCOL_WHITE;
 
 		/* Power bars */
-		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(scrX - scrR - 1, scrY + scrR + 2, scrX + scrR + 1, scrY + scrR + 6, WZCOL_RELOAD_BACKGROUND), rectGroup);
-		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(scrX - scrR, scrY + scrR + 3, scrX - scrR + damage, scrY + scrR + 4, powerCol), rectGroup);
-		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(scrX - scrR, scrY + scrR + 4, scrX - scrR + damage, scrY + scrR + 5, powerColShadow), rectGroup);
-		modQueueBarSegments(batchedMultiRectRenderer, rectGroup, static_cast<int>(scrX) - static_cast<int>(scrR), 2 * static_cast<int>(scrR), static_cast<int>(scrY) + static_cast<int>(scrR) + 3, static_cast<int>(scrY) + static_cast<int>(scrR) + 5);
+		modQueueHealthBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(scrX), static_cast<int>(scrY) + static_cast<int>(scrR), barHalf, static_cast<int>(damage), powerCol, powerColShadow);
 	}
 }
 
