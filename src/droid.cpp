@@ -315,6 +315,11 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 		damage *= 3;
 	}
 
+	if (modoil::droidInTrench(psDroid))
+	{
+		damage = damage * 45 / 100;   // MOD: Infanterie im Graben / in der Grube nimmt weniger als die Haelfte
+	}
+
 	const UDWORD modBodyBefore = psDroid->body;
 	relativeDamage = objDamage(psDroid, psProjectile, damage, psDroid->originalBody, weaponClass, weaponSubClass, isDamagePerSecond, minDamage, empRadiusHit);
 	if (relativeDamage > 0 && psDroid->body < modBodyBefore && modcombot::isModular(psDroid))

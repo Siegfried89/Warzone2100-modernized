@@ -41,6 +41,7 @@
 #include "astar.h"
 
 #include "fpath.h"
+#include "modoil.h"
 #include "pathfinding_backend.h"
 #include "congestion_overlay.h"
 #include "profiling.h"
@@ -388,7 +389,11 @@ bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PR
 	unsigned unitbits = prop2bits(propulsion);  // TODO - cache prop2bits to psDroid, and pass in instead of propulsion type
 	if ((unitbits & FEATURE_BLOCKED) != 0 && (aux & auxMask) != 0)
 	{
-		return true;	// move blocked by building, and we cannot or do not want to shoot our way through anything
+		// MOD: Infanterie (Beine) darf Graeben und Gruben betreten
+		if (propulsion != PROPULSION_TYPE_LEGGED || !modoil::tilePassableForInfantry(mapState, x, y))
+		{
+			return true;	// move blocked by building, and we cannot or do not want to shoot our way through anything
+		}
 	}
 
 	// the MAX hack below is because blockTile() range does not include player-specific versions...

@@ -95,6 +95,7 @@ std::map<uint32_t, int> s_store;            // Wasserturm (Feature) -> rohe Faes
 std::map<uint32_t, int> s_storeR;           // Wasserturm (Feature) -> veredelte Faesser
 std::map<uint32_t, int> s_refIn, s_refOut, s_refT;   // Raffinerie: Eingang, Ausgang, Sekunden im laufenden Fass
 std::map<uint32_t, CargoState> s_cargo;     // Lkw -> Zustand
+std::map<std::pair<int, int>, int> s_lowered;   // tiefe Graeben: abgesenkter Eckpunkt -> urspruengliche Hoehe
 std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
 bool s_have = false;
@@ -325,6 +326,7 @@ void reset()
 	s_refOut.clear();
 	s_refT.clear();
 	s_cargo.clear();
+	s_lowered.clear();
 	s_booms.clear();
 	s_repl.clear();
 	s_have = false;
@@ -346,6 +348,20 @@ void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne)
 		b++;
 		p -= full;
 	}
+}
+
+bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY)
+{
+	const MAPTILE *t = mapTile(mapState, tileX, tileY);
+	if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_STRUCTURE) { return false; }
+	const STRUCTURE *s = static_cast<const STRUCTURE *>(t->psObject);
+	return s->pStructureType != nullptr && s->pStructureType->infantryPassable && s->status == SS_BUILT;
+}
+
+bool droidInTrench(const DROID *d)
+{
+	if (d == nullptr || d->getPropulsionStats() == nullptr || d->getPropulsionStats()->propulsionType != PROPULSION_TYPE_LEGGED) { return false; }
+	return tilePassableForInfantry(gameWorld.map, map_coord(d->pos.x), map_coord(d->pos.y));
 }
 
 bool generatorRunning(const STRUCTURE *psGen)
@@ -422,6 +438,8 @@ void onDroidDestroyed(const DROID *psDel)
 
 namespace
 {
+
+void updateTerrain();
 
 struct Snap
 {
@@ -821,7 +839,62 @@ void logistics()
 		s_repl.push_back(r);
 	}
 
+	updateTerrain();
+
 	syncDebug("modoil b%zu f%zu c%zu", s_barrels.size(), s_fuel.size(), s_cargo.size());
+}
+
+// ---------------------------------------------------------------- tiefe Graeben: Gelaende absenken
+
+constexpr int TRENCH_DEPTH = 20;
+
+bool isDeepTrench(const STRUCTURE_STATS *st)
+{
+	if (st == nullptr || !st->infantryPassable) { return false; }
+	return st->id.toUtf8().find("Deep") != std::string::npos;
+}
+
+void updateTerrain()
+{
+	std::set<std::pair<int, int>> want;
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s == nullptr || s->died || s->status != SS_BUILT || !isDeepTrench(s->pStructureType)) { continue; }
+			const int tx = map_coord(s->pos.x), ty = map_coord(s->pos.y);
+			for (int dx = 0; dx <= 1; dx++)
+			{
+				for (int dy = 0; dy <= 1; dy++)
+				{
+					const int vx = tx + dx, vy = ty + dy;
+					if (vx > 0 && vy > 0 && vx < static_cast<int>(gameWorld.map.width) - 1 && vy < static_cast<int>(gameWorld.map.height) - 1)
+					{
+						want.insert(std::make_pair(vx, vy));
+					}
+				}
+			}
+		}
+	}
+	if (want.empty() && s_lowered.empty()) { return; }
+	for (const auto &v : want)
+	{
+		if (s_lowered.find(v) == s_lowered.end())
+		{
+			const int h = map_TileHeight(gameWorld.map, v.first, v.second);
+			s_lowered[v] = h;
+			setTileHeight(gameWorld.map, v.first, v.second, h - TRENCH_DEPTH);
+		}
+	}
+	for (auto it = s_lowered.begin(); it != s_lowered.end();)
+	{
+		if (want.count(it->first) == 0)
+		{
+			setTileHeight(gameWorld.map, it->first.first, it->first.second, it->second);
+			it = s_lowered.erase(it);
+		}
+		else { ++it; }
+	}
 }
 
 } // namespace

@@ -12,6 +12,7 @@
 struct STRUCTURE;
 struct FEATURE;
 struct DROID;
+struct WorldMapState;
 
 namespace modoil
 {
@@ -23,6 +24,10 @@ void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne);
 void tick();
 /// laeuft das Kraftwerk (hat es Brennstoff)? Immer wahr fuer Spieler ohne Fass-Wirtschaft.
 bool generatorRunning(const STRUCTURE *psGen);
+/// steht auf diesem Feld ein fertiges Bauwerk mit "infantryPassable" (Graben, Grube)?
+bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY);
+/// steht die Infanterie (Beine) im Graben / in der Grube? (Schadensminderung)
+bool droidInTrench(const DROID *psDroid);
 /// Hooks beim Zerstoeren (vor dem Entfernen aufrufen)
 void onStructureDestroyed(const STRUCTURE *psDel);
 void onFeatureDestroyed(const FEATURE *psDel);

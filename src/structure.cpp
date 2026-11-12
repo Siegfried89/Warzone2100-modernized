@@ -771,6 +771,7 @@ bool loadStructureStats(WzConfig &ini)
 
 		psStats->combinesWithWall = ini.value("combinesWithWall", false).toBool();
 		psStats->requiresPower = ini.value("requiresPower", false).toBool();   // MOD
+		psStats->infantryPassable = ini.value("infantryPassable", false).toBool();   // MOD
 
 		ini.endGroup();
 

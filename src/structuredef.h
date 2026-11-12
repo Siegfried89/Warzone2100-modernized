@@ -123,6 +123,7 @@ struct STRUCTURE_STATS : public BASE_STATS
 	struct WEAPON_STATS *psWeapStat[MAX_WEAPONS];
 	uint64_t flags;
 	bool combinesWithWall;			//If the structure will trigger nearby walls to try combining with it
+	bool infantryPassable = false;	// MOD: Infanterie darf das Feld betreten (Graeben, Gruben) und bekommt dort Schutz
 	bool requiresPower = false;		// MOD: arbeitet nur im Versorgungsbereich eines gespeisten Strommastes (siehe modgrid)
 
 	unsigned minLimit;		///< lowest value user can set limit to (currently unused)
