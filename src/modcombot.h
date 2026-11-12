@@ -6,7 +6,7 @@
 #include <functional>
 #include <string>
 #include <vector>
-#include <glm/glm.hpp>
+#include "lib/framework/vector.h"
 
 #include "lib/ivis_opengl/pietypes.h"
 
