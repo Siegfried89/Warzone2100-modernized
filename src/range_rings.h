@@ -42,6 +42,11 @@ void recordSdfWeapon(const gfx_api::RenderPassContext& passCtx);
 void recordSdfMin(const gfx_api::RenderPassContext& passCtx);
 void recordComposite(const gfx_api::RenderPassContext& passCtx);
 
+/// MOD: Anzeigemodus 0 aus, 1 Sensor, 2 Waffen, 3 beides
+int getMode();
+void setMode(int mode);
+int cycleMode();
+
 /// CPU hook for the unused debug API (weapon channel). radius <= 0 clears.
 void setDebugRange(float centerX, float centerYGame, float radius);
 

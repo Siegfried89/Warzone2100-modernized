@@ -3932,6 +3932,16 @@ void structureUpdate(STRUCTURE *psBuilding, GameWorld& world)
 
 	syncDebugStructure(psBuilding, '<');
 
+	// MOD: Staubwolke an der Baustelle, solange gebaut wird
+	if (!bMission && psBuilding->status == SS_BEING_BUILT && psBuilding->lastBuildRate > 0 && gameTime > psBuilding->lastEmission + 350)
+	{
+		psBuilding->lastEmission = gameTime;
+		const int ex = psBuilding->pos.x + (static_cast<int>(gameRand(61)) - 30);
+		const int ey = psBuilding->pos.y + (static_cast<int>(gameRand(61)) - 30);
+		Vector3i dustPos(ex, map_Height(gameWorld.map, ex, ey) + 4, ey);
+		addEffect(&dustPos, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_SMALL, false, nullptr, 0, gameTime);
+	}
+
 	if (psBuilding->flags.test(OBJECT_FLAG_DIRTY) && !bMission)
 	{
 		// (A range upgrade refreshes the tile coverage at the end of the tick, see visNoteRangeChange)

@@ -33,6 +33,7 @@
 #include "lib/ivis_opengl/ivisdef.h"
 #include "console.h"
 
+#include "modduel.h"
 #include "move.h"
 
 #include "objects.h"
@@ -2818,6 +2819,7 @@ void moveUpdateDroid(DROID *psDroid)
 	else
 	{
 		moveUpdateGroundModel(psDroid, moveSpeed, moveDir);
+		if (psPropStats->propulsionType == PROPULSION_TYPE_LEGGED) { modduel::updateLeggedAnimation(psDroid, moveSpeed); } // MOD
 	}
 
 	const bool movedTile = map_coord(oldx) != map_coord(psDroid->pos.x) || map_coord(oldy) != map_coord(psDroid->pos.y);

@@ -27,6 +27,7 @@
 #include "baseobject.h"
 #include "display3d_render_graph.h"
 #include "display3d_render_internal.h"
+#include "display3d.h"
 #include "droid.h"
 #include "game_world.h"
 #include "map.h"
@@ -84,6 +85,9 @@ std::vector<gfx_api::RangeRingInstance> s_minRange;
 
 uint32_t s_gatheredFrame = 0;
 bool s_gatheredThisFrame = false;
+
+int s_mode = 0;          // MOD: 0 aus, 1 Sensor, 2 Waffen, 3 beides
+bool s_modeTouched = false;
 
 float s_debugX = 0.f;
 float s_debugY = 0.f;
@@ -319,6 +323,7 @@ void gatherSelected()
 	s_sensor.clear();
 	s_weapon.clear();
 	s_minRange.clear();
+	if (!s_modeTouched && rangeOnScreen && s_mode == 0) { s_mode = 3; } // Altbestand aus der Konfiguration
 
 	if (selectedPlayer >= MAX_PLAYERS)
 	{
@@ -331,8 +336,8 @@ void gatherSelected()
 		{
 			continue;
 		}
-		push(s_sensor, psDroid, static_cast<float>(objSensorRange(psDroid)));
-		pushWeaponAndMin(psDroid);
+		if (s_mode & 1) { push(s_sensor, psDroid, static_cast<float>(objSensorRange(psDroid))); }
+		if (s_mode & 2) { pushWeaponAndMin(psDroid); }
 	}
 
 	for (STRUCTURE* psStruct : gameWorld.objects.structures[selectedPlayer])
@@ -341,8 +346,8 @@ void gatherSelected()
 		{
 			continue;
 		}
-		push(s_sensor, psStruct, static_cast<float>(objSensorRange(psStruct)));
-		pushWeaponAndMin(psStruct);
+		if (s_mode & 1) { push(s_sensor, psStruct, static_cast<float>(objSensorRange(psStruct))); }
+		if (s_mode & 2) { pushWeaponAndMin(psStruct); }
 	}
 
 	if (s_debugRadius > 0.f)
@@ -474,6 +479,20 @@ void shutdown()
 	s_sdfCamera = SdfCamera{};
 }
 
+int getMode() { return s_mode; }
+void setMode(int mode)
+{
+	s_modeTouched = true;
+	s_mode = mode & 3;
+	setRangeOnScreen(s_mode != 0);
+}
+int cycleMode()
+{
+	// Reihenfolge: aus -> nur Sensor -> nur Waffen -> beides -> aus
+	setMode((s_mode + 1) & 3);
+	return s_mode;
+}
+
 void setDebugRange(float centerX, float centerYGame, float radius)
 {
 	if (radius <= 0.f)
@@ -529,9 +548,9 @@ void recordComposite(const gfx_api::RenderPassContext& passCtx)
 	display3d_fillPassReadUvScaleClamp(passCtx, 1, constants.uvScaleClamp);
 	constants.sdfOriginExtent = s_sdfCamera.originExtent;
 	display3d_fillPassReadUvScaleClamp(passCtx, 2, constants.sdfUvScaleClamp);
-	constants.sensorColor = glm::vec4(0.20f, 0.85f, 1.00f, 1.f);
-	constants.weaponColor = glm::vec4(1.00f, 0.45f, 0.15f, 1.f);
-	constants.minRangeColor = glm::vec4(0.75f, 0.35f, 1.00f, 1.f);
+	constants.sensorColor = glm::vec4(0.25f, 0.55f, 1.00f, 1.f)   /* MOD: Blau */;
+	constants.weaponColor = glm::vec4(1.00f, 0.18f, 0.12f, 1.f)   /* MOD: Rot */;
+	constants.minRangeColor = glm::vec4(1.00f, 0.80f, 0.20f, 1.f)   /* MOD: Gold */;
 	constants.fillAlpha = FILL_ALPHA;
 	constants.sdfBand = s_sdfCamera.sdfBand;
 	constants.linearLighting = gfx_api::context::get().linearLightingEnabled() ? 1.f : 0.f;
