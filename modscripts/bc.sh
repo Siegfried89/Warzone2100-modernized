@@ -1,0 +1,2 @@
+S=/tmp/claude-0/cmp/base/stats
+rm -rf out_ca && python3 wz_scale.py --data base mp --structure-json $S/structure.json --out out_ca --replace-structs repl --effects effsrc1 effsrc2 --body-json $S/body.json --weapons-json $S/weapons.json --propulsion-json $S/propulsion.json --sensor-json $S/sensor.json --range-factor 0.5 --speed-factor 0.5 --templates-json $S/templates.json --research-json $S/research.json --features feat/features --features-json $S/features.json --sprite-scav --punk --sprite-run levels 2>&1 | tail -12
