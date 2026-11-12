@@ -32,6 +32,7 @@
 #include "lib/ivis_opengl/ivisdef.h"
 
 #include "feature.h"
+#include "modoil.h"
 #include "map.h"
 #include "hci.h"
 #include "power.h"
@@ -487,6 +488,8 @@ bool destroyFeature(FEATURE *psDel, unsigned impactTime, GameWorld& world)
 
 	ASSERT_OR_RETURN(false, psDel != nullptr, "Invalid feature pointer");
 	ASSERT(gameTime - deltaGameTime < impactTime, "Expected %u < %u, gameTime = %u, bad impactTime", gameTime - deltaGameTime, impactTime, gameTime);
+
+	modoil::onFeatureDestroyed(psDel);   // MOD: Fass-Haufen explodieren mit Kettenreaktion
 
 	/* Only add if visible and damageable*/
 	if (psDel->visibleForLocalDisplay() && psDel->psStats->damageable)

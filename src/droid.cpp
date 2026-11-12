@@ -45,6 +45,7 @@
 #include "modduel.h"
 #include "modcombot.h"
 #include "droid.h"
+#include "modoil.h"
 #include "hci.h"
 #include "power.h"
 #include "effects.h"
@@ -705,6 +706,8 @@ static void removeDroidFX(DROID *psDel, unsigned impactTime)
 bool destroyDroid(DROID *psDel, unsigned impactTime, GameWorld& world)
 {
 	ASSERT(gameTime - deltaGameTime <= impactTime, "Expected %u <= %u, gameTime = %u, bad impactTime", gameTime - deltaGameTime, impactTime, gameTime);
+
+	modoil::onDroidDestroyed(psDel);   // MOD: beladener Lkw explodiert
 
 	if (psDel->lastHitWeapon == WSC_LAS_SAT)		// darken tile if lassat.
 	{

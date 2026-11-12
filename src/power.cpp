@@ -26,6 +26,7 @@
 #include <string.h>
 #include "objectdef.h"
 #include "power.h"
+#include "modoil.h"
 #include "lib/gamelib/gtime.h"
 #include "lib/sound/audio.h"
 #include "objmem.h"
@@ -318,6 +319,8 @@ static void updateCurrentPower(STRUCTURE *psStruct, UDWORD player, int ticks)
 
 	//each power gen can cope with its associated resource extractors
 	int64_t extractedPower = 0;
+	const int multiplier = getBuildingPowerPoints(psStruct);
+	const bool oilEconomy = modoil::manages(static_cast<int>(player));   // MOD: Faesser statt direkter Energie
 	for (int i = 0; i < NUM_POWER_MODULES; ++i)
 	{
 		auto &extractor = psPowerGen->apResExtractors[i];
@@ -327,11 +330,17 @@ static void updateCurrentPower(STRUCTURE *psStruct, UDWORD player, int ticks)
 		}
 		if (extractor)
 		{
-			extractedPower += updateExtractedPower(extractor);
+			if (oilEconomy)
+			{
+				modoil::extract(extractor, (updateExtractedPower(extractor) * multiplier) / 100 * ticks, FP_ONE);
+			}
+			else
+			{
+				extractedPower += updateExtractedPower(extractor);
+			}
 		}
 	}
 
-	int multiplier = getBuildingPowerPoints(psStruct);
 	syncDebug("updateCurrentPower%d = %" PRId64",%u", player, extractedPower, multiplier);
 
 	asPower[player].currentPower += (extractedPower * multiplier) / 100 * ticks;

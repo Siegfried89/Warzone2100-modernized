@@ -94,6 +94,7 @@
 #include "ssr.h"
 #include "range_rings.h"
 #include "modgrid.h"
+#include "modoil.h"
 #include "scene_effect_surfaces.h"
 #include "multistat.h"
 #include "animation.h"
@@ -4966,6 +4967,7 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 		dragBox3D.status = DRAG_INACTIVE;
 	}
 
+	modoil::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Faesser-Anzeige
 	modgrid::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Stromkabel / Stromnetz-Anzeige
 	drawDroidAndStructureSelections();
 

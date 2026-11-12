@@ -42,6 +42,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "modoil.h"
 #include "research.h"
 #include "hci.h"
 #include "power.h"
@@ -4930,6 +4931,8 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 
 	CHECK_STRUCTURE(psDel);
 	ASSERT(gameTime - deltaGameTime <= impactTime, "Expected %u <= %u, gameTime = %u, bad impactTime", gameTime - deltaGameTime, impactTime, gameTime);
+
+	modoil::onStructureDestroyed(psDel);   // MOD: Pipeline-Bruch, Oelturm-Explosion
 
 	/* Firstly, are we dealing with a wall section */
 	const STRUCTURE_TYPE type = psDel->pStructureType->type;

@@ -80,6 +80,7 @@
 #include "modpanel.h"
 #include "modlayer.h"
 #include "modgrid.h"
+#include "modoil.h"
 #include "moddesigner.h"
 #include "qtscript.h"
 #include "chat.h"
@@ -711,6 +712,7 @@ void interfaceShutDown()
 	moddesigner::shutdown(); // MOD
 	modpanel::shutdown();    // MOD
 	modlayer::shutdown();    // MOD
+	modoil::reset();         // MOD
 	modgrid::reset();        // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed
 
@@ -2208,7 +2210,7 @@ static void intAddSensorModeButton()
 	sButInit.width = 28;
 	sButInit.height = 28;
 	sButInit.pDisplay = intDisplaySensorModeButton;
-	sButInit.pTip = _("Range rings: off / sensor / weapons / both / power grid");
+	sButInit.pTip = _("Range rings: off / sensor / weapons / both / power grid + oil barrels");
 	sButInit.x = RET_X;
 	sButInit.y = RET_Y - 32;
 	auto pButton = widgAddButton(psWScreen, &sButInit);

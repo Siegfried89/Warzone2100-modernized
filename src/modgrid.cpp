@@ -2,6 +2,7 @@
 // MOD: Stromnetz, siehe modgrid.h
 
 #include "modgrid.h"
+#include "modoil.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -126,7 +127,7 @@ void update()
 			if (s->status != SS_BUILT) { continue; }
 			const STRUCTURE_STATS *st = s->pStructureType;
 			if (isPole(st)) { poles.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); }
-			else if (st->type == REF_POWER_GEN) { gens.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); }
+			else if (st->type == REF_POWER_GEN) { if (modoil::generatorRunning(s)) { gens.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); } }
 			else if (st->requiresPower) { cons.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); }
 		}
 		if (poles.empty() && gens.empty() && cons.empty()) { continue; }

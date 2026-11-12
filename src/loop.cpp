@@ -108,8 +108,9 @@
 
 #ifdef DEBUG
 #include "objmem.h"
-#include "modgrid.h"
 #endif
+#include "modgrid.h"
+#include "modoil.h"
 
 #include <numeric>
 
@@ -569,6 +570,7 @@ static void gameStateUpdate()
 	visFlushCoverageChanges();
 
 	// MOD: Stromnetz neu berechnen (hoechstens einmal je Spielsekunde), bevor Sichtbarkeit und Strukturen es lesen
+	modoil::tick();     // MOD: Oelkreislauf (Explosionen, Lkw-Autopilot, Pipeline, Kraftwerk-Laufzeit)
 	modgrid::update();
 
 	if (!paused && !scriptPaused())
