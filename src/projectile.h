@@ -99,7 +99,7 @@ int proj_GetMinRange(const WEAPON_STATS& psStats, int player);
 /** Return the short range for a weapon. */
 int proj_GetShortRange(const WEAPON_STATS& psStats, int player);
 
-UDWORD calcDamage(UDWORD baseDamage, WEAPON_EFFECT weaponEffect, const BASE_OBJECT *psTarget);
+UDWORD calcDamage(UDWORD baseDamage, WEAPON_EFFECT weaponEffect, const BASE_OBJECT *psTarget, int energyShare = 0);   // MOD: energyShare = MF-Energieanteil der Waffe (0..100)
 bool gfxVisible(const PROJECTILE *psObj);
 
 /***************************************************************************/

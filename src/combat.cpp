@@ -652,7 +652,7 @@ unsigned int objGuessFutureDamage(WEAPON_STATS *psStats, unsigned int player, BA
 		return 0;    // Hard to destroy the ground. The armour on the mud is very strong and blocks all damage.
 	}
 
-	damage = calcDamage(weaponDamage(*psStats, player), psStats->weaponEffect, psTarget);
+	damage = calcDamage(weaponDamage(*psStats, player), psStats->weaponEffect, psTarget, psStats->energyShare);
 
 	// apply game difficulty setting
 	damage = modifyForDifficultyLevel(damage, psTarget->player != selectedPlayer);

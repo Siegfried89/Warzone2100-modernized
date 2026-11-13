@@ -413,6 +413,7 @@ bool loadWeaponStats(WzConfig &ini)
 		psStats->base.reloadTime = ini.value("reloadTime").toUInt();
 		psStats->base.damage = ini.value("damage").toUInt();
 		psStats->base.minimumDamage = ini.value("minimumDamage", 0).toInt();
+		psStats->energyShare = std::clamp(ini.value("energyShare", 0).toInt(), 0, 100);   // MOD
 		psStats->base.empRadius = ini.value("empRadius", 0).toUInt();
 		psStats->base.radius = ini.value("radius", 0).toUInt();
 		psStats->base.radiusDamage = ini.value("radiusDamage", 0).toUInt();
@@ -678,6 +679,8 @@ bool loadBodyStats(WzConfig &ini)
 
 		psStats->weaponSlots = std::clamp(ini.value("weaponSlots").toInt(), 0, static_cast<int>(MAX_WEAPONS));
 		psStats->bodyClass = ini.value("class").toWzString();
+		psStats->shieldMech = std::clamp(ini.value("shieldMech", 0).toInt(), 0, 90);   // MOD
+		psStats->shieldEnergy = std::clamp(ini.value("shieldEnergy", 0).toInt(), 0, 90);   // MOD
 		psStats->base.thermal = ini.value("armourHeat").toInt();
 		psStats->base.armour = ini.value("armourKinetic").toInt();
 		psStats->base.power = ini.value("powerOutput").toInt();
@@ -943,6 +946,8 @@ bool loadPropulsionStats(WzConfig &ini)
 
 		psStats->base.hitpointPctOfBody = ini.value("hitpointPctOfBody", 0).toInt();
 		psStats->maxSpeed = ini.value("speed").toInt();
+		psStats->shieldMech = std::clamp(ini.value("shieldMech", 0).toInt(), 0, 90);   // MOD
+		psStats->shieldEnergy = std::clamp(ini.value("shieldEnergy", 0).toInt(), 0, 90);   // MOD
 		psStats->ref = STAT_PROPULSION + i;
 		psStats->turnSpeed = ini.value("turnSpeed", DEG(1) / 3).toInt();
 		ASSERT(psStats->turnSpeed != 0, "\"%s\".\"turnSpeed\" is 0", psStats->id.toUtf8().c_str());

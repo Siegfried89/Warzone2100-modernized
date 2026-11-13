@@ -1193,7 +1193,7 @@ static void proj_radiusSweep(PROJECTILE *psObj, WEAPON_STATS *psStats, Vector3i 
 			continue;  // Target out of range.
 		}
 		// The psCurr will get damaged, at this point.
-		unsigned damage = calcDamage(weaponRadDamage(*psStats, psObj->player), psStats->weaponEffect, psCurr);
+		unsigned damage = calcDamage(weaponRadDamage(*psStats, psObj->player), psStats->weaponEffect, psCurr, psStats->energyShare);
 		debug(LOG_ATTACK, "Damage to object %d, player %d : %u", psCurr->id, psCurr->player, damage);
 		if (bMultiPlayer && psObj->psSource != nullptr && psCurr->type != OBJ_FEATURE)
 		{
@@ -1364,7 +1364,7 @@ static void proj_ImpactFunc(PROJECTILE *psObj)
 		{
 			// If we did enough `damage' to capture the target
 			if (electronicDamage(psObj->psDest, psObj->psSource,
-			                     calcDamage(weaponDamage(*psStats, psObj->player), psStats->weaponEffect, psObj->psDest),
+			                     calcDamage(weaponDamage(*psStats, psObj->player), psStats->weaponEffect, psObj->psDest, psStats->energyShare),
 			                     psObj->player, psStats->flags.test(WEAPON_FLAG_TELEPORT_CAPTURE)))
 			{
 				switch (psObj->psSource->type)
@@ -1389,7 +1389,7 @@ static void proj_ImpactFunc(PROJECTILE *psObj)
 		else
 		{
 			// Calculate the damage the weapon does to its target
-			unsigned int damage = calcDamage(weaponDamage(*psStats, psObj->player), psStats->weaponEffect, psObj->psDest);
+			unsigned int damage = calcDamage(weaponDamage(*psStats, psObj->player), psStats->weaponEffect, psObj->psDest, psStats->energyShare);
 
 			// If we are in a multi-player game and the attacker is our responsibility
 			if (bMultiPlayer && psObj->psSource)
@@ -1659,7 +1659,7 @@ static void proj_checkPeriodicalDamage(PROJECTILE *psProj)
 			psCurr->periodicalDamageStart = gameTime;
 			psCurr->periodicalDamage = 0;  // Reset periodical damage done this tick.
 		}
-		unsigned damageRate = calcDamage(weaponPeriodicalDamage(*psStats, psProj->player), psStats->periodicalDamageWeaponEffect, psCurr);
+		unsigned damageRate = calcDamage(weaponPeriodicalDamage(*psStats, psProj->player), psStats->periodicalDamageWeaponEffect, psCurr, psStats->energyShare);
 		debug(LOG_NEVER, "Periodical damage of %d per second to object %d, player %d\n", damageRate, psCurr->id, psCurr->player);
 
 		struct DAMAGE sDamage = {
@@ -1772,7 +1772,7 @@ ObjectShape establishTargetShape(const BASE_OBJECT *psTarget)
 
 /*the damage depends on the weapon effect and the target propulsion type or
 structure strength*/
-UDWORD	calcDamage(UDWORD baseDamage, WEAPON_EFFECT weaponEffect, const BASE_OBJECT *psTarget)
+UDWORD	calcDamage(UDWORD baseDamage, WEAPON_EFFECT weaponEffect, const BASE_OBJECT *psTarget, int energyShare)
 {
 	if (baseDamage == 0)
 	{
@@ -1791,6 +1791,20 @@ UDWORD	calcDamage(UDWORD baseDamage, WEAPON_EFFECT weaponEffect, const BASE_OBJE
 		const int body = ((const DROID*)psTarget)->getBodyStats()->size;
 		damage += baseDamage * (asWeaponModifier[weaponEffect][propulsion] - 100);
 		damage += baseDamage * (asWeaponModifierBody[weaponEffect][body] - 100);
+
+		// MOD (MF-Schadensarten): Rumpf + Beine haben je einen prozentualen Schild gegen mechanischen und Energieschaden (Deckel 90 %).
+		// Gesamt = Basis x [ (1 - SchildMech) x (1 - Energieanteil) + (1 - SchildEnergie) x Energieanteil ]; ohne Schilde/Energieanteil unveraendert.
+		const DROID *psD = static_cast<const DROID *>(psTarget);
+		const BODY_STATS *pb = psD->getBodyStats();
+		const PROPULSION_STATS *pp = psD->getPropulsionStats();
+		const int shMech = std::min(90, pb->shieldMech + pp->shieldMech);
+		const int shEn = std::min(90, pb->shieldEnergy + pp->shieldEnergy);
+		if (shMech != 0 || shEn != 0)
+		{
+			const int e = std::clamp(energyShare, 0, 100);
+			const int keep = (100 - shMech) * (100 - e) + (100 - shEn) * e;   // 0..10000
+			damage = static_cast<UDWORD>(static_cast<uint64_t>(damage) * keep / 10000);
+		}
 	}
 
 	//Always do at least one damage.

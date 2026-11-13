@@ -347,6 +347,8 @@ struct PROPULSION_STATS : public COMPONENT_STATS
 	UPGRADE const &getUpgrade(unsigned player) const override { return upgrade[player]; }
 
 	PROPULSION_TYPE propulsionType = PROPULSION_TYPE_NUM;
+	int shieldMech = 0;             ///< MOD (MF): Schild der Beine gegen mechanischen Schaden (Prozent, wird zu dem des Rumpfs addiert)
+	int shieldEnergy = 0;           ///< MOD (MF): Schild der Beine gegen Energieschaden
 	unsigned maxSpeed = 0;		///< Max speed for the droid
 	unsigned turnSpeed = 0;
 	unsigned spinSpeed = 0;
@@ -410,6 +412,8 @@ struct WEAPON_STATS : public COMPONENT_STATS
 {
 	UPGRADE const &getBase() const override { return base; }
 	UPGRADE const &getUpgrade(unsigned player) const override { return upgrade[player]; }
+
+	int energyShare = 0;            ///< MOD (MF-Schadensarten): Anteil 0..100 % des Schadens, der als Energie (statt mechanisch) zaehlt; Schilde des Ziels wirken je Art
 
 	struct : UPGRADE
 	{
@@ -521,6 +525,8 @@ struct BODY_STATS : public COMPONENT_STATS
 
 	BODY_SIZE size = SIZE_NUM;      ///< How big the body is - affects how hit
 	unsigned weaponSlots = 0;       ///< The number of weapon slots on the body
+	int shieldMech = 0;             ///< MOD (MF): prozentualer Schild gegen mechanischen Schaden (0..90)
+	int shieldEnergy = 0;           ///< MOD (MF): prozentualer Schild gegen Energieschaden (0..90)
 
 	std::vector<iIMDBaseShape *> ppIMDList;	///< list of IMDs to use for propulsion unit - up to numPropulsionStats
 	std::vector<iIMDBaseShape *> ppMoveIMDList;	///< list of IMDs to use when droid is moving - up to numPropulsionStats
