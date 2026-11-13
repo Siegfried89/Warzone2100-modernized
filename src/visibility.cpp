@@ -54,6 +54,7 @@
 #include "game_world.h"
 #include "mission.h"
 #include "modlayer.h"
+#include "modlayermap.h"
 
 // rate to change visibility level
 static const int VIS_LEVEL_INC = 255 * 2;
@@ -912,6 +913,7 @@ void processVisibility()
 	{
 		for (BASE_OBJECT* psObj : gameWorld.objects.droids[player])
 		{
+			modlayermap::Scope viewerLayerScope(modlayer::layerOf(psObj));   // MOD: Ebenen - Sicht in der Karte der Ebene des Betrachters
 			processVisibilityVision(psObj);
 		}
 		for (BASE_OBJECT* psObj : gameWorld.objects.structures[player])

@@ -56,6 +56,7 @@
 
 #include "lib/netplay/sync_debug.h"
 #include "game_world.h"
+#include "modlayermap.h"
 #include "congestion_overlay.h"
 #include "pathfinding_backend.h"
 #include "corridor_map.h"
@@ -126,13 +127,14 @@ struct PathBlockingType
 	PROPULSION_TYPE propulsion;
 	int owner;
 	FPATH_MOVETYPE moveType;
+	int layer;   // MOD: Ebenen - die Sperrkarte gehoert zur Karte einer Ebene
 };
 /// Pathfinding blocking map
 struct PathBlockingMap
 {
 	bool operator ==(PathBlockingType const &z) const
 	{
-		return type.gameTime == z.gameTime &&
+		return type.gameTime == z.gameTime && type.layer == z.layer &&
 		       fpathIsEquivalentBlocking(type.propulsion, type.owner, type.moveType,
 		                                 z.propulsion,    z.owner,    z.moveType);
 	}
@@ -1173,6 +1175,7 @@ void fpathSetBlockingMap(PATHJOB *psJob)
 	type.propulsion = psJob->propulsion;
 	type.owner = psJob->owner;
 	type.moveType = psJob->moveType;
+	type.layer = static_cast<int>(modlayermap::resident());   // MOD: Ebenen - gameWorld.map ist hier die Karte der Ebene der Einheit
 
 	// Find the map.
 	auto i = std::find_if(fpathBlockingMaps.begin(), fpathBlockingMaps.end(), [&](std::shared_ptr<PathBlockingMap> const &ptr) {

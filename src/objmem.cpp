@@ -47,6 +47,8 @@
 #include "world_object_state.h"
 #include "game_world.h"
 #include "perfcounters.h"
+#include "modlayer.h"
+#include "modlayermap.h"
 
 #include <algorithm>
 
@@ -462,6 +464,8 @@ void flushPendingVisRemoval(GameWorld& world)
 {
 	for (BASE_OBJECT* psObj : world.objects.pendingVisRemoval)
 	{
+		// MOD: Ebenen - die Sicht wurde in der Karte der Ebene des Objekts eingetragen
+		modlayermap::Scope objLayerScope(&world == &gameWorld ? modlayer::layerOf(psObj) : modlayer::SURFACE);
 		visRemoveVisibility(psObj, world.map);
 	}
 	world.objects.pendingVisRemoval.clear();

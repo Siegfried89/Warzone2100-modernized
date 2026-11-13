@@ -49,6 +49,8 @@ bool active();
 bool canInteract(const SIMPLE_OBJECT *a, const SIMPLE_OBJECT *b);
 /// kann dieses Geschoss das Ziel treffen? (Ebene der Quelle, sonst des Ziels)
 bool projectileCanHit(const PROJECTILE *proj, const SIMPLE_OBJECT *target);
+/// Ebene, in der ein Geschoss fliegt (Ebene der Quelle, sonst des Ziels, sonst Oberflaeche)
+Layer projectileLayer(const PROJECTILE *proj);
 /// Anzeige: soll dieses Objekt in der gerade angezeigten Ebene verborgen sein? (Schaechte sieht man in jeder Ebene)
 bool hiddenInView(const BASE_OBJECT *obj);
 /// Wegfindung / Blockierung: Untergrund-Einheiten verhalten sich wie Lufteinheiten (nichts versperrt den Weg)

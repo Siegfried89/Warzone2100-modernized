@@ -27,6 +27,8 @@
 
 #include "gamestate_snapshot.h"  // gameStateRestoreFailed
 #include "loop.h"  // levelChangePending
+#include "modlayer.h"
+#include "modlayermap.h"
 
 #include <vector>
 
@@ -43,6 +45,7 @@ bool gameStateCaptureSafe()
 
 static void runCapture(const std::function<void()> &capture)
 {
+	modlayermap::Scope captureLayerScope(modlayer::SURFACE);   // MOD: Ebenen - gespeichert wird immer die Oberflaechenkarte
 	capturedSinceTick = true;
 	captureGameTime = gameTime;
 	captureKind = "capture";

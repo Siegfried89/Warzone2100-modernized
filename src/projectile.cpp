@@ -63,6 +63,7 @@
 #include "wrappers.h"
 #include "perfcounters.h"
 #include "modlayer.h"
+#include "modlayermap.h"
 
 #include <algorithm>
 #include <functional>
@@ -1583,6 +1584,7 @@ void proj_UpdateAll()
 	for (size_t i = 0; i < projectileCount; ++i)
 	{
 		PROJECTILE* p = psProjectileList[i];
+		modlayermap::Scope projLayerScope(modlayer::projectileLayer(p));   // MOD: Ebenen - Geschoss fliegt ueber das Gelaende seiner Ebene
 		PROJECTILE* spawned = p->update();
 		if (spawned)
 		{

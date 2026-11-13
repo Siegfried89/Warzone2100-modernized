@@ -44,6 +44,7 @@
 #include "visibility.h"
 #include "structure.h"
 #include "modlayer.h"
+#include "modlayermap.h"
 #include "modoil.h"
 #include "research.h"
 #include "hci.h"
@@ -1575,6 +1576,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 {
 	STRUCTURE *psBuilding = nullptr;
 
+	if (&world == &gameWorld && modlayermap::resident() != modlayer::SURFACE) { return nullptr; }   // MOD: Ebenen - Bauwerke entstehen nur auf der Oberflaeche (Kartenzeiger der anderen Ebenen blieben sonst falsch)
 	ASSERT_OR_RETURN(nullptr, player < MAX_PLAYERS, "Cannot build structure for player %" PRIu32 " (>= MAX_PLAYERS)", player);
 	ASSERT_OR_RETURN(nullptr, pStructureType && pStructureType->type != REF_DEMOLISH, "You cannot build demolition!");
 	const Vector2i size = pStructureType->size(direction);
@@ -4501,6 +4503,7 @@ bool isBlueprintTooClose(STRUCTURE_STATS const *stats1, Vector2i pos1, uint16_t 
 bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t direction, unsigned player, bool bCheckBuildQueue)
 {
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "player (%u) >= MAX_PLAYERS", player);
+	if (&world == &gameWorld && modlayermap::resident() != modlayer::SURFACE) { return false; }   // MOD: Ebenen - gebaut wird (noch) nur auf der Oberflaeche
 
 	StructureBounds b = getStructureBounds(psStats, pos, direction);
 

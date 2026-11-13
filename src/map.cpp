@@ -57,6 +57,7 @@
 #include "fpath.h"
 #include "pathfinding_backend.h"
 #include "levels.h"
+#include "modlayer.h"
 #include "lib/framework/wzapp.h"
 #include "lib/framework/load_result.h"
 #include "lib/ivis_opengl/pielighting.h"
@@ -1449,6 +1450,68 @@ bool mapReinitGameStateAfterTerrainRestore(WorldMapState& mapState)
 	return true;
 }
 
+// MOD: Ebenen - eine frisch erzeugte Zusatzkarte (Untergrund / Orbit) fertigstellen: Bodentypen, Wasserstand, Blockier- und Hilfskarten,
+// Kontinente. Voraussetzung: tiles, width, height sind gesetzt, Textur und Hoehe stehen in jeder Kachel. Baut keine Engstellen-Karte
+// (die Wegfindung liest die der Oberflaeche).
+bool mapSetupLayerWorld(WorldMapState& mapState)
+{
+	ASSERT_OR_RETURN(false, mapState.tiles != nullptr, "No tiles allocated");
+	ASSERT_OR_RETURN(false, mapState.width > 0 && mapState.height > 0, "Invalid map size (%d x %d)", mapState.width, mapState.height);
+
+	if (!mapSetGroundTypes(mapState))
+	{
+		return false;
+	}
+	for (int y = 0; y < mapState.height; ++y)
+	{
+		for (int x = 0; x < mapState.width; ++x)
+		{
+			MAPTILE *psTile = mapTile(mapState, x, y);
+			psTile->waterLevel = psTile->height - world_coord(1) / 3;   // wie afterMapLoad()
+		}
+	}
+	mapState.scroll.minX = mapState.scroll.minY = 0;
+	mapState.scroll.maxX = mapState.width;
+	mapState.scroll.maxY = mapState.height;
+
+	const size_t mapSize = static_cast<size_t>(mapState.width) * static_cast<size_t>(mapState.height);
+	mapState.blockMap[AUX_MAP] = std::make_unique<uint8_t[]>(mapSize);
+	mapState.blockMap[AUX_ASTARMAP] = std::make_unique<uint8_t[]>(mapSize);
+	mapState.blockMap[AUX_DANGERMAP] = std::make_unique<uint8_t[]>(mapSize);
+	for (int x = 0; x < MAX_PLAYERS + AUX_MAX; ++x)
+	{
+		mapState.auxMap[x] = std::make_unique<uint8_t[]>(mapSize);
+	}
+	for (int y = 0; y < mapState.height; ++y)
+	{
+		for (int x = 0; x < mapState.width; ++x)
+		{
+			MAPTILE *psTile = mapTile(mapState, x, y);
+			auxClearBlocking(mapState, x, y, AUXBITS_ALL);
+			auxClearAll(mapState, x, y, AUXBITS_ALL);
+			if (x < 1 || y < 1 || x > mapState.width - 1 || y > mapState.height - 1)
+			{
+				auxSetBlocking(mapState, x, y, AUXBITS_ALL);
+			}
+			if (terrainType(psTile) == TER_WATER)
+			{
+				auxSetBlocking(mapState, x, y, WATER_BLOCKED);
+			}
+			else
+			{
+				auxSetBlocking(mapState, x, y, LAND_BLOCKED);
+			}
+			if (terrainType(psTile) == TER_CLIFFFACE)
+			{
+				auxSetBlocking(mapState, x, y, FEATURE_BLOCKED);
+			}
+		}
+	}
+	mapFloodFillContinents(mapState);
+	mapState.corridors.reset();
+	return true;
+}
+
 LoadingTask<> mapSnapshotDisplayInit(ResourceLoadingController& controller, WorldMapState& mapState)
 {
 	ASSERT(mapState.tiles != nullptr, "No tiles allocated");
@@ -1546,6 +1609,7 @@ bool mapSaveToWzMapData(WzMap::MapData& output, const WorldMapState& mapState)
 /* Shutdown the map module */
 bool mapShutdown()
 {
+	modlayer::resetState();   // MOD: Ebenen - Zusatzkarten freigeben, Oberflaechenkarte zurueckschalten (vor dem Freigeben der Karte)
 	stopDangerThread();
 	fpathActiveBackend().waitForIdle();
 

@@ -113,6 +113,8 @@
 #include "lib/framework/loading_task.h"
 
 #include "wzphysfszipioprovider.h"
+#include "modlayer.h"
+#include "modlayermap.h"
 #include <wzmaplib/map_package.h>
 
 #if defined(__clang__)
@@ -3617,6 +3619,7 @@ LoadingTask<> loadGame(ResourceLoadingController& controller, const GameLoadDeta
 
 bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 {
+	modlayermap::Scope saveLayerScope(modlayer::SURFACE);   // MOD: Ebenen - gespeichert wird immer die Oberflaechenkarte
 	size_t			fileExtension;
 	char			CurrentFileName[PATH_MAX] = {'\0'};
 

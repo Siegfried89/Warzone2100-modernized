@@ -2,6 +2,7 @@
 // MOD: Drei Ebenen-Knoepfe (Orbit / Oberflaeche / Untergrund) mit weicher Ueberblendung, siehe modlayer.h
 
 #include "modlayer.h"
+#include "modlayermap.h"
 #include "modui.h"
 #include "modcombot.h"
 #include "modoil.h"
@@ -26,11 +27,13 @@
 #include "order.h"
 #include "projectile.h"
 #include "structure.h"
+#include "visibility.h"
 
 #include <algorithm>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace modlayer
@@ -98,6 +101,7 @@ float progress()
 // Spielzustand: Ebene je Objekt-Kennung (nur Objekte ausserhalb der Oberflaeche), Abklingzeit nach einem Schachtwechsel
 std::unordered_map<uint32_t, Layer> s_layerOf;
 std::unordered_map<uint32_t, UDWORD> s_cool;
+std::unordered_set<uint32_t> s_openedShafts;   // Schaechte, deren Untergrund-Kammer schon freigelegt ist
 
 constexpr int PORTAL_ORDER_RANGE = 192;   // Zielpunkt des Marschbefehls liegt am Schacht
 constexpr int PORTAL_REACH = 240;         // so nah muss die Einheit am Schacht sein (Weg endet neben dem blockierten Feld)
@@ -117,7 +121,7 @@ Layer layerOfId(uint32_t id)
 // beim Umschalten der Anzeige: ausgewaehlte Einheiten, die in der neuen Ebene nicht sichtbar sind, abwaehlen
 void deselectOtherLayers(Layer shown)
 {
-	if (selectedPlayer >= MAX_PLAYERS || s_layerOf.empty()) { return; }
+	if (selectedPlayer >= MAX_PLAYERS) { return; }   // auch ohne Objekte in anderen Ebenen: Oberflaechen-Einheiten duerfen im Untergrund nicht ausgewaehlt bleiben
 	for (DROID *d : gameWorld.objects.droids[selectedPlayer])
 	{
 		if (d->selected && layerOfId(d->id) != shown) { DeSelectDroid(d); }
@@ -131,6 +135,7 @@ void update()
 	if (p >= 0.5f && s_current != s_target)
 	{
 		s_current = s_target;
+		modlayermap::setView(s_current);   // eigene Karte der Ebene anzeigen (Gelaende, Beleuchtung neu aufbauen)
 		deselectOtherLayers(s_current);
 	}
 	if (p >= 1.f) { s_busy = false; }
@@ -141,7 +146,7 @@ void drawVeil()
 {
 	const int w = static_cast<int>(screenWidth), h = static_cast<int>(screenHeight);
 	if (s_current == ORBIT) { pie_BoxFill_alpha(0, 0, w, h, pal_RGBA(10, 30, 90, 50)); }
-	else if (s_current == UNDERGROUND) { pie_BoxFill_alpha(0, 0, w, h, pal_RGBA(44, 18, 0, 140)); }
+	else if (s_current == UNDERGROUND) { pie_BoxFill_alpha(0, 0, w, h, pal_RGBA(40, 16, 0, 55)); }
 	if (s_busy)
 	{
 		const float p = progress();
@@ -153,7 +158,6 @@ void drawVeil()
 
 void drawRoot(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
-	update();
 	drawVeil();
 	const int x0 = static_cast<int>(xOffset) + psWidget->x();
 	const int y0 = static_cast<int>(yOffset) + psWidget->y();
@@ -247,6 +251,8 @@ void setSuppressed(bool suppressed)
 void tick()
 {
 	if (!modcombot::ready()) { return; }   // nur wenn die Combot-Mod geladen ist
+	update();                              // vor dem Zeichnen: Ebene am Ueberblend-Mittelpunkt umschalten
+	modlayermap::tick();                   // aufgeschobenes Neuaufbauen des Gelaendes (nach Grabungen)
 	const bool want = !s_suppressed;
 	if (!want && !s_screen) { return; }
 	ensureScreen();
@@ -285,20 +291,29 @@ bool projectileCanHit(const PROJECTILE *proj, const SIMPLE_OBJECT *target)
 	return layerOf(ref) == layerOf(target);
 }
 
+Layer projectileLayer(const PROJECTILE *proj)
+{
+	if (s_layerOf.empty() || proj == nullptr) { return SURFACE; }
+	const SIMPLE_OBJECT *ref = proj->psSource != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psSource)
+	                           : (proj->psDest != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psDest) : nullptr);
+	return ref != nullptr ? layerOf(ref) : SURFACE;
+}
+
 bool hiddenInView(const BASE_OBJECT *obj)
 {
-	// Solange nichts ausserhalb der Oberflaeche existiert, bleibt alles sichtbar und anklickbar (Fehler Version 1: beim Umschalten auf
-	// Untergrund/Orbit war sonst die ganze Basis unsichtbar und nicht mehr waehlbar; die Ebenen zeigen noch keine eigene Karte)
-	if (s_layerOf.empty()) { return false; }
-	if (obj == nullptr) { return false; }
+	// Ohne Zusatzkarten (Mod nicht geladen / Erzeugen fehlgeschlagen) bleibt alles sichtbar und waehlbar.
+	if (obj == nullptr || !modlayermap::worldsExist()) { return false; }
+	// Oberflaechen-Ansicht und nichts ausserhalb der Oberflaeche: nichts zu verbergen
+	if (s_current == SURFACE && s_layerOf.empty()) { return false; }
 	if (obj->type == OBJ_STRUCTURE && isShaft(static_cast<const STRUCTURE *>(obj)->pStructureType)) { return false; }   // Schaechte in jeder Ebene sichtbar
 	return layerOf(obj) != s_current;
 }
 
 PROPULSION_TYPE effectivePropulsion(const DROID *psDroid, PROPULSION_TYPE realType)
 {
-	if (s_layerOf.empty() || realType == PROPULSION_TYPE_LIFT || psDroid == nullptr) { return realType; }
-	return layerOfId(psDroid->id) == SURFACE ? realType : PROPULSION_TYPE_LIFT;
+	// Jede Ebene hat jetzt ihre eigene Karte: Einheiten bewegen sich dort mit ihrem echten Antrieb (Fels blockiert wirklich).
+	(void)psDroid;
+	return realType;
 }
 
 bool isPortalTile(int player, int tileX, int tileY)
@@ -312,6 +327,8 @@ bool isPortalTile(int player, int tileX, int tileY)
 
 void gameTick()
 {
+	if (!modlayermap::worldsExist()) { return; }   // ohne Zusatzkarten gibt es keinen Schacht-Verkehr
+
 	// Schaechte einsammeln (ohne Schacht passiert nichts und nichts kostet Zeit)
 	std::vector<const STRUCTURE *> shafts;
 	for (int p = 0; p < MAX_PLAYERS; p++)
@@ -322,6 +339,15 @@ void gameTick()
 		}
 	}
 	if (shafts.empty()) { return; }
+
+	// fertiger Schacht: im Untergrund eine Kammer freilegen und an das Gangnetz anbinden
+	for (const STRUCTURE *s : shafts)
+	{
+		if (s_openedShafts.insert(s->id).second)
+		{
+			modlayermap::openSite(map_coord(s->pos.x), map_coord(s->pos.y), s->player, 3, 7);
+		}
+	}
 
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
@@ -340,8 +366,19 @@ void gameTick()
 				if (!aiCheckAlliances(s->player, d->player)) { continue; }
 				if (iHypot(d->order.pos - s->pos.xy()) > PORTAL_ORDER_RANGE) { continue; }
 				if (iHypot(d->pos.xy() - s->pos.xy()) > PORTAL_REACH) { continue; }
-				const Layer next = layerOfId(d->id) == SURFACE ? UNDERGROUND : SURFACE;
+				const Layer prev = layerOfId(d->id);
+				const Layer next = prev == SURFACE ? UNDERGROUND : SURFACE;
+				// Sicht in der alten Karte abmelden, in der neuen anmelden; Hoehe aus der neuen Karte
+				{
+					modlayermap::Scope sc(prev);
+					visRemoveVisibility(d, gameWorld.map);
+				}
 				if (next == SURFACE) { s_layerOf.erase(d->id); } else { s_layerOf[d->id] = next; }
+				{
+					modlayermap::Scope sc(next);
+					d->pos.z = map_Height(gameWorld.map, d->pos.x, d->pos.y);
+					visTilesUpdate(d, gameWorld.map);
+				}
 				s_cool[d->id] = gameTime + PORTAL_COOLDOWN;
 				syncDebug("modlayer: droid %u -> layer %d", d->id, static_cast<int>(next));
 				orderDroid(d, DORDER_STOP, ModeImmediate);
@@ -362,10 +399,9 @@ void gameTick()
 
 void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder)
 {
-	if (s_layerOf.empty() || psStruct == nullptr || psBuilder == nullptr) { return; }
-	if (psStruct->currentBuildPts > 0) { return; }   // nur beim Baubeginn
-	const Layer l = layerOfId(psBuilder->id);
-	if (l == SURFACE) { s_layerOf.erase(psStruct->id); } else { s_layerOf[psStruct->id] = l; }
+	// Bauwerke entstehen immer auf der Oberflaeche (Bauen in anderen Ebenen kommt spaeter); hier ist nichts zu merken.
+	(void)psStruct;
+	(void)psBuilder;
 }
 
 void forget(uint32_t id)
@@ -379,6 +415,10 @@ void resetState()
 {
 	s_layerOf.clear();
 	s_cool.clear();
+	s_openedShafts.clear();
+	modlayermap::reset();
+	s_current = s_target = SURFACE;
+	s_busy = false;
 }
 
 void shutdown()

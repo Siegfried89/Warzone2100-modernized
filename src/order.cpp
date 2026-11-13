@@ -35,6 +35,7 @@
 #include "objects.h"
 #include "order.h"
 #include "modlayer.h"
+#include "modlayermap.h"
 #include "ordersource.h"
 #include "action.h"
 #include "map.h"
@@ -1444,6 +1445,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	STRUCTURE	*psFactory;
 	const PROPULSION_STATS *psPropStats = psDroid->getPropulsionStats();
 	const Vector3i rPos(psOrder->pos, 0);
+	modlayermap::Scope orderLayerScope(modlayer::layerOf(psDroid));   // MOD: Ebenen - Befehle pruefen gegen die Karte der Ebene der Einheit
 	syncDebugDroid(psDroid, '-');
 	syncDebug("%d ordered %s", psDroid->id, getDroidOrderName(psOrder->type));
 

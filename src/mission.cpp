@@ -98,6 +98,7 @@
 #include "wzapi.h"
 #include "screens/guidescreen.h"
 #include "lib/framework/loading_task.h"
+#include "modlayer.h"
 
 #define		IDMISSIONRES_TXT		11004
 #define		IDMISSIONRES_LOAD		11005
@@ -519,6 +520,7 @@ bool missionShutDown()
 		// nothing should be left to strand when this world is overwritten by the swap
 		ASSERT(gameWorld.objects.pendingVisRemoval.empty(), "pending visibility removals lost on world swap");
 		fpathActiveBackend().waitForIdle();
+		modlayer::resetState();   // MOD: Ebenen - Zusatzkarten verwerfen, Oberflaechenkarte zurueckschalten, bevor die Welt getauscht wird
 		gameWorld = std::move(mission.gameWorld);
 		mission.gameWorld = {};
 	}
@@ -1013,6 +1015,7 @@ static void saveMissionData()
 	flushPendingVisRemoval(mission.gameWorld);
 	fpathActiveBackend().waitForIdle();
 	removeSpotters();
+	modlayer::resetState();   // MOD: Ebenen - Zusatzkarten verwerfen, Oberflaechenkarte zurueckschalten, bevor die Welt getauscht wird
 	mission.gameWorld = std::move(gameWorld);
 	gameWorld = {};
 	gridMarkDirty();  // The grid holds the objects of the world that just left
@@ -1073,6 +1076,7 @@ void restoreMissionData()
 	// left to strand when this world is overwritten by the swap.
 	ASSERT(gameWorld.objects.pendingVisRemoval.empty(), "pending visibility removals lost on world swap");
 	fpathActiveBackend().waitForIdle();
+	modlayer::resetState();   // MOD: Ebenen - Zusatzkarten verwerfen, Oberflaechenkarte zurueckschalten, bevor die Welt getauscht wird
 	gameWorld = std::move(mission.gameWorld);
 	mission.gameWorld = {};
 	gridMarkDirty();  // The grid holds the objects of the world that just left

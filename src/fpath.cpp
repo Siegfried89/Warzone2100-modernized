@@ -42,6 +42,7 @@
 
 #include "fpath.h"
 #include "modlayer.h"
+#include "modlayermap.h"
 #include "modoil.h"
 #include "pathfinding_backend.h"
 #include "congestion_overlay.h"
@@ -712,6 +713,7 @@ protected:
 	{
 		bool acceptNearest;
 		PROPULSION_STATS *psPropStats = psDroid->getPropulsionStats();
+		modlayermap::Scope routeLayerScope(modlayer::layerOf(psDroid));   // MOD: Ebenen - Weg in der Karte der Ebene der Einheit suchen (mapState ist gameWorld.map)
 
 		// override for AI to blast our way through stuff
 		if (!isHumanPlayer(psDroid->player) && moveType == FMT_MOVE)

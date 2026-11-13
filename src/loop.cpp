@@ -111,6 +111,7 @@
 #endif
 #include "modgrid.h"
 #include "modlayer.h"
+#include "modlayermap.h"
 #include "modoil.h"
 #include "modradio.h"
 #include "modwreck.h"
@@ -559,6 +560,8 @@ static void gameStateUpdate()
 	// Actually send pending droid orders.
 	sendQueuedDroidInfo();
 
+	modlayermap::ensureWorlds();   // MOD: Ebenen - Untergrund-/Orbit-Karte aus der Kartenkennung erzeugen (einmal, auf jedem Rechner gleich)
+
 	sendPlayerGameTime();
 	NETflush();  // Make sure the game time tick message is really sent over the network.
 
@@ -617,6 +620,7 @@ static void gameStateUpdate()
 		executeFnAndProcessScriptQueuedRemovals([i]() {
 			mutating_list_iterate(gameWorld.objects.droids[i], [](DROID* d)
 			{
+				modlayermap::Scope droidLayerScope(modlayer::layerOf(d));   // MOD: Ebenen - Einheit bewegt sich in der Karte ihrer Ebene
 				droidUpdate(d);
 				return IterationResult::CONTINUE_ITERATION;
 			});
@@ -753,6 +757,9 @@ GAMECODE gameLoop()
 	gameTimeUpdateBegin();
 	while (true)
 	{
+		// MOD: Ebenen - Nachrichten und Spielschritt laufen immer mit der Oberflaechenkarte (Anzeige-Ebene ist nur fuers Zeichnen/Eingaben)
+		modlayermap::Scope simLayerScope(modlayer::SURFACE);
+
 		// Receive NET_BLAH messages.
 		// Receive GAME_BLAH messages, and if it's time, process exactly as many GAME_BLAH messages as required to be able to tick the gameTime.
 		executeFnAndProcessScriptQueuedRemovals([]() { recvMessage(); });

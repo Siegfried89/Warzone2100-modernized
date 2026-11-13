@@ -602,6 +602,9 @@ void mapFloodFillContinents(WorldMapState& mapState);
 /// path if/when this (off-world) map is actually entered and rendered.
 bool mapReinitGameStateAfterTerrainRestore(WorldMapState& mapState);
 
+/// MOD: Ebenen - Zusatzkarte (Untergrund/Orbit) nach dem Erzeugen der Kacheln fertigstellen (Bodentypen, Blockierkarten, Kontinente)
+bool mapSetupLayerWorld(WorldMapState& mapState);
+
 /// Clamps restored scroll limits to the map (does nothing if the map has no tiles yet)
 void mapClampScrollLimits(WorldMapState& mapState);
 
