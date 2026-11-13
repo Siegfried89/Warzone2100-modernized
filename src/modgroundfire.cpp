@@ -42,13 +42,15 @@ constexpr unsigned CLEAN_INTERVAL = 1000;
 
 FEATURE_STATS *s_stats = nullptr;
 size_t s_cachedNum = static_cast<size_t>(-1);
+const FEATURE_STATS *s_cachedData = nullptr;
 unsigned s_nextClean = 0;
 bool s_ringOn = false;
 
 FEATURE_STATS *markerStats()
 {
-	if (s_cachedNum == asFeatureStats.size()) { return s_stats; }
+	if (s_cachedNum == asFeatureStats.size() && s_cachedData == asFeatureStats.data()) { return s_stats; }
 	s_cachedNum = asFeatureStats.size();
+	s_cachedData = asFeatureStats.data();
 	s_stats = nullptr;
 	for (FEATURE_STATS &fs : asFeatureStats)
 	{
@@ -217,6 +219,7 @@ void reset()
 {
 	s_stats = nullptr;
 	s_cachedNum = static_cast<size_t>(-1);
+	s_cachedData = nullptr;
 	s_nextClean = 0;
 	if (s_ringOn)
 	{
