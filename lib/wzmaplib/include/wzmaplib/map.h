@@ -58,7 +58,7 @@ constexpr int8_t PLAYER_SCAVENGERS = -1;
 #define TILE_ROTMASK	0x3000
 #define TILE_ROTSHIFT	12
 #define TILE_TRIFLIP	0x0800	// This bit describes the direction the tile is split into 2 triangles (same as triangleFlip)
-#define TILE_NUMMASK	0x01ff
+#define TILE_NUMMASK	0x07ff	// MOD: 11 Bit (vorher 9) - Platz fuer die MF-Inselkacheln
 
 static WZMAPLIB_FORCE_INLINE unsigned short TileNumber_tile(unsigned short tilenumber)
 {

@@ -37,9 +37,11 @@ struct TILE_TEX_INFO
 #define TILES_IN_PAGE_COLUMN	16
 #define TILES_IN_PAGE_ROW	16
 #define TILES_IN_PAGE		(TILES_IN_PAGE_COLUMN * TILES_IN_PAGE_ROW)
-#define MAX_TILES		TILES_IN_PAGE
+#define MAX_TILES		2048	// MOD: Platz fuer die MF-Inselkacheln (ab 256)
 
 extern TILE_TEX_INFO	tileTexInfo[MAX_TILES];
+/// MOD: Anzahl der Zusatzkacheln (MF-Inseln) ab Nr. 256 (inkl. Leere); 0 = keine
+extern int modExtTileCount;
 extern gfx_api::texture_array *decalTexArr;
 extern gfx_api::texture_array *decalNormalArr;
 extern gfx_api::texture_array *decalSpecularArr;

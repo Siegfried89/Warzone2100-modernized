@@ -319,9 +319,16 @@ static inline bool TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(MAPTILE *pTile)
 
 extern UBYTE terrainTypes[MAX_TILE_TEXTURES];
 
+/// MOD: Zusatzkacheln (MF-Inseln): 256 = Leere (Felswand, blockiert), 257.. = Inselboden
+#define MOD_TILE_VOID		256
+#define MOD_TILE_ISLAND0	257
+#define MOD_TILE_MAX		2048
+
 static inline unsigned char terrainType(const MAPTILE *tile)
 {
-	return terrainTypes[TileNumber_tile(tile->texture)];
+	const unsigned n = TileNumber_tile(tile->texture);
+	if (n < MAX_TILE_TEXTURES) { return terrainTypes[n]; }
+	return n == MOD_TILE_VOID ? TER_CLIFFFACE : TER_SANDYBRUSH;
 }
 
 

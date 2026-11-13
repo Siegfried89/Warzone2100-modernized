@@ -49,6 +49,7 @@
 
 /* Texture page and coordinates for each tile */
 TILE_TEX_INFO tileTexInfo[MAX_TILES];
+int modExtTileCount = 0;
 
 static size_t firstPage; // the last used page before we start adding terrain textures
 gfx_api::texture_array *decalTexArr = nullptr;
@@ -155,6 +156,31 @@ bool texLoad(const char *fileName)
 	}
 	while (k >= 3 && j + 6 < size && i < MAX_TILES);
 	free(buffer);
+
+	// MOD: Zusatzkacheln (MF-Inseln) - Anzahl + Radarfarben aus texpages/modisland.txt
+	modExtTileCount = 0;
+	{
+		char *xbuf = nullptr;
+		UDWORD xsize = 0;
+		if (loadFile("texpages/modisland.txt", &xbuf, &xsize))
+		{
+			int cnt0 = 0, pos = 0;
+			if (sscanf(xbuf, "%d%n", &cnt0, &pos) == 1 && cnt0 > 0 && 256 + cnt0 <= MAX_TILES)
+			{
+				int e = 0;
+				for (; e < cnt0; ++e)
+				{
+					unsigned int r, g, b;
+					int c2 = 0;
+					if (sscanf(xbuf + pos, " %2x%2x%2x%n", &r, &g, &b, &c2) < 3) { break; }
+					pos += c2;
+					radarColour(256 + e, r, g, b);
+				}
+				if (e == cnt0) { modExtTileCount = cnt0; }
+			}
+			free(xbuf);
+		}
+	}
 
 	/* Now load the actual tiles */
 	{
@@ -264,6 +290,26 @@ bool texLoad(const char *fileName)
 			}
 		}
 
+		if (modExtTileCount > 0)
+		{
+			// MOD: Luecke bis 255 mit Leer-Kacheln fuellen, dann die Inselkacheln ab 256 anhaengen
+			const bool haveSmall = PHYSFS_exists(astringf("texpages/modisland-%d/tile-256.png", maxTileTexSize).c_str());
+			const int extSize = haveSmall ? maxTileTexSize : 128;
+			for (k = maxTileNo + 1; k < 256; ++k)
+			{
+				tile_base_filepaths.push_back(gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(astringf("%s/tile-%02d.png", partialPath, k))));
+				if (has_nm && has_auxillary_texture_info) { tile_nm_filepaths.push_back(WzString()); }
+				if (has_sm && has_auxillary_texture_info) { tile_sm_filepaths.push_back(WzString()); }
+				if (has_hm && has_auxillary_texture_info) { tile_hm_filepaths.push_back(WzString()); }
+			}
+			for (k = 0; k < modExtTileCount; ++k)
+			{
+				tile_base_filepaths.push_back(gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(astringf("texpages/modisland-%d/tile-%d.png", extSize, 256 + k))));
+				if (has_nm && has_auxillary_texture_info) { tile_nm_filepaths.push_back(WzString()); }
+				if (has_sm && has_auxillary_texture_info) { tile_sm_filepaths.push_back(WzString()); }
+				if (has_hm && has_auxillary_texture_info) { tile_hm_filepaths.push_back(WzString()); }
+			}
+		}
 		decalTexArr = gfx_api::context::get().loadTextureArrayFromFilesBlocking(tile_base_filepaths, gfx_api::texture_type::game_texture, mipmap_max, mipmap_max, [](int width, int height, int channels) -> std::unique_ptr<iV_Image> {
 				std::unique_ptr<iV_Image> pDefaultTexture = std::unique_ptr<iV_Image>(new iV_Image);
 				pDefaultTexture->allocate(width, height, channels, true);

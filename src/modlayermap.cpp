@@ -8,6 +8,8 @@
 #include "lib/framework/vector.h"
 #include "lib/ivis_opengl/pielighting.h"
 
+#include "lib/framework/file.h"
+#include "texture.h"
 #include "advvis.h"
 #include "ai.h"
 #include "game_world.h"
@@ -183,6 +185,7 @@ struct Grid
 	int W;
 	int H;
 	std::vector<uint8_t> cells;
+	std::vector<int16_t> tid;   // nur Orbit mit MF-Inseln: Nummer der Inselkachel je Feld (-1 = Leere); leer = nicht benutzt
 	Grid(int w, int h) : W(w), H(h), cells(static_cast<size_t>(w) * static_cast<size_t>(h), 0) {}
 	bool inside(int x, int y) const { return x >= 0 && y >= 0 && x < W && y < H; }
 	bool at(int x, int y) const { return inside(x, y) && cells[static_cast<size_t>(x) + static_cast<size_t>(y) * W] != 0; }
@@ -284,8 +287,120 @@ void genUndergroundGrid(Grid &g, Rng &r)
 	}
 }
 
-// Schwebende Inseln: Zufallswachstum ab einem Mittelpunkt (nur Ganzzahlen)
+// ---------------------------------------------------------------------------------------------------------------------
+// Originale MF-Inseln (mf/islands.txt, Texturen texpages/modisland-*/): Form + Kachelnummer je Feld
+// ---------------------------------------------------------------------------------------------------------------------
+
+struct IslandShape
+{
+	int w = 0;
+	int h = 0;
+	std::vector<int16_t> t;   // w*h, -1 = Leere
+};
+
+const std::vector<IslandShape> &islandLibrary()
+{
+	static std::vector<IslandShape> lib;
+	static bool tried = false;
+	if (tried) { return lib; }
+	tried = true;
+	char *buf = nullptr;
+	UDWORD size = 0;
+	if (!loadFile("mf/islands.txt", &buf, &size, false) || buf == nullptr) { return lib; }
+	const char *p = buf;
+	const char *end = buf + size;
+	auto readInt = [&](int &v) -> bool {
+		while (p < end && (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t')) { ++p; }
+		if (p >= end) { return false; }
+		char *e = nullptr;
+		const long x = strtol(p, &e, 10);
+		if (e == p) { return false; }
+		v = static_cast<int>(x);
+		p = e;
+		return true;
+	};
+	int n = 0;
+	if (readInt(n) && n > 0 && n < 5000)
+	{
+		for (int i = 0; i < n; ++i)
+		{
+			IslandShape s;
+			if (!readInt(s.w) || !readInt(s.h) || s.w <= 0 || s.h <= 0 || s.w > 512 || s.h > 512) { lib.clear(); break; }
+			s.t.resize(static_cast<size_t>(s.w) * static_cast<size_t>(s.h));
+			bool ok = true;
+			for (size_t k = 0; k < s.t.size() && ok; ++k)
+			{
+				int v = 0;
+				ok = readInt(v);
+				s.t[k] = static_cast<int16_t>(v);
+			}
+			if (!ok) { lib.clear(); break; }
+			lib.push_back(std::move(s));
+		}
+	}
+	free(buf);
+	return lib;
+}
+
+void genOrbitGridRandom(Grid &g, Rng &r);
+
+// Setzt zufaellig ausgewaehlte Original-Inseln auf die Karte (ohne Ueberlappung, mit Abstand). false = Bibliothek fehlt/passt nicht.
+bool genOrbitGridMF(Grid &g, Rng &r)
+{
+	const std::vector<IslandShape> &lib = islandLibrary();
+	if (lib.empty() || modExtTileCount < 2) { return false; }
+	const int W = g.W, H = g.H;
+	const int maxW = W - 2 * MARGIN - 2, maxH = H - 2 * MARGIN - 2;
+	const long mapArea = static_cast<long>(W) * H;
+	std::vector<int> fit;
+	for (size_t i = 0; i < lib.size(); ++i)
+	{
+		if (lib[i].w <= maxW && lib[i].h <= maxH && static_cast<long>(lib[i].w) * lib[i].h * 4 <= mapArea * 3) { fit.push_back(static_cast<int>(i)); }
+	}
+	if (fit.empty()) { return false; }
+	g.tid.assign(static_cast<size_t>(W) * static_cast<size_t>(H), -1);
+	std::vector<uint8_t> occ(static_cast<size_t>(W) * static_cast<size_t>(H), 0);
+	const long wanted = mapArea * 22 / 100;   // etwa ein Fuenftel der Karte soll Inselflaeche sein
+	long placed = 0;
+	int count = 0;
+	for (int tries = 0; tries < 600 && (placed < wanted || count < 3); ++tries)
+	{
+		const IslandShape &s = lib[static_cast<size_t>(fit[static_cast<size_t>(r.range(static_cast<int>(fit.size())))])];
+		const int x0 = MARGIN + 1 + r.range(std::max(1, maxW - s.w + 1));
+		const int y0 = MARGIN + 1 + r.range(std::max(1, maxH - s.h + 1));
+		bool free = true;
+		for (int y = std::max(0, y0 - 2); y < std::min(H, y0 + s.h + 2) && free; ++y)
+		{
+			for (int x = std::max(0, x0 - 2); x < std::min(W, x0 + s.w + 2); ++x)
+			{
+				if (occ[static_cast<size_t>(x) + static_cast<size_t>(y) * W]) { free = false; break; }
+			}
+		}
+		if (!free) { continue; }
+		for (int y = 0; y < s.h; ++y)
+		{
+			for (int x = 0; x < s.w; ++x)
+			{
+				occ[static_cast<size_t>(x0 + x) + static_cast<size_t>(y0 + y) * W] = 1;
+				const int16_t v = s.t[static_cast<size_t>(x) + static_cast<size_t>(y) * s.w];
+				if (v < 0) { continue; }
+				g.set(x0 + x, y0 + y);
+				g.tid[static_cast<size_t>(x0 + x) + static_cast<size_t>(y0 + y) * W] = v;
+				++placed;
+			}
+		}
+		++count;
+	}
+	return count > 0;
+}
+
 void genOrbitGrid(Grid &g, Rng &r)
+{
+	if (!genOrbitGridMF(g, r)) { genOrbitGridRandom(g, r); }
+}
+
+// Notloesung ohne Bibliothek: Zufallswachstum ab einem Mittelpunkt (nur Ganzzahlen)
+void genOrbitGridRandom(Grid &g, Rng &r)
 {
 	const int W = g.W, H = g.H;
 	const int nIs = std::max(3, (W * H) / 1800);
@@ -343,6 +458,11 @@ std::unique_ptr<MAPTILE[]> makeTiles(Layer layer, const Grid &g, const Palette &
 			}
 			const std::vector<uint16_t> &src = isOpenTile ? pal.floor : pal.rock;
 			t.texture = src[(hv >> 16) % src.size()];
+			if (layer == modlayer::ORBIT && !g.tid.empty())
+			{
+				const int16_t v = g.tid[static_cast<size_t>(x) + static_cast<size_t>(y) * W];
+				t.texture = static_cast<uint16_t>(v >= 0 ? MOD_TILE_ISLAND0 + v : MOD_TILE_VOID);
+			}
 			t.psObject = nullptr;
 			if (layer == modlayer::ORBIT)
 			{

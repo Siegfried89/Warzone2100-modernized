@@ -210,7 +210,7 @@ static std::unique_ptr<int[]> map; // 3D array pointer that holds the texturetyp
 static int numTile_types = 0;
 
 static std::unique_ptr<bool[]> mapDecals;           // array that tells us what tile is a decal
-#define MAX_TERRAIN_TILES 0x0200  // max that we support (for now), see TILE_NUMMASK
+#define MAX_TERRAIN_TILES 0x0800  // max that we support (for now), see TILE_NUMMASK
 
 /* Look up table that returns the terrain type of a given tile texture */
 UBYTE terrainTypes[MAX_TILE_TEXTURES];
@@ -597,8 +597,10 @@ static bool SetGroundForTile(const char *filename, const char *nametype)
 	//increment the pointer to the start of the next record
 	pFileData = tilesetNextLine(pFileData);
 
-	numTile_types = numlines;
-	map = std::unique_ptr<int[]> (new int[numlines * 2 * 2]());
+	// MOD: Platz fuer die Zusatzkacheln (MF-Inseln, ab 256); sie bekommen den Untergrund der letzten Kachel der Datei
+	const int numAlloc = std::max(numlines, static_cast<int>(MOD_TILE_MAX));
+	numTile_types = numAlloc;
+	map = std::unique_ptr<int[]> (new int[numAlloc * 2 * 2]());
 
 	for (i = 0; i < numlines; i++)
 	{
@@ -621,6 +623,10 @@ static bool SetGroundForTile(const char *filename, const char *nametype)
 			}
 			map[i * 2 * 2 + k] = ground[k];
 		}
+	}
+	for (int e = std::max(numlines, static_cast<int>(MOD_TILE_VOID)); e < numAlloc; ++e)
+	{
+		for (int k = 0; k < 4; ++k) { map[e * 2 * 2 + k] = map[(numlines - 1) * 2 * 2 + k]; }
 	}
 	return true;
 }
@@ -838,6 +844,7 @@ static bool SetDecals(const char *filename, const char *decal_type)
 		}
 		mapDecals[tiledecal] = true;
 	}
+	for (int e = MOD_TILE_VOID; e < MOD_TILE_MAX; ++e) { mapDecals[e] = true; }   // MOD: Inselkacheln sind Decals
 	return true;
 }
 // hasDecals()
