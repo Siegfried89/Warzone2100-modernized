@@ -25,6 +25,7 @@
 #include <numeric>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -71,11 +72,97 @@ bool s_hasGen[MAX_PLAYERS] = {};                   // PowerDown nur, wenn der Sp
 std::unordered_map<uint32_t, bool> s_held;           // wir haben die Fabrik/Forschung selbst auf Halt gesetzt (nicht der Spieler)
 constexpr int BASE_GEN_RANGE = 9 * 128;              // Fabriken/Forschung: 9 Felder um ein laufendes Kraftwerk
 constexpr unsigned RESTART_STAGGER_MS = 1200;        // MF: Gebaeude fahren einzeln nacheinander hoch
+// Besatzungskonto (MF-Manpower): Kryo-Farm stellt Besatzung, Fabriken/Forschung/Raffinerie/Aussenposten und MF-Einheiten binden welche
+std::unordered_map<uint32_t, unsigned> s_crewBorn;   // Zeitpunkt, zu dem eine Kryo-Farm erstmals fertig gesehen wurde (Wachstum +1/s)
+std::unordered_set<uint32_t> s_crewOff;              // wegen Besatzungsmangel abgeschaltete Gebaeude (jede Spielsekunde neu berechnet, neueste zuerst)
+int s_crewUsed[MAX_PLAYERS] = {};
+int s_crewSupply[MAX_PLAYERS] = {};
+bool s_crewActive[MAX_PLAYERS] = {};
+int s_crewOffCount[MAX_PLAYERS] = {};
 std::vector<Cable> s_cables;
 std::vector<Marker> s_markers;
 bool s_have = false;
 UDWORD s_lastSec = 0;
 UDWORD s_lastTime = 0;
+
+// Besatzungskonto eines Spielers neu rechnen; schaltet bei Mangel die neuesten Verbraucher ab (s_crewOff)
+void updateCrew(int p)
+{
+	const bool wasActive = s_crewActive[p];
+	s_crewActive[p] = false;
+	s_crewUsed[p] = 0;
+	s_crewSupply[p] = 0;
+	int off = 0;
+	if (modoil::manages(p))
+	{
+		int supply = 0, used = 0;
+		bool activator = false;
+		std::vector<const STRUCTURE *> consumers;
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s->died || s->status != SS_BUILT) { continue; }
+			const STRUCTURE_STATS *st = s->pStructureType;
+			if (st->crewProvide > 0)
+			{
+				int now = st->crewProvide;
+				if (st->crewStart > 0)
+				{
+					activator = true;
+					auto it = s_crewBorn.find(s->id);
+					if (it == s_crewBorn.end()) { it = s_crewBorn.emplace(s->id, gameTime).first; }
+					now = std::min(st->crewProvide, st->crewStart + static_cast<int>((gameTime - it->second) / 1000));
+				}
+				supply += now;
+			}
+			if (st->crewCost > 0)
+			{
+				used += st->crewCost;
+				if (st->requiresPower) { consumers.push_back(s); }
+			}
+		}
+		if (activator)
+		{
+			for (const DROID *d : gameWorld.objects.droids[p])
+			{
+				if (!d->died && d->getBodyStats() != nullptr) { used += d->getBodyStats()->crewCost; }
+			}
+			s_crewActive[p] = true;
+			s_crewUsed[p] = used;
+			s_crewSupply[p] = supply;
+			if (used > supply)
+			{
+				std::sort(consumers.begin(), consumers.end(), [](const STRUCTURE *a, const STRUCTURE *b) { return a->id > b->id; });
+				for (const STRUCTURE *s : consumers)
+				{
+					if (used <= supply) { break; }
+					s_crewOff.insert(s->id);
+					used -= s->pStructureType->crewCost;
+					off++;
+				}
+			}
+		}
+	}
+	if (p == static_cast<int>(selectedPlayer))
+	{
+		char buf[160];
+		if (s_crewActive[p] && !wasActive)
+		{
+			snprintf(buf, sizeof(buf), "Besatzungskonto aktiv: %d/%d", s_crewUsed[p], s_crewSupply[p]);
+			addConsoleMessage(buf, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+		else if (off > s_crewOffCount[p])
+		{
+			snprintf(buf, sizeof(buf), "Besatzung reicht nicht (%d/%d): %d Gebaeude werden abgeschaltet", s_crewUsed[p], s_crewSupply[p], off);
+			addConsoleMessage(buf, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+		else if (off == 0 && s_crewOffCount[p] > 0)
+		{
+			snprintf(buf, sizeof(buf), "Besatzung wieder ausreichend (%d/%d)", s_crewUsed[p], s_crewSupply[p]);
+			addConsoleMessage(buf, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+	}
+	s_crewOffCount[p] = off;
+}
 
 int find(std::vector<int> &par, int x)
 {
@@ -111,6 +198,9 @@ void reset()
 {
 	s_upAt.clear();
 	s_down.clear();
+	s_crewBorn.clear();
+	s_crewOff.clear();
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_crewActive[p] = false; s_crewUsed[p] = 0; s_crewSupply[p] = 0; s_crewOffCount[p] = 0; }
 	s_held.clear();
 	s_powered.clear();
 	s_cables.clear();
@@ -130,6 +220,8 @@ void update()
 	s_powered.clear();
 	s_cables.clear();
 	s_markers.clear();
+	s_crewOff.clear();
+	for (int p = 0; p < MAX_PLAYERS; p++) { updateCrew(p); }
 
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
@@ -228,6 +320,7 @@ void update()
 			{
 				ok = dist2(c, gens[k]) <= genR * genR;
 			}
+			if (s_crewOff.find(c.id) != s_crewOff.end()) { ok = false; }   // Besatzungsmangel: wie ohne Strom abgeschaltet
 			// PowerDown: kehrt die Versorgung zurueck, faehrt das Gebaeude nach Reihenfolge (ein Gebaeude je 1,2 s) wieder hoch
 			const auto wasDown = s_down.find(c.id);
 			if (ok && wasDown != s_down.end() && wasDown->second && s_upAt.find(c.id) == s_upAt.end())
@@ -277,7 +370,7 @@ bool powerDownGate(STRUCTURE *s)
 			s_upAt.erase(s->id);
 			if (s->player == selectedPlayer)
 			{
-				addConsoleMessage(("PowerDown: " + std::string(getStatsName(st))).c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+				addConsoleMessage(("PowerDown: " + std::string(getStatsName(st)) + (s_crewOff.count(s->id) ? " (Besatzung)" : "")).c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 			}
 			if (s->isFactory() && s->pFunctionality->factory.psSubject && !s->pFunctionality->factory.timeStartHold)
 			{

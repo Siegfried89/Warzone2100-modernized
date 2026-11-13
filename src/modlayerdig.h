@@ -16,6 +16,8 @@ bool isDrill(const DROID *psDroid);
 /// aus orderDroidBase: true, wenn der Befehl hier uebernommen wurde (Bohrfahrzeug im Untergrund mit Bewegungsbefehl); sonst wird
 /// ein altes Bohrziel der Einheit verworfen und false geliefert
 bool onOrder(DROID *psDroid, const DroidOrder *psOrder);
+/// aus orderDroidAdd (Shift+Rechtsklick): haengt ein Bohrziel an die Bohrroute an; true, wenn der Befehl hier uebernommen wurde
+bool onQueue(DROID *psDroid, const DroidOrder *psOrder);
 /// jeden Spielschritt aus der Spielschleife
 void tick(GameWorld &world);
 /// neues Spiel

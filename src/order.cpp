@@ -2462,6 +2462,8 @@ void orderDroidAdd(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 {
 	ASSERT_OR_RETURN(, psDroid != nullptr, "Invalid unit pointer");
 
+	if (modlayerdig::onQueue(psDroid, psOrder)) { return; }   // MOD: Bohrfahrzeug - Shift+Rechtsklick haengt Ziele an die Bohrroute an
+
 	if (psDroid->listSize >= psDroid->asOrderList.size())
 	{
 		// Make more room to store the order.

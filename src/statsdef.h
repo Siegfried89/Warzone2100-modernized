@@ -527,6 +527,7 @@ struct BODY_STATS : public COMPONENT_STATS
 
 	BODY_SIZE size = SIZE_NUM;      ///< How big the body is - affects how hit
 	unsigned weaponSlots = 0;       ///< The number of weapon slots on the body
+	int crewCost = 0;               ///< MOD (MF): Besatzung, die dieser Rumpf im Besatzungskonto bindet
 	int shieldMech = 0;             ///< MOD (MF): prozentualer Schild gegen mechanischen Schaden (0..90)
 	int shieldEnergy = 0;           ///< MOD (MF): prozentualer Schild gegen Energieschaden (0..90)
 

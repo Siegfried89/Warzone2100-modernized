@@ -18,6 +18,7 @@
 #include "stats.h"
 
 #include <cstdlib>
+#include <deque>
 #include <map>
 #include <string>
 
@@ -35,6 +36,7 @@ struct Goal
 	bool digging = false;
 	Vector2i digTile;
 	unsigned digUntil = 0;
+	std::deque<Vector2i> route;   // weitere Ziele (Shift+Rechtsklick), nacheinander angebohrt
 };
 
 std::map<uint32_t, Goal> s_goals;
@@ -64,6 +66,22 @@ bool onOrder(DROID *psDroid, const DroidOrder *psOrder)
 	return true;
 }
 
+bool onQueue(DROID *psDroid, const DroidOrder *psOrder)
+{
+	if (psDroid == nullptr || psOrder == nullptr || psOrder->type != DORDER_MOVE) { return false; }
+	if (!isDrill(psDroid) || modlayer::layerOf(psDroid) != modlayer::UNDERGROUND || !modlayermap::worldsExist()) { return false; }
+	if (!worldOnMap(gameWorld.map, psOrder->pos.x, psOrder->pos.y)) { return false; }
+	const Vector2i target(map_coord(psOrder->pos.x), map_coord(psOrder->pos.y));
+	auto it = s_goals.find(psDroid->id);
+	if (it == s_goals.end())
+	{
+		// noch kein Ziel: das erste Shift-Ziel wird wie ein normaler Befehl gestartet
+		return onOrder(psDroid, psOrder);
+	}
+	it->second.route.push_back(target);
+	return true;
+}
+
 void tick(GameWorld &world)
 {
 	if (s_goals.empty()) { return; }
@@ -84,7 +102,13 @@ void tick(GameWorld &world)
 		}
 		if (d->action != DACTION_NONE) { ++it; continue; }   // faehrt noch
 		const Vector2i cur(map_coord(d->pos.x), map_coord(d->pos.y));
-		if (cur == g.tile) { it = s_goals.erase(it); continue; }
+		if (cur == g.tile)
+		{
+			if (g.route.empty()) { it = s_goals.erase(it); continue; }
+			g.tile = g.route.front();   // naechstes Ziel der Route
+			g.route.pop_front();
+			if (cur == g.tile) { continue; }
+		}
 		const int dx = g.tile.x - cur.x, dy = g.tile.y - cur.y;
 		Vector2i next = cur;
 		if (std::abs(dx) >= std::abs(dy)) { next.x += (dx > 0 ? 1 : -1); } else { next.y += (dy > 0 ? 1 : -1); }

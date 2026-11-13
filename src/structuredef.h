@@ -127,6 +127,9 @@ struct STRUCTURE_STATS : public BASE_STATS
 	bool infantryBuildable = false;	// MOD: darf auch von Kampf-Infanterie mit Spaten gebaut werden (Graeben, Gruben, Sandsaecke, MG-Nester)
 	bool infantryPassable = false;	// MOD: Infanterie darf das Feld betreten (Graeben, Gruben) und bekommt dort Schutz
 	bool requiresPower = false;		// MOD: arbeitet nur im Versorgungsbereich eines gespeisten Strommastes (siehe modgrid)
+	int crewCost = 0;				// MOD (MF): bindet so viel Besatzung (Besatzungskonto, siehe modgrid)
+	int crewProvide = 0;			// MOD (MF): stellt bis zu so viel Besatzung (Kryo-Farm)
+	int crewStart = 0;				// MOD (MF): Besatzung direkt nach dem Fertigstellen; waechst danach um 1/s bis crewProvide; > 0 schaltet das Besatzungskonto ein
 
 	unsigned minLimit;		///< lowest value user can set limit to (currently unused)
 	unsigned maxLimit;		///< highest value user can set limit to, LOTS_OF = no limit
