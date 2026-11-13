@@ -94,6 +94,7 @@
 #include "3rdparty/gsl_finally.h"
 #include <functional>
 #include <unordered_map>
+#include "modgrid.h"
 
 //Maximium slope of the terrain for building a structure
 #define MAX_INCLINE		50//80//40
@@ -3266,6 +3267,12 @@ static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 		default:
 			return; // nothing to do
 		}
+	}
+
+	// MOD: PowerDown (MF) - ohne Strom arbeitet das Gebaeude nicht (Fabrik/Forschung auf Halt, kein Feuer)
+	if (!isMission && psStructure->status == SS_BUILT && modgrid::powerDownGate(psStructure))
+	{
+		return;
 	}
 
 	// Will go out into a building EVENT stats/text file

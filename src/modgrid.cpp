@@ -13,6 +13,8 @@
 #include "lib/netplay/netplay.h"
 
 #include "ai.h"
+#include "console.h"
+#include "research.h"
 #include "game_world.h"
 #include "map.h"
 #include "range_rings.h"
@@ -44,6 +46,7 @@ struct Node
 {
 	uint32_t id;
 	int x, y, z;
+	bool big = false;   // Fabrik/Forschung: groesserer Radius um das Kraftwerk
 };
 
 struct Cable
@@ -62,6 +65,12 @@ struct Marker
 };
 
 std::unordered_map<uint32_t, bool> s_powered;
+std::unordered_map<uint32_t, unsigned> s_upAt;       // PowerDown: Zeitpunkt, ab dem ein wieder versorgtes Gebaeude hochgefahren ist
+std::unordered_map<uint32_t, bool> s_down;           // PowerDown: Gebaeude ist (laut Gate) abgeschaltet
+bool s_hasGen[MAX_PLAYERS] = {};                   // PowerDown nur, wenn der Spieler ueberhaupt ein Kraftwerk hat (sonst kein Wiederanlauf moeglich)
+std::unordered_map<uint32_t, bool> s_held;           // wir haben die Fabrik/Forschung selbst auf Halt gesetzt (nicht der Spieler)
+constexpr int BASE_GEN_RANGE = 9 * 128;              // Fabriken/Forschung: 9 Felder um ein laufendes Kraftwerk
+constexpr unsigned RESTART_STAGGER_MS = 1200;        // MF: Gebaeude fahren einzeln nacheinander hoch
 std::vector<Cable> s_cables;
 std::vector<Marker> s_markers;
 bool s_have = false;
@@ -100,6 +109,9 @@ bool isPole(const STRUCTURE_STATS *psStats)
 
 void reset()
 {
+	s_upAt.clear();
+	s_down.clear();
+	s_held.clear();
 	s_powered.clear();
 	s_cables.clear();
 	s_markers.clear();
@@ -121,14 +133,20 @@ void update()
 
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
+		unsigned restartIndex = 0;
+		s_hasGen[p] = false;
 		std::vector<Node> poles, gens, cons;
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->status != SS_BUILT) { continue; }
 			const STRUCTURE_STATS *st = s->pStructureType;
 			if (isPole(st)) { poles.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); }
-			else if (st->type == REF_POWER_GEN) { if (modoil::generatorRunning(s)) { gens.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); } }
-			else if (st->requiresPower) { cons.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); }
+			else if (st->type == REF_POWER_GEN) { s_hasGen[p] = true; if (modoil::generatorRunning(s)) { gens.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); } }
+			else if (st->requiresPower)
+			{
+				const bool big = st->type == REF_FACTORY || st->type == REF_CYBORG_FACTORY || st->type == REF_VTOL_FACTORY || st->type == REF_RESEARCH || st->id.startsWith("A0BaBaRefinery");
+				cons.push_back({s->id, s->pos.x, s->pos.y, s->pos.z, big});
+			}
 		}
 		if (poles.empty() && gens.empty() && cons.empty()) { continue; }
 
@@ -205,9 +223,16 @@ void update()
 			{
 				ok = energized[find(par, i)] != 0 && dist2(c, poles[i]) <= static_cast<int64_t>(SUPPLY_RANGE) * SUPPLY_RANGE;
 			}
+			const int64_t genR = c.big ? BASE_GEN_RANGE : GEN_LINK_RANGE;
 			for (int k = 0; k < g && !ok; k++)
 			{
-				ok = dist2(c, gens[k]) <= static_cast<int64_t>(GEN_LINK_RANGE) * GEN_LINK_RANGE;
+				ok = dist2(c, gens[k]) <= genR * genR;
+			}
+			// PowerDown: kehrt die Versorgung zurueck, faehrt das Gebaeude nach Reihenfolge (ein Gebaeude je 1,2 s) wieder hoch
+			const auto wasDown = s_down.find(c.id);
+			if (ok && wasDown != s_down.end() && wasDown->second && s_upAt.find(c.id) == s_upAt.end())
+			{
+				s_upAt[c.id] = gameTime + RESTART_STAGGER_MS * (++restartIndex);
 			}
 			s_powered[c.id] = ok;
 			if (show) { s_markers.push_back({p, c.x, c.y, c.z, ok, false}); }
@@ -219,6 +244,65 @@ bool isPowered(const STRUCTURE *psStruct)
 {
 	const auto it = s_powered.find(psStruct->id);
 	return it != s_powered.end() && it->second;
+}
+
+bool isPoweredDown(const STRUCTURE *psStruct)
+{
+	const auto it = s_down.find(psStruct->id);
+	return it != s_down.end() && it->second;
+}
+
+bool powerDownGate(STRUCTURE *s)
+{
+	const STRUCTURE_STATS *st = s->pStructureType;
+	if (!st->requiresPower || s->status != SS_BUILT || !modoil::manages(s->player) || !s_hasGen[s->player]) { return false; }
+	const auto it = s_powered.find(s->id);
+	if (it == s_powered.end()) { return false; }          // gerade erst fertig: bis zur naechsten Berechnung Gnadenfrist
+	bool down = !it->second;
+	if (!down)
+	{
+		const auto up = s_upAt.find(s->id);
+		if (up != s_upAt.end())
+		{
+			if (gameTime < up->second) { down = true; }   // noch nicht an der Reihe
+			else { s_upAt.erase(up); }
+		}
+	}
+	const bool wasDown = s_down[s->id];
+	if (down)
+	{
+		if (!wasDown)
+		{
+			s_down[s->id] = true;
+			s_upAt.erase(s->id);
+			if (s->player == selectedPlayer)
+			{
+				addConsoleMessage(("PowerDown: " + std::string(getStatsName(st))).c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+			}
+			if (s->isFactory() && s->pFunctionality->factory.psSubject && !s->pFunctionality->factory.timeStartHold)
+			{
+				holdProduction(s, ModeImmediate);
+				s_held[s->id] = true;
+			}
+			else if (st->type == REF_RESEARCH && s->pFunctionality->researchFacility.psSubject && !s->pFunctionality->researchFacility.timeStartHold)
+			{
+				holdResearch(s, ModeImmediate);
+				s_held[s->id] = true;
+			}
+		}
+		return true;
+	}
+	if (wasDown)
+	{
+		s_down[s->id] = false;
+		if (s_held[s->id])
+		{
+			if (s->isFactory()) { releaseProduction(s, ModeImmediate); }
+			else if (st->type == REF_RESEARCH) { releaseResearch(s, ModeImmediate); }
+			s_held[s->id] = false;
+		}
+	}
+	return false;
 }
 
 namespace

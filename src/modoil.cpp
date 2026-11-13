@@ -36,6 +36,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "modgrid.h"
 
 namespace modoil
 {
@@ -590,6 +591,7 @@ void logistics()
 		// Raffinerien: ein Fass je REF_SECS Sekunden veredeln
 		for (STRUCTURE *r : sn.refs)
 		{
+			if (modgrid::isPoweredDown(r)) { continue; }   // PowerDown: ohne Strom veredelt die Raffinerie nichts
 			int &in = s_refIn[r->id];
 			int &out = s_refOut[r->id];
 			int &t = s_refT[r->id];

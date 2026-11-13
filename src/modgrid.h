@@ -18,6 +18,11 @@ bool isPole(const STRUCTURE_STATS *psStats);
 void update();
 /// ist das Gebaeude (mit requiresPower) gerade versorgt? Gebaeude ohne Eintrag (gerade erst gebaut) gelten bis zur naechsten Berechnung als unversorgt
 bool isPowered(const STRUCTURE *psStruct);
+/// PowerDown (MF): Aufruf am Anfang des Gebaeude-Updates. Haengt ein verwaltetes Gebaeude mit "requiresPower" nicht am Netz, wird es abgeschaltet
+/// (Fabrik/Forschung gehen auf Halt, nichts arbeitet, kein Feuer); beim Wiederkehren fahren sie nacheinander hoch (1,2 s Abstand). true = Update ueberspringen.
+bool powerDownGate(STRUCTURE *psStruct);
+/// ist das Gebaeude gerade abgeschaltet (PowerDown)? (nur fuer Anzeige/Abfragen)
+bool isPoweredDown(const STRUCTURE *psStruct);
 /// zeichnet Kabel und (im Anzeigemodus 4 "Stromnetz") Versorgungskreise; nach dem 3D-Bild aufrufen
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
 /// beim Spielende / Ladevorgang
