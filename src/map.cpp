@@ -1465,6 +1465,8 @@ bool mapSetupLayerWorld(WorldMapState& mapState)
 {
 	ASSERT_OR_RETURN(false, mapState.tiles != nullptr, "No tiles allocated");
 	ASSERT_OR_RETURN(false, mapState.width > 0 && mapState.height > 0, "Invalid map size (%d x %d)", mapState.width, mapState.height);
+	// Size is read once, here, while the check above is still visible to the compiler (GCC 13 loses it across the calls below).
+	const size_t layerMapSize = static_cast<size_t>(mapState.width) * static_cast<size_t>(mapState.height);
 
 	if (!mapSetGroundTypes(mapState))
 	{
@@ -1482,13 +1484,12 @@ bool mapSetupLayerWorld(WorldMapState& mapState)
 	mapState.scroll.maxX = mapState.width;
 	mapState.scroll.maxY = mapState.height;
 
-	const size_t mapSize = static_cast<size_t>(mapState.width) * static_cast<size_t>(mapState.height);
-	mapState.blockMap[AUX_MAP] = std::make_unique<uint8_t[]>(mapSize);
-	mapState.blockMap[AUX_ASTARMAP] = std::make_unique<uint8_t[]>(mapSize);
-	mapState.blockMap[AUX_DANGERMAP] = std::make_unique<uint8_t[]>(mapSize);
+	mapState.blockMap[AUX_MAP] = std::make_unique<uint8_t[]>(layerMapSize);
+	mapState.blockMap[AUX_ASTARMAP] = std::make_unique<uint8_t[]>(layerMapSize);
+	mapState.blockMap[AUX_DANGERMAP] = std::make_unique<uint8_t[]>(layerMapSize);
 	for (int x = 0; x < MAX_PLAYERS + AUX_MAX; ++x)
 	{
-		mapState.auxMap[x] = std::make_unique<uint8_t[]>(mapSize);
+		mapState.auxMap[x] = std::make_unique<uint8_t[]>(layerMapSize);
 	}
 	for (int y = 0; y < mapState.height; ++y)
 	{
