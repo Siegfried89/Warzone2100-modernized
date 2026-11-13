@@ -124,6 +124,7 @@ struct STRUCTURE_STATS : public BASE_STATS
 	uint64_t flags;
 	bool combinesWithWall;			//If the structure will trigger nearby walls to try combining with it
 	unsigned turretSpinMs = 3000;	// MOD: Drehzeit eines Sensor-Turms ohne Waffe in ms (Standard 3 s; Baukran langsamer)
+	bool infantryBuildable = false;	// MOD: darf auch von Kampf-Infanterie mit Spaten gebaut werden (Graeben, Gruben, Sandsaecke, MG-Nester)
 	bool infantryPassable = false;	// MOD: Infanterie darf das Feld betreten (Graeben, Gruben) und bekommt dort Schutz
 	bool requiresPower = false;		// MOD: arbeitet nur im Versorgungsbereich eines gespeisten Strommastes (siehe modgrid)
 

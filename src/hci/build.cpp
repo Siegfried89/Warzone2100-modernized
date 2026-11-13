@@ -29,6 +29,8 @@
 #include "../power.h"
 #include "../map.h"
 #include "../game_world.h"
+#include "../modbuild.h"
+#include <algorithm>
 
 DROID *BuildController::highlightedBuilder = nullptr;
 
@@ -67,6 +69,16 @@ void BuildController::updateBuildOptionsList()
 {
 	auto newBuildOptions = fillStructureList(gameWorld.objects, selectedPlayer, MAXSTRUCTURES - 1, shouldShowFavorites());
 
+	// MOD: Kampf-Infanterie darf nur Graeben, Gruben, Sandsack-Mauern und MG-Nester bauen
+	if (const DROID *hb = getHighlightedObject())
+	{
+		if (modbuild::isInfantryBuilder(hb))
+		{
+			newBuildOptions.erase(std::remove_if(newBuildOptions.begin(), newBuildOptions.end(),
+				[hb](const STRUCTURE_STATS *st) { return !modbuild::mayBuild(hb, st); }), newBuildOptions.end());
+		}
+	}
+
 	stats = std::vector<STRUCTURE_STATS *>(newBuildOptions.begin(), newBuildOptions.end());
 }
 
@@ -78,7 +90,7 @@ STRUCTURE_STATS *BuildController::getObjectStatsAt(size_t objectIndex) const
 		return nullptr;
 	}
 
-	if (!(droidType(builder) == DROID_CONSTRUCT || droidType(builder) == DROID_CYBORG_CONSTRUCT))
+	if (!builder->isConstructionDroid())   // MOD: auch Kampf-Infanterie mit Spaten
 	{
 		return nullptr;
 	}

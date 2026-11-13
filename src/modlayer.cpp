@@ -313,7 +313,12 @@ bool hiddenInView(const BASE_OBJECT *obj)
 PROPULSION_TYPE effectivePropulsion(const DROID *psDroid, PROPULSION_TYPE realType)
 {
 	// Jede Ebene hat jetzt ihre eigene Karte: Einheiten bewegen sich dort mit ihrem echten Antrieb (Fels blockiert wirklich).
-	(void)psDroid;
+	// Kampfroboter (Combots) haben auch "Beine", duerfen aber nicht durch Haeuser/Graeben laufen: sie bewegen sich wie Radfahrzeuge
+	// (gleiche Sperrbits, andere Pfad-Domaene), nur echte Infanterie behaelt Legged
+	if (realType == PROPULSION_TYPE_LEGGED && psDroid != nullptr && !modoil::isInfantry(psDroid))
+	{
+		return PROPULSION_TYPE_WHEELED;
+	}
 	return realType;
 }
 

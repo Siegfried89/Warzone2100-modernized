@@ -775,6 +775,7 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->combinesWithWall = ini.value("combinesWithWall", false).toBool();
 		psStats->requiresPower = ini.value("requiresPower", false).toBool();   // MOD
 		psStats->infantryPassable = ini.value("infantryPassable", false).toBool();   // MOD
+		psStats->infantryBuildable = ini.value("infantryBuildable", false).toBool();   // MOD
 		psStats->turretSpinMs = static_cast<unsigned>(std::max(500, ini.value("turretSpinMs", 3000).toInt()));   // MOD
 
 		ini.endGroup();

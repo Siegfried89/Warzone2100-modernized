@@ -11,6 +11,7 @@
 #include "feature.h"
 #include "game_world.h"
 #include "map.h"
+#include "modoil.h"
 #include "random.h"
 #include "stats.h"
 
@@ -32,8 +33,7 @@ void onFeatureRemoved(FEATURE *psFeature, GameWorld &world)
 		for (DROID *d : world.objects.droids[p])
 		{
 			if (d == nullptr || d->died) { continue; }
-			const PROPULSION_STATS *prop = d->getPropulsionStats();
-			if (prop == nullptr || prop->propulsionType != PROPULSION_TYPE_LEGGED) { continue; }
+			if (!modoil::isInfantry(d)) { continue; }
 			const int tx = map_coord(d->pos.x);
 			const int ty = map_coord(d->pos.y);
 			if (tx >= first.x && tx < last.x && ty >= first.y && ty < last.y)

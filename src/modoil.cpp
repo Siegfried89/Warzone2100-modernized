@@ -353,6 +353,24 @@ void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne)
 	}
 }
 
+bool isInfantry(const DROID *d)
+{
+	if (d == nullptr) { return false; }
+	switch (d->droidType)
+	{
+	case DROID_PERSON:
+	case DROID_CYBORG:
+	case DROID_CYBORG_SUPER:
+	case DROID_CYBORG_CONSTRUCT:
+	case DROID_CYBORG_REPAIR:
+		break;
+	default:
+		return false;
+	}
+	const PROPULSION_STATS *prop = d->getPropulsionStats();
+	return prop != nullptr && prop->propulsionType == PROPULSION_TYPE_LEGGED;
+}
+
 bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY)
 {
 	const MAPTILE *t = mapTile(mapState, tileX, tileY);
@@ -372,19 +390,17 @@ bool trenchForInfantry(const BASE_OBJECT *obj, const DROID *dominant)
 	if (obj != nullptr && dominant != nullptr && obj->type == OBJ_FEATURE)   // MOD: Haus/Hochhaus besetzen
 	{
 		const FEATURE *f = static_cast<const FEATURE *>(obj);
-		const PROPULSION_STATS *fp = dominant->getPropulsionStats();
-		return f->psStats != nullptr && f->psStats->infantryPassable && fp != nullptr && fp->propulsionType == PROPULSION_TYPE_LEGGED;
+		return f->psStats != nullptr && f->psStats->infantryPassable && isInfantry(dominant);
 	}
 	if (obj == nullptr || dominant == nullptr || obj->type != OBJ_STRUCTURE || obj->player != selectedPlayer) { return false; }
 	const STRUCTURE *s = static_cast<const STRUCTURE *>(obj);
 	if (s->pStructureType == nullptr || !s->pStructureType->infantryPassable || s->status != SS_BUILT) { return false; }
-	const PROPULSION_STATS *prop = dominant->getPropulsionStats();
-	return prop != nullptr && prop->propulsionType == PROPULSION_TYPE_LEGGED;
+	return isInfantry(dominant);
 }
 
 bool droidInTrench(const DROID *d)
 {
-	if (d == nullptr || d->getPropulsionStats() == nullptr || d->getPropulsionStats()->propulsionType != PROPULSION_TYPE_LEGGED) { return false; }
+	if (!isInfantry(d)) { return false; }
 	return tilePassableForInfantry(gameWorld.map, map_coord(d->pos.x), map_coord(d->pos.y));
 }
 

@@ -54,6 +54,10 @@ unsigned craneBoost(const DROID *psDroid, unsigned points);
 /// nur Anzeige: Arbeitsbewegung des Baggerarms (Schwenken + Nicken) bzw. Pendeln der Abrissbirne, solange das Fahrzeug baut/abreisst/repariert.
 /// Liefert true und Winkel in Grad (um die Hochachse / Querachse). anim = Grafikzeit (Phase der Bewegung).
 bool armWork(const DROID *psDroid, unsigned anim, float &yawDeg, float &pitchDeg);
+/// Kampf-Infanterie mit Spaten (echte Infanterie mit Waffe UND Bauteil): zaehlt als Baufahrzeug, baut aber nur "infantryBuildable"-Bauwerke
+bool isInfantryBuilder(const DROID *psDroid);
+/// darf dieses Fahrzeug dieses Bauwerk bauen? (Kampf-Infanterie nur Graeben/Gruben/Sandsack/MG-Nester; alle anderen Baufahrzeuge alles)
+bool mayBuild(const DROID *psDroid, const STRUCTURE_STATS *psStats);
 /// Abrissfaktor des Fahrzeugs (Abrissbirne reisst 4x so schnell ab, sonst 1)
 int demolishFactor(const DROID *psDroid);
 

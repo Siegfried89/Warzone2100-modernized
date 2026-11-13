@@ -4107,7 +4107,7 @@ bool DROID::isCyborg() const
 
 bool DROID::isConstructionDroid() const
 {
-	return droidType == DROID_CONSTRUCT || droidType == DROID_CYBORG_CONSTRUCT;
+	return droidType == DROID_CONSTRUCT || droidType == DROID_CYBORG_CONSTRUCT || modbuild::isInfantryBuilder(this);   // MOD: Kampf-Infanterie mit Spaten
 }
 
 bool isConstructionDroid(BASE_OBJECT const *psObject)

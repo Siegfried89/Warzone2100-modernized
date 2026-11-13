@@ -26,7 +26,9 @@ void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne);
 void tick();
 /// laeuft das Kraftwerk (hat es Brennstoff)? Immer wahr fuer Spieler ohne Fass-Wirtschaft.
 bool generatorRunning(const STRUCTURE *psGen);
-/// steht auf diesem Feld ein fertiges Bauwerk mit "infantryPassable" (Graben, Grube)?
+/// Echte Infanterie (Beine UND Personen-/Cyborg-Typ). Kampfroboter (Combots) haben auch Beine, zaehlen aber nicht.
+bool isInfantry(const DROID *psDroid);
+/// steht auf diesem Feld ein fertiges Bauwerk mit "infantryPassable" (Graben, Grube) oder ein besetzbares Haus?
 bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY);
 /// ist das ein eigener, fertiger Graben/eine Grube, in die die gewaehlte Infanterie (Beine) einruecken kann? (Mauszeiger "bemannen")
 bool trenchForInfantry(const BASE_OBJECT *obj, const DROID *dominantSelected);

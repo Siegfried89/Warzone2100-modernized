@@ -1651,6 +1651,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		// build a new structure or line of structures
 		ASSERT_OR_RETURN(, psDroid->isConstructionDroid(), "%s cannot construct things!", objInfo(psDroid));
 		ASSERT_OR_RETURN(, psOrder->psStats != nullptr, "invalid structure stats pointer");
+		if (!modbuild::mayBuild(psDroid, psOrder->psStats)) { break; }   // MOD: Kampf-Infanterie baut nur Graeben/Sandsaecke/MG-Nester
 		psDroid->order = *psOrder;
 		ASSERT_OR_RETURN(, !psDroid->order.psStats || psDroid->order.psStats->type != REF_DEMOLISH, "Cannot build demolition");
 		actionDroid(psDroid, DACTION_BUILD, psOrder->pos.x, psOrder->pos.y);

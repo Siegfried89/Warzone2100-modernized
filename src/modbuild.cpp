@@ -12,6 +12,7 @@
 #include "map.h"
 #include "modlayer.h"
 #include "modlayermap.h"
+#include "modoil.h"
 #include "modterrain.h"
 #include "multiplay.h"
 #include "objmem.h"
@@ -31,6 +32,19 @@
 
 namespace modbuild
 {
+bool isInfantryBuilder(const DROID *d)
+{
+	if (d == nullptr) { return false; }
+	if (d->droidType != DROID_PERSON && d->droidType != DROID_CYBORG && d->droidType != DROID_CYBORG_SUPER) { return false; }
+	return d->asBits[COMP_CONSTRUCT] != 0 && modoil::isInfantry(d);
+}
+
+bool mayBuild(const DROID *d, const STRUCTURE_STATS *st)
+{
+	if (st == nullptr || !isInfantryBuilder(d)) { return true; }
+	return st->infantryBuildable;
+}
+
 namespace
 {
 constexpr int MAX_PLACEMENTS = 170;
