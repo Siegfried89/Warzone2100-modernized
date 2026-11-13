@@ -488,6 +488,10 @@ DROID_ORDER_DATA infoToOrderData(QueuedDroidInfo const &info, STRUCTURE_STATS co
 	sOrder.pos2 = info.pos2;
 	sOrder.direction = info.direction;
 	sOrder.index = info.index;
+	if (info.order == DORDER_FORTIFY)
+	{
+		sOrder.direction = static_cast<uint16_t>(info.index);   // MOD: Befestigungsbau - Groesse
+	}
 	sOrder.psObj = processDroidTarget(info.destType, info.destId);
 	sOrder.psStats = const_cast<STRUCTURE_STATS *>(psStats);
 
@@ -549,6 +553,10 @@ void sendDroidInfo(DROID *psDroid, DroidOrder const &order, bool add, const Orde
 	{
 		info.index = order.index;
 	}
+	if (order.type == DORDER_FORTIFY)
+	{
+		info.index = order.direction;   // MOD: Groesse 1..3
+	}
 
 	info.add = add;
 
@@ -580,6 +588,7 @@ static bool validOrderForNetLoc(DROID_ORDER order)
 	case DORDER_BUILD:
 	case DORDER_LINEBUILD:
 	case DORDER_ATTACKGROUND:   // MOD: Boden beschiessen
+	case DORDER_FORTIFY:        // MOD: Befestigungsbau
 		return true;
 	default:
 		return validOrderForLoc(order);
@@ -691,7 +700,7 @@ static bool validDroidInfoOrderData(QueuedDroidInfo const &info, DROID_ORDER_DAT
 	{
 		return false;
 	}
-	if (info.order == DORDER_ATTACKGROUND && !worldOnMap(gameWorld.map, sOrder.pos))   // MOD: Boden beschiessen
+	if ((info.order == DORDER_ATTACKGROUND || info.order == DORDER_FORTIFY) && !worldOnMap(gameWorld.map, sOrder.pos))   // MOD: Boden beschiessen, Befestigungsbau
 	{
 		return false;
 	}

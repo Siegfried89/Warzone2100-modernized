@@ -64,6 +64,7 @@
 #include "perfcounters.h"
 #include "modlayer.h"
 #include "modlayermap.h"
+#include "modterrain.h"
 
 #include <algorithm>
 #include <functional>
@@ -1233,6 +1234,8 @@ static void proj_ImpactFunc(PROJECTILE *psObj)
 
 	psStats = psObj->psWStats;
 	ASSERT_OR_RETURN(, psStats != nullptr, "Invalid weapon stats pointer");
+
+	modterrain::onProjectileImpact(psObj);   // MOD: Krater bei Kanonen-/Moerser-/Haubitzentreffern auf freien Boden
 
 	/* play impact audio */
 	if (gfxVisible(psObj))

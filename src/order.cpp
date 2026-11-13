@@ -37,6 +37,7 @@
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modgroundfire.h"
+#include "modbuild.h"
 #include "modlayerdig.h"
 #include "feature.h"
 #include "ordersource.h"
@@ -1586,6 +1587,10 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		// tell a (transporter) droid to fly onworld
 		psDroid->order = *psOrder;
 		actionDroid(psDroid, DACTION_TRANSPORTIN, psOrder->pos.x, psOrder->pos.y);
+		break;
+	case DORDER_FORTIFY:
+		// MOD: Befestigungsbau - Auftrag uebernehmen, der Rest laeuft in modbuild::tick
+		modbuild::startOrder(psDroid, psOrder->pos.x, psOrder->pos.y, psOrder->direction);
 		break;
 	case DORDER_ATTACKGROUND:
 		{
@@ -4416,6 +4421,7 @@ const char *getDroidOrderName(DROID_ORDER order)
 	case DORDER_CIRCLE:                   return "DORDER_CIRCLE";
 	case DORDER_HOLD:                     return "DORDER_HOLD";
 	case DORDER_ATTACKGROUND:             return "DORDER_ATTACKGROUND";
+	case DORDER_FORTIFY:                  return "DORDER_FORTIFY";
 	};
 
 	ASSERT(false, "DROID_ORDER out of range: %u", order);
@@ -4466,6 +4472,7 @@ const char *getDroidOrderKey(DROID_ORDER order)
 	case DORDER_CIRCLE:                   return "C";
 	case DORDER_HOLD:                     return "H";
 	case DORDER_ATTACKGROUND:             return "AG";
+	case DORDER_FORTIFY:                  return "FT";
 	};
 	ASSERT(false, "DROID_ORDER out of range: %u", order);
 	return "Err";

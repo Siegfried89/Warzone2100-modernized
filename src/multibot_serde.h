@@ -119,7 +119,7 @@ struct QueuedDroidInfo
 					return pos2.y < z.pos2.y ? -1 : 1;
 				}
 			}
-			if (order == DORDER_BUILDMODULE)
+			if (order == DORDER_BUILDMODULE || order == DORDER_FORTIFY)
 			{
 				if (index != z.index)
 				{
@@ -211,7 +211,7 @@ inline void NETQueuedDroidInfo(SerdeContext& c, typename SerdeFnArgT<SerdeContex
 		{
 			NETVector2i(c, info.pos2);
 		}
-		if (info.order == DORDER_BUILDMODULE)
+		if (info.order == DORDER_BUILDMODULE || info.order == DORDER_FORTIFY)   // MOD: Befestigungsbau traegt die Groesse im Index
 		{
 			NETuint32_t(c, info.index);
 		}

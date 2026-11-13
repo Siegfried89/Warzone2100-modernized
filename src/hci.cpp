@@ -78,6 +78,8 @@
 #include "range_rings.h"
 #include "modformation.h"
 #include "modpanel.h"
+#include "modterrain.h"
+#include "modbuild.h"
 #include "modlayer.h"
 #include "modgrid.h"
 #include "modoil.h"
@@ -718,6 +720,8 @@ void interfaceShutDown()
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
 	modgroundfire::reset();  // MOD
+	modterrain::reset();     // MOD
+	modbuild::reset();       // MOD
 	modradio::reset();       // MOD
 	modgrid::reset();        // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed

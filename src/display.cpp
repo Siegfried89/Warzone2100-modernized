@@ -70,6 +70,7 @@
 #include "mechanics.h"
 #include "modoil.h"
 #include "modgroundfire.h"
+#include "modbuild.h"
 #include "lighting.h"
 #include "ingameop.h"
 #include "oprint.h"
@@ -887,6 +888,7 @@ void processMouseClickInput()
 		const bool overUi = OverRadar || mouseOverConsole || InGameOpUp || isMouseOverScreenOverlayChild(mouseX(), mouseY())
 		                    || buildState != BUILD3D_NONE || intBuildSelectMode();
 		modgroundfire::updatePreview(!overUi && !gestureActive && modgroundfire::keysForGroundFire() && mouseTarget() == nullptr, mousePos);
+		modbuild::updatePreview(!overUi && !gestureActive && mouseTarget() == nullptr, mousePos);   // MOD: Befestigungsbau (Strg + Baufahrzeug)
 	}
 
 	if (gestureActive)
@@ -2505,6 +2507,14 @@ void	dealWithLMB()
 		return;
 	}
 
+	// MOD: Befestigungsbau - Strg + Klick auf freien Boden mit Baufahrzeugen (bei "Rechtsklick-Befehle" ist das der Rechtsklick)
+	if (bEffectiveRightClickOrders && modbuild::keysForFortify()
+	    && modbuild::orderSelected(selectedPlayer, mousePos.x, mousePos.y))
+	{
+		audio_PlayTrack(ID_SOUND_SELECT);
+		return;
+	}
+
 	// now changed to use the multiple order stuff
 	// clicked on a destination.
 	orderSelectedLoc(selectedPlayer, mousePos.x, mousePos.y, ctrlShiftDown());  // ctrlShiftDown() = ctrl clicked a destination, add an order
@@ -2791,6 +2801,12 @@ static void dealWithRMB()
 		{
 			// MOD: Boden beschiessen - Strg + Rechtsklick (klassische Belegung)
 			if (modAnySelectedCombot()) { modPlayCombotClick(); } else { audio_PlayTrack(ID_SOUND_SELECT); }
+		}
+		else if (!bEffectiveRightClickOrders && modbuild::keysForFortify()
+		         && modbuild::orderSelected(selectedPlayer, mousePos.x, mousePos.y))
+		{
+			// MOD: Befestigungsbau - Strg + Rechtsklick (klassische Belegung)
+			audio_PlayTrack(ID_SOUND_SELECT);
 		}
 		else
 		{

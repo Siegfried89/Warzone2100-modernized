@@ -47,6 +47,7 @@
 #include "droid.h"
 #include "modlayer.h"
 #include "modoil.h"
+#include "modterrain.h"
 #include "modwreck.h"
 #include "modvariant.h"
 #include "hci.h"
@@ -318,9 +319,9 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 		damage *= 3;
 	}
 
-	if (modoil::droidInTrench(psDroid))
+	if (modoil::droidInTrench(psDroid) || modterrain::droidInCover(psDroid))
 	{
-		damage = damage * 45 / 100;   // MOD: Infanterie im Graben / in der Grube nimmt weniger als die Haelfte
+		damage = damage * 45 / 100;   // MOD: Infanterie im Graben / in der Grube / im Krater nimmt weniger als die Haelfte
 	}
 
 	const UDWORD modBodyBefore = psDroid->body;
