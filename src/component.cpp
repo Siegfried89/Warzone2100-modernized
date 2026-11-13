@@ -45,6 +45,7 @@
 #include "mission.h"
 #include "faction.h"
 #include "modcombot.h"
+#include "modbuild.h"
 #include "modduel.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
@@ -897,6 +898,17 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 				{
 					localModelMatrix *= glm::translate(glm::vec3(psMountShape->connectors[0].xzy()));
 					localHeightAboveTerrain += psMountShape->connectors[0].z;
+				}
+
+				/* MOD: Arbeitsbewegung des Baggerarms / Abrissbirne (nur Anzeige) */
+				if (psDroid->droidType == DROID_CONSTRUCT)
+				{
+					float awYaw = 0.f, awPitch = 0.f;
+					if (modbuild::armWork(psDroid, graphicsTime, awYaw, awPitch))
+					{
+						localModelMatrix *= glm::rotate(awYaw * 0.01745329f, glm::vec3(0.f, 1.f, 0.f));
+						localModelMatrix *= glm::rotate(awPitch * 0.01745329f, glm::vec3(1.f, 0.f, 0.f));
+					}
 				}
 
 				/* Draw it */

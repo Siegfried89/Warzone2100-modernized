@@ -42,6 +42,7 @@ SDWORD sound_GetTrackIDByName(const char *fileName); // MOD: definiert in lib/so
 #include "text.h"
 #include "notifications.h"
 #include <unordered_map>
+#include "modinvade.h"
 
 #define WEAPON_TIME		100
 
@@ -1877,13 +1878,13 @@ int weaponShortHit(const WEAPON_STATS& psStats, int player)
 int weaponDamage(const WEAPON_STATS& psStats, int player)
 {
 	ASSERT_PLAYER_OR_RETURN(0, player);
-	return psStats.upgrade[player].damage;
+	return psStats.upgrade[player].damage * (100 + modinvade::enhancerPercent(static_cast<unsigned>(player))) / 100;   // MOD: Verstaerker (eroberte Hauptgebaeude, +6 % je Stueck)
 }
 
 int weaponRadDamage(const WEAPON_STATS& psStats, int player)
 {
 	ASSERT_PLAYER_OR_RETURN(0, player);
-	return psStats.upgrade[player].radiusDamage;
+	return psStats.upgrade[player].radiusDamage * (100 + modinvade::enhancerPercent(static_cast<unsigned>(player))) / 100;   // MOD
 }
 
 int weaponPeriodicalDamage(const WEAPON_STATS& psStats, int player)

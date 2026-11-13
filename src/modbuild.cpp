@@ -22,8 +22,10 @@
 #include "statsdef.h"
 #include "structure.h"
 #include "action.h"
+#include "ai.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <unordered_map>
 
@@ -419,6 +421,69 @@ void tick(GameWorld &world)
 		s_jobs.erase(id);
 	}
 	(void)world;
+}
+
+bool armWork(const DROID *psDroid, unsigned anim, float &yawDeg, float &pitchDeg)
+{
+	if (psDroid == nullptr || psDroid->droidType != DROID_CONSTRUCT) { return false; }
+	const CONSTRUCT_STATS *cs = psDroid->getConstructStats();
+	if (cs == nullptr) { return false; }
+	if (psDroid->action != DACTION_BUILD && psDroid->action != DACTION_DEMOLISH && psDroid->action != DACTION_REPAIR) { return false; }
+	const unsigned since = gameTime > psDroid->actionStarted ? gameTime - psDroid->actionStarted : 0;
+	const float ramp = std::min(1.f, static_cast<float>(since) / 500.f);
+	const float t = static_cast<float>((anim + psDroid->id * 397u) % 100000u);
+	if (cs->id.startsWith("WreckBall"))
+	{
+		yawDeg = ramp * 38.f * std::sin(t * (6.2831853f / 3200.f));
+		pitchDeg = 0.f;
+	}
+	else
+	{
+		yawDeg = ramp * 22.f * std::sin(t * (6.2831853f / 2600.f));
+		pitchDeg = ramp * 6.f * std::sin(t * (6.2831853f / 1300.f) + 0.8f);
+	}
+	return true;
+}
+
+int demolishFactor(const DROID *psDroid)
+{
+	const CONSTRUCT_STATS *cs = psDroid != nullptr ? psDroid->getConstructStats() : nullptr;
+	return (cs != nullptr && cs->id.startsWith("WreckBall")) ? 4 : 1;
+}
+
+unsigned craneBoost(const DROID *psDroid, unsigned points)
+{
+	// Kranliste je Spielsekunde neu aufbauen (nur Spielzeit, deshalb auf allen Rechnern gleich)
+	static unsigned s_stamp = ~0u;
+	static std::vector<Vector3i> s_cranes[MAX_PLAYERS];
+	if (psDroid == nullptr) { return points; }
+	const unsigned stamp = gameTime / GAME_TICKS_PER_SEC;
+	if (stamp != s_stamp)
+	{
+		s_stamp = stamp;
+		for (int p = 0; p < MAX_PLAYERS; p++)
+		{
+			s_cranes[p].clear();
+			for (const STRUCTURE *s : gameWorld.objects.structures[p])
+			{
+				if (s->status == SS_BUILT && s->pStructureType->type == REF_DEFENSE && s->pStructureType->id.startsWith("A0BaBaCrane"))
+				{
+					s_cranes[p].push_back(s->pos);
+				}
+			}
+		}
+	}
+	constexpr int R = 9 * TILE_UNITS;
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		if (s_cranes[p].empty() || (p != static_cast<int>(psDroid->player) && !aiCheckAlliances(p, psDroid->player))) { continue; }
+		for (const Vector3i &c : s_cranes[p])
+		{
+			const int dx = c.x - psDroid->pos.x, dy = c.y - psDroid->pos.y;
+			if (dx * dx + dy * dy <= R * R) { return points + points / 4; }
+		}
+	}
+	return points;
 }
 
 void reset()

@@ -39,6 +39,7 @@
 #include "modgroundfire.h"
 #include "modbuild.h"
 #include "modlayerdig.h"
+#include "modinvade.h"
 #include "feature.h"
 #include "ordersource.h"
 #include "action.h"
@@ -3095,6 +3096,16 @@ void orderSelectedObjAdd(UDWORD player, BASE_OBJECT *psObj, bool add)
 			{
 				orderDroidLocAdd(psCurr, DORDER_MOVE, psObj->pos.x, psObj->pos.y, add);
 				continue;
+			}
+
+			// MOD: Invade - Bohrfahrzeug auf feindliches Gebaeude: direkt an die Wand fahren, dort bohrt es sich hinein (modinvade)
+			{
+				Vector2i invadePos;
+				if (modinvade::approachPoint(psCurr, psObj, invadePos))
+				{
+					orderDroidLocAdd(psCurr, DORDER_MOVE, static_cast<UDWORD>(invadePos.x), static_cast<UDWORD>(invadePos.y), add);
+					continue;
+				}
 			}
 
 			DroidOrder order = chooseOrderObj(psCurr, psObj, specialOrderKeyDown());

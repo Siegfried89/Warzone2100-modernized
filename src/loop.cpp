@@ -118,6 +118,7 @@
 #include "modwreck.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
+#include "modinvade.h"
 #include "modammo.h"
 
 #include <numeric>
@@ -585,6 +586,7 @@ static void gameStateUpdate()
 	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
 	modammo::tick(gameWorld);    // MOD: Munition (Nachschub)
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
+	modinvade::tick(gameWorld);  // MOD: Invade (Bohrfahrzeug uebernimmt Gebaeude)
 	modgroundfire::tick(gameWorld);   // MOD: Bodenziel-Punkte, die kein Befehl mehr braucht, entfernen
 	modradio::tick(gameWorld);   // MOD: Funkgebrabbel am Kommandozentrum / ATC-Turm
 	modvoice::tick(gameWorld);   // MOD: Schlachtrufe im Gefecht

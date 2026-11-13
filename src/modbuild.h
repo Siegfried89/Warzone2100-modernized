@@ -48,6 +48,15 @@ const char *activeLabel();
 /// aktuell gewaehlte Groesse (1..3)
 int currentTier();
 
+/// Baukran-Bonus: Baupunkte pro Sekunde eines Baufahrzeugs, das im Umkreis (9 Kacheln) eines fertigen eigenen/verbuendeten Krans (A0BaBaCrane) arbeitet, +25 %
+unsigned craneBoost(const DROID *psDroid, unsigned points);
+
+/// nur Anzeige: Arbeitsbewegung des Baggerarms (Schwenken + Nicken) bzw. Pendeln der Abrissbirne, solange das Fahrzeug baut/abreisst/repariert.
+/// Liefert true und Winkel in Grad (um die Hochachse / Querachse). anim = Grafikzeit (Phase der Bewegung).
+bool armWork(const DROID *psDroid, unsigned anim, float &yawDeg, float &pitchDeg);
+/// Abrissfaktor des Fahrzeugs (Abrissbirne reisst 4x so schnell ab, sonst 1)
+int demolishFactor(const DROID *psDroid);
+
 /// jeden Spielschritt
 void tick(GameWorld &world);
 /// bei neuem Spiel

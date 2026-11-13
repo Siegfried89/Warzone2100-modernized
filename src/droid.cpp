@@ -50,6 +50,7 @@
 #include "modterrain.h"
 #include "modhelp.h"
 #include "modvoice.h"
+#include "modbuild.h"
 #include "modwreck.h"
 #include "modvariant.h"
 #include "hci.h"
@@ -1364,7 +1365,7 @@ bool droidUpdateBuild(DROID *psDroid)
 		return false;
 	}
 
-	unsigned constructPoints = constructorPoints(*psDroid->getConstructStats(), psDroid->player);
+	unsigned constructPoints = modbuild::craneBoost(psDroid, constructorPoints(*psDroid->getConstructStats(), psDroid->player));   // MOD: Baukran-Bonus
 
 	unsigned pointsToAdd = constructPoints * (gameTime - psDroid->actionStarted) / GAME_TICKS_PER_SEC;
 	int buildPointsToAdd = pointsToAdd - psDroid->actionPoints;
@@ -1395,7 +1396,7 @@ bool droidUpdateDemolishing(DROID *psDroid)
 		return false;
 	}
 
-	int constructRate = 5 * constructorPoints(*psDroid->getConstructStats(), psDroid->player);
+	int constructRate = 5 * constructorPoints(*psDroid->getConstructStats(), psDroid->player) * modbuild::demolishFactor(psDroid);   // MOD: Abrissbirne 4x
 	int pointsToAdd = gameTimeAdjustedAverage(constructRate);
 
 	structureDemolish(gameWorld, psStruct, psDroid, pointsToAdd);
