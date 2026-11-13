@@ -477,11 +477,12 @@ int storeRoom(uint32_t id)
 	return std::max(0, STORAGE_CAP - s_store[id] - s_storeR[id]);
 }
 
-// Automatische Ausbildung: fehlen Fracht-Lkw (bzw. Tanker), startet eine freie Fabrik selbst einen (normale Kosten, normaler Bau)
+// Automatische Ausbildung: fehlt der erste Fracht-Lkw (bzw. Tanker), startet eine freie Fabrik selbst einen (normale Kosten, normaler Bau)
 void autoTrain(int p, const Snap &sn)
 {
-	const int wantTruck = std::min(4, (static_cast<int>(sn.derricks.size()) + 1) / 2);
-	const int wantTank = std::min(2, static_cast<int>(sn.refs.size()));
+	// Wunsch 13.11.: nur EIN Fracht-Lkw und EIN Tanker kommen automatisch (sobald Oelturm bzw. Raffinerie stehen), alle weiteren bildet der Spieler selbst aus
+	const int wantTruck = std::min(1, static_cast<int>(sn.derricks.size()));
+	const int wantTank = std::min(1, static_cast<int>(sn.refs.size()));
 	if (wantTruck <= 0 && wantTank <= 0) { return; }
 	int haveTruck = 0, haveTank = 0;
 	for (const auto &kv : s_cargo)

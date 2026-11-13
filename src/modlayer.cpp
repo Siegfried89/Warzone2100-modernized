@@ -287,7 +287,9 @@ bool projectileCanHit(const PROJECTILE *proj, const SIMPLE_OBJECT *target)
 
 bool hiddenInView(const BASE_OBJECT *obj)
 {
-	if (s_layerOf.empty() && s_current == SURFACE) { return false; }
+	// Solange nichts ausserhalb der Oberflaeche existiert, bleibt alles sichtbar und anklickbar (Fehler Version 1: beim Umschalten auf
+	// Untergrund/Orbit war sonst die ganze Basis unsichtbar und nicht mehr waehlbar; die Ebenen zeigen noch keine eigene Karte)
+	if (s_layerOf.empty()) { return false; }
 	if (obj == nullptr) { return false; }
 	if (obj->type == OBJ_STRUCTURE && isShaft(static_cast<const STRUCTURE *>(obj)->pStructureType)) { return false; }   // Schaechte in jeder Ebene sichtbar
 	return layerOf(obj) != s_current;
