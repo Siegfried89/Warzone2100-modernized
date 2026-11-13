@@ -88,6 +88,7 @@
 #include "modwreck.h"
 #include "modgroundfire.h"
 #include "modradio.h"
+#include "modvoice.h"
 #include "moddesigner.h"
 #include "qtscript.h"
 #include "chat.h"
@@ -727,6 +728,7 @@ void interfaceShutDown()
 	modhelp::reset();        // MOD
 	modammo::reset();        // MOD
 	modradio::reset();       // MOD
+	modvoice::reset();       // MOD
 	modgrid::reset();        // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed
 

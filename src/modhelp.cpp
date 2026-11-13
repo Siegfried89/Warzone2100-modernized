@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Hilferuf - siehe modhelp.h
 #include "modhelp.h"
+#include "modvoice.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -62,6 +63,10 @@ void onDroidHit(DROID *psVictim, const PROJECTILE *psProj)
 			orderDroidObj(d, DORDER_ATTACK, attacker, ModeImmediate);
 			helpers++;
 		}
+	}
+	if (helpers > 0)
+	{
+		modvoice::onHelpCall(psVictim);   // Funkspruch "Requesting support" (nur Ton)
 	}
 }
 

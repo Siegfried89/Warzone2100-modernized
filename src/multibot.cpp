@@ -47,6 +47,7 @@
 #include "transporter.h"
 #include "game_world.h"
 #include "multibot_serde.h"
+#include "modvoice.h"
 #include "ordersource.h"
 #include "ordersource_wire.h"
 
@@ -520,6 +521,10 @@ void sendDroidInfo(DROID *psDroid, DroidOrder const &order, bool add, const Orde
 		return;
 	}
 	orderProvenanceRecord(psDroid->player, source.origin(), false);
+	if (psDroid->player == selectedPlayer && (source.origin() == OrderOrigin::UiPointer || source.origin() == OrderOrigin::UiKeybind || source.origin() == OrderOrigin::UiWidget))
+	{
+		modvoice::onPlayerOrder(psDroid, static_cast<int>(order.type));   // MOD: Befehlsbestaetigung per Funk (nur Ton)
+	}
 
 	QueuedDroidInfo info;
 
