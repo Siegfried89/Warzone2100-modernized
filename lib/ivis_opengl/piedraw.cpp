@@ -76,6 +76,20 @@ static bool shadowsHasBeenInit = false;
 static ShadowMode shadowMode = ShadowMode::Shadow_Mapping;
 static uint32_t numShadowCascades = WZ_MAX_SHADOW_CASCADES;
 static gfx_api::gfxFloat lighting0[LIGHT_MAX][4];
+// MOD: Wetter/Nacht: Skalierung von Umgebungs-/Sonnenlicht (nur Anzeige, die Grundwerte aus Karte/Skript bleiben unveraendert)
+static glm::vec3 modAmbientScale(1.f, 1.f, 1.f);
+static glm::vec3 modDiffuseScale(1.f, 1.f, 1.f);
+void pie_SetLightingScale(const glm::vec3 &ambientScale, const glm::vec3 &diffuseScale)
+{
+	modAmbientScale = ambientScale;
+	modDiffuseScale = diffuseScale;
+}
+static glm::vec4 modScaled(LIGHTING_TYPE entry, glm::vec4 v)
+{
+	if (entry == LIGHT_AMBIENT) { v.r *= modAmbientScale.r; v.g *= modAmbientScale.g; v.b *= modAmbientScale.b; }
+	else if (entry == LIGHT_DIFFUSE || entry == LIGHT_SPECULAR) { v.r *= modDiffuseScale.r; v.g *= modDiffuseScale.g; v.b *= modDiffuseScale.b; }
+	return v;
+}
 static gfx_api::gfxFloat lightingDefault[LIGHT_MAX][4];
 
 /*
@@ -132,7 +146,7 @@ glm::vec4 pie_GetLighting0(LIGHTING_TYPE entry)
 
 glm::vec4 pie_GetSceneLighting0(LIGHTING_TYPE entry)
 {
-	return sceneLighting(lighting0[entry]);
+	return modScaled(entry, sceneLighting(lighting0[entry]));
 }
 
 void pie_Lighting0(LIGHTING_TYPE entry, const float value[4])
@@ -1701,9 +1715,9 @@ bool InstancedMeshRenderer::DrawAll(uint64_t currentGameFrame, const glm::mat4& 
 
 	// Generate global (per-frame) uniforms
 	glm::vec4 sceneColor = sceneLighting(lighting0[LIGHT_EMISSIVE]);
-	glm::vec4 ambient = sceneLighting(lighting0[LIGHT_AMBIENT]);
-	glm::vec4 diffuse = sceneLighting(lighting0[LIGHT_DIFFUSE]);
-	glm::vec4 specular = sceneLighting(lighting0[LIGHT_SPECULAR]);
+	glm::vec4 ambient = modScaled(LIGHT_AMBIENT, sceneLighting(lighting0[LIGHT_AMBIENT]));
+	glm::vec4 diffuse = modScaled(LIGHT_DIFFUSE, sceneLighting(lighting0[LIGHT_DIFFUSE]));
+	glm::vec4 specular = modScaled(LIGHT_SPECULAR, sceneLighting(lighting0[LIGHT_SPECULAR]));
 	const auto& renderState = getCurrentRenderState();
 	const bool forwardFogEnabled = fogMode == MeshFogMode::ForwardDistance && pie_GetFogEnabled();
 	const glm::vec4 fogColor = pie_SceneColourToVec4(pie_GetFogColour());

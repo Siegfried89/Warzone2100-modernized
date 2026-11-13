@@ -134,6 +134,8 @@ UDWORD  getDroidRankGraphic(const DROID *psDroid);
 UDWORD  getDroidRankGraphicFromLevel(unsigned int level);
 
 void setSkyBox(const char *page, float mywind, float myscale);
+/// MOD: Wetter tauscht zeitweise den Himmel / beschleunigt die Wolken (Grundhimmel bleibt als Karteneinstellung erhalten)
+void modSwapSkyBox(const char *page, float extraWindSpeed);
 const std::string &getCurrentSkyboxPage();
 float getCurrentSkyboxWindSpeed();
 float getCurrentSkyboxScale();

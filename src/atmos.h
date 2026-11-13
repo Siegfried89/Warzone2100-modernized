@@ -49,6 +49,19 @@ void renderParticle(ATPART *psPart, const glm::mat4 &perspectiveViewMatrix);
 void atmosDrawParticles(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix);
 void atmosSetWeatherType(WT_CLASS type);
 WT_CLASS atmosGetWeatherType();
+// MOD: Wetter-Erweiterung (modweather). Die "Grundwetter" (Skript, Taste, Spielstand) bleibt Regen/Schnee/Klar; das Mod-Modul setzt darueber
+// nur die aktive Erscheinung (Stil, Dichte, Wind). atmosGetBaseWeatherType() liefert das Grundwetter (wird gespeichert).
+enum AtmosStyle
+{
+	AS_NORMAL,      // wie bisher
+	AS_STORM_RAIN,  // Starkregen: dichter, schneller, schraeg
+	AS_SAND,        // Sandsturm: waagerechte Sandschlieren dicht ueber dem Boden
+	AS_BLIZZARD     // Schneesturm: dichter, schraeger Schnee
+};
+WT_CLASS atmosGetBaseWeatherType();
+/// aktive Erscheinung setzen (aendert das Grundwetter nicht). type = Teilchenart (RAINING/SNOWING/NONE); intensity 0..1.5; wind in Weltkoordinaten/s
+void atmosModSet(WT_CLASS type, AtmosStyle style, float intensity, float windX, float windZ);
+bool atmosModActive();
 // User preference gating the weather particle simulation and rendering,
 // independent of the weather type set by the map or scripts
 void atmosSetWeatherEnabled(bool enabled);

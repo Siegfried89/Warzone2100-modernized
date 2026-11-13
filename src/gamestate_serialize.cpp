@@ -5200,7 +5200,7 @@ static nlohmann::ordered_json writePresentation()
 	j["specular"] = writeLightVec4(pie_GetLighting0(LIGHT_SPECULAR));
 
 	j["fogColour"] = pie_GetFogColour().rgba();
-	j["weather"] = static_cast<int>(atmosGetWeatherType());
+	j["weather"] = static_cast<int>(atmosGetBaseWeatherType());   // MOD: Grundwetter, nicht das aufgelegte Mod-Wetter
 
 	nlohmann::ordered_json sky = nlohmann::ordered_json::object();
 	sky["page"] = getCurrentSkyboxPage();

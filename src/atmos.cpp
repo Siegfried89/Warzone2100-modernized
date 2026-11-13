@@ -33,6 +33,8 @@
 #include "loop.h"
 #include "map.h"
 #include "miscimd.h"
+#include "lib/ivis_opengl/piestate.h"
+#include "lib/ivis_opengl/imd.h"
 #include "profiling.h"
 #include "lib/gamelib/gtime.h"
 #include "game_world.h"
@@ -57,7 +59,8 @@
 enum AP_TYPE
 {
 	AP_RAIN,
-	AP_SNOW
+	AP_SNOW,
+	AP_SAND     // MOD: Sandschliere
 };
 
 enum AP_STATUS
@@ -70,6 +73,13 @@ static ATPART	*asAtmosParts = nullptr;
 static UDWORD	freeParticle = 0;
 static WT_CLASS	weather = WT_NONE;
 static bool	weatherEnabled = true;
+// MOD: Grundwetter (Skript/Taste/Spielstand) getrennt vom aktiven Wetter, das modweather darueberlegt
+static WT_CLASS	baseWeather = WT_NONE;
+static bool	modActive = false;
+static AtmosStyle modStyle = AS_NORMAL;
+static float	modIntensity = 1.f;
+static float	modWindX = 0.f, modWindZ = 0.f;
+static iIMDBaseShape *modSandImd = nullptr;
 
 /* Setup all the particles */
 void atmosInitSystem()
@@ -174,7 +184,7 @@ static void processParticle(WorldMapState& mapState, ATPART *psPart)
 				return;
 			}
 		}
-		if (psPart->type == AP_SNOW)
+		if (psPart->type == AP_SNOW && modStyle != AS_BLIZZARD)
 		{
 			if (rand() % 30 == 1)
 			{
@@ -231,10 +241,19 @@ static void atmosAddParticle(const Vector3f &pos, AP_TYPE type)
 		break;
 	case AP_RAIN:
 		asAtmosParts[freeParticle].imd = getImdFromIndex(MI_RAIN);
-		asAtmosParts[freeParticle].size = 50;
+		asAtmosParts[freeParticle].size = (modStyle == AS_STORM_RAIN) ? 62 : 50;
+		break;
+	case AP_SAND:
+		if (modSandImd == nullptr) { modSandImd = modelGet(WzString("misand.pie")); }
+		asAtmosParts[freeParticle].imd = (modSandImd != nullptr) ? modSandImd : getImdFromIndex(MI_SNOW);
+		asAtmosParts[freeParticle].size = 90 + rand() % 70;
 		break;
 	default:
 		break;
+	}
+	if (type == AP_SNOW && modStyle == AS_BLIZZARD)
+	{
+		asAtmosParts[freeParticle].size = 100 + rand() % 50;
 	}
 
 	/* Setup position */
@@ -243,7 +262,18 @@ static void atmosAddParticle(const Vector3f &pos, AP_TYPE type)
 	/* Setup its velocity */
 	if (type == AP_RAIN)
 	{
-		asAtmosParts[freeParticle].velocity = Vector3f(RAIN_SPEED_DRIFT, RAIN_SPEED_FALL, RAIN_SPEED_DRIFT);
+		const float k = (modStyle == AS_STORM_RAIN) ? 1.3f : 1.f;
+		asAtmosParts[freeParticle].velocity = Vector3f(RAIN_SPEED_DRIFT + modWindX * 0.45f, RAIN_SPEED_FALL * k, RAIN_SPEED_DRIFT + modWindZ * 0.45f);
+	}
+	else if (type == AP_SAND)
+	{
+		const float k = 0.7f + 0.6f * (rand() % 100) / 100.f;
+		asAtmosParts[freeParticle].velocity = Vector3f(modWindX * k, -static_cast<float>(rand() % 30), modWindZ * k);
+	}
+	else if (modStyle == AS_BLIZZARD)
+	{
+		const float k = 0.6f + 0.8f * (rand() % 100) / 100.f;
+		asAtmosParts[freeParticle].velocity = Vector3f(modWindX * k + SNOW_SPEED_DRIFT, SNOW_SPEED_FALL * 2.4f, modWindZ * k + SNOW_SPEED_DRIFT);
 	}
 	else
 	{
@@ -283,7 +313,15 @@ void atmosUpdateSystem(WorldMapState& mapState)
 		double gameTimeModVal = gameTimeGetMod().asDouble();
 		if (!std::isnan(gameTimeModVal))
 		{
-			accumulatedParticlesToAdd += ((weather == WT_SNOWING) ? 2.0 : 4.0) * gameTimeModVal;
+			double rate = (weather == WT_SNOWING) ? 2.0 : 4.0;
+			if (modActive)
+			{
+				rate *= modIntensity;
+				if (modStyle == AS_STORM_RAIN) { rate *= 1.8; }
+				else if (modStyle == AS_BLIZZARD) { rate *= 3.5; }
+				else if (modStyle == AS_SAND) { rate = 7.0 * modIntensity; }
+			}
+			accumulatedParticlesToAdd += rate * gameTimeModVal;
 		}
 
 		numberToAdd = static_cast<UDWORD>(accumulatedParticlesToAdd);
@@ -297,6 +335,7 @@ void atmosUpdateSystem(WorldMapState& mapState)
 			pos.x += world_coord(rand() % visibleTiles.x - visibleTiles.x / 2);
 			pos.z += world_coord(rand() % visibleTiles.x - visibleTiles.y / 2);
 			pos.y = 1000;
+			if (modActive && modStyle == AS_SAND) { pos.y = 90 + rand() % 420; }
 
 			/* If we've got one on the grid */
 			if (pos.x > 0 && pos.z > 0 &&
@@ -307,7 +346,7 @@ void atmosUpdateSystem(WorldMapState& mapState)
 				switch (weather)
 				{
 				case WT_SNOWING:
-					atmosAddParticle(pos, AP_SNOW);
+					atmosAddParticle(pos, (modActive && modStyle == AS_SAND) ? AP_SAND : AP_SNOW);
 					break;
 				case WT_RAINING:
 					atmosAddParticle(pos, AP_RAIN);
@@ -378,7 +417,7 @@ void renderParticle(ATPART *psPart, const glm::mat4 &viewMatrix)
 	renderParticleInternal(psPart, viewMatrix, rotateScaleMatrix);
 }
 
-void atmosSetWeatherType(WT_CLASS type)
+static void atmosApplyType(WT_CLASS type)
 {
 	if (type != weather)
 	{
@@ -390,6 +429,36 @@ void atmosSetWeatherType(WT_CLASS type)
 		free(asAtmosParts);
 		asAtmosParts = nullptr;
 	}
+}
+
+void atmosSetWeatherType(WT_CLASS type)
+{
+	baseWeather = type;
+	modActive = false;
+	modStyle = AS_NORMAL;
+	modIntensity = 1.f;
+	modWindX = modWindZ = 0.f;
+	atmosApplyType(type);
+}
+
+WT_CLASS atmosGetBaseWeatherType()
+{
+	return baseWeather;
+}
+
+bool atmosModActive()
+{
+	return modActive;
+}
+
+void atmosModSet(WT_CLASS type, AtmosStyle style, float intensity, float windX, float windZ)
+{
+	modActive = true;
+	modStyle = style;
+	modIntensity = intensity;
+	modWindX = windX;
+	modWindZ = windZ;
+	atmosApplyType(type);
 }
 
 WT_CLASS atmosGetWeatherType()

@@ -82,6 +82,7 @@
 #include "modbuild.h"
 #include "modhelp.h"
 #include "modammo.h"
+#include "modweather.h"
 #include "modlayer.h"
 #include "modgrid.h"
 #include "modoil.h"
@@ -727,6 +728,7 @@ void interfaceShutDown()
 	modbuild::reset();       // MOD
 	modhelp::reset();        // MOD
 	modammo::reset();        // MOD
+	modweather::reset();     // MOD
 	modradio::reset();       // MOD
 	modvoice::reset();       // MOD
 	modgrid::reset();        // MOD

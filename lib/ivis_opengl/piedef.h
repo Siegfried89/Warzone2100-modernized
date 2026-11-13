@@ -60,6 +60,8 @@ void pie_setShadows(bool drawShadows);
 void pie_InitLighting();
 void pie_Lighting0(LIGHTING_TYPE entry, const float value[4]);
 glm::vec4 pie_GetLighting0(LIGHTING_TYPE entry);
+/// MOD: Wetter/Nacht - Umgebungs- und Sonnenlicht nur fuer die Anzeige abdunkeln/faerben (1,1,1 = unveraendert)
+void pie_SetLightingScale(const glm::vec3 &ambientScale, const glm::vec3 &diffuseScale);
 /// A light parameter in the form a scene shader needs it: decoded to linear while linear lighting is on
 glm::vec4 pie_GetSceneLighting0(LIGHTING_TYPE entry);
 

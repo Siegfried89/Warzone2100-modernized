@@ -99,6 +99,7 @@
 #include "modgroundfire.h"
 #include "modbuild.h"
 #include "modammo.h"
+#include "modweather.h"
 #include "scene_effect_surfaces.h"
 #include "multistat.h"
 #include "animation.h"
@@ -192,6 +193,7 @@ bool	showCorridors = false;
 // Skybox data
 static float wind = 0.0f;
 static float windSpeed = 0.0f;
+static float skybox_baseWindSpeed = 0.0f; // MOD: Wolkenzug der Karte (ohne Unwetter-Zuschlag), wird gespeichert
 static float skybox_scale = 10000.0f;
 static std::string skybox_page; // current skybox texture (for save/restore)
 
@@ -728,21 +730,37 @@ static void setScreenDispWithPerspective(SCREEN_DISP_DATA *sDisplay, const glm::
 void setSkyBox(const char *page, float mywind, float myscale)
 {
 	windSpeed = mywind;
+	skybox_baseWindSpeed = mywind;
 	wind = 0.0f;
 	skybox_scale = myscale;
 	skybox_page = page;
 	pie_Skybox_Texture(page);
+	modweather::onSkybox(page); // MOD: Grundhimmel merken, Nacht erkennen
+}
+
+// MOD: Wetter legt zeitweise einen anderen Himmel auf (Unwetter) bzw. beschleunigt die Wolken; Grundhimmel bleibt unveraendert
+void modSwapSkyBox(const char *page, float extraWindSpeed)
+{
+	windSpeed = skybox_baseWindSpeed + extraWindSpeed;
+	if (page != nullptr && skybox_page != page)
+	{
+		skybox_page = page;
+		pie_Skybox_Texture(page);
+	}
 }
 
 // Accessors for the current skybox parameters (used by GameState presentation serialization).
 const std::string &getCurrentSkyboxPage()
 {
-	return skybox_page;
+	// MOD: gespeichert wird der Himmel der Karte, nicht der gerade aufgelegte Unwetterhimmel
+	static std::string baseCopy;
+	baseCopy = modweather::baseSkyPage(skybox_page.c_str());
+	return baseCopy;
 }
 
 float getCurrentSkyboxWindSpeed()
 {
-	return windSpeed;
+	return skybox_baseWindSpeed;
 }
 
 float getCurrentSkyboxScale()
@@ -1435,6 +1453,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	/* This is done here as effects can light the terrain - pause mode problems though */
 	wzPerfBegin(PERF_EFFECTS, "3D scene - effects");
 	processEffects(perspectiveViewMatrix, lightData);
+	modweather::tick(); // MOD: Wetter (Gewitter, Sandsturm, Schneesturm, Nacht) - nur Anzeige
 	atmosUpdateSystem(gameWorld.map);
 	avUpdateTiles(gameWorld.map);
 	emitProjectileLights(lightData);
@@ -3911,6 +3930,7 @@ static void	drawDroidSelections()
 
 static void drawDroidAndStructureSelections()
 {
+	modweather::drawOverlay(); // MOD: Vollbildfaerbung/Blitz des Wetters
 	drawDroidSelections();
 	drawStructureSelections();
 

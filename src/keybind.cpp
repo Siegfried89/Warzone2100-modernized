@@ -1964,13 +1964,13 @@ void	kf_MoveToLastMessagePos()
 /* Makes it snow if it's not snowing and stops it if it is */
 void	kf_ToggleWeather()
 {
-	if (atmosGetWeatherType() == WT_NONE)
+	if (atmosGetBaseWeatherType() == WT_NONE)
 	{
 		atmosSetWeatherType(WT_SNOWING);
 		addConsoleMessage(_("Oh, the weather outside is frightful... SNOW"), LEFT_JUSTIFY, SYSTEM_MESSAGE);
 
 	}
-	else if (atmosGetWeatherType() == WT_SNOWING)
+	else if (atmosGetBaseWeatherType() == WT_SNOWING)
 	{
 		atmosSetWeatherType(WT_RAINING);
 		addConsoleMessage(_("Singing in the rain, I'm singing in the rain... RAIN"), LEFT_JUSTIFY, SYSTEM_MESSAGE);
