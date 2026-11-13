@@ -69,6 +69,7 @@
 #include "intimage.h"
 #include "mechanics.h"
 #include "modoil.h"
+#include "modlava.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
 #include "lighting.h"
@@ -2356,6 +2357,13 @@ static void dealWithLMBFeature(FEATURE *psFeature)
 	if (psDominantSelected != nullptr && modoil::trenchForInfantry(psFeature, psDominantSelected))
 	{
 		orderSelectedLoc(selectedPlayer, psFeature->pos.x, psFeature->pos.y, ctrlShiftDown());
+		FeedbackOrderGiven();
+		return;
+	}
+
+	// MOD: Lavafeld mit Hover-Truck anklicken = hinfahren und schuerfen (modlava)
+	if (modlava::isLava(psFeature) && modlava::orderSelected(selectedPlayer, psFeature))
+	{
 		FeedbackOrderGiven();
 		return;
 	}
