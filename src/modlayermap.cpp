@@ -642,7 +642,8 @@ void openSite(int tileX, int tileY, int player, int rad, int revealRad)
 	{
 		for (int dx = -rad; dx <= rad; ++dx)
 		{
-			if (dx * dx + dy * dy > rad * rad + rad / 2) { continue; }
+			// MF: die Aufzugskammer ist quadratisch (5x5 Bloecke zu je 2x2 Whixel um den Aufzug); kleine Kammern daher als volles Quadrat
+			if (rad > 1 && dx * dx + dy * dy > rad * rad + rad / 2) { continue; }
 			carved.push_back({ tileX + dx, tileY + dy });
 		}
 	}
@@ -665,7 +666,9 @@ void openSite(int tileX, int tileY, int player, int rad, int revealRad)
 	Grid g(W, H);
 	for (int y = 0; y < H; ++y) { for (int x = 0; x < W; ++x) { if (isOpen(x, y)) { g.set(x, y); } } }
 	for (const Pt &p : carved) { if (p.x >= MARGIN && p.y >= MARGIN && p.x < W - MARGIN && p.y < H - MARGIN) { g.set(p.x, p.y); } }
-	if (!alreadyConnected && best.x >= 0)
+	// MF-treu: Gaenge entstehen nur durch Bohren (Bohrfahrzeug), nie von selbst. Die fruehere automatische Anbindung bleibt abschaltbar erhalten.
+	constexpr bool kAutoConnect = false;
+	if (kAutoConnect && !alreadyConnected && best.x >= 0)
 	{
 		Rng r(s_seed ^ static_cast<uint32_t>(tileX * 31 + tileY * 17));
 		carveTunnel(g, r, { tileX, tileY }, best, 1);

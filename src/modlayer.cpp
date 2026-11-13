@@ -342,12 +342,12 @@ void gameTick()
 	}
 	if (shafts.empty()) { return; }
 
-	// fertiger Schacht: im Untergrund eine Kammer freilegen und an das Gangnetz anbinden
+	// fertiger Schacht: im Untergrund eine kleine Kammer freilegen (MF: Aufzugskammer 10x10 Whixel, ohne Gangnetz-Anbindung; weiter nur durch Bohren)
 	for (const STRUCTURE *s : shafts)
 	{
 		if (s_openedShafts.insert(s->id).second)
 		{
-			modlayermap::openSite(map_coord(s->pos.x), map_coord(s->pos.y), s->player, 3, 7);
+			modlayermap::openSite(map_coord(s->pos.x), map_coord(s->pos.y), s->player, 1, 3);
 		}
 	}
 
