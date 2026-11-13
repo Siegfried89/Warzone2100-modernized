@@ -117,6 +117,7 @@ static void stopDangerThread()
 // lastDangerPlayer = -1; the snapshot's value is reapplied afterwards by the determinism-core restore.
 void mapStopDangerThreadForReconstruct()
 {
+	modlayer::resetState();   // MOD: Ebenen - Oberflaechenkarte zurueckschalten und Gefahrenkarten-Thread freigeben, sonst wartet stopDangerThread() ewig
 	stopDangerThread();
 }
 

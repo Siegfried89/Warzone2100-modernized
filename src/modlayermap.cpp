@@ -235,7 +235,8 @@ void carveTunnel(Grid &g, Rng &r, Pt a, Pt b, int rad)
 void genUndergroundGrid(Grid &g, Rng &r)
 {
 	const int W = g.W, H = g.H;
-	const int nCh = std::max(6, (W * H) / 650);
+	const int area = W * H;
+	const int nCh = area <= 20000 ? std::max(6, area / 650) : 30 + (area - 20000) / 2400;   // grosse Karten: nicht entsprechend mehr Kammern, sonst ist alles hohl
 	const int bigBonus = (W * H > 40000) ? 2 : 0;
 	std::vector<Pt> ch;
 	const int spanX = std::max(1, W - 2 * MARGIN - 14), spanY = std::max(1, H - 2 * MARGIN - 14);
