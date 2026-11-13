@@ -45,6 +45,7 @@
 #include "mission.h"
 #include "faction.h"
 #include "modcombot.h"
+#include "modduel.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
 #endif
@@ -632,15 +633,22 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		{
 			strImd = strImd->objanimpie[psDroid->animationEvent]->displayModel();
 		}
+		// MOD: Rumpf-Wackeln nach Combot-Nahkampftreffern - nur der Rumpf kippt, Turm und Waffen bleiben ruhig
+		glm::mat4 bodyMatrix = modifiedModelMatrix;
+		float wobblePitch = 0.f, wobbleRoll = 0.f;
+		if (!bButton && modduel::hullWobble(psDroid, wobblePitch, wobbleRoll))
+		{
+			bodyMatrix = modifiedModelMatrix * glm::rotate(glm::radians(wobblePitch), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(wobbleRoll), glm::vec3(0.f, 0.f, 1.f));
+		}
 		while (strImd)
 		{
-			if (drawShape(strImd, psDroid->timeAnimationStarted, colour, brightness, pieFlag, iPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+			if (drawShape(strImd, psDroid->timeAnimationStarted, colour, brightness, pieFlag, iPieData, bodyMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 			{
 				didDrawSomething = true;
 			}
 			if (!bButton && psDroid->shieldPoints > 0)
 			{
-				if (drawShape(strImd, psDroid->timeAnimationStarted, colour, brightness, shieldPieFlag, iShieldPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+				if (drawShape(strImd, psDroid->timeAnimationStarted, colour, brightness, shieldPieFlag, iShieldPieData, bodyMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 				{
 					didDrawSomething = true;
 				}

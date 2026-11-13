@@ -27,6 +27,8 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <cmath>
+#include <algorithm>
 
 namespace modduel
 {
@@ -105,6 +107,44 @@ void sever(DROID *d, Duel &du, Part p)
 	}
 }
 
+namespace
+{
+struct Wobble
+{
+	unsigned start = 0;
+	float dirRel = 0.f;      // Richtung des Schlags relativ zur Blickrichtung des Opfers (Bogenmass)
+	float amp = 0.f;         // Grad
+};
+std::unordered_map<uint32_t, Wobble> s_wobble;
+
+void noteWobble(const DROID *victim, const DROID *attacker, int dmg)
+{
+	if (victim == nullptr || attacker == nullptr || modcombot::isModular(victim)) { return; }
+	const float dx = static_cast<float>(victim->pos.x - attacker->pos.x);
+	const float dy = static_cast<float>(victim->pos.y - attacker->pos.y);
+	const float worldAng = std::atan2(dx, -dy);                                        // 0 = Norden
+	const float face = static_cast<float>(victim->rot.direction) * 6.2831853f / 65536.f;
+	Wobble w;
+	w.start = gameTime;
+	w.dirRel = worldAng - face;
+	w.amp = std::clamp(2.0f + static_cast<float>(dmg) * 0.05f, 2.0f, 6.0f);
+	s_wobble[victim->id] = w;
+}
+} // namespace
+
+bool hullWobble(const DROID *d, float &pitchDeg, float &rollDeg)
+{
+	if (d == nullptr || s_wobble.empty()) { return false; }
+	const auto it = s_wobble.find(d->id);
+	if (it == s_wobble.end()) { return false; }
+	const float t = static_cast<float>(gameTime - it->second.start) / 1000.f;
+	if (t > 1.6f) { return false; }
+	const float v = it->second.amp * std::exp(-t * 3.2f) * std::sin(t * 15.f);
+	pitchDeg = v * std::cos(it->second.dirRel);
+	rollDeg = v * std::sin(it->second.dirRel);
+	return true;
+}
+
 void applyDamage(DROID *victim, Duel &vd, const DROID *attacker, Duel &ad)
 {
 	int dmg = 40;
@@ -155,6 +195,7 @@ void applyDamage(DROID *victim, Duel &vd, const DROID *attacker, Duel &ad)
 		victim->timeLastHit = gameTime;
 		return;
 	}
+	if (modAtt) { noteWobble(victim, attacker, dmg); }   // MOD: Rumpf des getroffenen Panzers wackelt
 	Part part = r2 < 35 ? TORSO : r2 < 60 ? RARM : r2 < 80 ? LARM : LEGS;
 	if (!vd.init) { initParts(vd, victim); }
 	vd.partHp[part] -= dmg;

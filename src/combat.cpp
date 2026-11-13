@@ -49,6 +49,7 @@
 #include "display3ddef.h"
 #include "campaigninfo.h"
 #include "modgroundfire.h"
+#include "modammo.h"
 
 #define DROID_SHIELD_DAMAGE_SPREAD	(16 - rand()%32)
 #define DROID_SHIELD_PARTICLES		(6 + rand()%8)
@@ -138,6 +139,10 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	/* See when the weapon last fired to control it's rate of fire */
 	firePause = weaponFirePause(*psStats, psAttacker->player);
 	firePause = std::max(firePause, 1u);  // Don't shoot infinitely many shots at once.
+	if (psAttacker->type == OBJ_DROID)
+	{
+		firePause *= modammo::firePauseFactor(static_cast<const DROID *>(psAttacker));   // MOD: ohne Munition 10-mal so langsam
+	}
 	if (!bMultiPlayer && getCamTweakOption_heavilyDamagedPenalty() && objectBelowHealthLevel(psAttacker, HEAVY_DAMAGE_LEVEL))
 	{
 		firePause += firePause;
@@ -264,6 +269,10 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 
 	/* note when the weapon fired */
 	psWeap->lastFired = fireTime;
+	if (psAttacker->type == OBJ_DROID)
+	{
+		modammo::onShot(static_cast<const DROID *>(psAttacker));   // MOD: Munition
+	}
 
 	/* reduce ammo if salvo */
 	if (psStats->upgrade[psAttacker->player].reloadTime)

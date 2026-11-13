@@ -117,6 +117,7 @@
 #include "modwreck.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
+#include "modammo.h"
 
 #include <numeric>
 
@@ -581,6 +582,7 @@ static void gameStateUpdate()
 	modlayer::gameTick();   // MOD: Ebenen (Schacht-Wechsel)
 	modoil::tick();     // MOD: Oelkreislauf (Explosionen, Lkw-Autopilot, Pipeline, Kraftwerk-Laufzeit)
 	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
+	modammo::tick(gameWorld);    // MOD: Munition (Nachschub)
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modgroundfire::tick(gameWorld);   // MOD: Bodenziel-Punkte, die kein Befehl mehr braucht, entfernen
 	modradio::tick(gameWorld);   // MOD: Funkgebrabbel am Kommandozentrum / ATC-Turm

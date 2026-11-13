@@ -98,6 +98,7 @@
 #include "modwreck.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
+#include "modammo.h"
 #include "scene_effect_surfaces.h"
 #include "multistat.h"
 #include "animation.h"
@@ -3654,6 +3655,21 @@ static void modQueueSelectionRing(BatchedMultiRectRenderer& renderer, size_t rec
 	}
 }
 
+// MOD: Munitionsbalken (gelb, 5 Abschnitte) unter dem Lebensbalken; ein Abschnitt verschwindet immer ganz
+static void modQueueAmmoBar(BatchedMultiRectRenderer& renderer, size_t rectGroup, int cx, int cy, int half, int segs)
+{
+	const int x0 = cx - half;
+	const int y0 = cy + 8;
+	const int full = 2 * half;
+	const PIELIGHT ammoCol = pal_RGBA(236, 196, 40, 255);
+	const PIELIGHT ammoShadow = pal_RGBA(150, 112, 14, 255);
+	renderer.addRect(PIERECT_DrawRequest(x0 - 1, y0, cx + half + 1, y0 + 5, WZCOL_RELOAD_BACKGROUND), rectGroup);
+	const int fill = (std::clamp(segs, 0, MOD_BAR_SEGMENTS) * full) / MOD_BAR_SEGMENTS;
+	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 3, ammoCol), rectGroup);
+	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 3, x0 + fill, y0 + 4, ammoShadow), rectGroup);
+	modQueueBarSegments(renderer, rectGroup, x0, full, y0 + 1, y0 + 4);
+}
+
 static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup)
 {
 	UDWORD damage = PERCENT(psDroid->body, psDroid->originalBody);
@@ -3707,6 +3723,13 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 
 	/* Power bars */
 	modQueueHealthBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), barHalf, static_cast<int>(damage), powerCol, powerColShadow);
+	{
+		const int ammoSegs = modammo::segments(psDroid);
+		if (ammoSegs >= 0)
+		{
+			modQueueAmmoBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), barHalf, ammoSegs);
+		}
+	}
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(
 		psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 3,
 		psDroid->sDisplay.screenY + psDroid->sDisplay.screenR,
