@@ -2824,6 +2824,7 @@ void moveUpdateDroid(DROID *psDroid)
 	else
 	{
 		moveUpdateGroundModel(psDroid, moveSpeed, moveDir);
+		if (psPropStats->hoverHeight > 0) { psDroid->pos.z += psPropStats->hoverHeight; }   // MOD: Balldrohne schwebt ueber dem Boden
 		if (psPropStats->propulsionType == PROPULSION_TYPE_LEGGED) { modduel::updateLeggedAnimation(psDroid, moveSpeed); } // MOD
 	}
 

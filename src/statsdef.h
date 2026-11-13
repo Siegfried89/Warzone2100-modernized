@@ -349,6 +349,8 @@ struct PROPULSION_STATS : public COMPONENT_STATS
 	PROPULSION_TYPE propulsionType = PROPULSION_TYPE_NUM;
 	int shieldMech = 0;             ///< MOD (MF): Schild der Beine gegen mechanischen Schaden (Prozent, wird zu dem des Rumpfs addiert)
 	int shieldEnergy = 0;           ///< MOD (MF): Schild der Beine gegen Energieschaden
+	bool alwaysFlying = false;      ///< MOD: Schwebe-Antrieb (Balldrohne): gilt immer als Lufteinheit (Landwaffen koennen sie nicht anvisieren), bewegt sich wie ein Flieger
+	int hoverHeight = 0;            ///< MOD: Schwebehoehe ueber dem Boden (nur mit alwaysFlying)
 	unsigned maxSpeed = 0;		///< Max speed for the droid
 	unsigned turnSpeed = 0;
 	unsigned spinSpeed = 0;

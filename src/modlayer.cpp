@@ -319,6 +319,11 @@ PROPULSION_TYPE effectivePropulsion(const DROID *psDroid, PROPULSION_TYPE realTy
 	{
 		return PROPULSION_TYPE_WHEELED;
 	}
+	// Schwebende Drohnen (Balldrohne) fliegen ueber alles hinweg: Wegfindung und Blockierung wie ein Flieger
+	if (psDroid != nullptr && psDroid->getPropulsionStats()->alwaysFlying)
+	{
+		return PROPULSION_TYPE_LIFT;
+	}
 	return realType;
 }
 
