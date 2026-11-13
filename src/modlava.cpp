@@ -15,6 +15,7 @@
 #include "modbuild.h"
 #include "modlayer.h"
 #include "modlayerdig.h"
+#include "modlayermap.h"
 #include "modoil.h"
 #include "multiplay.h"
 #include "order.h"
@@ -45,6 +46,7 @@ std::map<uint32_t, int> s_left;            // Feld-Id -> Rest (MJ)
 unsigned s_lastSec = 0;
 unsigned s_sec = 0;                        // Sekundenzaehler ("unter Tage nur jede vierte Sekunde")
 bool s_placed = false;
+bool s_placedUnder = false;
 int s_cap[MAX_PLAYERS] = {};
 
 bool isLavaStats(const FEATURE_STATS *fs)
@@ -100,7 +102,7 @@ void placeFields(GameWorld &world)
 	}
 	const int w = world.map.width, h = world.map.height;
 	if (w < 24 || h < 24) { return; }
-	const int wanted = std::clamp(w * h / 1500, 3, 40);
+	const int wanted = (std::clamp(w * h / 1500, 3, 40) + 1) / 2;   // je zur Haelfte Oberflaeche / Untergrund (Untergrund-Haelfte siehe placeUnderground)
 	int placed = 0;
 	for (int attempt = 0; attempt < wanted * 60 && placed < wanted; attempt++)
 	{
@@ -111,6 +113,42 @@ void placeFields(GameWorld &world)
 		if (nearAnyStructure(world, wx, wy)) { continue; }
 		if (buildFeature(world, fs, static_cast<UDWORD>(wx), static_cast<UDWORD>(wy), false) != nullptr) { placed++; }
 	}
+}
+
+// Untergrund-Haelfte der Lavafelder: wird erst beim ersten fertigen Schacht angelegt (vorher aendert sich im Spiel nichts, die Ebenen bleiben unbenutzt).
+// Die Felder liegen im Fels (nur dort, wo noch nichts gebohrt ist); erst ein angrenzender Gang macht sie sichtbar und erreichbar.
+void placeUnderground(GameWorld &world)
+{
+	FEATURE_STATS *fs = lavaStats();
+	if (fs == nullptr || !modlayermap::worldsExist()) { return; }
+	const int w = world.map.width, h = world.map.height;
+	if (w < 24 || h < 24) { return; }
+	const int wanted = std::clamp(w * h / 1500, 3, 40) / 2;
+	int placed = 0;
+	std::vector<FEATURE *> made;
+	{
+		modlayermap::Scope sc(modlayer::UNDERGROUND);
+		for (int attempt = 0; attempt < wanted * 80 && placed < wanted; attempt++)
+		{
+			const int tx = 6 + static_cast<int>(gameRand(static_cast<uint32_t>(w - 12)));
+			const int ty = 6 + static_cast<int>(gameRand(static_cast<uint32_t>(h - 12)));
+			bool ok = true;
+			for (int y = ty; y < ty + 2 && ok; y++)
+			{
+				for (int x = tx; x < tx + 2 && ok; x++)
+				{
+					const MAPTILE *t = mapTile(world.map, x, y);
+					ok = t != nullptr && !TileIsOccupied(t) && terrainType(t) == TER_CLIFFFACE;   // massiver Fels
+				}
+			}
+			if (!ok) { continue; }
+			const int wx = world_coord(tx + 1), wy = world_coord(ty + 1);
+			if (nearAnyStructure(world, wx, wy)) { continue; }   // Aufzugskammern und Basen bleiben frei
+			FEATURE *f = buildFeature(world, fs, static_cast<UDWORD>(wx), static_cast<UDWORD>(wy), false);
+			if (f != nullptr) { made.push_back(f); placed++; }
+		}
+	}
+	for (FEATURE *f : made) { modlayer::assignLayer(f, modlayer::UNDERGROUND); }
 }
 
 FEATURE *nearestLava(GameWorld &world, const DROID *d)
@@ -186,6 +224,24 @@ void tick(GameWorld &world)
 		placeFields(world);   // unabhaengig vom eigenen Spieler (alle Rechner muessen gleich rechnen)
 	}
 
+	// Untergrund-Lavafelder: beim ersten fertigen Schacht
+	if (!s_placedUnder && s_placed)
+	{
+		bool shaft = false;
+		for (int p = 0; p < MAX_PLAYERS && !shaft; p++)
+		{
+			for (const STRUCTURE *s : world.objects.structures[p])
+			{
+				if (!s->died && s->status == SS_BUILT && s->pStructureType->id.startsWith("A0LayerShaft")) { shaft = true; break; }
+			}
+		}
+		if (shaft)
+		{
+			s_placedUnder = true;
+			placeUnderground(world);
+		}
+	}
+
 	// Energiebanken (Obergrenze) und Solarpaneele (Einnahme)
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
@@ -248,6 +304,7 @@ void reset()
 	s_lastSec = 0;
 	s_sec = 0;
 	s_placed = false;
+	s_placedUnder = false;
 	for (int &c : s_cap) { c = 0; }
 }
 }

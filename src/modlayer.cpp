@@ -272,6 +272,12 @@ Layer layerOf(const SIMPLE_OBJECT *obj)
 	return layerOfId(obj->id);
 }
 
+void assignLayer(const SIMPLE_OBJECT *obj, Layer l)
+{
+	if (obj == nullptr) { return; }
+	if (l == SURFACE) { s_layerOf.erase(obj->id); } else { s_layerOf[obj->id] = l; }
+}
+
 bool active()
 {
 	return !s_layerOf.empty();

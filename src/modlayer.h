@@ -43,6 +43,8 @@ void shutdown();
 // ---- Spielzustand ----
 /// Ebene eines Objekts (Standard Oberflaeche)
 Layer layerOf(const SIMPLE_OBJECT *obj);
+/// legt die Ebene eines Objekts fest (z. B. Lavafelder im Untergrund); das Objekt muss in der Karte dieser Ebene angelegt worden sein
+void assignLayer(const SIMPLE_OBJECT *obj, Layer l);
 /// gibt es ueberhaupt Objekte ausserhalb der Oberflaeche?
 bool active();
 /// koennen die beiden Objekte einander sehen / beschiessen / behindern? (gleiche Ebene)
