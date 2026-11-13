@@ -93,14 +93,14 @@ struct Thunder { unsigned at; int clip; };
 std::vector<Thunder> s_thunder;
 unsigned s_nextBed = 0;
 std::vector<int> s_trackCache;       // [Donner 6][Regen 3][Wind 4][Sand 3]
-unsigned s_lastWindDeg = 0;
+[[maybe_unused]] unsigned s_lastWindDeg = 0;
 
 unsigned rnd()
 {
 	s_rng ^= s_rng << 13; s_rng ^= s_rng >> 17; s_rng ^= s_rng << 5;
 	return s_rng;
 }
-float rnd01() { return (rnd() & 0xFFFFu) / 65535.f; }
+[[maybe_unused]] float rnd01() { return (rnd() & 0xFFFFu) / 65535.f; }
 unsigned rndRange(unsigned a, unsigned b) { return a + rnd() % (b - a + 1); }
 
 float smooth(float t) { t = std::min(1.f, std::max(0.f, t)); return t * t * (3.f - 2.f * t); }

@@ -132,7 +132,7 @@ void noteWobble(const DROID *victim, const DROID *attacker, int dmg)
 }
 } // namespace
 
-bool hullWobble(const DROID *d, float &pitchDeg, float &rollDeg)
+bool hullWobbleImpl(const DROID *d, float &pitchDeg, float &rollDeg)
 {
 	if (d == nullptr || s_wobble.empty()) { return false; }
 	const auto it = s_wobble.find(d->id);
@@ -226,6 +226,11 @@ void endDuel(DROID *d)
 }
 
 } // namespace
+
+bool hullWobble(const DROID *d, float &pitchDeg, float &rollDeg)
+{
+	return hullWobbleImpl(d, pitchDeg, rollDeg);   // die Umsetzung steht im anonymen Namensraum (s_wobble), die Schnittstelle in modduel.h
+}
 
 bool isCombot(const DROID *d)
 {
