@@ -399,7 +399,13 @@ bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PR
 	}
 
 	// the MAX hack below is because blockTile() range does not include player-specific versions...
-	return (blockTile(mapState, x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits) != 0;  // finally check if move is blocked by propulsion related factors
+	const unsigned blocked = blockTile(mapState, x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits;  // finally check if move is blocked by propulsion related factors
+	// MOD: besetzbare Haeuser/Hochhaeuser: Infanterie (Beine) darf hinein, wenn nur das Feature (kein Gelaende) sperrt
+	if (blocked != 0 && (blocked & ~static_cast<unsigned>(FEATURE_BLOCKED)) == 0 && propulsion == PROPULSION_TYPE_LEGGED && modoil::tilePassableForInfantry(mapState, x, y))
+	{
+		return false;
+	}
+	return blocked != 0;
 }
 
 bool fpathDroidBlockingTile(DROID *psDroid, const WorldMapState& mapState, int x, int y, FPATH_MOVETYPE moveType)

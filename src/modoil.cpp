@@ -356,13 +356,25 @@ void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne)
 bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY)
 {
 	const MAPTILE *t = mapTile(mapState, tileX, tileY);
-	if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_STRUCTURE) { return false; }
+	if (t == nullptr || t->psObject == nullptr) { return false; }
+	if (t->psObject->type == OBJ_FEATURE)   // MOD: besetzbare Haeuser/Hochhaeuser (nicht auf Klippen/im Wasser)
+	{
+		const FEATURE *f = static_cast<const FEATURE *>(t->psObject);
+		return f->psStats != nullptr && f->psStats->infantryPassable && terrainType(t) != TER_CLIFFFACE && terrainType(t) != TER_WATER;
+	}
+	if (t->psObject->type != OBJ_STRUCTURE) { return false; }
 	const STRUCTURE *s = static_cast<const STRUCTURE *>(t->psObject);
 	return s->pStructureType != nullptr && s->pStructureType->infantryPassable && s->status == SS_BUILT;
 }
 
 bool trenchForInfantry(const BASE_OBJECT *obj, const DROID *dominant)
 {
+	if (obj != nullptr && dominant != nullptr && obj->type == OBJ_FEATURE)   // MOD: Haus/Hochhaus besetzen
+	{
+		const FEATURE *f = static_cast<const FEATURE *>(obj);
+		const PROPULSION_STATS *fp = dominant->getPropulsionStats();
+		return f->psStats != nullptr && f->psStats->infantryPassable && fp != nullptr && fp->propulsionType == PROPULSION_TYPE_LEGGED;
+	}
 	if (obj == nullptr || dominant == nullptr || obj->type != OBJ_STRUCTURE || obj->player != selectedPlayer) { return false; }
 	const STRUCTURE *s = static_cast<const STRUCTURE *>(obj);
 	if (s->pStructureType == nullptr || !s->pStructureType->infantryPassable || s->status != SS_BUILT) { return false; }

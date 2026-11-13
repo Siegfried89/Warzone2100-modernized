@@ -58,6 +58,7 @@ struct FEATURE_STATS : public BASE_STATS
 	bool            allowLOS = false;       ///< Whether the feature allows the LOS. true = can see through the feature
 	bool            visibleAtStart = false; ///< Whether the feature is visible at the start of the mission
 	bool            damageable = false;     ///< Whether the feature can be destroyed
+	bool            infantryPassable = false; ///< MOD: Infanterie darf das Gebaeude betreten (Haeuser/Hochhaeuser besetzen)
 	UDWORD		body = 0;               ///< Number of body points
 	UDWORD          armourValue = 0;        ///< Feature armour
 

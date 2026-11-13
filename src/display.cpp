@@ -2352,6 +2352,14 @@ static void dealWithLMBFeature(FEATURE *psFeature)
 		goto debugOuput;
 	}
 
+	// MOD: Haus/Hochhaus mit Infanterie anklicken = hineingehen und besetzen (wie Graeben)
+	if (psDominantSelected != nullptr && modoil::trenchForInfantry(psFeature, psDominantSelected))
+	{
+		orderSelectedLoc(selectedPlayer, psFeature->pos.x, psFeature->pos.y, ctrlShiftDown());
+		FeedbackOrderGiven();
+		return;
+	}
+
 	//go on to check for
 	if (psFeature->psStats->damageable)
 	{

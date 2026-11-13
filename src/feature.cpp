@@ -55,6 +55,7 @@
 #include "display3d.h"
 #include "random.h"
 #include "game_world.h"
+#include "modgarrison.h"
 
 /* The statistics for the features */
 std::vector<FEATURE_STATS> asFeatureStats;
@@ -129,6 +130,7 @@ bool loadFeatureStats(WzConfig &ini)
 		p.allowLOS = ini.value("lineOfSight", 1).toInt();
 		p.visibleAtStart = ini.value("startVisible", 1).toInt();
 		p.damageable = ini.value("damageable", 1).toInt();
+		p.infantryPassable = ini.value("infantryPassable", false).toBool();   // MOD
 		p.body = ini.value("hitpoints", 1).toInt();
 		p.armourValue = ini.value("armour", 1).toInt();
 
@@ -440,6 +442,8 @@ bool removeFeature(FEATURE *psDel, GameWorld& world)
 
 	ASSERT_OR_RETURN(false, psDel != nullptr, "Invalid feature pointer");
 	ASSERT_OR_RETURN(false, !psDel->died, "Feature already dead");
+
+	modgarrison::onFeatureRemoved(psDel, world);   // MOD: Besatzung stirbt an den Fenstern
 
 	//remove from the map data
 	StructureBounds b = getStructureBounds(psDel);
