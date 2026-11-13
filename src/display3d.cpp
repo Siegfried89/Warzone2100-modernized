@@ -96,6 +96,7 @@
 #include "modgrid.h"
 #include "modoil.h"
 #include "modwreck.h"
+#include "modgroundfire.h"
 #include "scene_effect_surfaces.h"
 #include "multistat.h"
 #include "animation.h"
@@ -2583,6 +2584,11 @@ void	renderFeature(FEATURE *psFeature, const glm::mat4 &viewMatrix, const glm::m
 	PIELIGHT brightness = pal_SetBrightness(200);
 	bool bForceDraw = (getRevealStatus() && psFeature->psStats->visibleAtStart);
 	int pieFlags = 0;
+
+	if (modgroundfire::isMarkerStats(psFeature->psStats))   // MOD: Bodenziel-Punkt wird nie gezeichnet und nie angeklickt
+	{
+		return;
+	}
 
 	if (!psFeature->visibleForLocalDisplay() && !bForceDraw)
 	{

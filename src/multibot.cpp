@@ -579,6 +579,7 @@ static bool validOrderForNetLoc(DROID_ORDER order)
 	case DORDER_RECYCLE:
 	case DORDER_BUILD:
 	case DORDER_LINEBUILD:
+	case DORDER_ATTACKGROUND:   // MOD: Boden beschiessen
 		return true;
 	default:
 		return validOrderForLoc(order);
@@ -687,6 +688,10 @@ static bool validDroidInfoOrderData(QueuedDroidInfo const &info, DROID_ORDER_DAT
 		return false;
 	}
 	if (info.order == DORDER_LINEBUILD && !worldOnMap(gameWorld.map, sOrder.pos2))
+	{
+		return false;
+	}
+	if (info.order == DORDER_ATTACKGROUND && !worldOnMap(gameWorld.map, sOrder.pos))   // MOD: Boden beschiessen
 	{
 		return false;
 	}

@@ -34,6 +34,7 @@
 #include "feature.h"
 #include "modoil.h"
 #include "modwreck.h"
+#include "modgroundfire.h"
 #include "map.h"
 #include "hci.h"
 #include "power.h"
@@ -241,7 +242,7 @@ FEATURE *buildFeature(GameWorld& world, FEATURE_STATS *psStats, UDWORD x, UDWORD
 	ASSERT_OR_RETURN(nullptr, psStats != nullptr, "Invalid feature stats");
 	ASSERT_OR_RETURN(nullptr, psStats->psImd != nullptr, "No IMD for feature %s", getStatsName(psStats));
 
-	const bool modWreck = modwreck::isWreckStats(psStats);   // MOD: Wracks liegen frei (keine Kachelbindung, kein Einebnen)
+	const bool modWreck = modwreck::isWreckStats(psStats) || modgroundfire::isMarkerStats(psStats);   // MOD: Wracks liegen frei (keine Kachelbindung, kein Einebnen)
 
 	// snap the coords to a tile
 	if (modWreck)

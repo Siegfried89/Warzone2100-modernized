@@ -69,6 +69,7 @@
 #include "intimage.h"
 #include "mechanics.h"
 #include "modoil.h"
+#include "modgroundfire.h"
 #include "lighting.h"
 #include "ingameop.h"
 #include "oprint.h"
@@ -880,6 +881,13 @@ void processMouseClickInput()
 	}
 	selection = establishSelection(selectedPlayer);
 	ASSERT(selection <= POSSIBLE_SELECTIONS, "Weirdy selection!");
+
+	{
+		// MOD: Boden beschiessen - roter Streukreis am Mauszeiger, solange Strg gehalten wird und Einheiten gewaehlt sind
+		const bool overUi = OverRadar || mouseOverConsole || InGameOpUp || isMouseOverScreenOverlayChild(mouseX(), mouseY())
+		                    || buildState != BUILD3D_NONE || intBuildSelectMode();
+		modgroundfire::updatePreview(!overUi && !gestureActive && modgroundfire::keysForGroundFire() && mouseTarget() == nullptr, mousePos);
+	}
 
 	if (gestureActive)
 	{
@@ -2489,6 +2497,14 @@ void	dealWithLMB()
 		}
 	}
 
+	// MOD: Boden beschiessen - Strg + Klick auf freien Boden (bei "Rechtsklick-Befehle" ist das der Rechtsklick)
+	if (bEffectiveRightClickOrders && modgroundfire::keysForGroundFire()
+	    && modgroundfire::orderSelected(selectedPlayer, mousePos.x, mousePos.y))
+	{
+		if (modAnySelectedCombot()) { modPlayCombotClick(); } else { audio_PlayTrack(ID_SOUND_SELECT); }
+		return;
+	}
+
 	// now changed to use the multiple order stuff
 	// clicked on a destination.
 	orderSelectedLoc(selectedPlayer, mousePos.x, mousePos.y, ctrlShiftDown());  // ctrlShiftDown() = ctrl clicked a destination, add an order
@@ -2769,6 +2785,12 @@ static void dealWithRMB()
 					setViewPos(map_coord(psStructure->pos.x), map_coord(psStructure->pos.y), true);
 				}
 			}
+		}
+		else if (!bEffectiveRightClickOrders && modgroundfire::keysForGroundFire()
+		         && modgroundfire::orderSelected(selectedPlayer, mousePos.x, mousePos.y))
+		{
+			// MOD: Boden beschiessen - Strg + Rechtsklick (klassische Belegung)
+			if (modAnySelectedCombot()) { modPlayCombotClick(); } else { audio_PlayTrack(ID_SOUND_SELECT); }
 		}
 		else
 		{

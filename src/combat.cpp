@@ -48,6 +48,7 @@
 #include "effects.h"
 #include "display3ddef.h"
 #include "campaigninfo.h"
+#include "modgroundfire.h"
 
 #define DROID_SHIELD_DAMAGE_SPREAD	(16 - rand()%32)
 #define DROID_SHIELD_PARTICLES		(6 + rand()%8)
@@ -317,9 +318,27 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	// What bVisible really does is to make the projectile audible even if it misses you. Since the target is NULL, proj_SendProjectile can't check if it was fired at you.
 	bool bVisibleAnyway = psTarget->player == selectedPlayer;
 
+	// MOD: Boden beschiessen - auf einen Zielpunkt wird nicht getroffen oder verfehlt, sondern in den Streukreis geschossen
+	const bool groundShot = modgroundfire::isMarker(psTarget);
+	if (groundShot)
+	{
+		const Vector2i hitPoint = modgroundfire::scatterPoint(psTarget->pos.xy(), modgroundfire::scatterRadius(*psStats));
+		predict = Vector3i(hitPoint.x, hitPoint.y, 0);
+		CLIP(predict.x, 0, world_coord(gameWorld.map.width - 1));
+		CLIP(predict.y, 0, world_coord(gameWorld.map.height - 1));
+		predict.z = map_Height(gameWorld.map, predict.xy());
+		psTarget = nullptr;   // kein Zielobjekt: das Geschoss schlaegt im Gelaende ein
+		bVisibleAnyway = psAttacker->player == selectedPlayer;
+		syncDebug("ground=(%d,%d,%d)", predict.x, predict.y, predict.z);
+	}
+
 	// see if we were lucky to hit the target
-	bool isHit = static_cast<int>(gameRand(100)) <= resultHitChance;
-	if (isHit)
+	bool isHit = !groundShot && static_cast<int>(gameRand(100)) <= resultHitChance;
+	if (groundShot)
+	{
+		// nichts weiter: der Streupunkt steht fest
+	}
+	else if (isHit)
 	{
 		/* Kerrrbaaang !!!!! a hit */
 		objTrace(psAttacker->id, "combFire: [%s]->%u: resultHitChance=%d, visibility=%d", getStatsName(psStats), psTarget->id, resultHitChance, (int)psTarget->visible[psAttacker->player]);

@@ -47,6 +47,7 @@
 #include "move.h"
 #include "cmddroid.h"
 #include "game_world.h"
+#include "modgroundfire.h"
 #include "pathfinding_backend.h"
 
 /* attack run distance */
@@ -430,6 +431,10 @@ bool actionVisibleTarget(DROID *psDroid, BASE_OBJECT *psTarget, int weapon_slot)
 	if (!psTarget->visible[psDroid->player])
 	{
 		return false;
+	}
+	if (modgroundfire::isMarker(psTarget))   // MOD: Boden beschiessen - Zielpunkt ist fuer den Befehlsgeber immer "gesehen"
+	{
+		return lineOfFire(psDroid, psTarget, weapon_slot, true);
 	}
 	if ((psDroid->numWeaps == 0 || psDroid->isVtol()) && visibleObject(psDroid, psTarget, false))
 	{

@@ -36,6 +36,8 @@
 #include "order.h"
 #include "modlayer.h"
 #include "modlayermap.h"
+#include "modgroundfire.h"
+#include "feature.h"
 #include "ordersource.h"
 #include "action.h"
 #include "map.h"
@@ -1580,6 +1582,22 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		// tell a (transporter) droid to fly onworld
 		psDroid->order = *psOrder;
 		actionDroid(psDroid, DACTION_TRANSPORTIN, psOrder->pos.x, psOrder->pos.y);
+		break;
+	case DORDER_ATTACKGROUND:
+		{
+			// MOD: Boden beschiessen - Ortsbefehl wird zum Angriff auf einen unsichtbaren Zielpunkt
+			if (!modgroundfire::canFireOnGround(psDroid))
+			{
+				break;
+			}
+			FEATURE *psMarker = modgroundfire::markerAt(psOrder->pos, psDroid->player);
+			if (psMarker == nullptr)
+			{
+				break;
+			}
+			DROID_ORDER_DATA sAttack(DORDER_ATTACK, psMarker);
+			orderDroidBase(psDroid, &sAttack);
+		}
 		break;
 	case DORDER_ATTACK:
 	case DORDER_ATTACKTARGET:
@@ -4393,6 +4411,7 @@ const char *getDroidOrderName(DROID_ORDER order)
 	case DORDER_RTR_SPECIFIED:            return "DORDER_RTR_SPECIFIED";
 	case DORDER_CIRCLE:                   return "DORDER_CIRCLE";
 	case DORDER_HOLD:                     return "DORDER_HOLD";
+	case DORDER_ATTACKGROUND:             return "DORDER_ATTACKGROUND";
 	};
 
 	ASSERT(false, "DROID_ORDER out of range: %u", order);
@@ -4442,6 +4461,7 @@ const char *getDroidOrderKey(DROID_ORDER order)
 	case DORDER_RTR_SPECIFIED:            return "RTR";
 	case DORDER_CIRCLE:                   return "C";
 	case DORDER_HOLD:                     return "H";
+	case DORDER_ATTACKGROUND:             return "AG";
 	};
 	ASSERT(false, "DROID_ORDER out of range: %u", order);
 	return "Err";

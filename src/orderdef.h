@@ -82,9 +82,10 @@ enum DroidOrderType
 	DORDER_RTR_SPECIFIED,   /**< return to repair at a specified repair center. */
 	DORDER_CIRCLE = 40,     /**< circles target location and engage. */
 	DORDER_HOLD,            /**< hold position until given next order. */
+	DORDER_ATTACKGROUND,    /**< MOD: fire at a point on the ground (location order; becomes DORDER_ATTACK on a hidden target feature). */
 };
 typedef DroidOrderType DROID_ORDER;
-constexpr DroidOrderType DORDER_MAX = DORDER_HOLD; ///< highest valid DroidOrderType (update when adding entries)
+constexpr DroidOrderType DORDER_MAX = DORDER_ATTACKGROUND; ///< highest valid DroidOrderType (update when adding entries)
 
 /** All the possible secondary orders for droids. */
 enum SECONDARY_ORDER
