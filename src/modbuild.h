@@ -43,6 +43,8 @@ void startOrder(DROID *psDroid, int worldX, int worldY, int tier);
 bool keysForFortify();
 /// jedes Bild: Kreis am Mauszeiger zeigen/ausblenden; Mausrad (bei Strg) wechselt die Groesse
 void updatePreview(bool wanted, const Vector2i &worldPos);
+/// Beschriftung am Mauszeiger, solange der Kreis zu sehen ist (sonst nullptr), z. B. "Fortify: medium (mouse wheel changes size)"
+const char *activeLabel();
 /// aktuell gewaehlte Groesse (1..3)
 int currentTier();
 

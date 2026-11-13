@@ -48,6 +48,7 @@
 #include "modlayer.h"
 #include "modoil.h"
 #include "modterrain.h"
+#include "modhelp.h"
 #include "modwreck.h"
 #include "modvariant.h"
 #include "hci.h"
@@ -341,6 +342,11 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 		{
 			intCommanderGroupDamaged(psDroid->psGroup->psCommander, (relativeDamage > 0) ? static_cast<uint64_t>(relativeDamage) : 0, (relativeDamage < 0)); // update UI information
 		}
+	}
+
+	if (relativeDamage != 0 && psDroid->died == 0)
+	{
+		modhelp::onDroidHit(psDroid, psProjectile);   // MOD: Hilferuf - untaetige Verbuendete im Umkreis eilen zu Hilfe
 	}
 
 	if (relativeDamage > 0)

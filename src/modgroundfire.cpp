@@ -195,6 +195,11 @@ void updatePreview(bool wanted, const Vector2i &worldPos)
 	}
 }
 
+const char *activeLabel()
+{
+	return s_ringOn ? "Area Bombardment: Attack Area" : nullptr;
+}
+
 void tick(GameWorld &world)
 {
 	if (gameTime < s_nextClean) { return; }

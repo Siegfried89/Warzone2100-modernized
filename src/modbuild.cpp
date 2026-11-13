@@ -348,6 +348,17 @@ void updatePreview(bool wanted, const Vector2i &worldPos)
 	}
 }
 
+const char *activeLabel()
+{
+	if (!s_ringOn) { return nullptr; }
+	switch (s_tier)
+	{
+	case 1: return "Fortify: small  (Ctrl + mouse wheel: size)";
+	case 3: return "Fortify: large  (Ctrl + mouse wheel: size)";
+	default: return "Fortify: medium  (Ctrl + mouse wheel: size)";
+	}
+}
+
 void tick(GameWorld &world)
 {
 	if (s_jobs.empty()) { return; }

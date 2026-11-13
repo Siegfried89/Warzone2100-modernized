@@ -43,6 +43,9 @@ bool keysForGroundFire();
 /// jedes Bild: roten Streukreis bei worldPos zeigen (wanted) bzw. ausblenden. Radius = groesster Streuradius der gewaehlten Einheiten.
 void updatePreview(bool wanted, const Vector2i &worldPos);
 
+/// Beschriftung am Mauszeiger, solange der rote Streukreis zu sehen ist (sonst nullptr): "Area Bombardment: Attack Area"
+const char *activeLabel();
+
 /// jeden Spielschritt: nicht mehr gebrauchte Zielpunkte entfernen
 void tick(GameWorld &world);
 /// bei neuem Spiel

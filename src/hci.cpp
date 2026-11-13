@@ -80,6 +80,7 @@
 #include "modpanel.h"
 #include "modterrain.h"
 #include "modbuild.h"
+#include "modhelp.h"
 #include "modlayer.h"
 #include "modgrid.h"
 #include "modoil.h"
@@ -722,6 +723,7 @@ void interfaceShutDown()
 	modgroundfire::reset();  // MOD
 	modterrain::reset();     // MOD
 	modbuild::reset();       // MOD
+	modhelp::reset();        // MOD
 	modradio::reset();       // MOD
 	modgrid::reset();        // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed

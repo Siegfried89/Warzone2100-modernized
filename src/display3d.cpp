@@ -97,6 +97,7 @@
 #include "modoil.h"
 #include "modwreck.h"
 #include "modgroundfire.h"
+#include "modbuild.h"
 #include "scene_effect_surfaces.h"
 #include "multistat.h"
 #include "animation.h"
@@ -163,6 +164,7 @@ static WzText txtShowSamples_Lst;
 static WzText txtShowSamples_Act;
 // show Orders text
 static WzText txtShowOrders;
+static WzText modTxtCmdLabel;   // MOD: Beschriftung "Area Bombardment: Attack Area" / "Fortify" am Mauszeiger
 // show Droid visible/draw counts text
 static WzText droidText;
 
@@ -431,6 +433,7 @@ void display3dScreenSizeDidChange(unsigned int oldWidth, unsigned int oldHeight,
 }
 
 static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup);
+static void modBarColors(int player, PIELIGHT &col, PIELIGHT &colShadow);   // MOD
 static void queueDroidEnemyHealthBarsRects(DROID *psDroid, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup);
 static void queueWeaponReloadBarRects(BASE_OBJECT *psObj, WEAPON *psWeap, int weapon_slot, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup);
 static void queueStructureHealth(STRUCTURE *psStruct, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup);
@@ -3470,6 +3473,7 @@ static void queueStructureHealth(STRUCTURE *psStruct, BatchedMultiRectRenderer& 
 		powerCol = WZCOL_HEALTH_LOW;
 		powerColShadow = WZCOL_HEALTH_LOW_SHADOW;
 	}
+	modBarColors(psStruct->player, powerCol, powerColShadow);   // MOD: Scavenger gelb
 	health = (((width * 10000) / 100) * health) / 10000;
 	health *= 2;
 	batchedMultiRectRenderer.addRectF(PIERECT_DrawRequest_f(scrX - scrR - 1, scrY - 1, scrX - scrR + 2 * width + 1, scrY + 3, WZCOL_RELOAD_BACKGROUND), rectGroup);
@@ -3588,31 +3592,66 @@ bool	eitherSelected(DROID *psDroid)
 	return false;
 }
 
-// MOD: Balken in Abschnitte teilen (wie StarCraft): duenne schwarze Trennstriche ueber der Balkenmitte
+// MOD: Balken in Abschnitte teilen (wie der StarCraft-1-Marine): duenne schwarze Trennstriche
+static constexpr int MOD_BAR_SEGMENTS = 5;
 static void modQueueBarSegments(BatchedMultiRectRenderer& renderer, size_t rectGroup, int xLeft, int width, int yTop, int yBottom)
 {
-	const int segments = 5;
-	for (int seg = 1; seg < segments; ++seg)
+	for (int seg = 1; seg < MOD_BAR_SEGMENTS; ++seg)
 	{
-		const int sx = xLeft + (width * seg) / segments;
+		const int sx = xLeft + (width * seg) / MOD_BAR_SEGMENTS;
 		renderer.addRect(PIERECT_DrawRequest(sx, yTop, sx + 1, yBottom, WZCOL_BLACK), rectGroup);
 	}
 }
 
-// MOD: Lebensbalken: breiter (mind. 22 Pixel je Seite) und 9 Pixel hoch, damit er wie ein Balken aussieht und nicht wie ein Strich
+// MOD: Lebensbalken im StarCraft-1-Stil: schmal (mind. 14 Pixel je Seite), nur 5 Pixel hoch, in ganzen Abschnitten
 static int modBarHalf(UDWORD screenR)
 {
-	return std::max(static_cast<int>(screenR), 22);
+	return std::max(static_cast<int>(screenR), 14);
+}
+
+/// Scavenger-Einheiten und -Bauwerke bekommen gelbe Balken (WZ-Gruen bleibt fuer alle anderen)
+static void modBarColors(int player, PIELIGHT &col, PIELIGHT &colShadow)
+{
+	if (player >= 0 && player == scavengerPlayer())
+	{
+		col = WZCOL_YELLOW;
+		colShadow = pal_RGBA(150, 120, 10, 255);
+	}
 }
 
 static void modQueueHealthBar(BatchedMultiRectRenderer& renderer, size_t rectGroup, int cx, int cy, int half, int fillPx, PIELIGHT col, PIELIGHT colShadow)
 {
 	const int x0 = cx - half;
 	const int y0 = cy + 2;
-	renderer.addRect(PIERECT_DrawRequest(x0 - 1, y0, cx + half + 1, y0 + 10, WZCOL_RELOAD_BACKGROUND), rectGroup);
-	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fillPx, y0 + 6, col), rectGroup);
-	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 6, x0 + fillPx, y0 + 9, colShadow), rectGroup);
-	modQueueBarSegments(renderer, rectGroup, x0, 2 * half, y0 + 1, y0 + 9);
+	const int full = 2 * half;
+	// ganze Abschnitte: ein angefangener Abschnitt bleibt voll sichtbar (wie bei StarCraft)
+	int segs = (std::max(0, fillPx) * MOD_BAR_SEGMENTS + full - 1) / full;
+	segs = std::min(segs, MOD_BAR_SEGMENTS);
+	if (fillPx <= 0) { segs = 0; }
+	const int fill = (segs * full) / MOD_BAR_SEGMENTS;
+	renderer.addRect(PIERECT_DrawRequest(x0 - 1, y0, cx + half + 1, y0 + 5, WZCOL_RELOAD_BACKGROUND), rectGroup);
+	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 3, col), rectGroup);
+	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 3, x0 + fill, y0 + 4, colShadow), rectGroup);
+	modQueueBarSegments(renderer, rectGroup, x0, full, y0 + 1, y0 + 4);
+}
+
+// MOD: Ring aus kleinen Punkten (Ellipse auf dem Boden) um die Fuesse der gewaehlten Einheit; heller Kern + schwacher Hof
+static void modQueueSelectionRing(BatchedMultiRectRenderer& renderer, size_t rectGroup, int cx, int cy, int screenR)
+{
+	const int rx = std::max(screenR + screenR / 6, 13);
+	const int ry = std::max(rx * 9 / 20, 5);
+	const int fy = cy + (screenR * 3) / 4;
+	constexpr int N = 36;
+	const PIELIGHT core = pal_RGBA(235, 255, 215, 255);
+	const PIELIGHT halo = pal_RGBA(90, 190, 90, 150);
+	for (int i = 0; i < N; ++i)
+	{
+		const float a = (6.2831853f * static_cast<float>(i)) / static_cast<float>(N);
+		const int ox = static_cast<int>(std::cos(a) * static_cast<float>(rx));
+		const int oy = static_cast<int>(std::sin(a) * static_cast<float>(ry));
+		renderer.addRect(PIERECT_DrawRequest(cx + ox - 1, fy + oy - 1, cx + ox + 2, fy + oy + 2, halo), rectGroup);
+		renderer.addRect(PIERECT_DrawRequest(cx + ox, fy + oy, cx + ox + 1, fy + oy + 1, core), rectGroup);
+	}
 }
 
 static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup)
@@ -3650,6 +3689,7 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 		powerColShadow = WZCOL_HEALTH_LOW_SHADOW;
 	}
 
+	modBarColors(psDroid->player, powerCol, powerColShadow);
 	const int barHalf = modBarHalf(psDroid->sDisplay.screenR);
 	damage = static_cast<UDWORD>((float)psDroid->body / (float)psDroid->originalBody * (float)barHalf);
 	if (damage > static_cast<UDWORD>(barHalf))
@@ -3661,10 +3701,8 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 
 	if (drawBox)
 	{
-		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX - psDroid->sDisplay.screenR, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR - 7, psDroid->sDisplay.screenX - psDroid->sDisplay.screenR + 1, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR, WZCOL_WHITE), rectGroup);
-		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX - psDroid->sDisplay.screenR, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR, psDroid->sDisplay.screenX - psDroid->sDisplay.screenR + 7, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 1, WZCOL_WHITE), rectGroup);
-		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX + psDroid->sDisplay.screenR - 7, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR, psDroid->sDisplay.screenX + psDroid->sDisplay.screenR, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 1, WZCOL_WHITE), rectGroup);
-		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(psDroid->sDisplay.screenX + psDroid->sDisplay.screenR, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR - 7, psDroid->sDisplay.screenX + psDroid->sDisplay.screenR + 1, psDroid->sDisplay.screenY + psDroid->sDisplay.screenR + 1, WZCOL_WHITE), rectGroup);
+		// MOD: Auswahl-Hervorhebung wie in Rome Total War: Leuchtring um die Fuesse der Einheit (statt der vier Eckwinkel)
+		modQueueSelectionRing(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY), static_cast<int>(psDroid->sDisplay.screenR));
 	}
 
 	/* Power bars */
@@ -3740,6 +3778,7 @@ static void queueDroidEnemyHealthBarsRects(DROID *psDroid, BatchedMultiRectRende
 	{
 		mulH = (float)psDroid->body / (float)psDroid->originalBody;
 	}
+	modBarColors(psDroid->player, powerCol, powerColShadow);
 	const int barHalf = modBarHalf(psDroid->sDisplay.screenR);
 	damage = static_cast<UDWORD>(mulH * (float)barHalf);
 	if (damage > static_cast<UDWORD>(barHalf))
@@ -3854,6 +3893,14 @@ static void drawDroidAndStructureSelections()
 
 	batchedObjectStatusRenderer.drawAllSelections();
 	batchedObjectStatusRenderer.clear();
+
+	const char *modLabel = modgroundfire::activeLabel();
+	if (modLabel == nullptr) { modLabel = modbuild::activeLabel(); }
+	if (modLabel != nullptr)
+	{
+		modTxtCmdLabel.setText(modLabel, font_regular);
+		modTxtCmdLabel.render(mouseX() + 20, mouseY() + 24, WZCOL_TEXT_BRIGHT);
+	}
 }
 
 /* ---------------------------------------------------------------------------- */
