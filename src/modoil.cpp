@@ -313,7 +313,9 @@ void processReplacements()
 
 bool manages(int player)
 {
-	return bMultiPlayer && player >= 0 && player < MAX_PLAYERS && modPresent() && isHumanPlayer(player);
+	if (player < 0 || player >= MAX_PLAYERS || !modPresent()) { return false; }
+	// Gefecht/Mehrspieler: alle menschlichen Spieler. Kampagne (Wunsch 13.11.): der eigene Spieler
+	return bMultiPlayer ? isHumanPlayer(player) : player == static_cast<int>(selectedPlayer);
 }
 
 void reset()
