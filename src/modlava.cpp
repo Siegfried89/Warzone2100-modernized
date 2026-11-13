@@ -183,7 +183,7 @@ void tick(GameWorld &world)
 	if (!s_placed && gameTime >= 3000)
 	{
 		s_placed = true;
-		if (modoil::manages(static_cast<int>(selectedPlayer)) || !bMultiPlayer) { placeFields(world); }
+		placeFields(world);   // unabhaengig vom eigenen Spieler (alle Rechner muessen gleich rechnen)
 	}
 
 	// Energiebanken (Obergrenze) und Solarpaneele (Einnahme)
