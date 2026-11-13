@@ -37,6 +37,7 @@
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modgroundfire.h"
+#include "modlayerdig.h"
 #include "feature.h"
 #include "ordersource.h"
 #include "action.h"
@@ -1452,6 +1453,9 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	syncDebug("%d ordered %s", psDroid->id, getDroidOrderName(psOrder->type));
 
 	objTrace(psDroid->id, "base set order to %s (was %s)", getDroidOrderName(psOrder->type), getDroidOrderName(psDroid->order.type));
+
+	// MOD: Bohrfahrzeug im Untergrund bohrt sich zum Ziel (uebernimmt Bewegungsbefehle; jeder andere Befehl verwirft das Bohrziel)
+	if (modlayerdig::onOrder(psDroid, psOrder)) { return; }
 
 	if (psOrder->type != DORDER_TRANSPORTIN         // transporters special
 	    && psOrder->psObj == nullptr			// location-type order

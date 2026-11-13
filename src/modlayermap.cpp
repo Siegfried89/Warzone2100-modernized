@@ -235,56 +235,10 @@ void carveTunnel(Grid &g, Rng &r, Pt a, Pt b, int rad)
 	carveDisc(g, b.x, b.y, rad);
 }
 
-void genUndergroundGrid(Grid &g, Rng &r)
+// MF-treu: der Untergrund beginnt als massiver Fels. Gaenge entstehen nur durch Bohren; eine kleine Kammer legt der Schacht frei
+// (openSite). Der fruehere Zufalls-Hoehlengenerator ist entfernt (Nutzer 13.11.: "es soll MF treu sein").
+void genUndergroundGrid(Grid &, Rng &)
 {
-	const int W = g.W, H = g.H;
-	const int area = W * H;
-	const int nCh = area <= 20000 ? std::max(6, area / 650) : 30 + (area - 20000) / 2400;   // grosse Karten: nicht entsprechend mehr Kammern, sonst ist alles hohl
-	const int bigBonus = (W * H > 40000) ? 2 : 0;
-	std::vector<Pt> ch;
-	const int spanX = std::max(1, W - 2 * MARGIN - 14), spanY = std::max(1, H - 2 * MARGIN - 14);
-	for (int i = 0; i < nCh; ++i)
-	{
-		Pt p{ MARGIN + 7 + r.range(spanX), MARGIN + 7 + r.range(spanY) };
-		ch.push_back(p);
-		carveDisc(g, p.x, p.y, 3 + r.range(4) + bigBonus);
-	}
-	// Kette: jeweils zum naechsten noch nicht angeschlossenen -> alles haengt zusammen
-	std::vector<uint8_t> used(ch.size(), 0);
-	size_t cur = 0;
-	used[0] = 1;
-	for (size_t k = 1; k < ch.size(); ++k)
-	{
-		size_t best = 0;
-		long bestD = -1;
-		for (size_t j = 0; j < ch.size(); ++j)
-		{
-			if (used[j]) { continue; }
-			const long dx = ch[j].x - ch[cur].x, dy = ch[j].y - ch[cur].y;
-			const long d = dx * dx + dy * dy;
-			if (bestD < 0 || d < bestD) { bestD = d; best = j; }
-		}
-		used[best] = 1;
-		carveTunnel(g, r, ch[cur], ch[best], 1);
-		cur = best;
-	}
-	// zusaetzliche Verbindungen (Rundwege)
-	for (int i = 0; i < nCh / 2; ++i)
-	{
-		const size_t a = static_cast<size_t>(r.range(static_cast<int>(ch.size())));
-		const size_t b = static_cast<size_t>(r.range(static_cast<int>(ch.size())));
-		if (a != b) { carveTunnel(g, r, ch[a], ch[b], 1); }
-	}
-	// Sackgassen
-	for (const Pt &c : ch)
-	{
-		const int n = 1 + r.range(2);
-		for (int k = 0; k < n; ++k)
-		{
-			Pt t{ std::clamp(c.x + r.range(41) - 20, MARGIN + 2, W - MARGIN - 3), std::clamp(c.y + r.range(41) - 20, MARGIN + 2, H - MARGIN - 3) };
-			carveTunnel(g, r, c, t, 1);
-		}
-	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -620,7 +574,7 @@ void placeHomes()
 		Vector2i at(-1, -1);
 		if (!gameWorld.objects.structures[p].empty()) { at = Vector2i(map_coord(gameWorld.objects.structures[p].front()->pos.x), map_coord(gameWorld.objects.structures[p].front()->pos.y)); }
 		else if (!gameWorld.objects.droids[p].empty()) { at = Vector2i(map_coord(gameWorld.objects.droids[p].front()->pos.x), map_coord(gameWorld.objects.droids[p].front()->pos.y)); }
-		if (at.x >= 0) { openSite(at.x, at.y, p, 5, 9); }
+		(void)at;   // MF: unter der Basis gibt es keine Kammer; nur der Schacht legt eine frei
 	}
 	s_deferRefresh = false;
 	if (s_pendingRefresh)
@@ -752,6 +706,56 @@ void openSite(int tileX, int tileY, int player, int rad, int revealRad)
 	}
 	if (!s_deferRefresh) { initLighting(m, 0, 0, static_cast<UDWORD>(W), static_cast<UDWORD>(H)); }
 	if (s_view == modlayer::UNDERGROUND) { s_dirtyView = true; }
+}
+
+bool drillTile(int tileX, int tileY, int player, int revealRad)
+{
+	if (!s_built) { return false; }
+	Scope sc(modlayer::UNDERGROUND);
+	WorldMapState &m = gameWorld.map;
+	const int W = m.width, H = m.height;
+	if (tileX < MARGIN || tileY < MARGIN || tileX >= W - MARGIN || tileY >= H - MARGIN) { return false; }
+	auto isOpen = [&](int x, int y) {
+		return tileOnMap(m, x, y) && terrainType(mapTile(m, x, y)) != TER_CLIFFFACE;
+	};
+	if (isOpen(tileX, tileY)) { return false; }
+	Palette pal;
+	if (!pickPalette(pal)) { return false; }
+	const uint32_t salt = s_seed ^ (static_cast<uint32_t>(modlayer::UNDERGROUND) * 977u);
+	// das Feld selbst wird Boden
+	{
+		MAPTILE &t = m.tiles[static_cast<size_t>(tileX) + static_cast<size_t>(tileY) * W];
+		const uint32_t hv = hash2(tileX, tileY, salt);
+		t.texture = pal.floor[(hv >> 16) % pal.floor.size()];
+	}
+	// Eckpunkte: tief, wenn irgendeines der vier angrenzenden Felder offen ist (gleiche Regel wie makeTiles)
+	for (int cy = tileY; cy <= tileY + 1; ++cy)
+	{
+		for (int cx = tileX; cx <= tileX + 1; ++cx)
+		{
+			if (!tileOnMap(m, cx, cy)) { continue; }
+			const bool low = isOpen(cx, cy) || isOpen(cx - 1, cy) || isOpen(cx, cy - 1) || isOpen(cx - 1, cy - 1);
+			const uint32_t hv = hash2(cx, cy, salt);
+			mapTile(m, cx, cy)->height = low ? static_cast<int32_t>(hv % 24u) : static_cast<int32_t>(330u + (hv >> 8) % 110u);
+		}
+	}
+	mapSetupLayerWorld(m);
+	if (player >= 0 && player < MAX_PLAYER_SLOTS && revealRad > 0)
+	{
+		for (int dy = -revealRad; dy <= revealRad; ++dy)
+		{
+			for (int dx = -revealRad; dx <= revealRad; ++dx)
+			{
+				if (dx * dx + dy * dy > revealRad * revealRad) { continue; }
+				const int x = tileX + dx, y = tileY + dy;
+				if (tileOnMap(m, x, y)) { SET_TILE_VISIBLE(player, mapTile(m, x, y)); }
+			}
+		}
+	}
+	initLighting(m, static_cast<UDWORD>(std::max(0, tileX - 3)), static_cast<UDWORD>(std::max(0, tileY - 3)),
+	             static_cast<UDWORD>(std::min(W, tileX + 5)), static_cast<UDWORD>(std::min(H, tileY + 5)));
+	if (s_view == modlayer::UNDERGROUND) { s_dirtyView = true; }
+	return true;
 }
 
 void reset()

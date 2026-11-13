@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include "modlayerdig.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -327,7 +328,8 @@ bool isPortalTile(int player, int tileX, int tileY)
 
 void gameTick()
 {
-	if (!modlayermap::worldsExist()) { return; }   // ohne Zusatzkarten gibt es keinen Schacht-Verkehr
+	if (!modlayermap::worldsExist()) { return; }
+	modlayerdig::tick(gameWorld);   // Bohrfahrzeuge   // ohne Zusatzkarten gibt es keinen Schacht-Verkehr
 
 	// Schaechte einsammeln (ohne Schacht passiert nichts und nichts kostet Zeit)
 	std::vector<const STRUCTURE *> shafts;
@@ -413,6 +415,7 @@ void forget(uint32_t id)
 
 void resetState()
 {
+	modlayerdig::reset();
 	s_layerOf.clear();
 	s_cool.clear();
 	s_openedShafts.clear();

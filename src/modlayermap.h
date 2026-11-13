@@ -63,6 +63,10 @@ bool isSolid(Layer l, int tileX, int tileY);
 /// im Umkreis revealRad als erkundet markieren. Fuer Schaechte und die Kammer unter jeder Basis. Deterministisch.
 void openSite(int tileX, int tileY, int player, int rad, int revealRad);
 
+/// MF-Bohren: ein Felsfeld im Untergrund aufbohren (wird begehbar). Berechnet Hoehen, Sperrkarte, Kontinente und Licht neu und
+/// deckt das Umfeld (Radius revealRad) fuer den Spieler auf. false, wenn das Feld schon offen oder ungueltig ist. Deterministisch.
+bool drillTile(int tileX, int tileY, int player, int revealRad);
+
 /// alles freigeben (Spielende, neue Karte)
 void reset();
 }
