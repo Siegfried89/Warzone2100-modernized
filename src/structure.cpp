@@ -43,6 +43,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "modaidiff.h"
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modoil.h"
@@ -1214,7 +1215,7 @@ static void refundFactoryBuildPower(STRUCTURE *psBuilding)
 		if (psFactory->buildPointsRemaining < (int)calcTemplateBuild(psFactory->psSubject))
 		{
 			// We started building, so give the power back that was used.
-			addPower(psBuilding->player, calcTemplatePower(psFactory->psSubject));
+			addPower(psBuilding->player, modaidiff::scaleCost(calcTemplatePower(psFactory->psSubject), psBuilding->player));   // MOD: KI-Schwierigkeit (gezahlter Betrag)
 		}
 
 	}
@@ -3688,7 +3689,7 @@ static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 
 			if (psFactory->buildPointsRemaining > 0)
 			{
-				int progress = gameTimeAdjustedAverage(getBuildingProductionPoints(psStructure));
+				int progress = gameTimeAdjustedAverage(getBuildingProductionPoints(psStructure) * modaidiff::productionPercent(psStructure->player) / 100);   // MOD: KI-Schwierigkeit (Produktionstempo)
 				if ((unsigned)psFactory->buildPointsRemaining == calcTemplateBuild(psFactory->psSubject) && progress > 0)
 				{
 					// We're just starting to build, check for power.

@@ -26,6 +26,7 @@
 #include <string.h>
 #include "objectdef.h"
 #include "power.h"
+#include "modaidiff.h"
 #include "modoil.h"
 #include "lib/gamelib/gtime.h"
 #include "lib/sound/audio.h"
@@ -479,6 +480,7 @@ bool requestPrecisePowerFor(STRUCTURE *psStruct, int64_t amount)
 	{
 		return true;
 	}
+	amount = amount * modaidiff::costPercent(psStruct->player) / 100;   // MOD: KI-Schwierigkeit (nur KI-Spieler; 100 % fuer Menschen)
 
 	bool haveEnoughPower = addPowerRequest(psStruct->player, psStruct->id, amount);
 	if (haveEnoughPower)

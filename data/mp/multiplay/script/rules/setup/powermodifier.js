@@ -9,19 +9,8 @@ function setupPowerModifier(player)
 		setPowerModifier(125, player);
 	}
 
-	// insane difficulty is meant to be insane...
-	if (playerData[player].difficulty === INSANE)
-	{
-		setPowerModifier(200 + 15 * powerType, player);
-	}
-	else if (playerData[player].difficulty === HARD)
-	{
-		setPowerModifier(150 + 10 * powerType, player);
-	}
-	else if (playerData[player].difficulty === EASY)
-	{
-		setPowerModifier(70 + 5 * powerType, player);
-	}
+	// MOD: Die Schwierigkeit der KI wirkt nicht mehr ueber das Einkommen, sondern wie in Metal Fatigue getrennt auf
+	// Schaden, Kosten und Produktionstempo (Engine: modaidiff.cpp). Das Einkommen bleibt fuer alle gleich.
 }
 
 // Power modifier data is currently not saved. Reset it during eventGameLoaded for the moment.

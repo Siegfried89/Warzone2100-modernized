@@ -43,6 +43,7 @@ SDWORD sound_GetTrackIDByName(const char *fileName); // MOD: definiert in lib/so
 #include "notifications.h"
 #include <unordered_map>
 #include "modinvade.h"
+#include "modaidiff.h"
 
 #define WEAPON_TIME		100
 
@@ -1891,19 +1892,19 @@ int weaponShortHit(const WEAPON_STATS& psStats, int player)
 int weaponDamage(const WEAPON_STATS& psStats, int player)
 {
 	ASSERT_PLAYER_OR_RETURN(0, player);
-	return psStats.upgrade[player].damage * (100 + modinvade::enhancerPercent(static_cast<unsigned>(player))) / 100;   // MOD: Verstaerker (eroberte Hauptgebaeude, +6 % je Stueck)
+	return modaidiff::scaleDamage(psStats.upgrade[player].damage * (100 + modinvade::enhancerPercent(static_cast<unsigned>(player))) / 100, static_cast<unsigned>(player));   // MOD: Verstaerker (eroberte Hauptgebaeude, +6 % je Stueck); KI-Schwierigkeit
 }
 
 int weaponRadDamage(const WEAPON_STATS& psStats, int player)
 {
 	ASSERT_PLAYER_OR_RETURN(0, player);
-	return psStats.upgrade[player].radiusDamage * (100 + modinvade::enhancerPercent(static_cast<unsigned>(player))) / 100;   // MOD
+	return modaidiff::scaleDamage(psStats.upgrade[player].radiusDamage * (100 + modinvade::enhancerPercent(static_cast<unsigned>(player))) / 100, static_cast<unsigned>(player));   // MOD
 }
 
 int weaponPeriodicalDamage(const WEAPON_STATS& psStats, int player)
 {
 	ASSERT_PLAYER_OR_RETURN(0, player);
-	return psStats.upgrade[player].periodicalDamage;
+	return modaidiff::scaleDamage(psStats.upgrade[player].periodicalDamage, static_cast<unsigned>(player));   // MOD: KI-Schwierigkeit
 }
 
 int sensorRange(const SENSOR_STATS& psStats, int player)

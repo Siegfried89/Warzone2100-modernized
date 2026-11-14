@@ -3568,6 +3568,7 @@ static inline RtrBestResult decideWhereToRepairAndBalance(DROID *psDroid)
 
 	for (STRUCTURE *psStruct : gameWorld.objects.structures[psDroid->player])
 	{
+		if (!modlayer::canInteract(psDroid, psStruct)) { continue; }   // MOD: Ebenen - Reparatur/Rueckkehr nur zu Anlagen der eigenen Ebene
 		if (psStruct->pStructureType->type == REF_HQ)
 		{
 			if (CheckInScrollLimits(gameWorld.map, psStruct->pos.x, psStruct->pos.y))
