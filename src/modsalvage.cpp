@@ -92,7 +92,7 @@ int availability(int player, const Comp &c)
 {
 	if (player < 0 || player >= MAX_PLAYERS) { return UNAVAILABLE; }
 	const UBYTE *list = apCompLists[player][c.type];
-	return list == nullptr ? UNAVAILABLE : list[c.index];
+	return list == nullptr ? static_cast<int>(UNAVAILABLE) : static_cast<int>(list[c.index]);
 }
 
 void setAvailability(int player, const Comp &c, int state)
