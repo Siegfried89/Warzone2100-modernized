@@ -25,7 +25,8 @@ bool isMarkerStats(const FEATURE_STATS *stats);
 bool isMarker(const BASE_OBJECT *obj);
 
 /// Zielpunkt bei pos (Weltkoordinaten) fuer den Spieler suchen oder anlegen; fuer den Spieler als sichtbar markiert. nullptr, wenn nicht moeglich.
-FEATURE *markerAt(const Vector2i &pos, unsigned player);
+/// layer = Ebene der feuernden Einheit (0 Untergrund, 1 Oberflaeche, 2 Orbit); der Zielpunkt liegt in dieser Ebene, damit die Einheit ihn anvisieren darf
+FEATURE *markerAt(const Vector2i &pos, unsigned player, int layer = 1);
 
 /// kann die Einheit auf Boden feuern?
 bool canFireOnGround(const DROID *psDroid);

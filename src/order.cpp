@@ -1600,7 +1600,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 			{
 				break;
 			}
-			FEATURE *psMarker = modgroundfire::markerAt(psOrder->pos, psDroid->player);
+			FEATURE *psMarker = modgroundfire::markerAt(psOrder->pos, psDroid->player, static_cast<int>(modlayer::layerOf(psDroid)));
 			if (psMarker == nullptr)
 			{
 				break;

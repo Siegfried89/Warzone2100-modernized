@@ -9,6 +9,8 @@
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
+#include "lib/sound/audio.h"
+#include "lib/sound/audio_id.h"
 #include "lib/widget/widget.h"
 #include "lib/widget/form.h"
 #include "lib/widget/button.h"
@@ -19,6 +21,7 @@
 #include "lib/netplay/sync_debug.h"
 
 #include "ai.h"
+#include "console.h"
 #include "droid.h"
 #include "effects.h"
 #include "game_world.h"
@@ -362,6 +365,8 @@ bool canInteract(const SIMPLE_OBJECT *a, const SIMPLE_OBJECT *b)
 
 bool projectileCanHit(const PROJECTILE *proj, const SIMPLE_OBJECT *target)
 {
+	// Ebenen-Sonderwaffe: wirkt nur in ihrer Zielebene (auch wenn sonst nichts ausserhalb der Oberflaeche existiert)
+	if (proj != nullptr && proj->psWStats != nullptr && proj->psWStats->crossLayer >= 0) { return static_cast<int>(layerOf(target)) == proj->psWStats->crossLayer; }
 	if (s_layerOf.empty() || proj == nullptr) { return true; }
 	const SIMPLE_OBJECT *ref = proj->psSource != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psSource)
 	                           : (proj->psDest != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psDest) : nullptr);
@@ -371,6 +376,7 @@ bool projectileCanHit(const PROJECTILE *proj, const SIMPLE_OBJECT *target)
 
 Layer projectileLayer(const PROJECTILE *proj)
 {
+	if (proj != nullptr && proj->psWStats != nullptr && proj->psWStats->crossLayer >= 0) { return static_cast<Layer>(proj->psWStats->crossLayer); }
 	if (s_layerOf.empty() || proj == nullptr) { return SURFACE; }
 	const SIMPLE_OBJECT *ref = proj->psSource != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psSource)
 	                           : (proj->psDest != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psDest) : nullptr);
@@ -502,6 +508,21 @@ void forget(uint32_t id)
 	if (s_layerOf.empty() && s_cool.empty()) { return; }
 	s_layerOf.erase(id);
 	s_cool.erase(id);
+}
+
+void onUnderAttack(const BASE_OBJECT *victim)
+{
+	// reine Anzeige (Meldung + Ton), veraendert den Spielablauf nicht: nur fuer eigene Objekte, die gerade in einer anderen Ebene als der angezeigten liegen
+	if (victim == nullptr || s_layerOf.empty() || victim->player != static_cast<int>(selectedPlayer)) { return; }
+	const Layer l = layerOf(victim);
+	if (l == s_current) { return; }
+	static unsigned s_lastWarn[3] = { 0, 0, 0 };
+	const unsigned now = realTime;
+	if (s_lastWarn[l] != 0 && now >= s_lastWarn[l] && now - s_lastWarn[l] < 8000) { return; }
+	s_lastWarn[l] = now;
+	const char *name = l == ORBIT ? "Orbit" : (l == UNDERGROUND ? "Underground" : "Surface");
+	addConsoleMessage((std::string("Under attack: ") + name).c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+	audio_QueueTrack(victim->type == OBJ_STRUCTURE ? ID_SOUND_STRUCTURE_UNDER_ATTACK : ID_SOUND_UNIT_UNDER_ATTACK);
 }
 
 void resetState()

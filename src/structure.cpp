@@ -931,6 +931,10 @@ int32_t structureDamage(GameWorld& world, STRUCTURE *psStructure, PROJECTILE *ps
 	      psStructure->id, psStructure->body, objArmour(psStructure, weaponClass), damage);
 
 	relativeDamage = objDamage(psStructure, psProjectile, damage, psStructure->structureBody(), weaponClass, weaponSubClass, isDamagePerSecond, minDamage, empRadiusHit);
+	if (relativeDamage != 0)
+	{
+		modlayer::onUnderAttack(psStructure);   // MOD: Warnung, wenn ein eigenes Objekt in einer anderen Ebene getroffen wird
+	}
 
 	// If the shell did sufficient damage to destroy the structure
 	if (relativeDamage < 0)

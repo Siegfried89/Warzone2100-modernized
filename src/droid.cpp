@@ -338,6 +338,7 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 	if (relativeDamage != 0)
 	{
 		modvoice::onDroidDamaged(psDroid, psProjectile, relativeDamage < 0);   // MOD: Schlachtruf (nur Ton)
+		modlayer::onUnderAttack(psDroid);   // MOD: Warnung, wenn ein eigenes Objekt in einer anderen Ebene getroffen wird
 	}
 
 	if (relativeDamage != 0 && psDroid->player == selectedPlayer && psDroid->timeLastHit == gameTime)

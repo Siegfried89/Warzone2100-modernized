@@ -49,6 +49,8 @@
 #include "display3ddef.h"
 #include "campaigninfo.h"
 #include "modgroundfire.h"
+#include "modlayer.h"
+#include "modlayermap.h"
 #include "modammo.h"
 
 #define DROID_SHIELD_DAMAGE_SPREAD	(16 - rand()%32)
@@ -335,7 +337,8 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 		predict = Vector3i(hitPoint.x, hitPoint.y, 0);
 		CLIP(predict.x, 0, world_coord(gameWorld.map.width - 1));
 		CLIP(predict.y, 0, world_coord(gameWorld.map.height - 1));
-		predict.z = map_Height(gameWorld.map, predict.xy());
+		predict.z = psStats->crossLayer >= 0 ? modlayermap::heightAt(static_cast<modlayer::Layer>(psStats->crossLayer), predict.x, predict.y)   // MOD: Ebenen-Sonderwaffe trifft das Gelaende der Zielebene
+		                                     : map_Height(gameWorld.map, predict.xy());
 		psTarget = nullptr;   // kein Zielobjekt: das Geschoss schlaegt im Gelaende ein
 		bVisibleAnyway = psAttacker->player == selectedPlayer;
 		syncDebug("ground=(%d,%d,%d)", predict.x, predict.y, predict.z);

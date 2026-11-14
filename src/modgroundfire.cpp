@@ -96,13 +96,13 @@ bool isMarker(const BASE_OBJECT *obj)
 	return obj != nullptr && obj->type == OBJ_FEATURE && isMarkerStats(static_cast<const FEATURE *>(obj)->psStats);
 }
 
-FEATURE *markerAt(const Vector2i &pos, unsigned player)
+FEATURE *markerAt(const Vector2i &pos, unsigned player, int layer)
 {
 	FEATURE_STATS *st = markerStats();
 	if (st == nullptr || player >= MAX_PLAYERS || !worldOnMap(gameWorld.map, pos)) { return nullptr; }
 	for (FEATURE *f : gameWorld.objects.features[0])
 	{
-		if (f != nullptr && !f->died && f->psStats == st
+		if (f != nullptr && !f->died && f->psStats == st && static_cast<int>(modlayer::layerOf(f)) == layer
 		    && std::abs(f->pos.x - pos.x) <= REUSE_DIST && std::abs(f->pos.y - pos.y) <= REUSE_DIST)
 		{
 			f->visible[player] = UBYTE_MAX;
@@ -113,6 +113,7 @@ FEATURE *markerAt(const Vector2i &pos, unsigned player)
 	if (f == nullptr) { return nullptr; }
 	f->pos.z = map_Height(gameWorld.map, pos.x, pos.y);
 	f->visible[player] = UBYTE_MAX;
+	if (layer != modlayer::SURFACE) { modlayer::assignLayer(f, static_cast<modlayer::Layer>(layer)); }   // Zielpunkt in der Ebene der Einheit (Marker sind nicht an Kacheln gebunden)
 	return f;
 }
 
@@ -150,12 +151,18 @@ Vector2i scatterPoint(const Vector2i &center, int radius)
 bool orderSelected(unsigned player, int worldX, int worldY)
 {
 	if (player >= MAX_PLAYERS || markerStats() == nullptr) { return false; }
-	if (modlayermap::viewLayer() != modlayer::SURFACE) { return false; }   // Ebenen: nur an der Oberflaeche
+	const bool surfaceView = modlayermap::viewLayer() == modlayer::SURFACE;
 	if (!worldOnMap(gameWorld.map, worldX, worldY)) { return false; }
 	bool any = false;
 	for (DROID *d : gameWorld.objects.droids[player])
 	{
 		if (d == nullptr || !d->selected || !canFireOnGround(d)) { continue; }
+		// Ebenen: ausserhalb der Oberflaeche nur Ebenen-Sonderwaffen (Orbitalbombe, Tektonik-Torpedo); diese wirken nur in eine ANDERE Ebene
+		// als die eigene (Orbitalbombe aus dem Orbit auf die Oberflaeche, Torpedo von der Oberflaeche in den Untergrund)
+		const WEAPON_STATS *ws = d->getWeaponStats(0);
+		const bool special = ws != nullptr && ws->crossLayer >= 0;
+		if (special && static_cast<int>(modlayer::layerOf(d)) == ws->crossLayer) { continue; }
+		if (!surfaceView && !special) { continue; }
 		DroidOrder sOrder(DORDER_ATTACKGROUND, Vector2i(worldX, worldY));
 		sendDroidInfo(d, sOrder, false, currentOrderSource());
 		any = true;
@@ -216,6 +223,7 @@ void tick(GameWorld &world)
 	}
 	for (FEATURE *f : doomed)
 	{
+		modlayer::forget(f->id);   // Ebenen-Eintrag des Zielpunkts freigeben
 		removeFeature(f, world);
 	}
 }

@@ -596,6 +596,11 @@ bool loadWeaponStats(WzConfig &ini)
 		{
 			psStats->surfaceToAir |= SHOOT_IN_AIR;
 		}
+		// MOD: Ebenen-Sonderwaffen (MF): "ToSurface" (Orbitalbombe), "ToUnderground" (Tektonik-Torpedo), "ToOrbit"
+		psStats->crossLayer = -1;
+		if (std::find(flags.begin(), flags.end(), "tounderground") != flags.end()) { psStats->crossLayer = 0; }
+		else if (std::find(flags.begin(), flags.end(), "tosurface") != flags.end()) { psStats->crossLayer = 1; }
+		else if (std::find(flags.begin(), flags.end(), "toorbit") != flags.end()) { psStats->crossLayer = 2; }
 		if (std::find(flags.begin(), flags.end(), "nofriendlyfire") != flags.end()) // "NoFriendlyFire"
 		{
 			psStats->flags.set(WEAPON_FLAG_NO_FRIENDLY_FIRE, true);

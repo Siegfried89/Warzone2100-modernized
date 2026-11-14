@@ -68,6 +68,8 @@ void sendSelectedFliers(Layer target);
 bool isFlier(const DROID *psDroid);
 /// beim Baubeginn: das Bauwerk entsteht auf der Ebene des Baumeisters
 void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder);
+/// eigenes Objekt in einer nicht angezeigten Ebene wurde getroffen: Meldung "Under attack: Orbit/Underground/Surface" (nur Anzeige, nicht synchronisiert)
+void onUnderAttack(const BASE_OBJECT *victim);
 /// beim Zerstoeren eines Objekts
 void forget(uint32_t id);
 /// Spielzustand loeschen (Spielende / Laden)
