@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Munition fuer Einheiten (Spieler). Jede Einheit mit Feuerwaffe hat einen Vorrat (in Schuessen, je Waffenart); der Vorrat wird in
 // 5 Abschnitten angezeigt (zweiter, gelber Balken). Ohne Munition feuert die Waffe nur noch 10-mal so langsam. Nachschub bekommen
-// Einheiten in der Naehe eigener Fabriken, des Hauptquartiers, Reparaturanlagen, Aussenposten und Munitionskisten (Bauwerke mit
-// "Outpost" oder "AmmoBox" im Namen); Munitionskisten fuellen schneller. KI-Spieler, Combots (Energie/Nahkampf) und Energiewaffen
-// brauchen keine Munition. Alles im Spielschritt, deterministisch.
+// Einheiten in der Naehe eigener Fabriken, des Hauptquartiers, Reparaturanlagen, Aussenposten, Munitionskisten und Munitionsdepots
+// (Bauwerke mit "Outpost", "AmmoBox" oder "AmmoDepot" im Namen); Kisten fuellen schneller, das Depot (Radius 6 Felder) am schnellsten.
+// Leere Einheiten fahren von selbst zur naechsten Quelle (Depots/Kisten bevorzugt) und danach zu der Stelle zurueck, wo ihnen die
+// Munition ausging; ein neuer Befehl des Spielers bricht die Selbstversorgung ab. KI-Spieler, Combots (Energie/Nahkampf) und
+// Energiewaffen brauchen keine Munition. Alles im Spielschritt, deterministisch.
 #pragma once
 
 struct DROID;
