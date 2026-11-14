@@ -1586,7 +1586,6 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 {
 	STRUCTURE *psBuilding = nullptr;
 
-	if (&world == &gameWorld && modlayermap::resident() != modlayer::SURFACE) { return nullptr; }   // MOD: Ebenen - Bauwerke entstehen nur auf der Oberflaeche (Kartenzeiger der anderen Ebenen blieben sonst falsch)
 	ASSERT_OR_RETURN(nullptr, player < MAX_PLAYERS, "Cannot build structure for player %" PRIu32 " (>= MAX_PLAYERS)", player);
 	ASSERT_OR_RETURN(nullptr, pStructureType && pStructureType->type != REF_DEMOLISH, "You cannot build demolition!");
 	const Vector2i size = pStructureType->size(direction);
@@ -1738,6 +1737,10 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		// Emplace the structure being built in the global storage to obtain stable address.
 		STRUCTURE& stableBuilding = GlobalStructContainer().emplace(std::move(building));
 		psBuilding = &stableBuilding;
+		if (&world == &gameWorld && modlayermap::resident() != modlayer::SURFACE)
+		{
+			modlayer::assignLayer(psBuilding, modlayermap::resident());   // MOD: Ebenen - das Bauwerk gehoert zur Ebene, in deren Karte es gerade eingetragen wird
+		}
 		for (int tileY = map.y; tileY < map.y + size.y; ++tileY)
 		{
 			for (int tileX = map.x; tileX < map.x + size.x; ++tileX)
@@ -2797,6 +2800,10 @@ static bool structPlaceDroid(STRUCTURE *psStructure, DROID_TEMPLATE *psTempl, DR
 		{
 			*ppsDroid = nullptr;
 			return false;
+		}
+		if (modlayermap::resident() != modlayer::SURFACE)
+		{
+			modlayer::assignLayer(psNewDroid, modlayermap::resident());   // MOD: Ebenen - Einheiten aus einer Fabrik in einer anderen Ebene entstehen dort
 		}
 		modvariant::onFactoryDroid(psNewDroid);   // MOD: Ausbildung wuerfelt das Modell (Scav-Infanterie), seltene mit Erfahrungsbonus
 		psFact = &psStructure->pFunctionality->factory;
@@ -4519,7 +4526,6 @@ bool isBlueprintTooClose(STRUCTURE_STATS const *stats1, Vector2i pos1, uint16_t 
 bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t direction, unsigned player, bool bCheckBuildQueue)
 {
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "player (%u) >= MAX_PLAYERS", player);
-	if (&world == &gameWorld && modlayermap::resident() != modlayer::SURFACE) { return false; }   // MOD: Ebenen - gebaut wird (noch) nur auf der Oberflaeche
 
 	StructureBounds b = getStructureBounds(psStats, pos, direction);
 
@@ -4815,6 +4821,8 @@ bool removeStruct(STRUCTURE *psDel, bool bDestroy, GameWorld& world)
 
 	ASSERT_OR_RETURN(false, psDel != nullptr, "Invalid structure pointer");
 
+	modlayermap::Scope removeLayerScope(&world == &gameWorld ? modlayer::layerOf(psDel) : modlayer::SURFACE);   // MOD: Ebenen - Kacheln der Ebene des Bauwerks freigeben
+
 	int prevResearchState = intGetResearchState();
 
 	if (bDestroy)
@@ -4958,6 +4966,8 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 
 	CHECK_STRUCTURE(psDel);
 	ASSERT(gameTime - deltaGameTime <= impactTime, "Expected %u <= %u, gameTime = %u, bad impactTime", gameTime - deltaGameTime, impactTime, gameTime);
+
+	modlayermap::Scope destroyLayerScope(&world == &gameWorld ? modlayer::layerOf(psDel) : modlayer::SURFACE);   // MOD: Ebenen - Gelaende/Truemmer in der Karte der Ebene des Bauwerks
 
 	modoil::onStructureDestroyed(psDel);   // MOD: Pipeline-Bruch, Oelturm-Explosion
 

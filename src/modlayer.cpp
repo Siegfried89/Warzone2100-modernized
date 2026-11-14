@@ -498,7 +498,8 @@ void sendSelectedFliers(Layer target)
 
 void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder)
 {
-	// Bauwerke entstehen immer auf der Oberflaeche (Bauen in anderen Ebenen kommt spaeter); hier ist nichts zu merken.
+	// Die Ebene des Bauwerks steht schon fest: buildStructureDir() legt es in der Karte an, die gerade aktiv ist (= die des Baumeisters,
+	// weil der Bauauftrag im Schritt des Baumeisters ausgefuehrt wird) und merkt sich die Ebene; hier ist nichts mehr zu tun.
 	(void)psStruct;
 	(void)psBuilder;
 }

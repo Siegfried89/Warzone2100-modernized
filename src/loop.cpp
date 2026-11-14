@@ -650,6 +650,7 @@ static void gameStateUpdate()
 		executeFnAndProcessScriptQueuedRemovals([i]() {
 			mutating_list_iterate(gameWorld.objects.structures[i], [](STRUCTURE* s)
 			{
+				modlayermap::Scope structLayerScope(modlayer::layerOf(s));   // MOD: Ebenen - Bauwerk arbeitet in der Karte seiner Ebene
 				structureUpdate(s, gameWorld);
 				return IterationResult::CONTINUE_ITERATION;
 			});
