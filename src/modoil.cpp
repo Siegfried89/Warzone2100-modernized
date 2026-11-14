@@ -315,8 +315,8 @@ void processReplacements()
 bool manages(int player)
 {
 	if (player < 0 || player >= MAX_PLAYERS || !modPresent()) { return false; }
-	// Gefecht/Mehrspieler: alle menschlichen Spieler. Kampagne (Wunsch 13.11.): der eigene Spieler
-	return bMultiPlayer ? isHumanPlayer(player) : player == static_cast<int>(selectedPlayer);
+	// Eine Regel fuer jede Spielart: alle menschlichen Spieler (im Einzelspieler traegt SPinit Spieler 0 als Mensch ein)
+	return isHumanPlayer(player);
 }
 
 void reset()

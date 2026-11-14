@@ -420,6 +420,7 @@ void SPinit(LEVEL_TYPE gameType)
 	bMultiPlayer = false;
 	bMultiMessages = false;
 	game.type = gameType;
+	game.techLevel = 1;	// MOD: ein Spiel startet in jeder Spielart auf derselben Technikstufe (nicht vom letzten Gefecht uebernommen)
 	NET_InitPlayers();
 	NetPlay.players[0].allocated = true;
 	NetPlay.players[0].autoGame = false;

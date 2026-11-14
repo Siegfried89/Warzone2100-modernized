@@ -7,6 +7,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "multiplay.h"
+#include "difficulty.h"
 
 #include <algorithm>
 
@@ -25,18 +26,35 @@ const Row kTable[5] = {
 	{ 144, 100, 100 },   // INSANE    = MF Schwer
 };
 
+// Die EINE Stelle, die sagt, wie schwer ein Spieler ist (0..4). Die Tabelle oben gilt fuer jede Spielart gleich.
+// Menschen: -1 (nie skaliert). KI mit eigener Einstellung (Lobby): deren Stufe. Gegner ohne eigene Stufe
+// (Einzelspieler-Kampagne): die eine Schwierigkeits-Einstellung des Spiels.
+int difficultyOf(unsigned player)
+{
+	if (player >= MAX_PLAYERS || isHumanPlayer(static_cast<int>(player)))
+	{
+		return -1;
+	}
+	if (player < NetPlay.players.size())
+	{
+		const int d = static_cast<int>(NetPlay.players[player].difficulty);
+		if (d >= 0 && d <= 4)
+		{
+			return d;
+		}
+	}
+	if (!bMultiPlayer)
+	{
+		// Die Spielstufe ist hier fuer alle Rechner gleich (Einzelspieler); im Mehrspieler waere sie je Rechner verschieden.
+		return static_cast<int>(getDifficultyLevel());   // DL_SUPER_EASY..DL_INSANE = 0..4
+	}
+	return -1;
+}
+
 const Row *rowFor(unsigned player)
 {
-	if (!bMultiPlayer || player >= NetPlay.players.size())
-	{
-		return nullptr;
-	}
-	const int d = static_cast<int>(NetPlay.players[player].difficulty);
-	if (d < 0 || d > 4)   // HUMAN (-2) / DISABLED (-1)
-	{
-		return nullptr;
-	}
-	return &kTable[d];
+	const int d = difficultyOf(player);
+	return (d < 0 || d > 4) ? nullptr : &kTable[d];
 }
 }
 

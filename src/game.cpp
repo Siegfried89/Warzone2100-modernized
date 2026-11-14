@@ -6646,19 +6646,6 @@ static bool loadWzMapStructure(WzMap::Map& wzMap, std::unordered_map<UDWORD, UDW
 			player = MAX_PLAYERS - 1;
 			NumberOfSkippedStructures++;
 		}
-		// MOD (zentrale Regel fuer ALLE Kampagnenkarten, nichts mehr pro Mission): Gebaeude der Gegner behalten ihr
-		// Original-Aussehen. Wo ein Gebaeude fuer den Mod neu eingekleidet wurde, gibt es einen "<Name>-Orig"-Zwilling.
-		// Frueher wurde dazu die Objektdatei JEDER Missionskarte einzeln umgeschrieben; jetzt entscheidet das genau diese eine Stelle.
-		if (game.type == LEVEL_TYPE::CAMPAIGN && player != 0)
-		{
-			WzString origId = psStats->id;
-			origId.append("-Orig");
-			STRUCTURE_STATS *psOrig = getStructStatsFromName(origId);
-			if (psOrig != nullptr)
-			{
-				psStats = psOrig;
-			}
-		}
 		STRUCTURE *psStructure = nullptr;
 		debug(LOG_NEVER, "trying to build structure %i;%i;%s;%i;%i", (structure.id.has_value()) ? structure.id.value() : -1, player,
 				structure.name.c_str(), map_coord(structure.position.x), map_coord(structure.position.y));

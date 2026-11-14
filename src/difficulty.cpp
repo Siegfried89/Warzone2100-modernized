@@ -51,24 +51,10 @@ void setDamageModifiers(int playerModifier, int enemyModifier)
 /* Sets the game difficulty level */
 void setDifficultyLevel(DIFFICULTY_LEVEL lev)
 {
-	switch (lev)
-	{
-	case DL_SUPER_EASY:
-		setDamageModifiers(150, 70);
-		break;
-	case DL_EASY:
-		setDamageModifiers(125, 85);
-		break;
-	case DL_NORMAL:
-		setDamageModifiers(100, 100);
-		break;
-	case DL_HARD:
-		setDamageModifiers(90, 110);
-		break;
-	case DL_INSANE:
-		setDamageModifiers(80, 120);
-		break;
-	}
+	// MOD: In jeder Spielart wirkt die Schwierigkeit gleich, ueber die EINE Tabelle in modaidiff.cpp
+	// (Schaden/Kosten/Produktionstempo nur fuer KI). Die alte Kampagnen-Sonderregel (Spielerbonus/Gegnerzuschlag
+	// beim Schaden) ist abgeschaltet, sonst wuerde doppelt skaliert.
+	setDamageModifiers(100, 100);
 	presDifLevel = lev;
 }
 

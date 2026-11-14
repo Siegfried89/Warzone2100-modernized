@@ -143,7 +143,8 @@ void spawn(const Comp &c, int x, int y)
 
 bool researchMode()
 {
-	return bMultiPlayer && game.techLevel < 2;
+	// Eine Regel fuer jede Spielart (Kampagne, Gefecht, Mehrspieler): Technikstufe 1 = Beute-Forschung.
+	return game.techLevel < 2;
 }
 
 bool isLocked(int player, const modcombot::Part *part)
