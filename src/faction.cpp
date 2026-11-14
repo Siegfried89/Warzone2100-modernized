@@ -24,6 +24,7 @@
 #include "lib/framework/frame.h"
 #include "lib/netplay/netplay.h"
 #include "lib/ivis_opengl/ivisdef.h"
+#include "structure.h"
 #include <array>
 
 std::array<FACTION, NUM_FACTIONS> getInitialFactionsMappingTable()
@@ -118,6 +119,11 @@ std::array<FACTION, NUM_FACTIONS> getInitialFactionsMappingTable()
 				{"blmrtpit.pie", "blmrtpit_col.pie"},
 				{"stwpfcan.pie", "stwpfcan_col.pie"}
 			}
+		},
+		FACTION {
+			"NewParadigm",
+			{
+			}
 		}
 	};
 }
@@ -127,6 +133,67 @@ static std::array<FACTION, NUM_FACTIONS> factions = getInitialFactionsMappingTab
 void reinitFactionsMapping()
 {
 	factions = getInitialFactionsMappingTable();
+}
+
+// MOD: "Scavengers" (FACTION_NORMAL) show the mod look (the models of the stats). Every re-skinned structure has a twin "<Id>-Orig" with the
+// original models. New Paradigm shows exactly those originals; NEXUS / Collective show the vanilla _nex / _col variant of the original
+// (or the original itself where vanilla has none). Everything is derived from the loaded stats - no per-mission or per-map data.
+void rebuildFactionsFromStats()
+{
+	factions = getInitialFactionsMappingTable();
+	if (asStructureStats == nullptr)
+	{
+		return;
+	}
+	const std::array<FactionID, 3> derived = {FACTION_NEW_PARADIGM, FACTION_NEXUS, FACTION_COLLECTIVE};
+	std::array<FACTION::ReplaceIMDMap, NUM_FACTIONS> statics;
+	for (size_t f = 0; f < factions.size(); ++f)
+	{
+		statics[f] = factions[f].replaceIMD; // the vanilla tables (keyed by original model name)
+	}
+	auto addPair = [&](const iIMDBaseShape *modShape, const iIMDBaseShape *origShape) {
+		if (modShape == nullptr || origShape == nullptr || modShape->displayModel() == nullptr || origShape->displayModel() == nullptr)
+		{
+			return;
+		}
+		const WzString modName = modelName(modShape->displayModel()).toLower();
+		const WzString origName = modelName(origShape->displayModel()).toLower();
+		if (modName == origName)
+		{
+			return;
+		}
+		for (FactionID f : derived)
+		{
+			WzString target = origName;
+			if (f != FACTION_NEW_PARADIGM)
+			{
+				auto it = statics[static_cast<size_t>(f)].find(origName);
+				if (it != statics[static_cast<size_t>(f)].end())
+				{
+					target = it->second;
+				}
+			}
+			factions[static_cast<size_t>(f)].replaceIMD.emplace(modName, target);
+		}
+	};
+	for (UDWORD i = 0; i < numStructureStats; ++i)
+	{
+		const STRUCTURE_STATS &origStats = asStructureStats[i];
+		if (!origStats.id.endsWith("-Orig"))
+		{
+			continue;
+		}
+		const STRUCTURE_STATS *modStats = getStructStatsFromName(origStats.id.substr(0, static_cast<size_t>(origStats.id.length() - 5)));
+		if (modStats == nullptr)
+		{
+			continue;
+		}
+		addPair(modStats->pBaseIMD, origStats.pBaseIMD);
+		for (size_t k = 0; k < modStats->pIMD.size() && k < origStats.pIMD.size(); ++k)
+		{
+			addPair(modStats->pIMD[k], origStats.pIMD[k]);
+		}
+	}
 }
 
 optional<WzString> getFactionModelName(const FACTION *faction, const WzString& normalFactionName)
@@ -203,6 +270,8 @@ const char* to_string(FactionID faction)
 			return "NEXUS";
 		case FACTION_COLLECTIVE:
 			return "Collective";
+		case FACTION_NEW_PARADIGM:
+			return "NewParadigm";
 	}
 	return ""; // silence warning - switch above should be complete
 }
@@ -212,14 +281,17 @@ const char* to_localized_string(FactionID faction)
 	switch (faction)
 	{
 		case FACTION_NORMAL:
-			// TRANSLATORS: "Normal" Faction
-			return _("Normal");
+			// TRANSLATORS: "Scavengers" Faction (the mod look; formerly the "Normal" faction)
+			return _("Scavengers");
 		case FACTION_NEXUS:
 			// TRANSLATORS: "NEXUS" Faction
 			return _("NEXUS");
 		case FACTION_COLLECTIVE:
 			// TRANSLATORS: "Collective" Faction
 			return _("Collective");
+		case FACTION_NEW_PARADIGM:
+			// TRANSLATORS: "New Paradigm" Faction
+			return _("New Paradigm");
 	}
 	return ""; // silence warning - switch above should be complete
 }

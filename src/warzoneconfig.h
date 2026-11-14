@@ -179,6 +179,9 @@ int8_t war_GetSPcolor();
 void war_SetSPcolor(int color);
 void war_setMPcolour(int colour);
 int war_getMPcolour();
+// MOD: the faction the local player plays (main menu choice, valid in every game mode): 0 Scavengers, 1 NEXUS, 2 Collective, 3 New Paradigm
+int war_getPlayerFaction();
+void war_setPlayerFaction(int faction);
 void war_setScanlineMode(SCANLINE_MODE mode);
 SCANLINE_MODE war_getScanlineMode();
 void war_setFMVGamma(float gamma);

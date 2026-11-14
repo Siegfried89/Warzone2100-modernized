@@ -30,9 +30,10 @@ using nonstd::nullopt;
 enum FactionID : uint8_t {
 	FACTION_NORMAL = 0,
 	FACTION_NEXUS = 1,
-	FACTION_COLLECTIVE = 2
+	FACTION_COLLECTIVE = 2,
+	FACTION_NEW_PARADIGM = 3
 };
-#define MAX_FACTION_ID FACTION_COLLECTIVE
+#define MAX_FACTION_ID FACTION_NEW_PARADIGM
 
 inline optional<FactionID> uintToFactionID(uint8_t value)
 {

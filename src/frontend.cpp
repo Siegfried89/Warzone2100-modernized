@@ -55,6 +55,7 @@
 #include "difficulty.h"
 #include "display.h"
 #include "droid.h"
+#include "faction.h"
 #include "frend.h"
 #include "frontend.h"
 #include "group.h"
@@ -204,6 +205,95 @@ static void closeMissingVideosNotification()
 	cancelOrDismissNotificationsWithTag(VIDEO_TAG);
 }
 
+// ////////////////////////////////////////////////////////////////////////////
+// MOD: faction choice - ONE place (main menu), valid for every game mode (campaign, skirmish, multiplayer).
+// The four buttons sit under the game logo; the chosen one is lit and framed.
+
+namespace {
+struct FactionMenuButton : public W_BUTTON
+{
+	AtlasImage imNormal;
+	AtlasImage imHi;
+	bool chosen = false;
+
+	void display(int xOffset, int yOffset) override
+	{
+		const int x0 = xOffset + x();
+		const int y0 = yOffset + y();
+		const bool lit = chosen || (getState() & WBUT_HIGHLIGHT) != 0;
+		if (chosen)
+		{
+			pie_UniTransBoxFill(x0 - 3, y0 - 3, x0 + width() + 3, y0 + height() + 3, pal_RGBA(255, 220, 120, 60));
+			iV_Box(x0 - 3, y0 - 3, x0 + width() + 3, y0 + height() + 3, pal_RGBA(255, 220, 120, 230));
+		}
+		iV_DrawImageImage(lit ? imHi : imNormal, x0, y0, lit ? 255 : 170);
+	}
+};
+}
+
+static_assert(FRONTEND_FACTION_0 + NUM_FACTIONS - 1 == FRONTEND_FACTION_3, "faction button ids must match NUM_FACTIONS");
+
+static void refreshFactionChoice()
+{
+	const int chosen = war_getPlayerFaction();
+	for (int f = 0; f < NUM_FACTIONS; ++f)
+	{
+		auto *button = dynamic_cast<FactionMenuButton *>(widgGetFromID(psWScreen, FRONTEND_FACTION_0 + f));
+		if (button != nullptr)
+		{
+			button->chosen = (f == chosen);
+		}
+	}
+	widgSetString(psWScreen, FRONTEND_FACTION_LABEL, to_localized_string(static_cast<FactionID>(chosen)));
+}
+
+static void addFactionChoice()
+{
+	WIDGET *topForm = widgGetFromID(psWScreen, FRONTEND_TOPFORM);
+	ASSERT_OR_RETURN(, topForm != nullptr, "Unable to find FRONTEND_TOPFORM?");
+
+	// make room under the logo: the logo shrinks to 96 px height (same aspect), the buttons take the rest
+	WIDGET *logo = widgGetFromID(psWScreen, FRONTEND_LOGO);
+	const int iconSize = 44;
+	const int gap = 14;
+	const int stripY = topForm->height() - iconSize - 4;
+	if (logo != nullptr)
+	{
+		const int imgW = iV_GetImageWidth(FrontImages, IMAGE_FE_LOGO);
+		const int imgH = iV_GetImageHeight(FrontImages, IMAGE_FE_LOGO);
+		const int h = std::max(stripY - 8, 40);
+		const int w = imgW * h / std::max(imgH, 1);
+		logo->setGeometry((topForm->width() - w) / 2, 2, w, h);
+	}
+
+	const int stripW = NUM_FACTIONS * iconSize + (NUM_FACTIONS - 1) * gap;
+	const int x0 = (topForm->width() - stripW) / 2;
+	static const int menuImg[NUM_FACTIONS] = {IMAGE_FACTION_MENU_NORMAL, IMAGE_FACTION_MENU_NEXUS, IMAGE_FACTION_MENU_COLLECTIVE, IMAGE_FACTION_MENU_NEWPARADIGM};
+	static const int menuImgHi[NUM_FACTIONS] = {IMAGE_FACTION_MENU_NORMAL_HI, IMAGE_FACTION_MENU_NEXUS_HI, IMAGE_FACTION_MENU_COLLECTIVE_HI, IMAGE_FACTION_MENU_NEWPARADIGM_HI};
+	for (int f = 0; f < NUM_FACTIONS; ++f)
+	{
+		auto button = std::make_shared<FactionMenuButton>();
+		topForm->attach(button);
+		button->id = FRONTEND_FACTION_0 + f;
+		button->setGeometry(x0 + f * (iconSize + gap), stripY, iconSize, iconSize);
+		button->imNormal = AtlasImage(FrontImages, menuImg[f]);
+		button->imHi = AtlasImage(FrontImages, menuImgHi[f]);
+		// TRANSLATORS: tooltip of a faction button in the main menu; %s is the faction name
+		button->setTip(astringf(_("Play as %s (valid for every game mode)"), to_localized_string(static_cast<FactionID>(f))));
+	}
+
+	auto label = std::make_shared<W_LABEL>();
+	topForm->attach(label);
+	label->id = FRONTEND_FACTION_LABEL;
+	label->setGeometry(x0 + stripW + 16, stripY, topForm->width() - (x0 + stripW + 16), iconSize);
+	label->setTextAlignment(WLAB_ALIGNLEFT);
+	label->setFont(font_regular, WZCOL_TEXT_BRIGHT);
+	label->setTransparentToClicks(true);
+	label->setTransparentToMouse(true);
+
+	refreshFactionChoice();
+}
+
 void startTitleMenu()
 {
 	intRemoveReticule();
@@ -211,6 +301,7 @@ void startTitleMenu()
 	addBackdrop();
 	addTopForm(false);
 	addBottomForm();
+	addFactionChoice();
 
 	addTextButton(FRONTEND_SINGLEPLAYER, FRONTEND_POS2X, FRONTEND_POS2Y, _("Single Player"), WBUT_TXTCENTRE);
 	addTextButton(FRONTEND_MULTIPLAYER, FRONTEND_POS3X, FRONTEND_POS3Y, _("Multi Player"), WBUT_TXTCENTRE);
@@ -303,6 +394,13 @@ bool runTitleMenu()
 	case FRONTEND_CONTINUE:
 		runContinue();
 		changeTitleMode(LOADSAVEGAME);
+		break;
+	case FRONTEND_FACTION_0:
+	case FRONTEND_FACTION_1:
+	case FRONTEND_FACTION_2:
+	case FRONTEND_FACTION_3:
+		war_setPlayerFaction(static_cast<int>(id - FRONTEND_FACTION_0));
+		refreshFactionChoice();
 		break;
 
 	default:
@@ -425,6 +523,7 @@ void SPinit(LEVEL_TYPE gameType)
 	NetPlay.players[0].allocated = true;
 	NetPlay.players[0].autoGame = false;
 	NetPlay.players[0].difficulty = AIDifficulty::HUMAN;
+	NetPlay.players[0].faction = static_cast<FactionID>(war_getPlayerFaction());	// MOD: the faction chosen in the main menu
 	game.maxPlayers = MAX_PLAYERS - 1;	// Currently, 0 - 10 for a total of MAX_PLAYERS
 	// make sure we have a valid color choice for our SP game. Valid values are 0, 4-7
 	playercolor = war_GetSPcolor();

@@ -2420,6 +2420,10 @@ static void handleJoinSuccess(const JoinConnectionDescription& connection, const
 	{
 		SendColourRequest(selectedPlayer, war_getMPcolour());
 	}
+	if (selectedPlayer < MAX_PLAYERS)
+	{
+		SendFactionRequest(selectedPlayer, static_cast<UBYTE>(war_getPlayerFaction()));	// MOD: the faction chosen in the main menu
+	}
 
 	widgScheduleTask([]() {
 		// switch the TitleUI to the multiplayer options (lobby), which will take over handling messages from the host

@@ -546,6 +546,7 @@ bool loadConfig()
 	}
 	war_SetSPcolor(iniGetInteger("colour", 0).value());	// default is green (0)
 	war_setMPcolour(iniGetInteger("colourMP", -1).value());  // default is random (-1)
+	war_setPlayerFaction(iniGetInteger("playerFaction", 0).value());  // MOD: default is Scavengers (the mod look)
 	sstrcpy(game.name, iniGetString("gameName", _("My Game")).value().c_str());
 	sstrcpy(sPlayer, iniGetString("playerName", _("Player")).value().c_str());
 
@@ -1151,6 +1152,7 @@ bool saveConfig()
 		iniSetFromCString("playerName", (char *)sPlayer, 128);		// player name
 	}
 	iniSetInteger("colourMP", war_getMPcolour());
+	iniSetInteger("playerFaction", war_getPlayerFaction());
 	iniSetInteger("inactivityMinutesMP", war_getMPInactivityMinutes());
 	iniSetInteger("gameTimeLimitMinutesMP", war_getMPGameTimeLimitMinutes());
 	iniSetInteger("playerLeaveModeMP", (int)war_getMPPlayerLeaveMode());

@@ -31,6 +31,7 @@
 #include "lib/netplay/connection_provider_registry.h"
 #include "lib/sequence/video_decoder.h"
 #include "advvis.h"
+#include "faction.h"
 #include "component.h"
 #include "display.h"
 #include "keybind.h"
@@ -61,6 +62,7 @@ struct WARZONE_GLOBALS
 	int screen = 0;
 	int8_t SPcolor = 0;
 	int MPcolour = -1;
+	int playerFaction = FACTION_NORMAL;
 	int antialiasing = 0;
 	WINDOW_MODE Fullscreen = WINDOW_MODE::windowed; // Leave this to windowed, some system will fail and they can't see the system popup dialog!
 	bool soundEnabled = true;
@@ -212,6 +214,21 @@ void war_setMPcolour(int colour)
 int war_getMPcolour()
 {
 	return warGlobs.MPcolour;
+}
+
+void war_setPlayerFaction(int faction)
+{
+	if (faction < 0 || faction > static_cast<int>(MAX_FACTION_ID))
+	{
+		faction = FACTION_NORMAL;
+	}
+	warGlobs.playerFaction = faction;
+	ActivityManager::instance().changedSetting("playerFaction", std::to_string(faction));
+}
+
+int war_getPlayerFaction()
+{
+	return warGlobs.playerFaction;
 }
 
 void war_setWindowMode(WINDOW_MODE b)

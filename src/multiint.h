@@ -171,6 +171,7 @@ std::shared_ptr<WzMultiButton> makeMultiBut(UDWORD id, UDWORD width, UDWORD heig
 
 AtlasImage mpwidgetGetFrontHighlightImage(AtlasImage image);
 bool changeColour(unsigned player, int col, uint32_t responsibleIdx);
+bool changeFaction(unsigned player, FactionID faction, uint32_t responsibleIdx);
 
 extern char sPlayer[128];
 extern bool multiintDisableLobbyRefresh; // gamefind
@@ -203,6 +204,7 @@ void multiLobbyHandleHostOptionsChanges(const std::array<bool, MAX_CONNECTED_PLA
 void multiLobbyRandomizeOptions();
 
 bool SendColourRequest(UBYTE player, UBYTE col);
+bool SendFactionRequest(UBYTE player, UBYTE faction);
 
 void handleAutoReadyRequest();
 

@@ -33,7 +33,7 @@
 using nonstd::optional;
 using nonstd::nullopt;
 
-#define NUM_FACTIONS 3
+#define NUM_FACTIONS 4
 
 struct FACTION {
 	WzString name;
@@ -42,6 +42,10 @@ struct FACTION {
 };
 
 void reinitFactionsMapping();
+
+// MOD: builds the structure look of New Paradigm / NEXUS / Collective from the loaded stats (the "<Name>-Orig" twins that hold the
+// original models of the re-skinned structures). Call after the stats are loaded and before faction models are preloaded.
+void rebuildFactionsFromStats();
 
 optional<WzString> getFactionModelName(const FACTION *faction, const WzString& normalFactionName);
 optional<WzString> getFactionModelName(const FactionID faction, const WzString& normalFactionName);

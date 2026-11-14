@@ -4941,6 +4941,7 @@ bool NEThostGame(const char *SessionName, const char *PlayerName, const EcKey& p
 		{
 			changeColour(NetPlay.hostPlayer, war_getMPcolour(), realSelectedPlayer);
 		}
+		changeFaction(NetPlay.hostPlayer, static_cast<FactionID>(war_getPlayerFaction()), realSelectedPlayer);	// MOD: the faction chosen in the main menu
 		return true;
 	}
 
@@ -5005,6 +5006,10 @@ bool NEThostGame(const char *SessionName, const char *PlayerName, const EcKey& p
 	if (NetPlay.hostPlayer < MAX_PLAYERS && war_getMPcolour() >= 0)
 	{
 		changeColour(NetPlay.hostPlayer, war_getMPcolour(), realSelectedPlayer);
+	}
+	if (NetPlay.hostPlayer < MAX_PLAYERS)
+	{
+		changeFaction(NetPlay.hostPlayer, static_cast<FactionID>(war_getPlayerFaction()), realSelectedPlayer);	// MOD: the faction chosen in the main menu
 	}
 
 	// Enable spectator slots as desired

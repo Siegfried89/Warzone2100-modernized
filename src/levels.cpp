@@ -901,6 +901,7 @@ enum class LevDatasetResolveResult
 // Call after base WRF data is loaded: preload alternate faction PIE models referenced by the loaded set.
 static void levPreloadFactionModelsFromLoadedSet()
 {
+	rebuildFactionsFromStats();	// MOD: structure looks of New Paradigm / NEXUS / Collective come from the loaded stats' -Orig twins
 	std::unordered_set<FactionID> enabledNonNormalFactions = getEnabledFactions(true);
 	if (enabledNonNormalFactions.empty())
 	{

@@ -253,7 +253,6 @@ static	void	SendFireUp();
 
 static	void	decideWRF();
 
-static bool		SendFactionRequest(UBYTE player, UBYTE faction);
 static bool		SendPositionRequest(UBYTE player, UBYTE chosenPlayer);
 static bool		SendPlayerSlotTypeRequest(uint32_t player, bool isSpectator);
 bool changeReadyStatus(UBYTE player, bool bReady);
@@ -3057,7 +3056,7 @@ bool changeFaction(unsigned player, FactionID faction, uint32_t responsibleIdx)
 	return true;
 }
 
-static bool SendFactionRequest(UBYTE player, UBYTE faction)
+bool SendFactionRequest(UBYTE player, UBYTE faction)
 {
 	// TODO: needs to be rewritten from scratch
 	ASSERT_OR_RETURN(false, faction <= static_cast<UBYTE>(MAX_FACTION_ID), "Invalid faction: %u", (unsigned int)faction);
@@ -3608,6 +3607,10 @@ static SwapPlayerIndexesResult recvSwapPlayerIndexes(NETQUEUE queue, const std::
 		if (selectedPlayer < MAX_PLAYERS && war_getMPcolour() >= 0)
 		{
 			SendColourRequest(selectedPlayer, war_getMPcolour());
+		}
+		if (selectedPlayer < MAX_PLAYERS)
+		{
+			SendFactionRequest(selectedPlayer, static_cast<UBYTE>(war_getPlayerFaction()));	// MOD: the faction chosen in the main menu
 		}
 
 		if (selectedPlayerWasSpectator != NetPlay.players[selectedPlayer].isSpectator)
