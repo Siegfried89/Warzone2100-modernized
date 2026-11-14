@@ -52,6 +52,7 @@
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modammo.h"
+#include "modrecoil.h"
 
 #define DROID_SHIELD_DAMAGE_SPREAD	(16 - rand()%32)
 #define DROID_SHIELD_PARTICLES		(6 + rand()%8)
@@ -274,6 +275,7 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	if (psAttacker->type == OBJ_DROID)
 	{
 		modammo::onShot(static_cast<const DROID *>(psAttacker));   // MOD: Munition
+		modrecoil::onShot(static_cast<const DROID *>(psAttacker), psStats, static_cast<const DROID *>(psAttacker)->asWeaps[weapon_slot].rot.direction);   // MOD: Rueckstoss-Wackeln (Anzeige)
 	}
 
 	/* reduce ammo if salvo */

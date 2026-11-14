@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Wracks. Zerstoerte Fahrzeuge zerplatzen nicht immer, sondern bleiben mit 80 % Wahrscheinlichkeit als verkohltes Wrack auf der
 // Seite liegen (Feature "ModWreckS*/M*/L*" je nach Rumpfgroesse, Modelle aus den Landfill-Autowracks mit Brandspuren). Das Wrack qualmt
-// eine Weile, brennt am Anfang kurz und verschwindet nach etwa 5 Minuten. Es blockiert keine Kachel (reine Deko).
+// eine Weile, brennt am Anfang kurz und verschwindet nach etwa 25 Minuten. Nach der Landung blockiert es seine Kachel (Fahrzeuge muessen drumherum).
 // Nur wenn die Mod-Daten (Feature ModWreckS0) geladen sind; deterministisch (gameRand), gilt fuer alle Spieler gleich.
 #pragma once
 

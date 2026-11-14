@@ -47,6 +47,7 @@
 #include "modcombot.h"
 #include "modbuild.h"
 #include "modduel.h"
+#include "modrecoil.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
 #endif
@@ -592,21 +593,33 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		return modcombot::draw(const_cast<DROID *>(psDroid), bButton, modifiedModelMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, iPieData);
 	}
 
+	// MOD: Hover-Fahrzeuge schweben und wippen leicht (nur Anzeige)
+	{
+		glm::mat4 hoverMat(1.f);
+		if (!bButton && modrecoil::hover(psDroid, graphicsTime, hoverMat)) { modifiedModelMatrix *= hoverMat; }
+	}
+	// MOD: Rueckstoss-Wackeln - Ketten/Beine und Rumpf (mit Turm und Waffen) schwingen nach jedem Schuss getrennt nach
+	glm::mat4 propMatrix = modifiedModelMatrix;
+	glm::mat4 hullShake(1.f), propShake(1.f);
+	const bool shaking = !bButton && modrecoil::shake(psDroid, graphicsTime, hullShake, propShake);
+	if (shaking) { propMatrix = modifiedModelMatrix * propShake; }
 	const iIMDBaseShape *psShapeProp = (leftFirst ? getLeftPropulsionIMD(psDroid) : getRightPropulsionIMD(psDroid));
 	if (psShapeProp)
 	{
-		if (pie_Draw3DShape(psShapeProp->displayModel(), 0, colour, brightness, pieFlag, iPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+		if (pie_Draw3DShape(psShapeProp->displayModel(), 0, colour, brightness, pieFlag, iPieData, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 		{
 			didDrawSomething = true;
 		}
 		if (!bButton && psDroid->shieldPoints > 0)
 		{
-			if (pie_Draw3DShape(psShapeProp->displayModel(), 0, colour, brightness, shieldPieFlag, iShieldPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+			if (pie_Draw3DShape(psShapeProp->displayModel(), 0, colour, brightness, shieldPieFlag, iShieldPieData, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 			{
 				didDrawSomething = true;
 			}
 		}
 	}
+
+	if (shaking) { modifiedModelMatrix *= hullShake; }   // MOD: ab hier (Rumpf, Turm, Waffen) mit dem Rumpf-Wackeln
 
 	/* set default components transparent */
 	if (psDroid->asBits[COMP_BODY] == 0)
@@ -665,7 +678,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	if (!bButton && psMoveAnim && psDroid->sMove.Status != MOVEINACTIVE)
 	{
 		const iIMDShape *displayModel = psMoveAnim->displayModel();
-		if (pie_Draw3DShape(displayModel, getModularScaledGraphicsTime(displayModel->animInterval, displayModel->numFrames), colour, brightness, pie_ADDITIVE, 200, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+		if (pie_Draw3DShape(displayModel, getModularScaledGraphicsTime(displayModel->animInterval, displayModel->numFrames), colour, brightness, pie_ADDITIVE, 200, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 		{
 			didDrawSomething = true;
 		}
@@ -673,7 +686,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	else if (!bButton && psStillAnim) // standing still
 	{
 		const iIMDShape *displayModel = psStillAnim->displayModel();
-		if (pie_Draw3DShape(displayModel, getModularScaledGraphicsTime(displayModel->animInterval, displayModel->numFrames), colour, brightness, 0, 0, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+		if (pie_Draw3DShape(displayModel, getModularScaledGraphicsTime(displayModel->animInterval, displayModel->numFrames), colour, brightness, 0, 0, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 		{
 			didDrawSomething = true;
 		}
