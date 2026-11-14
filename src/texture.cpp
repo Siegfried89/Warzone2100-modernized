@@ -302,9 +302,17 @@ bool texLoad(const char *fileName)
 				if (has_sm && has_auxillary_texture_info) { tile_sm_filepaths.push_back(WzString()); }
 				if (has_hm && has_auxillary_texture_info) { tile_hm_filepaths.push_back(WzString()); }
 			}
+			// MOD: Orbit-Boden (Kachel 256) je Tileset: Arizona = eigener Wuestenboden (tile-256.png), Urban/Rockies = originale MF-Orbitboeden (tile-256-urban/-rockies.png), falls vorhanden
+			const char *voidVariant = (currentMapTileset == MAP_TILESET::URBAN) ? "urban" : ((currentMapTileset == MAP_TILESET::ROCKIES) ? "rockies" : nullptr);
 			for (k = 0; k < modExtTileCount; ++k)
 			{
-				tile_base_filepaths.push_back(gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(astringf("texpages/modisland-%d/tile-%d.png", extSize, 256 + k))));
+				std::string extPath = astringf("texpages/modisland-%d/tile-%d.png", extSize, 256 + k);
+				if (k == 0 && voidVariant != nullptr)
+				{
+					const std::string altPath = astringf("texpages/modisland-%d/tile-256-%s.png", extSize, voidVariant);
+					if (PHYSFS_exists(altPath.c_str())) { extPath = altPath; }
+				}
+				tile_base_filepaths.push_back(gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(extPath)));
 				if (has_nm && has_auxillary_texture_info) { tile_nm_filepaths.push_back(WzString()); }
 				if (has_sm && has_auxillary_texture_info) { tile_sm_filepaths.push_back(WzString()); }
 				if (has_hm && has_auxillary_texture_info) { tile_hm_filepaths.push_back(WzString()); }

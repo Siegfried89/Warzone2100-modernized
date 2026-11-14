@@ -728,6 +728,8 @@ wzapi::scripting_instance* scripting_engine::loadPlayerScript(const WzString& pa
 	globalVars["scavengerPlayer"] = scavengerSlot();
 	//== * ```isMultiplayer``` If the current game is a online multiplayer game or not. (3.2+ only)
 	globalVars["isMultiplayer"] = NetPlay.bComms;
+	//== * ```isCampaign``` If the current game is a single-player campaign game (as opposed to skirmish or online multiplayer). Lets one shared script serve every game mode.
+	globalVars["isCampaign"] = !bMultiPlayer;
 	//== * ```challenge``` If the current game is a challenge. (4.1.4+ only)
 	globalVars["challenge"] = challengeActive;
 	//== * ```idleTime``` The amount of game time without active play before a player should be considered "inactive". (0 = disable activity alerts / AFK check) (4.2.0+ only)
