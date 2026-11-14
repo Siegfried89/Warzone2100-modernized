@@ -130,6 +130,8 @@ struct STRUCTURE_STATS : public BASE_STATS
 	int crewCost = 0;				// MOD (MF): bindet so viel Besatzung (Besatzungskonto, siehe modgrid)
 	int crewProvide = 0;			// MOD (MF): stellt bis zu so viel Besatzung (Kryo-Farm)
 	int crewStart = 0;				// MOD (MF): Besatzung direkt nach dem Fertigstellen; waechst danach um 1/s bis crewProvide; > 0 schaltet das Besatzungskonto ein
+	int storageProvide = 0;			// MOD (MF): erhoeht die Energie-Obergrenze um so viel MJ (Energiebank 1000, Matter Converter 1750), siehe modlava
+	int incomeProvide = 0;			// MOD (MF): bringt so viel MJ je Sekunde (Solarpaneel 1; unter Tage nur ein Viertel), siehe modlava
 
 	unsigned minLimit;		///< lowest value user can set limit to (currently unused)
 	unsigned maxLimit;		///< highest value user can set limit to, LOTS_OF = no limit

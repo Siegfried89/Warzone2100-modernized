@@ -37,8 +37,6 @@ namespace
 constexpr int LAVA_MJ = 4000;              // Vorrat je Feld
 constexpr int MINE_RATE = 3;               // MJ je Sekunde je Hover-Truck
 constexpr int BASE_CAP = 4000;             // Grundobergrenze (MJ) mit Fass-Wirtschaft
-constexpr int BANK_CAP = 1000;             // je Energiebank
-constexpr int SOLAR_PER_SEC = 1;
 constexpr int REACH = 128 + 192;           // Abstand Truck - Feldmitte, ab dem geschuerft wird (halbes Feld + 1,5 Felder)
 constexpr int MIN_START_DIST = 12 * 128;   // Mindestabstand zu Gebaeuden bei der Verteilung
 
@@ -245,18 +243,19 @@ void tick(GameWorld &world)
 	// Energiebanken (Obergrenze) und Solarpaneele (Einnahme)
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
-		int banks = 0, solar = 0, solarUnder = 0;
+		int storage = 0, income = 0, incomeUnder = 0;   // aus den Stats der fertigen Gebaeude (storageProvide / incomeProvide)
 		for (const STRUCTURE *s : world.objects.structures[p])
 		{
 			if (s->status != SS_BUILT || s->died) { continue; }
-			if (s->pStructureType->id.startsWith("A0EnergyBank")) { banks++; }
-			else if (s->pStructureType->id.startsWith("A0SolarPanel")) { (modlayer::layerOf(s) == modlayer::SURFACE ? solar : solarUnder)++; }
+			const STRUCTURE_STATS *st = s->pStructureType;
+			storage += st->storageProvide;
+			if (st->incomeProvide > 0) { (modlayer::layerOf(s) == modlayer::SURFACE ? income : incomeUnder) += st->incomeProvide; }
 		}
-		const int solarGain = solar * SOLAR_PER_SEC + ((s_sec % 4 == 0) ? solarUnder * SOLAR_PER_SEC : 0);
+		const int solarGain = income + ((s_sec % 4 == 0) ? incomeUnder : 0);
 		if (solarGain > 0) { addPower(p, solarGain); }
 		if (modoil::manages(p))
 		{
-			const int cap = BASE_CAP + banks * BANK_CAP;
+			const int cap = BASE_CAP + storage;
 			if (cap != s_cap[p])
 			{
 				s_cap[p] = cap;

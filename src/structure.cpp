@@ -779,6 +779,8 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->crewCost = std::max(0, ini.value("crewCost", 0).toInt());   // MOD: Besatzungskonto
 		psStats->crewProvide = std::max(0, ini.value("crewProvide", 0).toInt());   // MOD: Besatzungskonto
 		psStats->crewStart = std::max(0, ini.value("crewStart", 0).toInt());   // MOD: Besatzungskonto
+		psStats->storageProvide = std::max(0, ini.value("storageProvide", 0).toInt());   // MOD: Energie-Obergrenze
+		psStats->incomeProvide = std::max(0, ini.value("incomeProvide", 0).toInt());   // MOD: Energie je Sekunde
 		psStats->infantryPassable = ini.value("infantryPassable", false).toBool();   // MOD
 		psStats->infantryBuildable = ini.value("infantryBuildable", false).toBool();   // MOD
 		psStats->turretSpinMs = static_cast<unsigned>(std::max(500, ini.value("turretSpinMs", 3000).toInt()));   // MOD
