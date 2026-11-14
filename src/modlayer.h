@@ -61,6 +61,11 @@ PROPULSION_TYPE effectivePropulsion(const DROID *psDroid, PROPULSION_TYPE realTy
 bool isPortalTile(int player, int tileX, int tileY);
 /// jeden Spielschritt aus der Spielschleife: Einheiten, die einen Schacht erreichen, wechseln die Ebene
 void gameTick();
+/// Ebenen-Knopf gedrueckt: die ausgewaehlten Flieger (Hoverjets, Drohnen, VTOLs) steigen in den Orbit bzw. kehren zur Oberflaeche zurueck
+/// (der Wechsel selbst geschieht im naechsten Spielschritt; in den Untergrund koennen Flieger nicht)
+void sendSelectedFliers(Layer target);
+/// Flieger? (schwebende Antriebe wie Balldrohne/Hoverjet und VTOLs)
+bool isFlier(const DROID *psDroid);
 /// beim Baubeginn: das Bauwerk entsteht auf der Ebene des Baumeisters
 void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder);
 /// beim Zerstoeren eines Objekts

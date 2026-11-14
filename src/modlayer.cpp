@@ -75,7 +75,7 @@ const char *layerTip(Layer l)
 {
 	switch (l)
 	{
-	case ORBIT: return "Orbit layer: floating asteroids and solar panels, only aerial units will travel here (not playable yet)";
+	case ORBIT: return "Orbit layer: floating asteroids and solar panels, only fliers go here: select Hoverjets (or VTOLs) and press this button to climb, press Surface to descend";
 	case SURFACE: return "Surface layer: the battlefield";
 	default: return "Underground layer: units that drive into a Shaft (build one with a truck) travel here unseen; right-click a Shaft to enter or leave";
 	}
@@ -119,13 +119,84 @@ Layer layerOfId(uint32_t id)
 	return it == s_layerOf.end() ? SURFACE : it->second;
 }
 
+std::unordered_map<uint32_t, Layer> s_flyReq;   // Flieger -> Ebene, in die sie auf Knopfdruck wechseln sollen (wird im Spielschritt abgearbeitet)
+
 // beim Umschalten der Anzeige: ausgewaehlte Einheiten, die in der neuen Ebene nicht sichtbar sind, abwaehlen
 void deselectOtherLayers(Layer shown)
 {
 	if (selectedPlayer >= MAX_PLAYERS) { return; }   // auch ohne Objekte in anderen Ebenen: Oberflaechen-Einheiten duerfen im Untergrund nicht ausgewaehlt bleiben
 	for (DROID *d : gameWorld.objects.droids[selectedPlayer])
 	{
-		if (d->selected && layerOfId(d->id) != shown) { DeSelectDroid(d); }
+		if (!d->selected || layerOfId(d->id) == shown) { continue; }
+		const auto rq = s_flyReq.find(d->id);
+		if (rq != s_flyReq.end() && rq->second == shown) { continue; }   // Flieger, die gerade in die gezeigte Ebene steigen, bleiben ausgewaehlt
+		DeSelectDroid(d);
+	}
+}
+
+/// Ebenenwechsel einer Einheit: Sicht in der alten Karte abmelden, in der neuen anmelden, Hoehe aus der neuen Karte
+void applyLayer(DROID *d, Layer next)
+{
+	const Layer prev = layerOfId(d->id);
+	if (prev == next) { return; }
+	{
+		modlayermap::Scope sc(prev);
+		visRemoveVisibility(d, gameWorld.map);
+	}
+	if (next == SURFACE) { s_layerOf.erase(d->id); } else { s_layerOf[d->id] = next; }
+	{
+		modlayermap::Scope sc(next);
+		d->pos.z = map_Height(gameWorld.map, d->pos.x, d->pos.y);
+		visTilesUpdate(d, gameWorld.map);
+	}
+	syncDebug("modlayer: droid %u -> layer %d", d->id, static_cast<int>(next));
+}
+
+/// Flieger: Knopfdruck-Wuensche abarbeiten; im Orbit kehren Flieger mit Rueckkehrbefehl oder leere VTOLs zur Oberflaeche zurueck
+void flierTick()
+{
+	if (!s_flyReq.empty())
+	{
+		if (selectedPlayer < MAX_PLAYERS)
+		{
+			for (DROID *d : gameWorld.objects.droids[selectedPlayer])
+			{
+				const auto rq = s_flyReq.find(d->id);
+				if (rq == s_flyReq.end() || d->died != 0) { continue; }
+				if (layerOfId(d->id) == UNDERGROUND) { continue; }
+				const Layer from = layerOfId(d->id);
+				applyLayer(d, rq->second);
+				if (layerOfId(d->id) != from)
+				{
+					orderDroid(d, DORDER_STOP, ModeImmediate);
+					const unsigned it = gameTime - deltaGameTime / 2 + 1;
+					for (int i = 0; i < 3; i++)
+					{
+						Vector3i sp(d->pos.x + (i - 1) * 20, d->pos.z + 30 + i * 22, d->pos.y + (1 - i) * 14);
+						addEffect(&sp, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_HIGH, false, nullptr, 0, it);
+					}
+				}
+			}
+		}
+		s_flyReq.clear();
+	}
+	if (s_layerOf.empty()) { return; }
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		for (DROID *d : gameWorld.objects.droids[p])
+		{
+			if (d->died != 0 || layerOfId(d->id) != ORBIT) { continue; }
+			const auto ot = d->order.type;
+			const bool homeward = ot == DORDER_RTR || ot == DORDER_RTB || ot == DORDER_RTR_SPECIFIED || ot == DORDER_REARM
+			                      || d->action == DACTION_MOVETOREARM || d->action == DACTION_WAITFORREARM || d->action == DACTION_MOVETOREARMPOINT
+			                      || d->action == DACTION_WAITDURINGREARM;
+			if (homeward || (d->isVtol() && vtolEmpty(d)))
+			{
+				applyLayer(d, SURFACE);            // Heimat, Reparatur- und Landeplaetze liegen auf der Oberflaeche; der Befehl bleibt bestehen
+				if (ot == DORDER_RTR || ot == DORDER_RTB || ot == DORDER_REARM) { orderDroid(d, ot, ModeImmediate); }
+				if (static_cast<unsigned>(d->player) == selectedPlayer && d->selected) { request(SURFACE); }
+			}
+		}
 	}
 }
 
@@ -209,7 +280,7 @@ void ensureScreen()
 		b->displayFunction = drawButton;
 		b->UserData = static_cast<UDWORD>(l);
 		b->setTip(layerTip(l));
-		b->addOnClickHandler([l](W_BUTTON &) { widgScheduleTask([l]() { request(l); }); });
+		b->addOnClickHandler([l](W_BUTTON &) { widgScheduleTask([l]() { sendSelectedFliers(l); request(l); }); });
 		s_buttons.push_back(b);
 	}
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
@@ -346,6 +417,7 @@ void gameTick()
 {
 	if (!modlayermap::worldsExist()) { return; }
 	modlayerdig::tick(gameWorld);   // Bohrfahrzeuge   // ohne Zusatzkarten gibt es keinen Schacht-Verkehr
+	flierTick();                    // Flieger: Orbit <-> Oberflaeche
 
 	// Schaechte einsammeln (ohne Schacht passiert nichts und nichts kostet Zeit)
 	std::vector<const STRUCTURE *> shafts;
@@ -372,7 +444,7 @@ void gameTick()
 		for (DROID *d : gameWorld.objects.droids[p])
 		{
 			if (d->died != 0 || d->order.type != DORDER_MOVE) { continue; }
-			if (d->isVtol() || d->isTransporter() || modoil::isCargo(d->id)) { continue; }
+			if (d->isVtol() || d->isTransporter() || modoil::isCargo(d->id) || layerOfId(d->id) == ORBIT) { continue; }   // Orbit: Schaechte sind nur Oberflaeche <-> Untergrund
 			const auto cool = s_cool.find(d->id);
 			if (cool != s_cool.end())
 			{
@@ -384,21 +456,9 @@ void gameTick()
 				if (!aiCheckAlliances(s->player, d->player)) { continue; }
 				if (iHypot(d->order.pos - s->pos.xy()) > PORTAL_ORDER_RANGE) { continue; }
 				if (iHypot(d->pos.xy() - s->pos.xy()) > PORTAL_REACH) { continue; }
-				const Layer prev = layerOfId(d->id);
-				const Layer next = prev == SURFACE ? UNDERGROUND : SURFACE;
-				// Sicht in der alten Karte abmelden, in der neuen anmelden; Hoehe aus der neuen Karte
-				{
-					modlayermap::Scope sc(prev);
-					visRemoveVisibility(d, gameWorld.map);
-				}
-				if (next == SURFACE) { s_layerOf.erase(d->id); } else { s_layerOf[d->id] = next; }
-				{
-					modlayermap::Scope sc(next);
-					d->pos.z = map_Height(gameWorld.map, d->pos.x, d->pos.y);
-					visTilesUpdate(d, gameWorld.map);
-				}
+				const Layer next = layerOfId(d->id) == SURFACE ? UNDERGROUND : SURFACE;
+				applyLayer(d, next);
 				s_cool[d->id] = gameTime + PORTAL_COOLDOWN;
-				syncDebug("modlayer: droid %u -> layer %d", d->id, static_cast<int>(next));
 				orderDroid(d, DORDER_STOP, ModeImmediate);
 				// Staubwolke am Schacht
 				const unsigned it = gameTime - deltaGameTime / 2 + 1;
@@ -412,6 +472,21 @@ void gameTick()
 				break;
 			}
 		}
+	}
+}
+
+bool isFlier(const DROID *psDroid)
+{
+	return psDroid != nullptr && (psDroid->getPropulsionStats()->alwaysFlying || psDroid->isVtol());
+}
+
+void sendSelectedFliers(Layer target)
+{
+	if (target == UNDERGROUND || selectedPlayer >= MAX_PLAYERS || !modlayermap::worldsExist()) { return; }
+	for (DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d->died != 0 || !d->selected || !isFlier(d) || layerOfId(d->id) == target) { continue; }
+		s_flyReq[d->id] = target;
 	}
 }
 
@@ -434,6 +509,7 @@ void resetState()
 	modlayerdig::reset();
 	s_layerOf.clear();
 	s_cool.clear();
+	s_flyReq.clear();
 	s_openedShafts.clear();
 	modlayermap::reset();
 	s_current = s_target = SURFACE;

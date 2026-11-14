@@ -36,7 +36,7 @@ constexpr unsigned TICK_MS = 250;
 constexpr unsigned HIT_WINDOW_MS = 1400;         // so lange gilt ein Treffer als "gerade beschossen"
 constexpr int NUM_CATS = static_cast<int>(sizeof(kVoiceCats) / sizeof(kVoiceCats[0]));
 
-enum Cls { CLS_INF = 0, CLS_TNK = 1, CLS_TRN = 2 };
+enum Cls { CLS_INF = 0, CLS_TNK = 1, CLS_TRN = 2, CLS_PIL = 3 };
 
 struct State
 {
@@ -93,10 +93,18 @@ Cls classOf(const DROID *d)
 {
 	if (d->isTransporter()) { return CLS_TRN; }
 	if (d->isCyborg() || d->droidType == DROID_PERSON) { return CLS_INF; }
+	if (d->getPropulsionStats()->alwaysFlying) { return CLS_PIL; }    // Hoverjets (Piloten)
 	return CLS_TNK;
 }
 
-const char *clsPrefix(Cls c) { return c == CLS_INF ? "inf" : (c == CLS_TNK ? "tnk" : "trn"); }
+const char *clsPrefix(Cls c) { return c == CLS_INF ? "inf" : (c == CLS_TNK ? "tnk" : (c == CLS_TRN ? "trn" : "pil")); }
+
+/// Drohnen (Balldrohne) sind Maschinen und schweigen; schwebende Antriebe der Hoverjets (MFJet) haben Piloten
+bool isSilent(const DROID *d)
+{
+	const PROPULSION_STATS *ps = d->getPropulsionStats();
+	return ps->alwaysFlying && ps->id.toStdString().rfind("MFJet", 0) != 0;
+}
 
 bool nearAndVisible(int x, int y, const Vector2i &cam)
 {
@@ -223,7 +231,7 @@ void onHelpCall(const DROID *psDroid)
 
 void onPlayerOrder(const DROID *psDroid, int order)
 {
-	if (psDroid == nullptr || psDroid->player != selectedPlayer || psDroid->isVtol()) { return; }
+	if (psDroid == nullptr || psDroid->player != selectedPlayer || psDroid->isVtol() || isSilent(psDroid)) { return; }
 	if (realTime < s_nextAck) { return; }     // eine Einheit der Auswahl antwortet, nicht alle zugleich
 	if (psDroid->isTransporter())
 	{
@@ -292,7 +300,7 @@ void tick(GameWorld &world)
 	{
 		for (DROID *d : world.objects.droids[p])
 		{
-			if (d == nullptr || d->died || d->isVtol()) { continue; }
+			if (d == nullptr || d->died || d->isVtol() || isSilent(d)) { continue; }
 			if (!nearAndVisible(d->pos.x, d->pos.y, cam)) { continue; }
 			auto sit = s_state.find(d->id);
 			// Einheiten ohne Eintrag brauchen nur dann einen, wenn sie kaempfen oder Befehle ausfuehren
@@ -319,7 +327,7 @@ void tick(GameWorld &world)
 			{
 				if (st.hitArty)
 				{
-					if (now >= s_nextArty)
+					if (now >= s_nextArty && cls != CLS_PIL)
 					{
 						addCand(8, d, std::string("arty_") + clsPrefix(cls), 8000, 1);
 					}
@@ -330,7 +338,7 @@ void tick(GameWorld &world)
 				{
 					if (now >= s_nextAir)
 					{
-						addCand(7, d, catName(cls, "air"), 8000, 2);
+						addCand(7, d, cls == CLS_PIL ? std::string("pil_hit") : catName(cls, "air"), 8000, 2);
 					}
 					st.hitTime = 0;
 					continue;
@@ -347,7 +355,7 @@ void tick(GameWorld &world)
 					if (std::strcmp(k, "pinned") == 0 && st.hitCount < 3) { k = "cover"; }
 					addCand(5, d, catName(cls, k), 4500 + rnd() % 3500, 0);
 				}
-				else if (cls == CLS_TNK)
+				else if (cls == CLS_TNK || cls == CLS_PIL)
 				{
 					addCand(5, d, catName(cls, "hit"), 7000 + rnd() % 5000, 0);
 				}
@@ -422,14 +430,14 @@ void tick(GameWorld &world)
 					}
 					else
 					{
-						const char *k = (tk == T_ARMOR) ? "tnk_armor" : (tk == T_INF) ? "tnk_inf" : (tk == T_AIR) ? "tnk_air" : (tk == T_STRUCT) ? "tnk_struct" : "tnk_contact";
+						const char *k = (cls == CLS_PIL) ? "pil_contact" : (tk == T_ARMOR) ? "tnk_armor" : (tk == T_INF) ? "tnk_inf" : (tk == T_AIR) ? "tnk_air" : (tk == T_STRUCT) ? "tnk_struct" : "tnk_contact";
 						addCand((tk == T_ARMOR || tk == T_AIR) ? 4 : 3, d, k, 8000 + rnd() % 5000, 0);
 					}
 					continue;
 				}
 				if (d->action == DACTION_MOVETOATTACK && (rnd() % 5u) == 0)
 				{
-					const char *k = (cls == CLS_INF) ? (((rnd() % 3u) == 0) ? "inf_coverme" : "inf_attack") : "tnk_advance";
+					const char *k = (cls == CLS_INF) ? (((rnd() % 3u) == 0) ? "inf_coverme" : "inf_attack") : (cls == CLS_PIL ? "pil_advance" : "tnk_advance");
 					addCand(2, d, k, 12000 + rnd() % 6000, 0);
 					continue;
 				}
@@ -445,9 +453,9 @@ void tick(GameWorld &world)
 				st.lastTarget = 0;
 				const bool onTheWay = (d->order.type == DORDER_SCOUT || d->order.type == DORDER_ATTACK) && d->action == DACTION_MOVE;
 				// unterwegs zum Gefecht: Panzer melden sich, Infanterie treibt sich an
-				if (cls == CLS_TNK && onTheWay && (rnd() % 24u) == 0)
+				if ((cls == CLS_TNK || cls == CLS_PIL) && onTheWay && (rnd() % 24u) == 0)
 				{
-					addCand(1, d, "tnk_advance", 16000 + rnd() % 8000, 0);
+					addCand(1, d, catName(cls, "advance"), 16000 + rnd() % 8000, 0);
 				}
 				else if (cls == CLS_INF && onTheWay && (rnd() % 30u) == 0)
 				{
