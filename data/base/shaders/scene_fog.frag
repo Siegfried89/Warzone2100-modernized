@@ -13,6 +13,8 @@ layout(std140) uniform cbuffer {
 	float fogEnd;
 	float linearLighting;
 	float padding1;
+	vec4 dofParams;
+	vec4 dofTexel;
 };
 uniform sampler2D sceneTexture;
 uniform sampler2D prepassDepth;
@@ -46,6 +48,30 @@ void main()
 	if (depth < SKY_DEPTH_THRESHOLD)
 	{
 		float viewDist = length(wzGetViewPosition(texCoords, depth, invProjectionMatrix));
+		// MOD: Schaerfentiefe - nur ausserhalb der Fokuszone, wenige Abtastungen (9), Radius waechst mit dem Abstand zur Fokuszone
+		if (dofTexel.w > 0.0)
+		{
+			float farK = clamp((viewDist - dofParams.z) / max(dofParams.w, 1.0), 0.0, 1.0);
+			float nearK = clamp((dofParams.y - viewDist) / max(dofParams.y * 0.5, 1.0), 0.0, 1.0);
+			float coc = max(farK, nearK) * dofTexel.w;
+			if (coc > 0.02)
+			{
+				float radius = coc * dofTexel.z;
+				vec2 stepUv = dofTexel.xy * radius;
+				vec2 diagUv = stepUv * 0.7071;
+				vec3 sum = lit;
+				sum += texture(sceneTexture, clamp(uv + vec2(stepUv.x, 0.0), vec2(0.0), uvScaleClamp.zw)).rgb;
+				sum += texture(sceneTexture, clamp(uv - vec2(stepUv.x, 0.0), vec2(0.0), uvScaleClamp.zw)).rgb;
+				sum += texture(sceneTexture, clamp(uv + vec2(0.0, stepUv.y), vec2(0.0), uvScaleClamp.zw)).rgb;
+				sum += texture(sceneTexture, clamp(uv - vec2(0.0, stepUv.y), vec2(0.0), uvScaleClamp.zw)).rgb;
+				sum += texture(sceneTexture, clamp(uv + diagUv, vec2(0.0), uvScaleClamp.zw)).rgb;
+				sum += texture(sceneTexture, clamp(uv - diagUv, vec2(0.0), uvScaleClamp.zw)).rgb;
+				sum += texture(sceneTexture, clamp(uv + vec2(diagUv.x, -diagUv.y), vec2(0.0), uvScaleClamp.zw)).rgb;
+				sum += texture(sceneTexture, clamp(uv + vec2(-diagUv.x, diagUv.y), vec2(0.0), uvScaleClamp.zw)).rgb;
+				lit = sum / 9.0;
+				result = lit;
+			}
+		}
 		float fogAmount = wzDistanceFogAmount(viewDist, fogBegin, fogEnd);
 		if (linearLighting > 0.5)
 		{

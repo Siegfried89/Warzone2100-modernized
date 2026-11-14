@@ -1059,6 +1059,8 @@ namespace gfx_api
 		float fogEnd;
 		float linearLighting;
 		float padding1;
+		glm::vec4 dofParams;   // MOD Schaerfentiefe: x = Fokusabstand, y = Naehe-Beginn, z = Ferne-Beginn, w = Uebergangslaenge (alles in Weltmetern)
+		glm::vec4 dofTexel;    // MOD Schaerfentiefe: xy = 1 / Texturgroesse, z = groesster Radius in Pixeln, w = Staerke (0 = aus)
 	};
 
 	using SceneFogPSO = typename gfx_api::pipeline_state_helper<rasterizer_state<REND_OPAQUE, DEPTH_CMP_ALWAYS_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::none>, primitive_type::triangles, index_type::u16,

@@ -24,6 +24,7 @@
 
 #include "fog_pass.h"
 
+#include "display3d.h"
 #include "display3d_render_graph.h"
 #include "display3d_render_internal.h"
 
@@ -32,6 +33,7 @@
 #include "lib/ivis_opengl/piestate.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
+#include <algorithm>
 
 namespace fog_pass
 {
@@ -57,6 +59,19 @@ void recordApply(const gfx_api::RenderPassContext& passCtx)
 	constants.fogBegin = renderState.fogBegin;
 	constants.fogEnd = renderState.fogEnd;
 	constants.linearLighting = gfx_api::context::get().linearLightingEnabled() ? 1.f : 0.f;
+
+	// MOD: Schaerfentiefe (reine Bildschirmdarstellung, hat mit dem Spielablauf nichts zu tun):
+	// Fokus = Kameraabstand zum Blickpunkt; scharf von 55 % bis 160 % davon, dahinter/davor weicher Uebergang bis zum groessten Radius.
+	{
+		const float focus = std::max(getViewDistance(), 300.f);
+		const auto dims = gfx_api::context::get().getRenderTargetDimensions(scene)
+			.value_or(std::pair<uint32_t, uint32_t>{1, 1});
+		const float w = static_cast<float>(std::max<uint32_t>(dims.first, 1));
+		const float h = static_cast<float>(std::max<uint32_t>(dims.second, 1));
+		const float viewportHeight = h * constants.uvScaleClamp.y;
+		constants.dofParams = glm::vec4(focus, focus * 0.55f, focus * 1.6f, focus * 1.2f);
+		constants.dofTexel = glm::vec4(1.f / w, 1.f / h, 2.6f * viewportHeight / 1080.f, 1.f);
+	}
 	display3d_drawFullscreenTriangle<gfx_api::SceneFogPSO>(constants, scene, depth);
 }
 
