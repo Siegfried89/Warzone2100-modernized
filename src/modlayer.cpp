@@ -481,6 +481,11 @@ void gameTick()
 	}
 }
 
+void moveToLayer(DROID *d, Layer next)
+{
+	if (d != nullptr) { applyLayer(d, next); }
+}
+
 bool isFlier(const DROID *psDroid)
 {
 	return psDroid != nullptr && (psDroid->getPropulsionStats()->alwaysFlying || psDroid->isVtol());
