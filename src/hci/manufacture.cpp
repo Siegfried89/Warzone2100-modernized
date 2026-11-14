@@ -679,7 +679,7 @@ private:
 	{
 		BaseWidget::initialize();
 		addObsoleteButton();
-		attach(std::make_shared<DeliveryPointButton>(controller));
+		// MOD: Der Knopf "Lieferpunkt" entfaellt - der Sammelpunkt wird per Rechtsklick auf den Boden gesetzt (modrally)
 		addLoopProductionWidgets();
 	}
 

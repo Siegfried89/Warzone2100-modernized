@@ -71,6 +71,7 @@
 #include "modoil.h"
 #include "modlava.h"
 #include "modgroundfire.h"
+#include "modrally.h"
 #include "modbuild.h"
 #include "lighting.h"
 #include "ingameop.h"
@@ -658,13 +659,17 @@ static void CheckStartWallDrag()
 	}
 }
 
+extern bool panActive;   // MOD: weiter unten definiert
+
 //this function is called when a location has been chosen to place a structure or a DP
 static bool CheckFinishedFindPosition()
 {
 	bool OverRadar = OverRadarAndNotDragging();
 
 	/* Do not let the player position buildings 'under' the radar */
-	if (mouseReleased(MOUSE_LMB) && !OverRadar)
+	// MOD: Bauen mit gehaltener Umschalttaste (Strg/Shift): auch die rechte Maustaste setzt das Gebaeude - loslassen der Taste beendet die Kette
+	const bool chainRightClick = ctrlShiftDown() && mouseReleased(MOUSE_RMB) && !rotActive && !panActive && (buildState == BUILD3D_VALID);
+	if ((mouseReleased(MOUSE_LMB) || chainRightClick) && !OverRadar)
 	{
 
 		if (deliveryReposValid())
@@ -941,7 +946,7 @@ void processMouseClickInput()
 		dealWithLMBDClick();
 	}
 
-	if (mouseReleased(MOUSE_RMB) && !rotActive && !panActive && !ignoreRMBC)
+	if (mouseReleased(MOUSE_RMB) && !rotActive && !panActive && !ignoreRMBC && !(ignoreOrder && ctrlShiftDown()))
 	{
 		OrderSourceScope orderScope(pointerOrderSource());
 		dragBox3D.status = DRAG_INACTIVE;
@@ -963,7 +968,7 @@ void processMouseClickInput()
 	}
 
 	/* Right mouse click kills a building placement */
-	if (!rotActive && mouseReleased(MOUSE_RMB) &&
+	if (!rotActive && mouseReleased(MOUSE_RMB) && !ctrlShiftDown() &&   // MOD: mit gehaltener Umschalttaste bleibt der Baumodus bestehen
 	    (buildState == BUILD3D_POS || buildState == BUILD3D_VALID))
 	{
 		/* Stop the placement */
@@ -2531,6 +2536,13 @@ void	dealWithLMB()
 		return;
 	}
 
+	// MOD: Sammelpunkt - Befehlsklick (Rechtsklick) auf freien Boden mit angewaehlter Fabrik und ohne angewaehlte Fahrzeuge
+	if (bEffectiveRightClickOrders && modrally::orderSelected(selectedPlayer, mousePos.x, mousePos.y))
+	{
+		audio_PlayTrack(ID_SOUND_SELECT);
+		return;
+	}
+
 	// now changed to use the multiple order stuff
 	// clicked on a destination.
 	orderSelectedLoc(selectedPlayer, mousePos.x, mousePos.y, ctrlShiftDown());  // ctrlShiftDown() = ctrl clicked a destination, add an order
@@ -2822,6 +2834,11 @@ static void dealWithRMB()
 		         && modbuild::orderSelected(selectedPlayer, mousePos.x, mousePos.y))
 		{
 			// MOD: Befestigungsbau - Strg + Rechtsklick (klassische Belegung)
+			audio_PlayTrack(ID_SOUND_SELECT);
+		}
+		else if (!bEffectiveRightClickOrders && modrally::orderSelected(selectedPlayer, mousePos.x, mousePos.y))
+		{
+			// MOD: Sammelpunkt - Rechtsklick auf freien Boden mit angewaehlter Fabrik (klassische Belegung)
 			audio_PlayTrack(ID_SOUND_SELECT);
 		}
 		else
