@@ -53,6 +53,7 @@
 #include "modvoice.h"
 #include "modbuild.h"
 #include "modwreck.h"
+#include "modparts.h"
 #include "modvariant.h"
 #include "hci.h"
 #include "power.h"
@@ -328,11 +329,20 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 		damage = damage * 45 / 100;   // MOD: Infanterie im Graben / in der Grube / im Krater nimmt weniger als die Haelfte
 	}
 
+	if (psProjectile != nullptr)
+	{
+		damage = modparts::scaleDamage(psDroid, damage);   // MOD: liegt der Rumpf frei (Turm und Laufwerk weg), 50 % mehr Schaden
+	}
 	const UDWORD modBodyBefore = psDroid->body;
 	relativeDamage = objDamage(psDroid, psProjectile, damage, psDroid->originalBody, weaponClass, weaponSubClass, isDamagePerSecond, minDamage, empRadiusHit);
 	if (relativeDamage > 0 && psDroid->body < modBodyBefore && modcombot::isModular(psDroid))
 	{
 		modcombot::hitRandomPart(psDroid, static_cast<int>(modBodyBefore - psDroid->body)); // MOD: Teil nimmt Schaden, kann abgeschlagen werden
+	}
+
+	if (relativeDamage > 0 && psDroid->body < modBodyBefore)
+	{
+		modparts::onHit(psDroid, static_cast<int>(modBodyBefore - psDroid->body), psProjectile);   // MOD: Treffer auf Turm / Laufwerk
 	}
 
 	if (relativeDamage != 0)

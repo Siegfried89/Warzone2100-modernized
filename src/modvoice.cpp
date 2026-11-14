@@ -50,6 +50,7 @@ struct State
 	bool hitAir = false;         // der Treffer kam von einem Flieger
 	bool helpPending = false;
 	bool killPending = false;
+	bool cheerPending = false;   // hat einen Turm abgeschossen
 	unsigned downAt = 0;         // Kamerad in der Naehe wurde zerstoert (0 = nein)
 	unsigned lastTarget = 0;
 	unsigned lastContact = 0;    // wann diese Einheit zuletzt "Feind gesichtet" gerufen hat
@@ -173,6 +174,14 @@ void reset()
 	s_state.clear();
 	s_nextTick = s_nextAny = s_nextArty = s_nextAir = s_nextPrune = 0;
 	s_nextAck = 0;
+}
+
+void onPartShot(const DROID *psShooter)
+{
+	if (psShooter == nullptr) { return; }
+	State &st = s_state[psShooter->id];
+	st.lastTouch = gameTime;
+	st.cheerPending = true;
 }
 
 void onDroidDamaged(const DROID *psVictim, const PROJECTILE *psProj, bool killed)
@@ -382,6 +391,15 @@ void tick(GameWorld &world)
 			{
 				addCand(4, d, catName(cls, "retreat"), 14000, 0);
 				continue;
+			}
+			if (st.cheerPending)
+			{
+				st.cheerPending = false;
+				if (cls != CLS_TRN)
+				{
+					addCand(3, d, catName(cls, "cheer"), 6000, 0);
+					continue;
+				}
 			}
 			if (st.killPending)
 			{

@@ -14,6 +14,8 @@ namespace modvoice
 /// Einheit wurde von einem Geschoss getroffen; killed = der Treffer zerstoert sie (dann ruft der Schuetze "Got him!" und
 /// Kameraden in der Naehe "Man down!"). psProj darf nullptr sein (Dauerschaden wird ignoriert)
 void onDroidDamaged(const DROID *psVictim, const PROJECTILE *psProj, bool killed);
+/// die Einheit hat den Turm eines Gegners abgeschossen (jubelt: "Yeehaw!")
+void onPartShot(const DROID *psShooter);
 /// der lokale Spieler hat der Einheit einen Befehl gegeben (Maus, Taste, Bedienfeld); order ist DROID_ORDER
 void onPlayerOrder(const DROID *psDroid, int order);
 /// Einheit ruft um Hilfe ("Requesting support")

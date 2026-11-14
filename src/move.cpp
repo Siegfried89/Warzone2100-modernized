@@ -36,6 +36,7 @@
 #include "modduel.h"
 #include "modlayer.h"
 #include "modsalvage.h"
+#include "modparts.h"
 #include "move.h"
 
 #include "objects.h"
@@ -262,6 +263,13 @@ static bool moveDroidToBase(DROID *psDroid, UDWORD x, UDWORD y, bool bFormation,
 	FPATH_RETVAL		retVal = FPR_OK;
 
 	CHECK_DROID(psDroid);
+
+	if (modparts::immobile(psDroid))
+	{
+		// MOD: Laufwerk zerstoert - das Fahrzeug bleibt stehen
+		psDroid->sMove.Status = MOVEINACTIVE;
+		return false;
+	}
 
 	// in multiPlayer make Transporter move like the vtols
 	if (psDroid->isTransporter() && game.maxPlayers == 0)
@@ -1707,6 +1715,8 @@ SDWORD moveCalcDroidSpeed(DROID *psDroid)
 	WEAPON_STATS		*psWStats;
 
 	CHECK_DROID(psDroid);
+
+	if (modparts::immobile(psDroid)) { return 0; }   // MOD: Laufwerk zerstoert
 
 	// NOTE: This screws up since the transporter is offscreen still (on a mission!), and we are trying to find terrainType of a tile (that is offscreen!)
 	if (psDroid->droidType == DROID_SUPERTRANSPORTER && missionIsOffworld())

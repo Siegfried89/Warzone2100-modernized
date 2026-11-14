@@ -89,6 +89,7 @@
 #include "modgrid.h"
 #include "modoil.h"
 #include "modwreck.h"
+#include "modparts.h"
 #include "modgroundfire.h"
 #include "modradio.h"
 #include "modsalvage.h"
@@ -726,6 +727,7 @@ void interfaceShutDown()
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
+	modparts::reset();       // MOD
 	modgroundfire::reset();  // MOD
 	modterrain::reset();     // MOD
 	modbuild::reset();       // MOD

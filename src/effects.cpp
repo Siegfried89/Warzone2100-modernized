@@ -1005,7 +1005,7 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 	}
 
 	/* Does it emit a trail? And is it high enough? */
-	if ((psEffect->type == GRAVITON_TYPE_EMITTING_DR)
+	if ((psEffect->type == GRAVITON_TYPE_EMITTING_DR) || (psEffect->type == GRAVITON_TYPE_TURRET)
 	    || ((psEffect->type == GRAVITON_TYPE_EMITTING_ST)
 	        && (psEffect->position.y > (groundHeight + 10))))
 	{
@@ -1089,7 +1089,7 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 					dv.x = static_cast<int>(psEffect->position.x);
 					dv.y = static_cast<int>(psEffect->position.y + 10);
 					dv.z = static_cast<int>(psEffect->position.z);
-					addEffect(&dv, EFFECT_EXPLOSION, EXPLOSION_TYPE_VERY_SMALL, false, nullptr, 0);
+					addEffect(&dv, EFFECT_EXPLOSION, psEffect->type == GRAVITON_TYPE_TURRET ? EXPLOSION_TYPE_MEDIUM : EXPLOSION_TYPE_VERY_SMALL, false, nullptr, 0);
 				}
 				return false;
 			}
@@ -1932,6 +1932,10 @@ void	effectSetupGraviton(EFFECT& effect)
 		effect.velocity.z += GRAVITON_INIT_VEL_Z / 2;
 		effect.velocity.y = GRAVITON_INIT_VEL_Y;
 		break;
+	case GRAVITON_TYPE_TURRET:
+		// MOD: Turm fliegt hoch (ca. 3-5 Kacheln), Seitengeschwindigkeit kommt vom Aufrufer
+		effect.velocity.y = static_cast<float>(780 + rand() % 320);
+		break;
 	default:
 		ASSERT(false, "Weirdy type of graviton");
 		break;
@@ -1945,11 +1949,22 @@ void	effectSetupGraviton(EFFECT& effect)
 	effect.spin.x = rand() % DEG(100) + DEG(20);
 	effect.spin.z = rand() % DEG(100) + DEG(20);
 	effect.spin.y = rand() % DEG(100) + DEG(20);
+	if (effect.type == GRAVITON_TYPE_TURRET)
+	{
+		// schwerer Brocken: langsamer Drall
+		effect.spin.x = rand() % DEG(70) + DEG(10);
+		effect.spin.z = rand() % DEG(70) + DEG(10);
+		effect.spin.y = rand() % DEG(120) + DEG(40);
+	}
 
 	/* Gravitons are essential */
 	SET_ESSENTIAL(effect);
 
-	if (effect.type == GRAVITON_TYPE_GIBLET)
+	if (effect.type == GRAVITON_TYPE_TURRET)
+	{
+		effect.frameDelay = static_cast<UWORD>(40 + rand() % 20);   // dichte Rauchspur
+	}
+	else if (effect.type == GRAVITON_TYPE_GIBLET)
 	{
 		effect.frameDelay = (UWORD)GRAVITON_BLOOD_DELAY;
 	}

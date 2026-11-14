@@ -85,6 +85,7 @@ enum EFFECT_TYPE
 	GRAVITON_TYPE_EMITTING_DR,
 	GRAVITON_TYPE_EMITTING_ST,
 	GRAVITON_TYPE_GIBLET,
+	GRAVITON_TYPE_TURRET,   // MOD: abgeschossener Panzerturm (fliegt hoch, dreht sich, Rauchspur, Explosion beim Aufprall)
 
 	SMOKE_TYPE_DRIFTING,
 	SMOKE_TYPE_DRIFTING_HIGH,

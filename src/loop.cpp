@@ -117,6 +117,7 @@
 #include "modsalvage.h"
 #include "modvoice.h"
 #include "modwreck.h"
+#include "modparts.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
 #include "modinvade.h"
@@ -587,6 +588,7 @@ static void gameStateUpdate()
 	modoil::tick();     // MOD: Oelkreislauf (Explosionen, Lkw-Autopilot, Pipeline, Kraftwerk-Laufzeit)
 	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
 	modammo::tick(gameWorld);    // MOD: Munition (Nachschub)
+	modparts::tick(gameWorld);   // MOD: Teile-Schaden (Turm / Laufwerk)
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modinvade::tick(gameWorld);   // MOD: Invade (Bohrfahrzeug uebernimmt Gebaeude)
 	modlava::tick(gameWorld);   // MOD: Lavafelder, Solarpaneele, Energiebank
