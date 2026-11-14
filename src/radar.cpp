@@ -372,6 +372,17 @@ void drawRadar(GameWorld& world)
 	ASSERT_OR_RETURN(, radarBitmap.bmp_w(), "No radar buffer allocated");
 	ASSERT_OR_RETURN(, radarOverlayBuffer, "No radar buffer allocated");
 
+	// MOD: Ebenenwechsel (Untergrund/Orbit): die Karte der Ebene kann ein anderes Scrollfenster haben als die Oberflaeche - dann Puffer neu anlegen,
+	// sonst schreibt die Minikarte ueber das Pufferende hinaus (Bild zerrissen, tausende Fehlermeldungen je Sekunde)
+	{
+		const size_t wantW = static_cast<size_t>(std::abs(world.map.scroll.maxX - world.map.scroll.minX));
+		const size_t wantH = static_cast<size_t>(std::abs(world.map.scroll.maxY - world.map.scroll.minY));
+		if (wantW != radarTexWidth || wantH != radarTexHeight)
+		{
+			resizeRadar(world.map);
+		}
+	}
+
 	setViewingWindow(world.map);
 	playerpos = playerPos.p; // cache position
 
