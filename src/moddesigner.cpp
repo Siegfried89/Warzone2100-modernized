@@ -13,6 +13,7 @@
 #include "modcombot.h"
 #include "modpanel.h"
 #include "modlayer.h"
+#include "modsalvage.h"
 #include "modui.h"
 
 #include "lib/framework/frame.h"
@@ -243,6 +244,28 @@ bool isCurrent(const Entry &e)
 	}
 }
 
+/// gesperrt = im Beute-Modus noch nicht erforscht (Teil muss erbeutet und in der Forschungsstation analysiert werden)
+bool entryLocked(const Entry &e)
+{
+	if (e.preset)
+	{
+		for (int i = 0; i < modcombot::SLOT_COUNT; ++i) { if (e.set[i] != nullptr && modsalvage::isLocked(static_cast<int>(selectedPlayer), e.set[i])) { return true; } }
+		return false;
+	}
+	return e.part != nullptr && modsalvage::isLocked(static_cast<int>(selectedPlayer), e.part);
+}
+
+std::string lockReason(const Entry &e)
+{
+	const Part *p = e.part;
+	if (e.preset)
+	{
+		for (int i = 0; i < modcombot::SLOT_COUNT; ++i) { if (e.set[i] != nullptr && modsalvage::isLocked(static_cast<int>(selectedPlayer), e.set[i])) { p = e.set[i]; break; } }
+	}
+	if (p != nullptr && modsalvage::isAnalysing(static_cast<int>(selectedPlayer), p)) { return p->name + " is being analysed in your research facility."; }
+	return std::string("Locked: capture ") + (p != nullptr ? p->name : std::string("this part")) + " from a defeated combot and analyse it in a research facility.";
+}
+
 void assign(int slot, const Part *p)
 {
 	s_target[slot] = p;
@@ -412,6 +435,10 @@ bool makeTemplate(DROID_TEMPLATE &tpl, std::string &err)
 	if (t == nullptr) { err = "Choose a torso first."; return false; }
 	if (g == nullptr) { err = "Choose legs first."; return false; }
 	if (arms[0] == nullptr && arms[1] == nullptr) { err = "A combot needs at least one arm."; return false; }
+	for (const Part *chosen : { t, g, arms[0], arms[1] })
+	{
+		if (chosen != nullptr && modsalvage::isLocked(static_cast<int>(selectedPlayer), chosen)) { err = chosen->name + " is still locked. Capture it and analyse it first."; return false; }
+	}
 	const COMPONENT_STATS *body = getCompStatsFromName(WzString::fromUtf8("MFT_" + t->id));
 	const COMPONENT_STATS *prop = getCompStatsFromName(WzString::fromUtf8("MFL_" + g->id));
 	if (body == nullptr || prop == nullptr) { err = "Torso or legs are not available in this game."; return false; }
@@ -626,8 +653,19 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		const int ry = c.Y(38.f + static_cast<float>(i * ROW_H));
 		const bool cur = isCurrent(e);
 		if (cur) { pie_BoxFill_alpha(c.X(8), ry + 1, c.X(158), ry + c.L(static_cast<float>(ROW_H)) - 1, pal_RGBA(20, 140, 190, 120)); }
-		const PIELIGHT col = cur ? pal_RGBA(255, 255, 255, 255) : (s_hoverShown == i ? pal_RGBA(180, 255, 255, 255) : modui::cyan(230));
-		modui::text(modui::fit(e.name, c.L(146.f), sc), c.X(11), ry + c.L(3.f), col, sc);
+		const bool locked = entryLocked(e);
+		const PIELIGHT col = locked ? pal_RGBA(120, 130, 140, 255)
+		                            : (cur ? pal_RGBA(255, 255, 255, 255) : (s_hoverShown == i ? pal_RGBA(180, 255, 255, 255) : modui::cyan(230)));
+		if (locked)
+		{
+			const std::string tag = "LOCKED";
+			modui::text(tag, c.X(158) - modui::textWidth(tag, sc) - c.L(3.f), ry + c.L(3.f), pal_RGBA(200, 90, 70, 255), sc);
+			modui::text(modui::fit(e.name, c.L(146.f) - modui::textWidth(tag, sc) - c.L(6.f), sc), c.X(11), ry + c.L(3.f), col, sc);
+		}
+		else
+		{
+			modui::text(modui::fit(e.name, c.L(146.f), sc), c.X(11), ry + c.L(3.f), col, sc);
+		}
 	}
 	{
 		const int first = total == 0 ? 0 : s_scroll + 1, last = std::min(total, s_scroll + ROWS);
@@ -859,7 +897,9 @@ void buildScreen()
 	{
 		s_rowBtn.push_back(makeBtn(parent, rowDisplay, static_cast<UDWORD>(i), nullptr, [i]() {
 			const size_t idx = static_cast<size_t>(s_scroll + i);
-			if (idx < s_list.size()) { applyEntry(s_list[idx]); }
+			if (idx >= s_list.size()) { return; }
+			if (entryLocked(s_list[idx])) { setStatus(lockReason(s_list[idx]), true); play("mfui_clank.ogg"); return; }
+			applyEntry(s_list[idx]);
 		}));
 	}
 	s_arrBtn.push_back(makeBtn(parent, hotDisplay, 0, "Scroll up", []() { scrollBy(-5); }));

@@ -45,6 +45,7 @@
 #include "qtscript.h"
 
 #include "lib/netplay/netplay.h"
+#include "modsalvage.h"
 #include "multiplay.h"
 #include "multigifts.h"
 #include "multiint.h"			// for force name.
@@ -880,6 +881,8 @@ bool pickupArtefact(int toPlayer, int fromPlayer)
 				}
 			}
 		}
+
+		modsalvage::onArtefact(toPlayer, fromPlayer);   // MOD: Blaupausen fuer Combot-Teile
 
 		if (toPlayer == selectedPlayer)
 		{

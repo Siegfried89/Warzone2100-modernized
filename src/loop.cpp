@@ -114,6 +114,7 @@
 #include "modlayermap.h"
 #include "modoil.h"
 #include "modradio.h"
+#include "modsalvage.h"
 #include "modvoice.h"
 #include "modwreck.h"
 #include "modgroundfire.h"
@@ -592,6 +593,7 @@ static void gameStateUpdate()
 	modgroundfire::tick(gameWorld);   // MOD: Bodenziel-Punkte, die kein Befehl mehr braucht, entfernen
 	modradio::tick(gameWorld);   // MOD: Funkgebrabbel am Kommandozentrum / ATC-Turm
 	modvoice::tick(gameWorld);   // MOD: Schlachtrufe im Gefecht
+	modsalvage::tick();   // MOD: Analyse erbeuteter Teile
 	modgrid::update();
 
 	if (!paused && !scriptPaused())

@@ -49,6 +49,7 @@
 #include "modoil.h"
 #include "modterrain.h"
 #include "modhelp.h"
+#include "modsalvage.h"
 #include "modvoice.h"
 #include "modbuild.h"
 #include "modwreck.h"
@@ -730,6 +731,7 @@ bool destroyDroid(DROID *psDel, unsigned impactTime, GameWorld& world)
 	ASSERT(gameTime - deltaGameTime <= impactTime, "Expected %u <= %u, gameTime = %u, bad impactTime", gameTime - deltaGameTime, impactTime, gameTime);
 
 	modoil::onDroidDestroyed(psDel);   // MOD: beladener Lkw explodiert
+	modsalvage::onDroidDestroyed(psDel);   // MOD: Beute-Teile
 
 	if (psDel->lastHitWeapon == WSC_LAS_SAT)		// darken tile if lassat.
 	{

@@ -35,6 +35,7 @@
 
 #include "modduel.h"
 #include "modlayer.h"
+#include "modsalvage.h"
 #include "move.h"
 
 #include "objects.h"
@@ -2459,7 +2460,8 @@ static void checkLocalFeatures(DROID *psDroid)
 			switch (((FEATURE *)psObj)->psStats->subType)
 			{
 			case FEAT_OIL_DRUM:
-				pickedUp = pickupOilDrum(psDroid->player, psObj->player);
+				pickedUp = modsalvage::onPickup(static_cast<FEATURE *>(psObj), psDroid->player)   // MOD: Beute-Teile (Combots) statt Oelfass-Energie
+				           || pickupOilDrum(psDroid->player, psObj->player);
 				triggerEventPickup((FEATURE *)psObj, psDroid);
 				break;
 			case FEAT_GEN_ARTE:
