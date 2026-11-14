@@ -75,8 +75,8 @@ void onShot(const DROID *d, const WEAPON_STATS *st, int weaponDir)
 	float amp = 0.25f + 0.09f * std::sqrt(static_cast<float>(dmg));     // Grad Ausschlag je Schuss
 	if (pause > 0 && pause < 500) { amp *= 0.6f; }                      // Schnellfeuer: viele kleine Stoesse statt eines grossen
 	amp = std::clamp(amp, 0.3f, 2.4f);
-	// Der Stoss geht entgegen der Schussrichtung (nach hinten); Nicken in Fahrtrichtung, Rollen quer dazu.
-	const float dirRel = static_cast<float>(weaponDir) * 6.2831853f / 65536.f + 3.1415927f;
+	// Der Rueckstoss wirft den Rumpf nach hinten: schiesst der Turm nach vorn, hebt sich der Bug (positives Nicken); Rollen quer dazu.
+	const float dirRel = static_cast<float>(weaponDir) * 6.2831853f / 65536.f;
 	const float cp = std::cos(dirRel), sr = std::sin(dirRel);
 	if (s_shake.size() > 600) { s_shake.clear(); }                     // reine Anzeige: lieber verwerfen als wachsen lassen
 	Shake &s = s_shake[d->id];
@@ -112,6 +112,23 @@ bool shake(const DROID *d, unsigned renderTime, glm::mat4 &hull, glm::mat4 &prop
 	}
 	hull = glm::rotate(glm::radians(s.hull.p), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(s.hull.r), glm::vec3(0.f, 0.f, 1.f));
 	prop = glm::rotate(glm::radians(s.prop.p), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(s.prop.r), glm::vec3(0.f, 0.f, 1.f));
+	return true;
+}
+
+bool duck(const DROID *d, unsigned renderTime, glm::mat4 &out)
+{
+	if (d == nullptr || d->droidType != DROID_PERSON || d->timeLastHit == 0) { return false; }
+	// timeLastHit steht in Spielzeit, renderTime in Bildzeit: beide laufen gleich, die Bildzeit kann der Spielzeit knapp voraus sein
+	const int since = static_cast<int>(renderTime) - static_cast<int>(d->timeLastHit);
+	if (since < 0 || since > 4200) { return false; }
+	// Kopf runter wie beim Rennen in Deckung: schnell hinein (0,25 s), halten bis 3 s, dann langsam aufrichten
+	float k;
+	if (since < 250) { k = static_cast<float>(since) / 250.f; }
+	else if (since < 3000) { k = 1.f; }
+	else { k = 1.f - static_cast<float>(since - 3000) / 1200.f; }
+	k = std::clamp(k, 0.f, 1.f);
+	const float lean = -26.f * k;                      // negatives Nicken = Oberkoerper nach vorn
+	out = glm::scale(glm::vec3(1.f, 1.f - 0.10f * k, 1.f)) * glm::rotate(glm::radians(lean), glm::vec3(1.f, 0.f, 0.f));
 	return true;
 }
 
