@@ -47,9 +47,13 @@ struct State
 	unsigned hitCountReset = 0;
 	int hitCount = 0;
 	bool hitArty = false;
+	bool hitAir = false;         // der Treffer kam von einem Flieger
 	bool helpPending = false;
 	bool killPending = false;
+	unsigned downAt = 0;         // Kamerad in der Naehe wurde zerstoert (0 = nein)
 	unsigned lastTarget = 0;
+	unsigned lastContact = 0;    // wann diese Einheit zuletzt "Feind gesichtet" gerufen hat
+	unsigned nextFireCall = 0;   // naechster Feuerruf
 };
 
 std::unordered_map<unsigned, State> s_state;
@@ -60,6 +64,7 @@ std::vector<int> s_lastLine;         // zuletzt gesprochene Zeile je Kategorie (
 unsigned s_nextTick = 0;
 unsigned s_nextAny = 0;              // allgemeine Pause zwischen zwei Rufen (Gefecht soll lebendig, nicht uebervoll sein)
 unsigned s_nextArty = 0;
+unsigned s_nextAir = 0;
 unsigned s_nextPrune = 0;
 unsigned s_nextAck = 0;              // Echtzeit
 unsigned s_rng = 0x9E3779B9u;        // eigener Zufall (nur Ton)
@@ -144,7 +149,7 @@ struct Cand
 	const DROID *d;
 	std::string cat;
 	unsigned unitPause;     // Pause dieser Einheit danach
-	bool arty;
+	int kind;               // 0 = normal, 1 = Artillerie-Ruf, 2 = Flieger-Ruf (eigene Pausen)
 };
 
 std::string catName(Cls c, const char *suffix)
@@ -156,11 +161,11 @@ std::string catName(Cls c, const char *suffix)
 void reset()
 {
 	s_state.clear();
-	s_nextTick = s_nextAny = s_nextArty = s_nextPrune = 0;
+	s_nextTick = s_nextAny = s_nextArty = s_nextAir = s_nextPrune = 0;
 	s_nextAck = 0;
 }
 
-void onDroidDamaged(const DROID *psVictim, const PROJECTILE *psProj)
+void onDroidDamaged(const DROID *psVictim, const PROJECTILE *psProj, bool killed)
 {
 	if (psVictim == nullptr || psProj == nullptr) { return; }    // Brand/Dauerschaden: kein Ruf
 	State &st = s_state[psVictim->id];
@@ -170,11 +175,41 @@ void onDroidDamaged(const DROID *psVictim, const PROJECTILE *psProj)
 	st.hitCount++;
 	st.hitTime = gameTime;
 	st.hitArty = isArtillery(psProj, psVictim->lastHitWeapon);
-	if (psVictim->died && psProj->psSource != nullptr && psProj->psSource->type == OBJ_DROID && !psProj->psSource->died)
+	st.hitAir = false;
+	const BASE_OBJECT *src = psProj->psSource;
+	if (src != nullptr && src->type == OBJ_DROID && !src->died)
 	{
-		State &as = s_state[psProj->psSource->id];
+		st.hitAir = static_cast<const DROID *>(src)->isVtol();
+	}
+	if (!killed) { return; }
+	// der Schuetze ruft "Got him!"
+	if (src != nullptr && src->type == OBJ_DROID && !src->died)
+	{
+		State &as = s_state[src->id];
 		as.lastTouch = gameTime;
 		as.killPending = true;
+	}
+	// Kameraden der Gefallenen im Umkreis von 7 Kacheln rufen "Man down!" (die zwei naechsten)
+	const int64_t r2 = static_cast<int64_t>(7 * TILE_UNITS) * (7 * TILE_UNITS);
+	const DROID *near1 = nullptr, *near2 = nullptr;
+	int64_t d1 = r2 + 1, d2 = r2 + 1;
+	for (const DROID *d : gameWorld.objects.droids[psVictim->player])
+	{
+		if (d == nullptr || d == psVictim || d->died || d->isVtol()) { continue; }
+		const int64_t dx = d->pos.x - psVictim->pos.x, dy = d->pos.y - psVictim->pos.y;
+		const int64_t dd = dx * dx + dy * dy;
+		if (dd > r2) { continue; }
+		if (dd < d1) { near2 = near1; d2 = d1; near1 = d; d1 = dd; }
+		else if (dd < d2) { near2 = d; d2 = dd; }
+	}
+	for (const DROID *d : {near1, near2})
+	{
+		if (d != nullptr && !d->isTransporter())
+		{
+			State &ds = s_state[d->id];
+			ds.lastTouch = gameTime;
+			ds.downAt = gameTime;
+		}
 	}
 }
 
@@ -188,8 +223,14 @@ void onHelpCall(const DROID *psDroid)
 
 void onPlayerOrder(const DROID *psDroid, int order)
 {
-	if (psDroid == nullptr || psDroid->player != selectedPlayer || psDroid->isTransporter() || psDroid->isVtol()) { return; }
+	if (psDroid == nullptr || psDroid->player != selectedPlayer || psDroid->isVtol()) { return; }
 	if (realTime < s_nextAck) { return; }     // eine Einheit der Auswahl antwortet, nicht alle zugleich
+	if (psDroid->isTransporter())
+	{
+		const char *tk = (order == DORDER_DISEMBARK) ? "trn_drop" : ((order == DORDER_MOVE || order == DORDER_RTB || order == DORDER_RTR || order == DORDER_EMBARK) ? "trn_ack" : nullptr);
+		if (tk != nullptr && say(tk, psDroid)) { s_nextAck = realTime + 1100; }
+		return;
+	}
 	const char *kind = nullptr;
 	switch (order)
 	{
@@ -241,10 +282,10 @@ void tick(GameWorld &world)
 
 	const Vector2i cam = getPlayerPos();
 	std::vector<Cand> cands;
-	auto addCand = [&](int prio, const DROID *d, const std::string &cat, unsigned pause, bool arty)
+	auto addCand = [&](int prio, const DROID *d, const std::string &cat, unsigned pause, int kind)
 	{
 		if (cands.size() >= 64) { return; }
-		cands.push_back({prio, d, cat, pause, arty});
+		cands.push_back({prio, d, cat, pause, kind});
 	};
 
 	for (int p = 0; p < MAX_PLAYERS; p++)
@@ -271,7 +312,7 @@ void tick(GameWorld &world)
 			if (st.helpPending)
 			{
 				st.helpPending = false;
-				addCand(7, d, "help_call", 9000, false);
+				addCand(7, d, "help_call", 9000, 0);
 				continue;
 			}
 			if (hitNow)
@@ -280,7 +321,16 @@ void tick(GameWorld &world)
 				{
 					if (now >= s_nextArty)
 					{
-						addCand(8, d, std::string("arty_") + clsPrefix(cls), 8000, true);
+						addCand(8, d, std::string("arty_") + clsPrefix(cls), 8000, 1);
+					}
+					st.hitTime = 0;
+					continue;
+				}
+				if (st.hitAir && cls != CLS_TRN)
+				{
+					if (now >= s_nextAir)
+					{
+						addCand(7, d, catName(cls, "air"), 8000, 2);
 					}
 					st.hitTime = 0;
 					continue;
@@ -288,29 +338,39 @@ void tick(GameWorld &world)
 				const bool low = d->originalBody > 0 && d->body * 100 < d->originalBody * 30;
 				if (low && cls != CLS_TRN)
 				{
-					addCand(6, d, catName(cls, "retreat"), 9000, false);
+					addCand(6, d, catName(cls, "retreat"), 9000, 0);
 				}
 				else if (cls == CLS_INF)
 				{
-					const unsigned r = rnd() % 8;
-					const char *k = (r < 3) ? "cover" : (r < 5) ? "hit" : (r < 7) ? "help" : "pinned";
+					const unsigned r = rnd() % 9;
+					const char *k = (r < 3) ? "cover" : (r < 5) ? "hit" : (r < 6) ? "help" : (r < 7) ? "status" : "pinned";
 					if (std::strcmp(k, "pinned") == 0 && st.hitCount < 3) { k = "cover"; }
-					addCand(5, d, catName(cls, k), 4500 + rnd() % 3500, false);
+					addCand(5, d, catName(cls, k), 4500 + rnd() % 3500, 0);
 				}
 				else if (cls == CLS_TNK)
 				{
-					addCand(5, d, catName(cls, "hit"), 7000 + rnd() % 5000, false);
+					addCand(5, d, catName(cls, "hit"), 7000 + rnd() % 5000, 0);
 				}
 				else
 				{
-					addCand(5, d, "trn_fire", 8000, false);
+					addCand(5, d, "trn_fire", 8000, 0);
 				}
 				st.hitTime = 0;
 				continue;
 			}
+			if (st.downAt != 0)
+			{
+				const bool fresh = now - st.downAt < 3000;
+				st.downAt = 0;
+				if (fresh && cls != CLS_TRN)
+				{
+					addCand(6, d, catName(cls, "down"), 7000 + rnd() % 4000, 0);
+					continue;
+				}
+			}
 			if (retreating && cls != CLS_TRN)
 			{
-				addCand(4, d, catName(cls, "retreat"), 14000, false);
+				addCand(4, d, catName(cls, "retreat"), 14000, 0);
 				continue;
 			}
 			if (st.killPending)
@@ -318,14 +378,14 @@ void tick(GameWorld &world)
 				st.killPending = false;
 				if (cls != CLS_TRN)
 				{
-					addCand(3, d, catName(cls, "kill"), 5000 + rnd() % 4000, false);
+					addCand(3, d, catName(cls, "kill"), 5000 + rnd() % 4000, 0);
 					continue;
 				}
 			}
 			if (cls != CLS_TRN && now >= st.nextAmmo && modammo::usesAmmo(d) && modammo::segments(d) == 0)
 			{
 				st.nextAmmo = now + 30000;
-				addCand(4, d, catName(cls, "ammo"), 6000, false);
+				addCand(4, d, catName(cls, "ammo"), 6000, 0);
 				continue;
 			}
 			if (fighting && cls != CLS_TRN)
@@ -335,56 +395,106 @@ void tick(GameWorld &world)
 				if (tgt != nullptr && tid != st.lastTarget)
 				{
 					st.lastTarget = tid;
+					// was ist das Ziel?
+					enum { T_INF, T_ARMOR, T_AIR, T_STRUCT, T_OTHER } tk = T_OTHER;
+					if (tgt->type == OBJ_DROID)
+					{
+						const DROID *td = static_cast<const DROID *>(tgt);
+						tk = td->isVtol() ? T_AIR : ((td->isCyborg() || td->droidType == DROID_PERSON) ? T_INF : T_ARMOR);
+					}
+					else if (tgt->type == OBJ_STRUCTURE)
+					{
+						tk = T_STRUCT;
+					}
+					const bool fresh = st.lastContact == 0 || now - st.lastContact > 20000;
+					if (!fresh && (rnd() & 1u) && now >= st.nextFireCall)
+					{
+						// schon im Gefecht: neues Ziel bekommt einen Feuerruf statt "Feind gesichtet"
+						st.nextFireCall = now + 12000;
+						addCand(2, d, catName(cls, "fire"), 6000 + rnd() % 4000, 0);
+						continue;
+					}
+					st.lastContact = now;
 					if (cls == CLS_INF)
 					{
-						const bool armor = tgt->type == OBJ_DROID && !static_cast<const DROID *>(tgt)->isCyborg()
-						                   && static_cast<const DROID *>(tgt)->droidType != DROID_PERSON;
-						addCand(armor ? 5 : 3, d, armor ? "inf_tanks" : "inf_enemy", 6000 + rnd() % 4000, false);
+						const char *k = (tk == T_ARMOR) ? "inf_tanks" : (tk == T_AIR) ? "inf_air" : "inf_enemy";
+						addCand((tk == T_ARMOR || tk == T_AIR) ? 5 : 3, d, k, 6000 + rnd() % 4000, 0);
 					}
 					else
 					{
-						addCand(3, d, "tnk_contact", 8000 + rnd() % 5000, false);
+						const char *k = (tk == T_ARMOR) ? "tnk_armor" : (tk == T_INF) ? "tnk_inf" : (tk == T_AIR) ? "tnk_air" : (tk == T_STRUCT) ? "tnk_struct" : "tnk_contact";
+						addCand((tk == T_ARMOR || tk == T_AIR) ? 4 : 3, d, k, 8000 + rnd() % 5000, 0);
 					}
 					continue;
 				}
 				if (d->action == DACTION_MOVETOATTACK && (rnd() % 5u) == 0)
 				{
-					addCand(2, d, cls == CLS_INF ? "inf_attack" : "tnk_advance", 12000 + rnd() % 6000, false);
+					const char *k = (cls == CLS_INF) ? (((rnd() % 3u) == 0) ? "inf_coverme" : "inf_attack") : "tnk_advance";
+					addCand(2, d, k, 12000 + rnd() % 6000, 0);
+					continue;
+				}
+				if (d->action == DACTION_ATTACK && now >= st.nextFireCall && (rnd() % 12u) == 0)
+				{
+					st.nextFireCall = now + 14000;
+					addCand(2, d, catName(cls, "fire"), 8000, 0);
 					continue;
 				}
 			}
 			else if (!fighting)
 			{
 				st.lastTarget = 0;
-				// unterwegs zum Gefecht: Panzer melden sich
-				if (cls == CLS_TNK && (d->order.type == DORDER_SCOUT || d->order.type == DORDER_ATTACK) && d->action == DACTION_MOVE && (rnd() % 24u) == 0)
+				const bool onTheWay = (d->order.type == DORDER_SCOUT || d->order.type == DORDER_ATTACK) && d->action == DACTION_MOVE;
+				// unterwegs zum Gefecht: Panzer melden sich, Infanterie treibt sich an
+				if (cls == CLS_TNK && onTheWay && (rnd() % 24u) == 0)
 				{
-					addCand(1, d, "tnk_advance", 16000 + rnd() % 8000, false);
+					addCand(1, d, "tnk_advance", 16000 + rnd() % 8000, 0);
+				}
+				else if (cls == CLS_INF && onTheWay && (rnd() % 30u) == 0)
+				{
+					addCand(1, d, "inf_attack", 16000 + rnd() % 8000, 0);
 				}
 			}
 		}
 	}
 	if (cands.empty()) { return; }
 
-	// beste Rufe (hoechste Prioritaet), unter gleichen zufaellig
-	int best = -1; unsigned ties = 0;
-	for (size_t i = 0; i < cands.size(); i++)
+	// beste Rufe (hoechste Prioritaet), unter gleichen zufaellig; im grossen Gefecht sprechen zwei Einheiten zugleich
+	auto pickBest = [&](const DROID *exclude) -> int
 	{
-		if (best < 0 || cands[i].prio > cands[static_cast<size_t>(best)].prio) { best = static_cast<int>(i); ties = 1; }
-		else if (cands[i].prio == cands[static_cast<size_t>(best)].prio && rnd() % (++ties) == 0) { best = static_cast<int>(i); }
-	}
-	const Cand &c = cands[static_cast<size_t>(best)];
-	const std::string &cat = c.cat;
-	State &st = s_state[c.d->id];
-	if (say(cat.c_str(), c.d))
+		int best = -1; unsigned ties = 0;
+		for (size_t i = 0; i < cands.size(); i++)
+		{
+			if (cands[i].d == exclude) { continue; }
+			if (best < 0 || cands[i].prio > cands[static_cast<size_t>(best)].prio) { best = static_cast<int>(i); ties = 1; }
+			else if (cands[i].prio == cands[static_cast<size_t>(best)].prio && rnd() % (++ties) == 0) { best = static_cast<int>(i); }
+		}
+		return best;
+	};
+	auto speak = [&](const Cand &c)
 	{
-		st.nextSpeak = now + c.unitPause;
-		s_nextAny = now + 400 + rnd() % 700;
-		if (c.arty) { s_nextArty = now + 9000 + rnd() % 6000; }
-	}
-	else
-	{
+		State &st = s_state[c.d->id];
+		if (say(c.cat.c_str(), c.d))
+		{
+			st.nextSpeak = now + c.unitPause;
+			if (c.kind == 1) { s_nextArty = now + 9000 + rnd() % 6000; }
+			if (c.kind == 2) { s_nextAir = now + 9000 + rnd() % 6000; }
+			return true;
+		}
 		st.nextSpeak = now + 3000;    // Datei fehlt: nicht jeden Schritt neu versuchen
+		return false;
+	};
+	const int b1 = pickBest(nullptr);
+	if (b1 < 0) { return; }
+	const Cand first = cands[static_cast<size_t>(b1)];
+	const bool ok = speak(first);
+	if (ok)
+	{
+		s_nextAny = now + 400 + rnd() % 700;
+		if (cands.size() >= 5 && (rnd() & 1u))
+		{
+			const int b2 = pickBest(first.d);
+			if (b2 >= 0) { speak(cands[static_cast<size_t>(b2)]); }
+		}
 	}
 }
 }

@@ -336,7 +336,7 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 
 	if (relativeDamage != 0)
 	{
-		modvoice::onDroidDamaged(psDroid, psProjectile);   // MOD: Schlachtruf (nur Ton)
+		modvoice::onDroidDamaged(psDroid, psProjectile, relativeDamage < 0);   // MOD: Schlachtruf (nur Ton)
 	}
 
 	if (relativeDamage != 0 && psDroid->player == selectedPlayer && psDroid->timeLastHit == gameTime)
