@@ -128,13 +128,14 @@ struct PathBlockingType
 	int owner;
 	FPATH_MOVETYPE moveType;
 	int layer;   // MOD: Ebenen - die Sperrkarte gehoert zur Karte einer Ebene
+	bool houseAccess = true;   // MOD: Cyborgs duerfen nicht durch Haeuser, echte Infanterie schon
 };
 /// Pathfinding blocking map
 struct PathBlockingMap
 {
 	bool operator ==(PathBlockingType const &z) const
 	{
-		return type.gameTime == z.gameTime && type.layer == z.layer &&
+		return type.gameTime == z.gameTime && type.layer == z.layer && type.houseAccess == z.houseAccess &&
 		       fpathIsEquivalentBlocking(type.propulsion, type.owner, type.moveType,
 		                                 z.propulsion,    z.owner,    z.moveType);
 	}
@@ -1175,6 +1176,7 @@ void fpathSetBlockingMap(PATHJOB *psJob)
 	type.propulsion = psJob->propulsion;
 	type.owner = psJob->owner;
 	type.moveType = psJob->moveType;
+	type.houseAccess = psJob->houseAccess;
 	type.layer = static_cast<int>(modlayermap::resident());   // MOD: Ebenen - gameWorld.map ist hier die Karte der Ebene der Einheit
 
 	// Find the map.
@@ -1196,7 +1198,7 @@ void fpathSetBlockingMap(PATHJOB *psJob)
 		for (int y = 0; y < gameWorld.map.height; ++y)
 			for (int x = 0; x < gameWorld.map.width; ++x)
 			{
-				map[x + y * gameWorld.map.width] = fpathBaseBlockingTile(gameWorld.map, x, y, type.propulsion, type.owner, type.moveType);
+				map[x + y * gameWorld.map.width] = fpathBaseBlockingTile(gameWorld.map, x, y, type.propulsion, type.owner, type.moveType, type.houseAccess);
 				checksumMap ^= map[x + y * gameWorld.map.width] * (factor = 3 * factor + 1);
 			}
 		if (!isHumanPlayer(type.owner) && type.moveType == FMT_MOVE)

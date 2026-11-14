@@ -386,12 +386,25 @@ bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY
 	return s->pStructureType != nullptr && s->pStructureType->infantryPassable && s->status == SS_BUILT;
 }
 
+bool isHouseOccupant(const DROID *d)
+{
+	return d != nullptr && d->droidType == DROID_PERSON && isInfantry(d);
+}
+
+bool tileHasHouse(const WorldMapState &mapState, int tileX, int tileY)
+{
+	const MAPTILE *t = mapTile(mapState, tileX, tileY);
+	if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_FEATURE) { return false; }
+	const FEATURE *f = static_cast<const FEATURE *>(t->psObject);
+	return f->psStats != nullptr && f->psStats->infantryPassable;
+}
+
 bool trenchForInfantry(const BASE_OBJECT *obj, const DROID *dominant)
 {
 	if (obj != nullptr && dominant != nullptr && obj->type == OBJ_FEATURE)   // MOD: Haus/Hochhaus besetzen
 	{
 		const FEATURE *f = static_cast<const FEATURE *>(obj);
-		return f->psStats != nullptr && f->psStats->infantryPassable && isInfantry(dominant);
+		return f->psStats != nullptr && f->psStats->infantryPassable && isHouseOccupant(dominant);   // nur echte Infanterie, keine Cyborgs
 	}
 	if (obj == nullptr || dominant == nullptr || obj->type != OBJ_STRUCTURE || obj->player != selectedPlayer) { return false; }
 	const STRUCTURE *s = static_cast<const STRUCTURE *>(obj);

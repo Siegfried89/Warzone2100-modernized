@@ -318,7 +318,9 @@ static UDWORD calcDistToTile(UDWORD tileX, UDWORD tileY, Vector3i *pos)
 /// "popping" tiles
 void updateFogDistance(float distance)
 {
-	pie_UpdateFogDistance(war_getFogStart() + (distance - war_GetMapZoom()) * FOG_ALTITUDE_COEFFICIENT, war_getFogEnd() + (distance - war_GetMapZoom()) * FOG_ALTITUDE_COEFFICIENT);
+	// MOD: Nebel deutlich weiter weg (Faktor 1,6), rein optisch; die gespeicherte Einstellung bleibt unveraendert
+	constexpr float MOD_FOG_SCALE = 1.6f;
+	pie_UpdateFogDistance((war_getFogStart() + (distance - war_GetMapZoom()) * FOG_ALTITUDE_COEFFICIENT) * MOD_FOG_SCALE, (war_getFogEnd() + (distance - war_GetMapZoom()) * FOG_ALTITUDE_COEFFICIENT) * MOD_FOG_SCALE);
 }
 
 void setDefaultFogColour()

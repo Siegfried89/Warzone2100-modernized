@@ -48,6 +48,8 @@ struct Wreck
 	unsigned dur;      // Dauer der Todesanimation in ms
 	int rollTotal;     // Gesamtdrehung in Grad (mit Vorzeichen)
 	int halfH, halfW;  // halbe Modellhoehe / -breite (Lage der Drehachse)
+	bool blockDone = false;   // Sperre der Kachel schon geprueft/gesetzt (Wrack ist gelandet)
+	bool ownBlock = false;    // diese Sperre stammt von uns und wird beim Entfernen wieder aufgehoben
 	// nur Anzeige (beeinflusst den Spielzustand nicht)
 	bool startFx = false;
 	bool crashPlayed = false;
@@ -64,7 +66,7 @@ unsigned s_lastSec = 0;
 bool s_have = false;
 int s_trackRev = -2, s_trackCrash[3] = {-2, -2, -2};   // -2 = noch nicht gesucht
 
-constexpr unsigned LIFE = 300000;          // Wrack bleibt 5 Minuten
+constexpr unsigned LIFE = 1500000;         // Wrack bleibt 25 Minuten (Wunsch: mindestens 20), kann vorher geborgen werden
 constexpr unsigned SMOKE_ALL = 120000;     // die ersten 2 Minuten jede Sekunde Rauch
 constexpr unsigned SMOKE_END = 240000;     // bis 4 Minuten jede zweite Sekunde
 constexpr unsigned FIRE_TIME = 90000;      // Brandherd nach dem Stillstand
@@ -95,6 +97,14 @@ void loadStats()
 			s_stats[id[8] == 'S' ? 0 : (id[8] == 'M' ? 1 : 2)].push_back(&fs);   // allgemeines Wrack nach Groesse
 		}
 	}
+}
+
+// MOD (Wunsch 14.11.): ein gelandetes Wrack sperrt seine Kachel fuer Bodeneinheiten (Panzerwrack blockiert die Fahrer dahinter)
+void releaseBlock(GameWorld &world, Wreck &w)
+{
+	if (!w.ownBlock) { return; }
+	w.ownBlock = false;
+	auxClearBlocking(world.map, map_coord(w.xe), map_coord(w.ye), FEATURE_BLOCKED);
 }
 
 void playNamed(const char *file, int &cache, int x, int y)
@@ -267,6 +277,7 @@ bool onDroidDestroyed(const DROID *psDel, GameWorld &world)
 	while (s_wrecks.size() >= MAX_WRECKS)
 	{
 		FEATURE *old = static_cast<FEATURE *>(getBaseObjFromId(world.objects.features[0], s_wrecks.front().id));
+		releaseBlock(world, s_wrecks.front());
 		if (old != nullptr && !old->died) { removeFeature(old, world); }
 		s_wrecks.pop_front();
 	}
@@ -309,6 +320,17 @@ void tick(GameWorld &world)
 	for (auto w = s_wrecks.begin(); w != s_wrecks.end();)
 	{
 		const unsigned age = gameTime - w->born;
+		if (!w->blockDone && age >= w->dur)
+		{
+			// gelandet: Kachel sperren, falls sie nicht ohnehin gesperrt ist (Gebaeude, Fels, Wasser)
+			w->blockDone = true;
+			const int tx = map_coord(w->xe), ty = map_coord(w->ye);
+			if (tx > 0 && ty > 0 && tx < world.map.width - 1 && ty < world.map.height - 1 && !fpathBlockingTile(world.map, tx, ty, PROPULSION_TYPE_WHEELED))
+			{
+				auxSetBlocking(world.map, tx, ty, FEATURE_BLOCKED);
+				w->ownBlock = true;
+			}
+		}
 		// ---- Todesanimation: Anzeige-Effekte in jedem Spielschritt (nur lokal, aendert den Spielzustand nicht)
 		if (age <= w->dur + 100)
 		{
@@ -369,11 +391,13 @@ void tick(GameWorld &world)
 		FEATURE *f = static_cast<FEATURE *>(getBaseObjFromId(world.objects.features[0], w->id));
 		if (f == nullptr || f->died)
 		{
+			releaseBlock(world, *w);
 			w = s_wrecks.erase(w);
 			continue;
 		}
 		if (age >= LIFE)
 		{
+			releaseBlock(world, *w);
 			removeFeature(f, world);
 			w = s_wrecks.erase(w);
 			continue;

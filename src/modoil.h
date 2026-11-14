@@ -28,6 +28,10 @@ void tick();
 bool generatorRunning(const STRUCTURE *psGen);
 /// Echte Infanterie (Beine UND Personen-/Cyborg-Typ). Kampfroboter (Combots) haben auch Beine, zaehlen aber nicht.
 bool isInfantry(const DROID *psDroid);
+/// nur echte Infanterie (Personen) darf besetzbare Haeuser betreten; Cyborgs nicht (Graeben/Gruben duerfen beide)
+bool isHouseOccupant(const DROID *psDroid);
+/// steht auf diesem Feld ein besetzbares Haus (Feature mit infantryPassable)?
+bool tileHasHouse(const WorldMapState &mapState, int tileX, int tileY);
 /// steht auf diesem Feld ein fertiges Bauwerk mit "infantryPassable" (Graben, Grube) oder ein besetzbares Haus?
 bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY);
 /// ist das ein eigener, fertiger Graben/eine Grube, in die die gewaehlte Infanterie (Beine) einruecken kann? (Mauszeiger "bemannen")

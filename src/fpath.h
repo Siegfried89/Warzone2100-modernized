@@ -52,6 +52,7 @@ struct PATHJOB
 {
 	PROPULSION_TYPE	propulsion;
 	DROID_TYPE	droidType;
+	bool		houseAccess = true;	///< MOD: darf besetzbare Haeuser durchqueren (nur echte Infanterie, keine Cyborgs)
 	int		destX, destY;
 	int		origX, origY;
 	StructureBounds dstStructure;
@@ -125,7 +126,7 @@ bool fpathBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PROPUL
 /// exactly as a full-map scroll window blocks it.
 bool fpathBlockingTileScrollIgnored(const WorldMapState& mapState, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion);
 bool fpathDroidBlockingTile(DROID *psDroid, const WorldMapState& mapState, int x, int y, FPATH_MOVETYPE moveType);
-bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int player, FPATH_MOVETYPE moveType);
+bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int player, FPATH_MOVETYPE moveType, bool houseAccess = true);
 
 static inline bool fpathBlockingTile(const WorldMapState& mapState, Vector2i tile, PROPULSION_TYPE propulsion)
 {

@@ -251,7 +251,7 @@ void incrementViewDistance(float amount)
 		CLIP(target, MOD_ZOOM_MIN_DISTANCE, (!NETisReplay()) ? static_cast<float>(MAXDISTANCE) : static_cast<float>(MAXDISTANCE_REPLAY));
 	}
 
-	animateToViewDistance(target);
+	animateToViewDistance(target, 0);   // MOD: ohne Traegheit - die Kamera springt sofort auf die neue Distanz
 }
 
 static void updateViewDistanceAnimation()

@@ -54,6 +54,8 @@ struct State
 	unsigned lastTarget = 0;
 	unsigned lastContact = 0;    // wann diese Einheit zuletzt "Feind gesichtet" gerufen hat
 	unsigned nextFireCall = 0;   // naechster Feuerruf
+	int lastSeg = -1;            // zuletzt gesehene Anzahl Munitionsabschnitte (faellt sie, ruft die Einheit "Changing mag!" / "Reload!")
+	unsigned nextMag = 0;
 };
 
 std::unordered_map<unsigned, State> s_state;
@@ -387,6 +389,19 @@ void tick(GameWorld &world)
 				if (cls != CLS_TRN)
 				{
 					addCand(3, d, catName(cls, "kill"), 5000 + rnd() % 4000, 0);
+					continue;
+				}
+			}
+			if ((cls == CLS_INF || cls == CLS_TNK) && modammo::usesAmmo(d))
+			{
+				// MOD: jedes Mal, wenn ein Munitionsabschnitt wegfaellt, ein Nachlade-Ruf ("Changing mag!" / "Reload!") - Wunsch 14.11.
+				const int seg = modammo::segments(d);
+				const bool lost = st.lastSeg > 0 && seg >= 0 && seg < st.lastSeg;
+				st.lastSeg = seg;
+				if (lost && seg > 0 && now >= st.nextMag && (rnd() % 100u) < 55u)
+				{
+					st.nextMag = now + 6000;
+					addCand(2, d, catName(cls, "mag"), 3500 + rnd() % 2500, 0);
 					continue;
 				}
 			}
