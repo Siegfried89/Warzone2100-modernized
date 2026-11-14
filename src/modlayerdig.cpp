@@ -32,9 +32,9 @@ constexpr int REVEAL_RAD = 4;
 struct Goal
 {
 	unsigned player = 0;
-	Vector2i tile;
+	Vector2i tile{0, 0};
 	bool digging = false;
-	Vector2i digTile;
+	Vector2i digTile{0, 0};
 	unsigned digUntil = 0;
 	std::deque<Vector2i> route;   // weitere Ziele (Shift+Rechtsklick), nacheinander angebohrt
 };

@@ -21,8 +21,8 @@ namespace modbuild
 struct Placement
 {
 	STRUCTURE_STATS *stats = nullptr;
-	Vector2i tile;          // Kachel (Mitte der Struktur)
-	Vector2i tile2;         // bei Linienbau Endkachel, sonst gleich tile
+	Vector2i tile{0, 0};          // Kachel (Mitte der Struktur)
+	Vector2i tile2{0, 0};         // bei Linienbau Endkachel, sonst gleich tile
 	bool line = false;      // Mauerlinie (DORDER_LINEBUILD)
 	unsigned direction = 0; // 0..65535
 };

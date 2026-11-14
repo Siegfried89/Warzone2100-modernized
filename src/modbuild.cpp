@@ -52,10 +52,10 @@ constexpr int MAX_PLACEMENTS = 170;
 struct Job
 {
 	unsigned player = 0;
-	Vector2i center;                 // Weltkoordinaten
+	Vector2i center{0, 0};                 // Weltkoordinaten
 	int tier = 2;
 	bool moving = false;             // wir haben dem Fahrzeug einen Marsch zur Mulde gegeben
-	Vector2i moveTarget;
+	Vector2i moveTarget{0, 0};
 	unsigned startTime = 0;
 };
 
@@ -399,7 +399,7 @@ void tick(GameWorld &world)
 		j.moving = false;
 
 		// Phase 1: Mulden im Kreis zuschaufeln
-		Vector2i dent;
+		Vector2i dent{0, 0};
 		if (modterrain::findDent(j.center, radius, 6, dent))
 		{
 			const Vector2i dw(world_coord(dent.x) + TILE_UNITS / 2, world_coord(dent.y) + TILE_UNITS / 2);
