@@ -618,12 +618,14 @@ jobs:
     # MOD: das fertige x64-Archiv zusaetzlich als Git-Zweig "winbuild" ablegen (in 90-MB-Teilen). So kann die Installation
     # den Build ueber Git holen, ohne den Artefakt-Speicher (blob.core.windows.net) zu benoetigen.
     - name: 'MOD - Windows-Build als Git-Zweig winbuild ablegen'
-      if: success() && (matrix.deploy_release == true) && (matrix.architecture == 'x64') && (github.event_name == 'push') && (github.ref == 'refs/heads/master')
+      if: success() && (matrix.deploy_release == true) && (matrix.architecture == 'x64') && (github.event_name == 'push') && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/viertel')
       continue-on-error: true
       shell: bash
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         WZ_ARCHIVE_DIR: '${{ github.workspace }}\output\archive'
+        # MOD (16.11.): Testzweig "viertel" (Kachel-Viertelung) bekommt einen eigenen Build-Zweig, master bleibt unberuehrt
+        WZ_BUILD_BRANCH: ${{ github.ref == 'refs/heads/viertel' && 'winbuild-viertel' || 'winbuild' }}
       run: |
         set -e
         src="$(cygpath -u "${WZ_ARCHIVE_DIR}" 2>/dev/null || echo "${WZ_ARCHIVE_DIR}")"
@@ -635,10 +637,10 @@ jobs:
         echo "${GITHUB_SHA}" > COMMIT
         echo "$(basename "${zip}")" > ARCHIVE_NAME
         git init -q
-        git checkout -q -b winbuild
+        git checkout -q -b "${WZ_BUILD_BRANCH}"
         git add .
         git -c user.name="ci" -c user.email="ci@users.noreply.github.com" commit -q -m "Windows x64 build ${GITHUB_SHA}"
-        git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" winbuild
+        git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${WZ_BUILD_BRANCH}"
         ls -l
     #####################################################
     # Generate artifact attestations
