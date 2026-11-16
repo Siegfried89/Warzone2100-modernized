@@ -2,6 +2,7 @@
 // MOD: Befestigungsbau - siehe modbuild.h
 #include "modcrates.h"
 #include "modbuild.h"
+#include "feature.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/input.h"
@@ -238,6 +239,37 @@ int radiusOfTier(int tier)
 int currentTier()
 {
 	return s_tier;
+}
+
+/// MOD (16.11.): Deko im Niemandsland zwischen den Ringen (Steine, Wracks, Absperrungen) - wie im Wunsch-Layout "dazwischen immer Deko".
+/// Wird beim Start des Befestigungsbaus einmal gesetzt (Spielschritt, feste Reihenfolge, Zufall nur aus den Kachelkoordinaten).
+static void placeDeco(unsigned player, const Vector2i &worldCenter, int tier)
+{
+	static const char *const decoNames[] = {"Boulder1", "Boulder2", "Boulder3", "Wreck0", "Wreck1", "Wreck2", "Wreck3", "Wreck4", "Wreck5",
+	                                        "WreckedSuzukiJeep", "WreckedVertCampVan", "barrier", "Boulder2", "Wreck1"};
+	constexpr int NDECO = static_cast<int>(sizeof(decoNames) / sizeof(decoNames[0]));
+	const Rect b = baseRect(player, worldCenter, radiusOfTier(tier));
+	const int rings[3] = {5, 7, 10};
+	for (int ri = 0; ri < 3; ++ri)
+	{
+		const int k = rings[ri];
+		if (tier == 1 && k > 5) { continue; }
+		if (tier == 2 && k > 7) { continue; }
+		for (const Cell &c : perimeter(b, k))
+		{
+			const uint32_t h = static_cast<uint32_t>(c.x) * 73856093u ^ static_cast<uint32_t>(c.y) * 19349663u ^ static_cast<uint32_t>(k) * 83492791u;
+			if (h % 5u != 0u) { continue; }   // etwa jedes fuenfte Feld
+			if (c.x < 2 || c.y < 2 || c.x >= gameWorld.map.width - 2 || c.y >= gameWorld.map.height - 2) { continue; }
+			MAPTILE *t = mapTile(gameWorld.map, c.x, c.y);
+			if (t == nullptr || TileIsOccupied(t) || terrainType(t) == TER_WATER || terrainType(t) == TER_CLIFFFACE) { continue; }
+			FEATURE_STATS *fs = nullptr;
+			const char *want = decoNames[(h >> 8) % static_cast<uint32_t>(NDECO)];
+			for (auto &s : asFeatureStats) { if (s.id == want) { fs = &s; break; } }
+			if (fs == nullptr) { continue; }
+			FEATURE *f = buildFeature(gameWorld, fs, static_cast<UDWORD>(world_coord(c.x) + TILE_UNITS / 2), static_cast<UDWORD>(world_coord(c.y) + TILE_UNITS / 2), false);
+			if (f != nullptr) { f->rot.direction = static_cast<uint16_t>((h >> 4) & 0xffffu); }
+		}
+	}
 }
 
 std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int tier)
@@ -483,8 +515,9 @@ void tick(GameWorld &world)
 			continue;
 		}
 
-		// Phase 2: Bauplan in die Auftragsliste
+		// Phase 2: Bauplan in die Auftragsliste (plus Deko im Niemandsland)
 		const std::vector<Placement> plan = planFor(j.player, j.center, j.tier);
+		placeDeco(j.player, j.center, j.tier);
 		for (const Placement &p : plan)
 		{
 			const Vector2i w1(world_coord(p.tile.x) + TILE_UNITS / 2, world_coord(p.tile.y) + TILE_UNITS / 2);
