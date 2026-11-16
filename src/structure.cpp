@@ -49,6 +49,7 @@
 #include "modlayermap.h"
 #include "modcrates.h"
 #include "modoil.h"
+#include "modconcrete.h"
 #include "research.h"
 #include "hci.h"
 #include "power.h"
@@ -1770,6 +1771,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 				}
 			}
 		}
+		if (&world == &gameWorld) { modconcrete::footprintChanged(psBuilding, map.x, map.y, size.x, size.y); }   // MOD: Betonboden
 
 		switch (pStructureType->type)
 		{
@@ -4873,6 +4875,7 @@ void removeStructFromMap(STRUCTURE *psStruct, WorldMapState& mapState)
 			}
 		}
 	}
+	if (&mapState == &gameWorld.map) { modconcrete::footprintChanged(psStruct, b.map.x, b.map.y, b.size.x, b.size.y); }   // MOD: Betonboden
 }
 
 // remove a structure from a game without any visible effects

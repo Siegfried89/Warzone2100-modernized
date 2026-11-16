@@ -77,7 +77,20 @@ extern BUILDDETAILS	sBuildDetails;
 static inline bool canLineBuild()
 {
 	ASSERT_OR_RETURN(false, selectedPlayer < MAX_PLAYERS, "selectedPlayer definitely can't line-build: %" PRIu32 "", selectedPlayer);
-	return ((STRUCTURE_STATS *)sBuildDetails.psStats)->upgrade[selectedPlayer].limit > 1;
+	const STRUCTURE_STATS *s = (const STRUCTURE_STATS *)sBuildDetails.psStats;
+	if (s->upgrade[selectedPlayer].limit <= 1)
+	{
+		return false;
+	}
+	// MOD (16.11. 23:30 "Mörserstellung: klicken, halten, ziehen ändert die Richtung nicht"): bisher galt jedes mehrfach baubare
+	// Gebäude als Reihen-Bau, damit wurde Ziehen nie zum Drehen. Jetzt ziehen nur Mauern/Sperren/Gräben (1 Feld) und Mauertürme
+	// eine Reihe; Stellungen, Türme und alle anderen Gebäude dreht das Ziehen.
+	if (s->combinesWithWall)
+	{
+		return true;
+	}
+	return (s->type == REF_WALL || s->type == REF_WALLCORNER || s->type == REF_GATE)
+		&& s->baseWidth <= (UDWORD)(DIST_TILE / TILE_UNITS) && s->baseBreadth <= (UDWORD)(DIST_TILE / TILE_UNITS);
 }
 
 extern bool buildRotateDrag;      // MOD: Ziehen beim Platzieren bestimmt die Richtung

@@ -70,6 +70,7 @@
 #include "terrain_bake.h"
 #include "map.h"
 #include "modlayermap.h"   // MOD 16.11.: Orbit-Inselfeld
+#include "modconcrete.h"   // MOD 16.11. 23:30: Beton unter Gebaeuden
 #include "texture.h"
 #include "display3d.h"
 #include "hci.h"
@@ -517,10 +518,14 @@ static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
 {
 	TileDecalInfo info;
 	MAPTILE *tile = mapTile(mapState, i, j);
-	info.centerUv = getTileTexArrCoords(*info.uv, tile->texture);
+	// MOD (16.11. 23:30): Betonboden unter Gebaeuden - nur Anzeige, die Kartenkachel bleibt (siehe modconcrete.h)
+	const int concreteTex = modconcrete::overrideTexture(mapState, i, j, terrainShaderQuality == TerrainShaderQuality::CLASSIC);
+	const unsigned short texValue = concreteTex >= 0 ? static_cast<unsigned short>(concreteTex) : tile->texture;
+	info.centerUv = getTileTexArrCoords(*info.uv, texValue);
 #if defined(WZ_MOD_FINE_GRID)
 	// MOD (Kachel-Viertelung): jede Original-Kachel ist jetzt 2x2 Feinfelder - jedes zeigt sein Viertel der (gedrehten/gespiegelten)
-	// Kacheltextur, damit der Boden genau so aussieht wie vorher
+	// Kacheltextur, damit der Boden genau so aussieht wie vorher (Beton-Randkacheln gelten je Feinfeld ganz)
+	if (!modconcrete::isEdgeTile(concreteTex))
 	{
 		Vector2f *uv = *info.uv;
 		const Vector2f TL = uv[0], TR = uv[2], BR = uv[3], BL = uv[1];
@@ -533,9 +538,13 @@ static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
 		info.centerUv = at(a0 + 0.25f, b0 + 0.25f);
 	}
 #endif
-	info.decalNo = static_cast<int>(TileNumber_tile(tile->texture));
+	info.decalNo = static_cast<int>(TileNumber_tile(texValue));
 	bool skipDecalDraw = !TILE_HAS_DECAL(tile);
-	if (terrainShaderQuality == TerrainShaderQuality::CLASSIC)
+	if (concreteTex >= 0)
+	{
+		skipDecalDraw = false;
+	}
+	else if (terrainShaderQuality == TerrainShaderQuality::CLASSIC)
 	{
 		// in Classic mode, skip drawing any that are the "water only" decal (water is handled separately as a prior pass)
 		// MOD (16.11.): Klassik hat keinen Boden-Untergrund - JEDE Kachel ist dort ein Decal (sonst schwarzer Boden, sobald ein Mod
