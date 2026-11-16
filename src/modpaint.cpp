@@ -466,43 +466,127 @@ bool project(const Vector2i &w, const glm::mat4 &m, Vector2i &out)
 	return pie_RotateProjectWithPerspective(&pos, m, &out) > 0;
 }
 
-void drawPoly(const std::vector<Vector2i> &pts, bool closed, PIELIGHT col, const glm::mat4 &m)
+
+// MOD (Wunsch 16.11. 21:34): dicke, sich verjuengende Kriegskarten-Pfeile (wie auf den Beispielbildern) und Linien/Kreise mit leuchtendem Hof
+// - Bildschirmpunkte gleichmaessig neu verteilt (glatt), Strich aus weichen, gedrehten Rundboxen; Schwanz blendet ein; Pfeilspitze aus Scheiben.
+std::vector<glm::vec2> screenPath(const std::vector<Vector2i> &pts, const glm::mat4 &m, bool closed)
 {
-	if (pts.size() < 2) { return; }
-	std::vector<glm::ivec4> lines;
-	Vector2i prev(0, 0), first(0, 0);
-	bool havePrev = false, haveFirst = false;
+	std::vector<glm::vec2> raw;
 	for (const Vector2i &p : pts)
 	{
-		Vector2i s(0, 0);
-		const bool ok = project(p, m, s);
-		if (ok && havePrev)
-		{
-			lines.emplace_back(prev.x, prev.y, s.x, s.y);
-			lines.emplace_back(prev.x + 1, prev.y, s.x + 1, s.y);
-			lines.emplace_back(prev.x, prev.y + 1, s.x, s.y + 1);
-		}
-		if (ok && !haveFirst) { first = s; haveFirst = true; }
-		prev = s;
-		havePrev = ok;
+		Vector2i sp(0, 0);
+		if (project(p, m, sp)) { raw.emplace_back(static_cast<float>(sp.x), static_cast<float>(sp.y)); }
 	}
-	if (closed && havePrev && haveFirst) { lines.emplace_back(prev.x, prev.y, first.x, first.y); }
-	// Pfeilspitze am Ende von Linien
-	if (!closed && havePrev && pts.size() >= 2)
+	if (closed && raw.size() >= 3) { raw.push_back(raw.front()); }
+	if (raw.size() < 2) { return raw; }
+	// Glaetten (Chaikin, 2 Durchgaenge) - Zeichnungen mit der Maus sind zittrig
+	for (int it = 0; it < 2; ++it)
 	{
-		Vector2i a(0, 0);
-		if (project(pts[pts.size() >= 4 ? pts.size() - 4 : 0], m, a))
+		std::vector<glm::vec2> o;
+		o.push_back(raw.front());
+		for (size_t i = 0; i + 1 < raw.size(); ++i)
 		{
-			const double dx = prev.x - a.x, dy = prev.y - a.y;
-			const double l = std::max(1.0, std::sqrt(dx * dx + dy * dy));
-			const double ux = dx / l, uy = dy / l;
-			const int hx1 = static_cast<int>(prev.x - ux * 14 - uy * 8), hy1 = static_cast<int>(prev.y - uy * 14 + ux * 8);
-			const int hx2 = static_cast<int>(prev.x - ux * 14 + uy * 8), hy2 = static_cast<int>(prev.y - uy * 14 - ux * 8);
-			lines.emplace_back(prev.x, prev.y, hx1, hy1);
-			lines.emplace_back(prev.x, prev.y, hx2, hy2);
+			o.push_back(raw[i] * 0.75f + raw[i + 1] * 0.25f);
+			o.push_back(raw[i] * 0.25f + raw[i + 1] * 0.75f);
+		}
+		o.push_back(raw.back());
+		raw.swap(o);
+	}
+	// gleichmaessig neu verteilen (etwa alle 7 Bildpunkte, hoechstens 160 Punkte)
+	float total = 0.f;
+	for (size_t i = 1; i < raw.size(); ++i) { total += glm::length(raw[i] - raw[i - 1]); }
+	if (total < 1.f) { return raw; }
+	const int n = std::clamp(static_cast<int>(total / 7.f), 2, 160);
+	std::vector<glm::vec2> out;
+	out.push_back(raw.front());
+	float want = total / static_cast<float>(n), acc = 0.f;
+	for (size_t i = 1; i < raw.size(); ++i)
+	{
+		const glm::vec2 a = raw[i - 1], b = raw[i];
+		float seg = glm::length(b - a);
+		float t0 = 0.f;
+		while (acc + seg * (1.f - t0) >= want && seg > 0.f)
+		{
+			const float t = t0 + (want - acc) / seg;
+			out.push_back(a + (b - a) * t);
+			t0 = t; acc = 0.f;
+		}
+		acc += seg * (1.f - t0);
+	}
+	if (glm::length(out.back() - raw.back()) > 1.f) { out.push_back(raw.back()); }
+	return out;
+}
+
+void softSeg(const glm::vec2 &a, const glm::vec2 &b, float w, PIELIGHT col)
+{
+	const glm::vec2 d = b - a;
+	const float len = glm::length(d);
+	if (len < 0.01f || w <= 0.5f) { return; }
+	const glm::vec2 c = (a + b) * 0.5f;
+	pie_DrawSoftRoundedBoxRotated(c.x, c.y, len + w, w, std::atan2(d.y, d.x), col, w * 0.5f, std::max(1.2f, w * 0.18f));
+}
+
+void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm::mat4 &m)
+{
+	const ModeInfo &mi = kModes[mode];
+	const bool closed = mi.area;
+	const bool arrow = !closed && mode != M_RALLY && mode != M_DEFEND;   // Rally = Kreis/Spirale, Defend = Linie: ohne Spitze
+	std::vector<glm::vec2> p = screenPath(pts, m, closed);
+	if (p.size() < 2 || alpha <= 0) { return; }
+	const float sc = modui::uiScale();
+	const float body = (arrow ? 13.f : 7.f) * sc;   // Strichstaerke
+	const float halo = body + 14.f * sc;            // leuchtender Hof
+	// Pfeil: Spitze am Ende, Koerper endet an ihrer Basis
+	glm::vec2 tip = p.back(), dir(1.f, 0.f);
+	float headL = 0.f, headW = 0.f;
+	if (arrow)
+	{
+		headL = body * 2.6f; headW = body * 2.7f;
+		// Richtung aus dem letzten Stueck (etwa eine Spitzenlaenge zurueck)
+		size_t k = p.size() - 1;
+		float back = 0.f;
+		while (k > 0 && back < headL) { back += glm::length(p[k] - p[k - 1]); --k; }
+		dir = tip - p[k];
+		if (glm::length(dir) < 0.01f) { dir = glm::vec2(1.f, 0.f); } else { dir = glm::normalize(dir); }
+		// Punkte innerhalb der Spitze weglassen
+		while (p.size() > 2 && glm::length(p.back() - tip) < headL * 0.8f && glm::dot(tip - p.back(), dir) < headL * 0.8f) { p.pop_back(); }
+		p.push_back(tip - dir * (headL * 0.8f));
+	}
+	const size_t n = p.size();
+	auto colA = [&](float a, float bright) {
+		const int r = std::min(255, static_cast<int>(mi.r + (255 - mi.r) * bright));
+		const int g = std::min(255, static_cast<int>(mi.g + (255 - mi.g) * bright));
+		const int b = std::min(255, static_cast<int>(mi.b + (255 - mi.b) * bright));
+		return pal_RGBA(static_cast<UBYTE>(r), static_cast<UBYTE>(g), static_cast<UBYTE>(b), static_cast<UBYTE>(std::clamp(static_cast<int>(a), 0, 255)));
+	};
+	// 1. Hof (breit, schwach, heller), 2. Kern
+	for (int pass = 0; pass < 2; ++pass)
+	{
+		for (size_t i = 1; i < n; ++i)
+		{
+			const float s = static_cast<float>(i) / static_cast<float>(n - 1);
+			// Pfeil: schmaler, durchsichtiger Schwanz -> voller Koerper (wie die Kriegskarten-Pfeile); Linien/Kreise gleichmaessig
+			const float taper = arrow ? (0.35f + 0.65f * std::min(1.f, s / 0.45f)) : 1.f;
+			const float fade = arrow ? std::min(1.f, 0.15f + s / 0.4f) : 1.f;
+			if (pass == 0) { softSeg(p[i - 1], p[i], halo * (arrow ? (0.6f + 0.4f * taper) : 1.f), colA(alpha * 0.28f * fade, 0.45f)); }
+			else { softSeg(p[i - 1], p[i], body * taper, colA(alpha * fade, 0.f)); }
+		}
+		if (arrow)
+		{
+			// Spitze aus Scheiben quer zur Richtung (Dreieck mit weichen Kanten)
+			const glm::vec2 base = tip - dir * headL;
+			const float ang = std::atan2(dir.y, dir.x);
+			const int K = 12;
+			for (int k = 0; k < K; ++k)
+			{
+				const float f = (static_cast<float>(k) + 0.5f) / static_cast<float>(K);
+				const glm::vec2 c = base + dir * (headL * f);
+				const float wAcross = headW * (1.f - f) + (pass == 0 ? 12.f * sc : 0.f);
+				const float wAlong = headL / static_cast<float>(K) + 2.f;
+				pie_DrawSoftRoundedBoxRotated(c.x, c.y, wAlong, std::max(1.f, wAcross), ang, pass == 0 ? colA(alpha * 0.28f, 0.45f) : colA(alpha, 0.f), 1.f, 1.2f);
+			}
 		}
 	}
-	if (!lines.empty()) { iV_Lines(lines, col); }
 }
 } // namespace
 
@@ -555,6 +639,8 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	st.mode = m;
 	st.pts = s_cur;
 	st.born = realTime;
+	// MOD (Wunsch 16.11. 21:25): hoechstens ein Marker je Aktion - eine neue Zeichnung ersetzt die alte derselben Art
+	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [m](const Stroke &o) { return o.mode == m; }), s_done.end());
 	s_done.push_back(std::move(st));
 	if (s_done.size() > 24) { s_done.erase(s_done.begin()); }
 	s_cur.clear();
@@ -566,15 +652,13 @@ void drawOverlay(const glm::mat4 &m)
 {
 	for (const Stroke &st : s_done)
 	{
-		const ModeInfo &mi = kModes[st.mode];
 		const unsigned age = realTime - st.born;
 		const int a = age >= SHOW_MS ? 0 : static_cast<int>(230 - 200 * static_cast<int64_t>(age) / static_cast<int64_t>(SHOW_MS));
-		if (a > 0) { drawPoly(st.pts, mi.area, pal_RGBA(mi.r, mi.g, mi.b, static_cast<unsigned char>(a)), m); }
+		if (a > 0) { drawStroke(st.pts, st.mode, a, m); }
 	}
 	if (s_drawing && s_mode >= 0)
 	{
-		const ModeInfo &mi = kModes[s_mode];
-		drawPoly(s_cur, mi.area, pal_RGBA(mi.r, mi.g, mi.b, 255), m);
+		drawStroke(s_cur, s_mode, 255, m);
 	}
 }
 

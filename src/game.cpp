@@ -2088,7 +2088,7 @@ static void serializeSaveGameData_json(nlohmann::json &o, nlohmann::json &savein
 	// This file lists saved games, and their build info
 	// one per savegame directory
 	const auto tagResult = version_extractVersionNumberFromTag(version_getLatestTag());
-	ASSERT(tagResult.has_value(), "No extractable latest tag?? - Please try re-downloading the latest official source bundle");
+	// MOD: Eigenbau ohne offizielles Versions-Tag - kein Fehler, nur 0.0.0 in der Spielstand-Liste (vorher Assert-Meldung bei jedem Speichern)
 	const TagVer tag = tagResult.value_or(TagVer());
 	saveinfo["latestTagArray"] = nlohmann::json::array({tag.version[0], tag.version[1], tag.version[2]});
 	const auto epoch  = std::chrono::system_clock::now().time_since_epoch();
