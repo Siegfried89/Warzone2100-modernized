@@ -46,6 +46,9 @@ struct Part
 	int eyePiece = -1;                          // (16.11.) leuchtendes Auge (Neuropa): Teil-Stueck und Lage darin
 	glm::vec3 eyePos = glm::vec3(0.f);
 	std::string eyeGlow;                        // Modell des Lichthofs (effects/mfeyeglow.pie)
+	int fxPiece = -1;                           // (16.11.) leuchtender Anbau, z. B. Energieschild am Unterarm (additiv)
+	glm::vec3 fxPos = glm::vec3(0.f);
+	std::string fxModel;
 
 	const iIMDShape *shape(size_t i) const;   // laedt das Modell bei Bedarf
 	bool hasAbility(const char *a) const;
