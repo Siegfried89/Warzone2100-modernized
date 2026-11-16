@@ -28,6 +28,7 @@
 #include "modui.h"
 #include "multiplay.h"
 #include "modincoming.h"
+#include "modrecover.h"
 #include "order.h"
 #include "ordersource.h"
 #include "stats.h"
@@ -45,7 +46,7 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_COUNT   // M_SPREAD = Sofort-Befehl (kein Zeichnen)
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COUNT   // M_SPREAD = Sofort-Befehl (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -67,6 +68,7 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Aircraft", "Aircraft: patrol over this area", "Aircraft: drag the patrol area (right click cancels)", 255, 235, 50, true },
 	{ "Combots", "Combot area: combots patrol and fight in this area on their own", "Combots: drag the combot area (right click cancels)", 190, 90, 255, true },
 	{ "Spread out", "Spread out: the selected units spread out evenly (against artillery and bombs)", "", 150, 200, 200, false },
+	{ "Recover", "Recover: the selected trucks / repair units collect lost turrets and bring them to the repair facility", "", 120, 220, 255, false },
 };
 
 constexpr int BTN_W = 66;
@@ -157,6 +159,20 @@ void ensureScreen()
 					for (DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d->selected) { sel.push_back(d); } }
 				}
 				modincoming::spreadUnits(sel);
+				s_mode = -1;
+				s_drawing = false;
+				s_cur.clear();
+				return;
+			}
+			if (m == M_RECOVER)
+			{
+				// MOD (16.11. Punkt 10): Bergen - gewaehlte Bau-/Reparatureinheiten holen liegende Turm-Teile
+				std::vector<DROID *> sel;
+				if (selectedPlayer < MAX_PLAYERS)
+				{
+					for (DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d->selected) { sel.push_back(d); } }
+				}
+				modrecover::recoverWithSelection(sel);
 				s_mode = -1;
 				s_drawing = false;
 				s_cur.clear();

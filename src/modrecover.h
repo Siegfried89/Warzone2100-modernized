@@ -14,6 +14,7 @@
 
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/mat4x4.hpp>
+#include <vector>
 
 struct DROID;
 struct FEATURE;
@@ -36,6 +37,9 @@ bool onPickup(FEATURE *psFeature, DROID *psDroid);
 /// jeden Spielschritt
 void tick();
 void reset();
+
+/// Knopf "Recover": die gewaehlten Einheiten bergen die naechstgelegenen liegenden Turm-Teile ihres Spielers (Befehle ueber das Netz)
+void recoverWithSelection(const std::vector<DROID *> &units);
 
 /// Anzeige: Waffe fuer ein liegendes Turm-Teil (0 = keins)
 unsigned partWeapon(const FEATURE *psFeature);

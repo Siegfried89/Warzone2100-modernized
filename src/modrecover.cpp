@@ -19,6 +19,7 @@
 #include "multiplay.h"
 #include "objmem.h"
 #include "order.h"
+#include "ordersource.h"
 #include "stats.h"
 #include "structure.h"
 
@@ -308,6 +309,33 @@ void reset()
 	s_nextTick = 0;
 	s_statsBase = nullptr;
 	s_partStats = nullptr;
+}
+
+void recoverWithSelection(const std::vector<DROID *> &units)
+{
+	std::vector<FEATURE *> free;
+	for (auto &kv : s_parts)
+	{
+		if (kv.second.feature != nullptr && !kv.second.feature->died) { free.push_back(kv.second.feature); }
+	}
+	for (DROID *d : units)
+	{
+		if (d == nullptr || d->died || d->isVtol() || !support(d)) { continue; }
+		FEATURE *best = nullptr;
+		int64_t bestD = 0;
+		for (FEATURE *f : free)
+		{
+			auto it = s_parts.find(f->id);
+			if (it == s_parts.end()) { continue; }
+			const bool friendly = d->player == it->second.ownerPlayer || (d->player < MAX_PLAYERS && it->second.ownerPlayer < MAX_PLAYERS && aiCheckAlliances(d->player, it->second.ownerPlayer));
+			if (!friendly) { continue; }
+			const int64_t dd = dist2(d->pos.xy(), f->pos.xy());
+			if (best == nullptr || dd < bestD) { best = f; bestD = dd; }
+		}
+		if (best == nullptr) { continue; }
+		free.erase(std::remove(free.begin(), free.end(), best), free.end());
+		sendDroidInfo(d, DroidOrder(DORDER_RECOVER, best), false, currentOrderSource());
+	}
 }
 
 unsigned partWeapon(const FEATURE *f)
