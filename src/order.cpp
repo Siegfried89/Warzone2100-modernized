@@ -34,6 +34,7 @@
 
 #include "objects.h"
 #include "order.h"
+#include "modarty.h"
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modgroundfire.h"
@@ -3331,6 +3332,10 @@ bool secondarySupported(const DROID *psDroid, SECONDARY_ORDER sec)
 		}
 		break;
 
+	case DSO_ARTILLERY:   // MOD: nur Bodenfahrzeuge/Laeufer mit normaler Kanone
+		supported = modarty::supported(psDroid);
+		break;
+
 	case DSO_REPAIR_LEVEL:
 	case DSO_PATROL:
 	case DSO_HALTTYPE:
@@ -3393,6 +3398,9 @@ SECONDARY_STATE secondaryGetState(const DROID *psDroid, SECONDARY_ORDER sec, QUE
 		break;
 	case DSO_ACCEPT_RETREP:
 		return (SECONDARY_STATE)(state & DSS_ACCREP_MASK);
+		break;
+	case DSO_ARTILLERY:   // MOD
+		return (SECONDARY_STATE)(state & DSS_ARTY_MASK);
 		break;
 	case DSO_HALTTYPE:
 		if (psDroid->order.type == DORDER_HOLD)
@@ -3809,6 +3817,10 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 		secondaryMask = DSS_ACCREP_MASK;
 		secondarySet = State;
 		break;
+	case DSO_ARTILLERY:   // MOD
+		secondaryMask = DSS_ARTY_MASK;
+		secondarySet = State & DSS_ARTY_MASK;
+		break;
 	case DSO_UNUSED:
 	case DSO_FIRE_DESIGNATOR:
 		// Do nothing.
@@ -4024,6 +4036,10 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 		break;
 	case DSO_ACCEPT_RETREP:
 		CurrState = (CurrState & ~DSS_ACCREP_MASK) | State;
+		break;
+	case DSO_ARTILLERY:   // MOD: Waffen zwischen Kanone und Artillerie-Fassung umschalten
+		CurrState = (CurrState & ~DSS_ARTY_MASK) | (State & DSS_ARTY_MASK);
+		modarty::apply(psDroid, (State & DSS_ARTY_MASK) != 0);
 		break;
 	case DSO_PATROL:
 		if (State & DSS_PATROL_SET)

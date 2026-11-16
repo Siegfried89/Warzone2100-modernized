@@ -218,8 +218,8 @@ inline void NETQueuedDroidInfo(SerdeContext& c, typename SerdeFnArgT<SerdeContex
 		NETbool(c, info.add);
 		break;
 	case SecondaryOrder:
-		NETenum(c, info.secOrder, DSO_ACCEPT_RETREP);
-		NETenum(c, info.secState, 0x1fffffff); // All state bits, up to DSS_ASSPROD_VTOL_MASK
+		NETenum(c, info.secOrder, DSO_ARTILLERY);
+		NETenum(c, info.secState, 0x3fffffff); // All state bits, up to DSS_ARTY_MASK (MOD)
 		break;
 	}
 

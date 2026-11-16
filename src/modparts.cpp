@@ -13,6 +13,7 @@
 #include "effects.h"
 #include "game_world.h"
 #include "map.h"
+#include "modarty.h"
 #include "modcombot.h"
 #include "modvoice.h"
 #include "move.h"
@@ -167,6 +168,7 @@ void restore(DROID *d, State &s)
 				d->asWeaps[i].ammo = s.savedAmmo[i];
 			}
 		}
+		modarty::refresh(d);   // Artillerie-Modus: neu aufgesetzter Turm folgt dem eingestellten Modus
 	}
 }
 } // namespace

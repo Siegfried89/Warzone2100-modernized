@@ -32,6 +32,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "action.h"
+#include "modarty.h"
 #include "combat.h"
 #include "formation.h"
 #include "geometry.h"
@@ -292,7 +293,9 @@ void actionAlignTurret(BASE_OBJECT *psObj, int weapon_slot)
 	tRot += clip(angleDelta(nearest - tRot), -rotation, rotation);  // Addition wrapping intended.
 
 	// align the turret pitch
-	tPitch += clip(angleDelta(0 - tPitch), -rotation / 2, rotation / 2); // Addition wrapping intended.
+	// MOD: im Artillerie-Modus (modarty) bleibt das Rohr steil aufgerichtet wie bei einem Artilleriepanzer
+	const uint16_t restPitch = (psObj->type == OBJ_DROID) ? modarty::restPitch(((DROID *)psObj)->asWeaps[weapon_slot].nStat) : 0;
+	tPitch += clip(angleDelta(restPitch - tPitch), -rotation / 2, rotation / 2); // Addition wrapping intended.
 
 	switch (psObj->type)
 	{

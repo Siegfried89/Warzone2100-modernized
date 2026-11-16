@@ -41,6 +41,7 @@
 
 #include "action.h"
 #include "display.h"
+#include "modlayer.h"
 #include "uiobjectrefs.h"
 #include "ordersource.h"
 #include "droid.h"
@@ -912,6 +913,32 @@ void processMouseClickInput()
 	HandleDrag();
 
 	CheckFinishedDrag(selection);
+
+	// MOD: Klick-Diagnose (Nutzerbericht "nichts anklickbar"): die ersten 40 Linksklicks je Programmstart landen mit allen Sperr-Gruenden
+	// im Log (Ordner logs). Reine Anzeige-/Protokoll-Zeile, aendert nichts am Ablauf.
+	{
+		static int s_modClickLog = 0;
+		if (mouseReleased(MOUSE_LMB) && s_modClickLog < 40)
+		{
+			++s_modClickLog;
+			BASE_OBJECT *psDiag = mouseTarget();
+			int ownDrawn = 0, ownHidden = 0;
+			if (selectedPlayer < MAX_PLAYERS)
+			{
+				for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
+				{
+					if (!d->visibleForLocalDisplay()) { ++ownHidden; }
+					else if (DrawnInLastFrame(d->sDisplay.frameNumber)) { ++ownDrawn; }
+				}
+			}
+			debug(LOG_INFO, "MOD-Klick %d: Maus %d/%d Feld %d/%d, Ueberlagerung=%d Radar=%d Ziehen=%d Bauort=%d Konsole=%d, Ebene=%d, "
+			      "eigene Einheiten gezeichnet=%d verborgen=%d, Ziel=%s (Spieler %d)",
+			      s_modClickLog, mouseX(), mouseY(), mouseTileX, mouseTileY, isMouseOverScreenOverlayChild(mouseX(), mouseY()) ? 1 : 0,
+			      OverRadar ? 1 : 0, static_cast<int>(dragBox3D.status), ignoreOrder ? 1 : 0, mouseOverConsole ? 1 : 0,
+			      static_cast<int>(modlayer::current()), ownDrawn, ownHidden,
+			      psDiag ? objInfo(psDiag) : "nichts", psDiag ? static_cast<int>(psDiag->player) : -1);
+		}
+	}
 
 	if (isMouseOverScreenOverlayChild(mouseX(), mouseY()))
 	{

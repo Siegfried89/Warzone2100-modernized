@@ -2903,7 +2903,8 @@ const std::unordered_map<std::string, SECONDARY_ORDER> strToSecondaryOrderMap = 
 	{ "FIRE_DESIGNATOR", DSO_FIRE_DESIGNATOR },
 	{ "ASSIGN_VTOL_PRODUCTION", DSO_ASSIGN_VTOL_PRODUCTION },
 	{ "CIRCLE", DSO_CIRCLE },
-	{ "ACCEPT_RETREP", DSO_ACCEPT_RETREP }
+	{ "ACCEPT_RETREP", DSO_ACCEPT_RETREP },
+	{ "ARTILLERY", DSO_ARTILLERY }
 };
 
 void from_json(const nlohmann::json& j, SECONDARY_ORDER& v)

@@ -494,6 +494,9 @@ enum INTFAC_TYPE
 	// an image: an empty circle is a circle, which the renderer draws already.
 	IMAGE_INTFAC_CHECK_CIRCLE,
 
+	IMAGE_ORD_ARTY_UP,     // MOD: Artillerie-Modus
+	IMAGE_ORD_ARTY_DOWN,
+
 	IMAGE_INTFAC_COUNT
 };
 

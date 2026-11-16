@@ -408,7 +408,10 @@ std::unique_ptr<MAPTILE[]> makeTiles(Layer layer, const Grid &g, const Palette &
 			}
 			else
 			{
-				t.height = low ? static_cast<int32_t>(1040u + hv % 24u) : 0;
+				// Orbit wie in MF: Inseln und Leere liegen auf derselben Hoehe (eben, keine Rampen zum Boden). Dass die Inseln frei
+				// schweben, zeichnet der Terrain-Shader: unter der Leere-Kachel (256) erscheinen Inselflanken und tief unten der Boden.
+				(void)low;
+				t.height = 1040;
 			}
 			const std::vector<uint16_t> &src = isOpenTile ? pal.floor : pal.rock;
 			t.texture = src[(hv >> 16) % src.size()];

@@ -1807,6 +1807,16 @@ static void updateLightMap(WorldMapState& mapState, const LightMap& lightmap)
 				colour.byte.r = MAX(m, 255 - m);
 				level = std::max<UBYTE>(level, colour.byte.r / 2);
 			}
+			// MOD: Inselmaske fuer den Orbit-Leere-Effekt der Terrain-Shader (schwebende MF-Inseln): Leere-Kachel = Helligkeit 0,
+			// jede andere Kachel mindestens 1 (1/255 - unsichtbar)
+			if (TileNumber_tile(psTile->texture) == MOD_TILE_VOID)
+			{
+				level = 0;
+			}
+			else if (level == 0)
+			{
+				level = 1;
+			}
 
 			lightMapWritePtr[(i + j * lightmapWidth) * lightmapChannels + 0] = colour.byte.r;
 			lightMapWritePtr[(i + j * lightmapWidth) * lightmapChannels + 1] = colour.byte.g;
