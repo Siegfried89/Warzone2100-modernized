@@ -95,6 +95,7 @@
 #include "range_rings.h"
 #include "modgrid.h"
 #include "modpaint.h"
+#include "modferry.h"
 #include "modoil.h"
 #include "modwreck.h"
 #include "modgroundfire.h"
@@ -5090,6 +5091,7 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 	modoil::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Faesser-Anzeige
 	modgrid::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Stromkabel / Stromnetz-Anzeige
 	modpaint::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: Schlachtplan-Zeichnungen
+	modferry::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: blinkende Transport-Leuchtfeuer
 	drawDroidAndStructureSelections();
 
 	pie_SetFogStatus(false);

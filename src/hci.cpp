@@ -92,6 +92,7 @@
 #include "modparts.h"
 #include "modpaint.h"
 #include "modmorale.h"
+#include "modferry.h"
 #include "modgroundfire.h"
 #include "modradio.h"
 #include "modsalvage.h"
@@ -732,6 +733,7 @@ void interfaceShutDown()
 	modwreck::reset();       // MOD
 	modparts::reset();       // MOD
 	modmorale::reset();      // MOD
+	modferry::reset();       // MOD
 	modgroundfire::reset();  // MOD
 	modterrain::reset();     // MOD
 	modbuild::reset();       // MOD
