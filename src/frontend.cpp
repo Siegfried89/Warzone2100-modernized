@@ -241,7 +241,7 @@ struct FactionMenuButton : public W_BUTTON
 };
 }
 
-static_assert(FRONTEND_FACTION_0 + NUM_FACTIONS - 1 == FRONTEND_FACTION_3, "faction button ids must match NUM_FACTIONS");
+static_assert(FRONTEND_FACTION_0 + NUM_FACTIONS - 1 == FRONTEND_FACTION_4, "faction button ids must match NUM_FACTIONS");
 
 static void refreshFactionChoice()
 {
@@ -278,8 +278,8 @@ static void addFactionChoice()
 
 	const int stripW = NUM_FACTIONS * iconSize + (NUM_FACTIONS - 1) * gap;
 	const int x0 = (topForm->width() - stripW) / 2;
-	static const int menuImg[NUM_FACTIONS] = {IMAGE_FACTION_MENU_NORMAL, IMAGE_FACTION_MENU_NEXUS, IMAGE_FACTION_MENU_COLLECTIVE, IMAGE_FACTION_MENU_NEWPARADIGM};
-	static const int menuImgHi[NUM_FACTIONS] = {IMAGE_FACTION_MENU_NORMAL_HI, IMAGE_FACTION_MENU_NEXUS_HI, IMAGE_FACTION_MENU_COLLECTIVE_HI, IMAGE_FACTION_MENU_NEWPARADIGM_HI};
+	static const int menuImg[NUM_FACTIONS] = {IMAGE_FACTION_MENU_NORMAL, IMAGE_FACTION_MENU_NEXUS, IMAGE_FACTION_MENU_COLLECTIVE, IMAGE_FACTION_MENU_NEWPARADIGM, IMAGE_FACTION_MENU_PROJECT};
+	static const int menuImgHi[NUM_FACTIONS] = {IMAGE_FACTION_MENU_NORMAL_HI, IMAGE_FACTION_MENU_NEXUS_HI, IMAGE_FACTION_MENU_COLLECTIVE_HI, IMAGE_FACTION_MENU_NEWPARADIGM_HI, IMAGE_FACTION_MENU_PROJECT_HI};
 	for (int f = 0; f < NUM_FACTIONS; ++f)
 	{
 		auto button = std::make_shared<FactionMenuButton>();
@@ -413,6 +413,7 @@ bool runTitleMenu()
 	case FRONTEND_FACTION_1:
 	case FRONTEND_FACTION_2:
 	case FRONTEND_FACTION_3:
+	case FRONTEND_FACTION_4:
 		war_setPlayerFaction(static_cast<int>(id - FRONTEND_FACTION_0));
 		modfaction::splash(static_cast<int>(id - FRONTEND_FACTION_0));   // MOD: grosses Symbol + Fraktions-Klang
 		refreshFactionChoice();

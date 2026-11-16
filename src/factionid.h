@@ -31,9 +31,10 @@ enum FactionID : uint8_t {
 	FACTION_NORMAL = 0,
 	FACTION_NEXUS = 1,
 	FACTION_COLLECTIVE = 2,
-	FACTION_NEW_PARADIGM = 3
+	FACTION_NEW_PARADIGM = 3,
+	FACTION_PROJECT = 4      // MOD (16.11.): das Project (Spieler der Original-Kampagne) mit den Original-Modellen
 };
-#define MAX_FACTION_ID FACTION_NEW_PARADIGM
+#define MAX_FACTION_ID FACTION_PROJECT
 
 inline optional<FactionID> uintToFactionID(uint8_t value)
 {

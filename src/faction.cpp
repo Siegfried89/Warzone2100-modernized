@@ -125,6 +125,10 @@ std::array<FACTION, NUM_FACTIONS> getInitialFactionsMappingTable()
 			{
 			}
 		}
+		,FACTION { "Project",   // MOD (16.11.): Original-Modelle (wird in rebuildFactionsFromStats gefuellt)
+			{
+			}
+		}
 	};
 }
 
@@ -145,7 +149,7 @@ void rebuildFactionsFromStats()
 	{
 		return;
 	}
-	const std::array<FactionID, 3> derived = {FACTION_NEW_PARADIGM, FACTION_NEXUS, FACTION_COLLECTIVE};
+	const std::array<FactionID, 4> derived = {FACTION_NEW_PARADIGM, FACTION_NEXUS, FACTION_COLLECTIVE, FACTION_PROJECT};
 	std::array<FACTION::ReplaceIMDMap, NUM_FACTIONS> statics;
 	for (size_t f = 0; f < factions.size(); ++f)
 	{
@@ -165,7 +169,7 @@ void rebuildFactionsFromStats()
 		for (FactionID f : derived)
 		{
 			WzString target = origName;
-			if (f != FACTION_NEW_PARADIGM)
+			if (f != FACTION_NEW_PARADIGM && f != FACTION_PROJECT)
 			{
 				auto it = statics[static_cast<size_t>(f)].find(origName);
 				if (it != statics[static_cast<size_t>(f)].end())
@@ -272,6 +276,8 @@ const char* to_string(FactionID faction)
 			return "Collective";
 		case FACTION_NEW_PARADIGM:
 			return "NewParadigm";
+		case FACTION_PROJECT:
+			return "Project";
 	}
 	return ""; // silence warning - switch above should be complete
 }
@@ -292,6 +298,9 @@ const char* to_localized_string(FactionID faction)
 		case FACTION_NEW_PARADIGM:
 			// TRANSLATORS: "New Paradigm" Faction
 			return _("New Paradigm");
+		case FACTION_PROJECT:
+			// TRANSLATORS: "Project" Faction (the player's faction of the original campaign)
+			return _("Project");
 	}
 	return ""; // silence warning - switch above should be complete
 }

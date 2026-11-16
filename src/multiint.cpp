@@ -2432,7 +2432,7 @@ void WzMultiplayerOptionsTitleUI::openColourChooser(uint32_t player)
 			i * (facW * spaceDiv + space) / spaceDiv + PLAYERBOX_X0,  MULTIOP_PLAYERHEIGHT, // x, y
 			facW, facH,  // w, h
 			to_localized_string(static_cast<FactionID>(i)),
-			IMAGE_FACTION_NORMAL+i, IMAGE_FACTION_NORMAL_HI+i, IMAGE_FACTION_NORMAL_HI+i, onClickHandler
+			(i < 4) ? IMAGE_FACTION_NORMAL+i : IMAGE_FACTION_PROJECT, (i < 4) ? IMAGE_FACTION_NORMAL_HI+i : IMAGE_FACTION_PROJECT_HI, (i < 4) ? IMAGE_FACTION_NORMAL_HI+i : IMAGE_FACTION_PROJECT_HI, onClickHandler
 		);
 	}
 

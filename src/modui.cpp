@@ -121,6 +121,39 @@ PIELIGHT healthColour(int pct)
 	return pal_RGBA(255, 60, 40, 255);
 }
 
+void wzPanel(int x0, int y0, int x1, int y1, const char *title, int sizeClass)
+{
+	// wie WZ-Formulare: dunkelblaue Flaeche, heller Aussenrand, dunkler Innenrand
+	PIELIGHT bg = WZCOL_MENU_BACKGROUND;
+	bg.byte.a = 210;
+	pie_BoxFill_alpha(x0, y0, x1, y1, bg);
+	iV_Box(x0, y0, x1 - 1, y1 - 1, WZCOL_MENU_BORDER);
+	iV_Box(x0 + 1, y0 + 1, x1 - 2, y1 - 2, WZCOL_FORM_DARK);
+	if (title != nullptr)
+	{
+		text(title, x0 + 5, y0 + 2, WZCOL_TEXT_MEDIUM, sizeClass);
+	}
+}
+
+void wzButton(int x0, int y0, int w, int h, const std::string &label, bool active, bool hover, bool down, int sizeClass, const PIELIGHT *accent)
+{
+	const int x1 = x0 + w, y1 = y0 + h;
+	// Knopf wie die WZ-Textknoepfe/Reiter: Rahmen WZCOL_MENU_BORDER, aktiv = helle Formularfarbe, Maus darueber = Hervorhebung
+	PIELIGHT fill = active ? WZCOL_FORM_LIGHT : WZCOL_FORM_BACKGROUND;
+	fill.byte.a = active ? 235 : 215;
+	if (down) { fill = WZCOL_FORM_HILITE; fill.byte.a = 240; }
+	pie_BoxFill_alpha(x0, y0, x1, y1, fill);
+	iV_Box(x0, y0, x1 - 1, y1 - 1, (hover || active) ? WZCOL_FORM_HILITE : WZCOL_MENU_BORDER);
+	if (accent != nullptr)
+	{
+		pie_BoxFill(x0 + 2, y0 + 3, x0 + 5, y1 - 3, *accent);   // kleine Farbmarke (Art des Befehls)
+	}
+	const int tw = textWidth(label, sizeClass);
+	const int textX = x0 + (accent ? 6 : 0) + std::max(0, (w - (accent ? 6 : 0) - tw) / 2);
+	const int fh = (sizeClass <= 0) ? 9 : (sizeClass == 1 ? 12 : 16);
+	text(label, textX, y0 + (h - fh) / 2 - 1, (active || hover) ? WZCOL_TEXT_BRIGHT : WZCOL_TEXT_MEDIUM, sizeClass);
+}
+
 void disc(int cx, int cy, int r, PIELIGHT colour)
 {
 	for (int dy = -r; dy <= r; ++dy)

@@ -46,4 +46,8 @@ PIELIGHT healthColour(int pct);   // >66 cyan, >33 gelb, sonst rot
 void disc(int cx, int cy, int r, PIELIGHT colour);   // gefuellter Kreis (halbtransparent)
 void ring(int cx, int cy, int r, PIELIGHT colour);
 
+/// MOD (16.11. Punkt 1): Bedienelemente im Warzone-2100-Stil (Farben/Rahmen wie die WZ-Menues und -Formulare)
+void wzPanel(int x0, int y0, int x1, int y1, const char *title = nullptr, int sizeClass = 0);
+void wzButton(int x0, int y0, int w, int h, const std::string &label, bool active, bool hover, bool down, int sizeClass = 0, const PIELIGHT *accent = nullptr);
+
 }

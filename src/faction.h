@@ -33,7 +33,7 @@
 using nonstd::optional;
 using nonstd::nullopt;
 
-#define NUM_FACTIONS 4
+#define NUM_FACTIONS 5
 
 struct FACTION {
 	WzString name;

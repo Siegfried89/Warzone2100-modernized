@@ -22,7 +22,7 @@ namespace modfaction
 {
 namespace
 {
-constexpr int NUM = 4;
+constexpr int NUM = 5;   // MOD: mit Project
 constexpr unsigned SPLASH_MS = 3200;
 
 struct Anim
@@ -39,7 +39,7 @@ bool s_tried = false;
 Anim s_anim[NUM];
 int s_splashFaction = -1;
 unsigned s_splashStart = 0;
-int s_track[NUM] = { -2, -2, -2, -2 };
+int s_track[NUM] = { -2, -2, -2, -2, -2 };
 
 bool load()
 {

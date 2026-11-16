@@ -144,6 +144,7 @@ static int factionIcon(FactionID faction)
 	case 1: return IMAGE_FACTION_NEXUS;
 	case 2: return IMAGE_FACTION_COLLECTIVE;
 	case 3: return IMAGE_FACTION_NEWPARADIGM;
+	case 4: return IMAGE_FACTION_PROJECT;   // MOD
 	default: return IMAGE_NO;	/// what??
 	}
 }

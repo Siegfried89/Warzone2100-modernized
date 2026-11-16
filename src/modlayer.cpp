@@ -238,8 +238,7 @@ void drawRoot(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int x0 = static_cast<int>(xOffset) + psWidget->x();
 	const int y0 = static_cast<int>(yOffset) + psWidget->y();
 	const float s = modui::uiScale();
-	pie_BoxFill_alpha(x0, y0, x0 + static_cast<int>(TOTAL_W * s), y0 + static_cast<int>(TOTAL_H * s), pal_RGBA(4, 10, 24, 150));
-	iV_Box(x0, y0, x0 + static_cast<int>(TOTAL_W * s) - 1, y0 + static_cast<int>(TOTAL_H * s) - 1, pal_RGBA(70, 110, 150, 200));
+	modui::wzPanel(x0, y0, x0 + static_cast<int>(TOTAL_W * s), y0 + static_cast<int>(TOTAL_H * s));   // MOD: WZ-Stil
 }
 
 void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -254,17 +253,7 @@ void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const bool down = (b->getState() & WBUT_DOWN) != 0;
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
 
-	PIELIGHT fill = active ? pal_RGBA(20, 90, 120, 230) : pal_RGBA(16, 28, 48, 200);
-	if (down) { fill = pal_RGBA(30, 120, 150, 240); }
-	pie_BoxFill_alpha(x0, y0, x0 + w, y0 + h, fill);
-	iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, active ? modui::cyan(240) : pal_RGBA(60, 90, 120, 220));
-	if (hl) { iV_Box(x0 + 1, y0 + 1, x0 + w - 2, y0 + h - 2, pal_RGBA(255, 255, 255, 150)); }
-
-	const int sc = modui::sizeClassFor(s);
-	const std::string label = layerName(l);
-	const int tw = modui::textWidth(label, sc);
-	const PIELIGHT col = active ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(150, 185, 215, 255);
-	modui::text(label, x0 + (w - tw) / 2, y0 + (h - 9 * static_cast<int>(s)) / 2 - 1, col, sc);
+	modui::wzButton(x0, y0, w, h, layerName(l), active, hl, down, modui::sizeClassFor(s));   // MOD (16.11. Punkt 1): WZ-Stil
 }
 
 void ensureScreen()

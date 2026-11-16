@@ -3058,6 +3058,45 @@ static void renderStructureTurrets(STRUCTURE *psStructure, const iIMDShape *strI
 }
 
 /// Draw the structures
+// MOD (16.11. Punkt 4): an jedem Gebaeude im Bau steht ein Kran (Original-WZ-Modell micrane, zerlegt: Mast + drehender Ausleger) an
+// einer Ecke und schwenkt hin und her. Reine Anzeige; verschwindet, sobald das Gebaeude fertig ist. Nicht fuer Mauern und kleine
+// 1x1-Verteidigungsanlagen (Graeben, Sandsaecke ...).
+static void modDrawSiteCrane(const STRUCTURE *psStructure, int colour, PIELIGHT brightness, const glm::mat4 &viewMatrix)
+{
+	const STRUCTURE_STATS *st = psStructure->pStructureType;
+	if (st == nullptr || psStructure->isBlueprint()) { return; }
+	const int w = std::max(1, static_cast<int>(st->baseWidth)), b = std::max(1, static_cast<int>(st->baseBreadth));
+	if (st->type == REF_WALL || st->type == REF_WALLCORNER || st->type == REF_GATE || (st->type == REF_DEFENSE && w * b <= 1)) { return; }
+	static iIMDBaseShape *s_mast = nullptr, *s_jib = nullptr;
+	static bool s_tried = false;
+	if (!s_tried)
+	{
+		s_tried = true;
+		s_mast = modelGet("scavcrane.pie");
+		s_jib = modelGet("scavcranejib.pie");
+	}
+	if (s_mast == nullptr || s_jib == nullptr) { return; }
+	// Ecke der Baustelle (im Bauwerk-Koordinatensystem), etwas ausserhalb der Grundflaeche
+	const float ox = static_cast<float>(w * TILE_UNITS / 2 + 34);
+	const float oz = static_cast<float>(b * TILE_UNITS / 2 + 34);
+	const float dir = UNDEG(-psStructure->rot.direction);
+	const float cs = std::cos(dir), sn = std::sin(dir);
+	const float wx = static_cast<float>(psStructure->pos.x) + ox * cs + oz * sn;
+	const float wz = static_cast<float>(psStructure->pos.y) - (-ox * sn + oz * cs);
+	if (!worldOnMap(gameWorld.map, static_cast<int>(wx), static_cast<int>(wz))) { return; }
+	const float gy = static_cast<float>(map_Height(gameWorld.map, static_cast<int>(wx), static_cast<int>(wz)));
+	// kleine Gebaeude: kleinerer Kran
+	const float scale = (w * b >= 4) ? 1.0f : 0.75f;
+	const glm::mat4 base = glm::translate(glm::vec3(wx, gy, -wz)) * glm::rotate(dir, glm::vec3(0.f, 1.f, 0.f)) * glm::scale(glm::vec3(scale));
+	pie_Draw3DShape(s_mast->displayModel(), 0, colour, brightness, pie_SHADOW, 0, base, viewMatrix);
+	// Ausleger schwenkt langsam hin und her (je Baustelle versetzt), ab und zu eine kleine Pause
+	const float t = static_cast<float>(graphicsTime % 600000u) / 1000.f + static_cast<float>(psStructure->id % 97u);
+	const float swing = 1.05f * std::sin(t * 0.23f) + 0.25f * std::sin(t * 0.61f + 1.3f);
+	const float yaw = 2.3f + swing + static_cast<float>(psStructure->id % 8u) * 0.4f;
+	const glm::mat4 jibM = base * glm::translate(glm::vec3(0.f, 95.f, 0.f)) * glm::rotate(yaw, glm::vec3(0.f, 1.f, 0.f));
+	pie_Draw3DShape(s_jib->displayModel(), 0, colour, brightness, pie_SHADOW, 0, jibM, viewMatrix);
+}
+
 void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	int colour, pieFlagData, ecmFlag = 0, pieFlag = 0;
@@ -3163,6 +3202,7 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 		{
 			pie_Draw3DShape(strImd, 0, colour, buildingBrightness, pie_HEIGHT_SCALED | pie_SHADOW, static_cast<int>(structHeightScale(psStructure) * pie_RAISE_SCALE), modelMatrix, viewMatrix);
 		}
+		modDrawSiteCrane(psStructure, colour, buildingBrightness, viewMatrix);   // MOD (16.11. Punkt 4): Baustellen-Kran
 		setScreenDispWithPerspective(&psStructure->sDisplay, perspectiveViewMatrix * modelMatrix);
 		return;
 	}
