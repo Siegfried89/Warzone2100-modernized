@@ -91,6 +91,7 @@
 #include <list>
 #include <cmath>
 
+
 /// Assert for scripts that give useful backtraces and other info.
 #if defined(SCRIPT_ASSERT)
 #undef SCRIPT_ASSERT
@@ -512,11 +513,11 @@ bool wzapi::orderDroidBuild(WZAPI_PARAMS(DROID* psDroid, int order, std::string 
 	uint16_t direction = scriptDirectionToAngle(_direction.value_or(0.f));
 
 	DROID_ORDER_DATA *droidOrder = &psDroid->order;
-	if (droidOrder->type == order && psDroid->actionPos.x == world_coord(x) && psDroid->actionPos.y == world_coord(y))
+	if (droidOrder->type == order && psDroid->actionPos.x == scrWorld(x) && psDroid->actionPos.y == scrWorld(y))
 	{
 		return true;
 	}
-	orderDroidStatsLocDir(psDroid, (DROID_ORDER)order, psStats, world_coord(x) + TILE_UNITS / 2, world_coord(y) + TILE_UNITS / 2, direction, ModeQueue);
+	orderDroidStatsLocDir(psDroid, (DROID_ORDER)order, psStats, scrWorld(x) + DIST_TILE / 2, scrWorld(y) + DIST_TILE / 2, direction, ModeQueue);
 	return true;
 }
 
@@ -692,8 +693,8 @@ bool wzapi::removeSpotter(WZAPI_PARAMS(uint32_t spotterId))
 //--
 bool wzapi::syncRequest(WZAPI_PARAMS(int32_t req_id, int32_t _x, int32_t _y, optional<const BASE_OBJECT *> _psObj, optional<const BASE_OBJECT *> _psObj2))
 {
-	int32_t x = world_coord(_x);
-	int32_t y = world_coord(_y);
+	int32_t x = scrWorld(_x);
+	int32_t y = scrWorld(_y);
 	const BASE_OBJECT *psObj = nullptr, *psObj2 = nullptr;
 	if (_psObj.has_value())
 	{
@@ -1077,7 +1078,7 @@ wzapi::no_return_value wzapi::hackMarkTiles(WZAPI_PARAMS(optional<wzapi::label_o
 				{
 					for (int y = y1; y < y2; y++)
 					{
-						MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+						MAPTILE *psTile = mapTile(gameWorld.map, scrGrid(x), scrGrid(y));
 						psTile->tileInfoBits |= BITS_MARKED;
 					}
 				}
@@ -1086,7 +1087,7 @@ wzapi::no_return_value wzapi::hackMarkTiles(WZAPI_PARAMS(optional<wzapi::label_o
 			{
 				int x = tilePosOrArea.x1;
 				int y = tilePosOrArea.y1;
-				MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+				MAPTILE *psTile = mapTile(gameWorld.map, scrGrid(x), scrGrid(y));
 				psTile->tileInfoBits |= BITS_MARKED;
 			}
 		}
@@ -1336,7 +1337,7 @@ std::vector<scr_position> wzapi::enumBlips(WZAPI_PARAMS(int player))
 	{
 		if (psSensor->visible[player] > 0 && psSensor->visible[player] < UBYTE_MAX)
 		{
-			matches.push_back({map_coord(psSensor->pos.x), map_coord(psSensor->pos.y)});
+			matches.push_back({scrTile(psSensor->pos.x), scrTile(psSensor->pos.y)});
 		}
 	}
 	return matches;
@@ -1434,9 +1435,9 @@ std::vector<const BASE_OBJECT *> wzapi::enumRange(WZAPI_PARAMS(int _x, int _y, i
 	_y = std::min<int>(_y, gameWorld.map.height);
 
 	int player = context.player();
-	int x = world_coord(_x);
-	int y = world_coord(_y);
-	int range = world_coord(_range);
+	int x = scrWorld(_x);
+	int y = scrWorld(_y);
+	int range = scrWorld(_range);
 	int playerFilter = _playerFilter.value_or(ALL_PLAYERS);
 	bool seen = _seen.value_or(true);
 
@@ -1641,13 +1642,13 @@ bool wzapi::orderDroidLoc(WZAPI_PARAMS(DROID *psDroid, int order_, int x, int y)
 		debug(LOG_ERROR, "%s is not available in multiplayer; use DORDER_DISEMBARK", getDroidOrderName(order));
 		return false;
 	}
-	SCRIPT_ASSERT(false, context, tileOnMap(gameWorld.map, x, y), "Outside map bounds (%d, %d)", x, y);
+	SCRIPT_ASSERT(false, context, tileOnMap(gameWorld.map, scrGrid(x), scrGrid(y)), "Outside map bounds (%d, %d)", x, y);
 	DROID_ORDER_DATA *droidOrder = &psDroid->order;
-	if (droidOrder->type == order && psDroid->actionPos.x == world_coord(x) && psDroid->actionPos.y == world_coord(y))
+	if (droidOrder->type == order && psDroid->actionPos.x == scrWorld(x) && psDroid->actionPos.y == scrWorld(y))
 	{
 		return true;
 	}
-	::orderDroidLoc(psDroid, order, world_coord(x), world_coord(y), ModeQueue);
+	::orderDroidLoc(psDroid, order, scrWorld(x), scrWorld(y), ModeQueue);
 	return true;
 }
 
@@ -1783,8 +1784,12 @@ optional<scr_position> wzapi::pickStructLocation(WZAPI_PARAMS(const DROID *psDro
 	int incX, incY, x, y;
 	int maxBlockingTiles = _maxBlockingTiles.value_or(0);
 
-	SCRIPT_ASSERT({}, context, startX >= 0 && startX < gameWorld.map.width && startY >= 0 && startY < gameWorld.map.height, "Bad position (%d, %d)", startX, startY);
+	SCRIPT_ASSERT({}, context, startX >= 0 && scrGrid(startX) < gameWorld.map.width && startY >= 0 && scrGrid(startY) < gameWorld.map.height, "Bad position (%d, %d)", startX, startY);
 
+	// MOD (Kachel-Viertelung): gesucht wird im Raster, Ein- und Ausgabe in Skript-Kacheln
+	numIterations = numIterations * DIST_TILE / TILE_UNITS;
+	startX = scrGrid(startX);
+	startY = scrGrid(startY);
 	x = startX;
 	y = startY;
 
@@ -1847,7 +1852,7 @@ optional<scr_position> wzapi::pickStructLocation(WZAPI_PARAMS(const DROID *psDro
 endstructloc:
 	if (found)
 	{
-		return optional<scr_position>({x + map_coord(offset.x), y + map_coord(offset.y)});
+		return optional<scr_position>({scrTile(world_coord(x) + offset.x), scrTile(world_coord(y) + offset.y)});
 	}
 	else
 	{
@@ -1871,8 +1876,8 @@ bool wzapi::structureCanFit(WZAPI_PARAMS(std::string structureName, int x, int y
 
 	uint16_t direction = scriptDirectionToAngle(_direction.value_or(0.f));
 
-	return (tileOnMap(gameWorld.map, x, y)
-			&& validLocation(gameWorld, psStat, world_coord(Vector2i(x, y)), direction, player, false));
+	return (tileOnMap(gameWorld.map, scrGrid(x), scrGrid(y))
+			&& validLocation(gameWorld, psStat, Vector2i(scrWorld(x), scrWorld(y)), direction, player, false));
 }
 
 //-- ## droidCanReach(droid, x, y)
@@ -1884,7 +1889,7 @@ bool wzapi::droidCanReach(WZAPI_PARAMS(const DROID *psDroid, int x, int y))
 {
 	SCRIPT_ASSERT(false, context, psDroid, "No valid droid provided");
 	const PROPULSION_STATS* psPropStats = psDroid->getPropulsionStats();
-	return fpathCheck(gameWorld.map, psDroid->pos, Vector3i(world_coord(x), world_coord(y), 0), psPropStats->propulsionType);
+	return fpathCheck(gameWorld.map, psDroid->pos, Vector3i(scrWorld(x), scrWorld(y), 0), psPropStats->propulsionType);
 }
 
 //-- ## propulsionCanReach(propulsionName, x1, y1, x2, y2)
@@ -1897,7 +1902,7 @@ bool wzapi::propulsionCanReach(WZAPI_PARAMS(std::string propulsionName, int x1, 
 	int propulsionIndex = getCompFromName(COMP_PROPULSION, WzString::fromUtf8(propulsionName));
 	SCRIPT_ASSERT(false, context, propulsionIndex > 0, "No such propulsion: %s", propulsionName.c_str());
 	const PROPULSION_STATS *psPropStats = &asPropulsionStats[propulsionIndex];
-	return fpathCheck(gameWorld.map, Vector3i(world_coord(x1), world_coord(y1), 0), Vector3i(world_coord(x2), world_coord(y2), 0), psPropStats->propulsionType);
+	return fpathCheck(gameWorld.map, Vector3i(scrWorld(x1), scrWorld(y1), 0), Vector3i(scrWorld(x2), scrWorld(y2), 0), psPropStats->propulsionType);
 }
 
 //-- ## terrainType(x, y)
@@ -1907,7 +1912,7 @@ bool wzapi::propulsionCanReach(WZAPI_PARAMS(std::string propulsionName, int x1, 
 //--
 int wzapi::terrainType(WZAPI_PARAMS(int x, int y))
 {
-	return ::terrainType(mapTile(gameWorld.map, x, y));
+	return ::terrainType(mapTile(gameWorld.map, scrGrid(x), scrGrid(y)));
 }
 
 //-- ## tileIsBurning(x, y)
@@ -1916,7 +1921,7 @@ int wzapi::terrainType(WZAPI_PARAMS(int x, int y))
 //--
 bool wzapi::tileIsBurning(WZAPI_PARAMS(int x, int y))
 {
-	const MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+	const MAPTILE *psTile = mapTile(gameWorld.map, scrGrid(x), scrGrid(y));
 	SCRIPT_ASSERT(false, context, psTile, "Checking fire on tile outside the map (%d, %d)", x, y);
 	return ::TileIsBurning(psTile);
 }
@@ -2137,7 +2142,7 @@ wzapi::returned_nullable_ptr<const DROID> wzapi::addDroid(WZAPI_PARAMS(int playe
 		}
 		else
 		{
-			psDroid = ::buildDroid(gameWorld, psTemplate.get(), world_coord(x) + TILE_UNITS / 2, world_coord(y) + TILE_UNITS / 2, player, onMission, nullptr);
+			psDroid = ::buildDroid(gameWorld, psTemplate.get(), scrWorld(x) + DIST_TILE / 2, scrWorld(y) + DIST_TILE / 2, player, onMission, nullptr);
 			if (psDroid)
 			{
 				addDroid(psDroid, gameWorld.objects.droids);
@@ -2206,13 +2211,13 @@ wzapi::returned_nullable_ptr<const FEATURE> wzapi::addFeature(WZAPI_PARAMS(std::
 	int feature = getFeatureStatFromName(WzString::fromUtf8(featureName));
 	SCRIPT_ASSERT(nullptr, context, feature >= 0 && feature < asFeatureStats.size(), "Unknown feature name: %s", featureName.c_str());
 	FEATURE_STATS *psStats = &asFeatureStats[feature];
-	SCRIPT_ASSERT(nullptr, context, tileOnMap(gameWorld.map, x, y), "Outside map bounds (%d, %d)", x, y);
+	SCRIPT_ASSERT(nullptr, context, tileOnMap(gameWorld.map, scrGrid(x), scrGrid(y)), "Outside map bounds (%d, %d)", x, y);
 	for (const FEATURE *psFeat : gameWorld.objects.features[0])
 	{
-		SCRIPT_ASSERT(nullptr, context, map_coord(psFeat->pos.x) != x || map_coord(psFeat->pos.y) != y,
+		SCRIPT_ASSERT(nullptr, context, scrTile(psFeat->pos.x) != x || scrTile(psFeat->pos.y) != y,
 		              "Building feature on tile already occupied");
 	}
-	FEATURE *psFeature = buildFeature(gameWorld, psStats, world_coord(x), world_coord(y), false);
+	FEATURE *psFeature = buildFeature(gameWorld, psStats, scrWorld(x), scrWorld(y), false);
 	return psFeature;
 }
 
@@ -2250,7 +2255,7 @@ bool wzapi::isVTOL(WZAPI_PARAMS(const DROID *psDroid))
 bool wzapi::safeDest(WZAPI_PARAMS(int player, int x, int y))
 {
 	SCRIPT_ASSERT_PLAYER(false, context, player);
-	SCRIPT_ASSERT(false, context, tileOnMap(gameWorld.map, x, y), "Out of bounds coordinates(%d, %d)", x, y);
+	SCRIPT_ASSERT(false, context, tileOnMap(gameWorld.map, scrGrid(x), scrGrid(y)), "Out of bounds coordinates(%d, %d)", x, y);
 	return !(auxTile(gameWorld.map, x, y, player) & AUXBITS_DANGER);
 }
 
@@ -2343,7 +2348,7 @@ std::vector<scr_position> wzapi::getDroidPath(WZAPI_PARAMS(const DROID *psDroid)
 	{
 		const auto& pathCoords = psDroid->sMove.asPath[i];
 		ASSERT(worldOnMap(gameWorld.map, pathCoords.x, pathCoords.y), "Path off map!");
-		result.emplace_back(scr_position {map_coord(pathCoords.x), map_coord(pathCoords.y)});
+		result.emplace_back(scr_position {scrTile(pathCoords.x), scrTile(pathCoords.y)});
 	}
 
 	return result;
@@ -2361,8 +2366,8 @@ bool wzapi::addBeacon(WZAPI_PARAMS(int _x, int _y, int playerFilter, optional<st
 	SCRIPT_ASSERT(false, context, _x <= gameWorld.map.width, "Beacon x value %d is greater than mapWidth %d", _x, (int)gameWorld.map.width);
 	SCRIPT_ASSERT(false, context, _y <= gameWorld.map.height, "Beacon y value %d is greater than mapHeight %d", _y, (int)gameWorld.map.height);
 
-	int x = world_coord(_x) + (TILE_UNITS / 2);
-	int y = world_coord(_y) + (TILE_UNITS / 2);
+	int x = scrWorld(_x) + (DIST_TILE / 2);
+	int y = scrWorld(_y) + (DIST_TILE / 2);
 
 	std::string message;
 	if (_message.has_value())
@@ -2645,9 +2650,9 @@ bool wzapi::playSound(WZAPI_PARAMS(std::string sound, optional<int> _x, optional
 	}
 	if (_x.has_value())
 	{
-		int x = world_coord(_x.value());
-		int y = world_coord(_y.value_or(0));
-		int z = world_coord(_z.value_or(0));
+		int x = scrWorld(_x.value());
+		int y = scrWorld(_y.value_or(0));
+		int z = scrWorld(_z.value_or(0));
 		audio_QueueTrackPos(soundID, x, y, z);
 	}
 	else
@@ -2674,7 +2679,7 @@ bool wzapi::emitSound(WZAPI_PARAMS(std::string sound, int x, int y))
 		soundID = audio_SetTrackVals(sound.c_str(), false, 100, 1800);
 	}
 
-	return audio_PlayStaticTrack(x * TILE_UNITS, y * TILE_UNITS, soundID);
+	return audio_PlayStaticTrack(scrWorld(x), scrWorld(y), soundID);
 }
 
 //-- ## addGuideTopic(guideTopicID[, showFlags[, excludedTopicIDs]])
@@ -3704,14 +3709,14 @@ wzapi::no_return_value wzapi::fireWeaponAtLoc(WZAPI_PARAMS(std::string weaponNam
 	SCRIPT_ASSERT_PLAYER({}, context, player);
 
 	Vector3i target;
-	target.x = world_coord(x);
-	target.y = world_coord(y);
+	target.x = scrWorld(x);
+	target.y = scrWorld(y);
 	if (center.value_or(false))
 	{
-		target.x += (TILE_UNITS / 2);
-		target.y += (TILE_UNITS / 2);
+		target.x += (DIST_TILE / 2);
+		target.y += (DIST_TILE / 2);
 	}
-	target.z = mapTile(gameWorld.map, x, y)->height;
+	target.z = mapTile(gameWorld.map, scrGrid(x), scrGrid(y))->height;
 
 	WEAPON sWeapon;
 	sWeapon.nStat = weaponIndex;
@@ -5114,12 +5119,12 @@ nlohmann::json wzapi::constructMapTilesArray()
 	//==   * ```hoverContinent``` (For hover type propulsions)
 	//==   * ```limitedContinent``` (For land or sea limited propulsion types)
 	nlohmann::json mapTileArray = nlohmann::json::array();
-	for (SDWORD y = 0; y < gameWorld.map.height; y++)
+	for (SDWORD y = 0; y < scrMapSize(gameWorld.map.height); y++)   // MOD: in Skript-Kacheln
 	{
 		nlohmann::json mapRow = nlohmann::json::array();
-		for (SDWORD x = 0; x < gameWorld.map.width; x++)
+		for (SDWORD x = 0; x < scrMapSize(gameWorld.map.width); x++)
 		{
-			MAPTILE *psTile = mapTile(gameWorld.map, x, y);
+			MAPTILE *psTile = mapTile(gameWorld.map, scrGrid(x), scrGrid(y));
 			nlohmann::json mapTile = nlohmann::json::object();
 			mapTile["terrainType"] = ::terrainType(psTile);
 			mapTile["height"] = psTile->height;

@@ -1648,9 +1648,9 @@ JSValue convObj(const BASE_OBJECT *psObj, JSContext *ctx)
 	JSValue value = JS_NewObject(ctx);
 	ASSERT_OR_RETURN(value, psObj, "No object for conversion");
 	QuickJS_DefinePropertyValue(ctx, value, "id", JS_NewUint32(ctx, psObj->id), 0);
-	QuickJS_DefinePropertyValue(ctx, value, "x", JS_NewInt32(ctx, map_coord(psObj->pos.x)), JS_PROP_ENUMERABLE);
-	QuickJS_DefinePropertyValue(ctx, value, "y", JS_NewInt32(ctx, map_coord(psObj->pos.y)), JS_PROP_ENUMERABLE);
-	QuickJS_DefinePropertyValue(ctx, value, "z", JS_NewInt32(ctx, map_coord(psObj->pos.z)), JS_PROP_ENUMERABLE);
+	QuickJS_DefinePropertyValue(ctx, value, "x", JS_NewInt32(ctx, scrTile(psObj->pos.x)), JS_PROP_ENUMERABLE);
+	QuickJS_DefinePropertyValue(ctx, value, "y", JS_NewInt32(ctx, scrTile(psObj->pos.y)), JS_PROP_ENUMERABLE);
+	QuickJS_DefinePropertyValue(ctx, value, "z", JS_NewInt32(ctx, scrTile(psObj->pos.z)), JS_PROP_ENUMERABLE);
 	QuickJS_DefinePropertyValue(ctx, value, "player", JS_NewUint32(ctx, psObj->player), JS_PROP_ENUMERABLE);
 	QuickJS_DefinePropertyValue(ctx, value, "armour", JS_NewInt32(ctx, objArmour(psObj, WC_KINETIC)), JS_PROP_ENUMERABLE);
 	QuickJS_DefinePropertyValue(ctx, value, "thermal", JS_NewInt32(ctx, objArmour(psObj, WC_HEAT)), JS_PROP_ENUMERABLE);

@@ -335,6 +335,14 @@ static inline unsigned char terrainType(const MAPTILE *tile)
 
 /// MOD: DIST_TILE (Abstandsmass "Kachel") steht in wzmaplib/map.h neben TILE_UNITS
 
+/// MOD (Kachel-Viertelung, Stufe 6): Skripte (JS) rechnen in Original-Kacheln (DIST_TILE Welteinheiten), intern ist das Raster TILE_UNITS.
+/// scrWorld: Skript-Kachel -> Welt (linke obere Ecke), scrTile: Welt -> Skript-Kachel, scrGrid: Skript-Kachel -> Rasterfeld (linke obere Ecke).
+static inline int32_t scrWorld(int32_t scriptTile) { return static_cast<int32_t>(static_cast<uint32_t>(scriptTile) * static_cast<uint32_t>(DIST_TILE)); }
+static inline int32_t scrTile(int32_t worldCoord) { return worldCoord >= 0 ? worldCoord / DIST_TILE : -((-worldCoord + DIST_TILE - 1) / DIST_TILE); }
+static inline int32_t scrGrid(int32_t scriptTile) { return map_coord(scrWorld(scriptTile)); }
+/// Kartengroesse in Skript-Kacheln
+static inline int32_t scrMapSize(int32_t gridTiles) { return static_cast<int32_t>(static_cast<int64_t>(gridTiles) * TILE_UNITS / DIST_TILE); }
+
 /* Additional tile <-> world coordinate overloads */
 
 static inline Vector2i world_coord(Vector2i const &mapCoord)

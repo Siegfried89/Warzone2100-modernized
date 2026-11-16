@@ -388,8 +388,8 @@ nlohmann::json scripting_engine::constructStartPositions()
 	for (int i = 0; i < game.maxPlayers; i++)
 	{
 		nlohmann::json vector = nlohmann::json::object();
-		vector["x"] = map_coord(positions[i].x);
-		vector["y"] = map_coord(positions[i].y);
+		vector["x"] = scrTile(positions[i].x);
+		vector["y"] = scrTile(positions[i].y);
 		vector["type"] = SCRIPT_POSITION;
 		startPositions.push_back(vector);
 	}
@@ -721,9 +721,9 @@ wzapi::scripting_instance* scripting_engine::loadPlayerScript(const WzString& pa
 	//== * ```scavengers``` Whether or not scavengers are activated in this game, and, if so, which type.
 	globalVars["scavengers"] = game.scavengers;
 	//== * ```mapWidth``` Width of map in tiles.
-	globalVars["mapWidth"] = gameWorld.map.width;
+	globalVars["mapWidth"] = scrMapSize(gameWorld.map.width);
 	//== * ```mapHeight``` Height of map in tiles.
-	globalVars["mapHeight"] = gameWorld.map.height;
+	globalVars["mapHeight"] = scrMapSize(gameWorld.map.height);
 	//== * ```scavengerPlayer``` Index of scavenger player. (3.2+ only)
 	globalVars["scavengerPlayer"] = scavengerSlot();
 	//== * ```isMultiplayer``` If the current game is a online multiplayer game or not. (3.2+ only)
@@ -2195,7 +2195,7 @@ bool triggerEventBeacon(int from, int to, const char *message, int x, int y)
 		bool receiveAll = instance->isReceivingAllEvents();
 		if (me == to || receiveAll)
 		{
-			instance->handle_eventBeacon(map_coord(x), map_coord(y), from, to, opt_message);
+			instance->handle_eventBeacon(scrTile(x), scrTile(y), from, to, opt_message);
 		}
 	}
 	return true;
@@ -3384,16 +3384,16 @@ LABEL generic_script_object::toNewLabel() const
 	value.id = id;
 	value.player = player;
 	value.subscriber = ALL_PLAYERS;
-	value.p1.x = world_coord(p1.x);
-	value.p1.y = world_coord(p1.y);
+	value.p1.x = scrWorld(p1.x);
+	value.p1.y = scrWorld(p1.y);
 	if (type == SCRIPT_AREA)
 	{
-		value.p2.x = world_coord(p2.x);
-		value.p2.y = world_coord(p2.y);
+		value.p2.x = scrWorld(p2.x);
+		value.p2.y = scrWorld(p2.y);
 	}
 	else if (type == SCRIPT_RADIUS)
 	{
-		value.p2.x = world_coord(p2.x);
+		value.p2.x = scrWorld(p2.x);
 	}
 
 	value.triggered = -1; // default off
@@ -3549,13 +3549,13 @@ generic_script_object scripting_engine::getObjectFromLabel(WZAPI_PARAMS(const st
 		switch (p.type)
 		{
 		case SCRIPT_RADIUS:
-			return generic_script_object::fromRadius(map_coord(p.p1.x), map_coord(p.p1.y), map_coord(p.p2.x));
+			return generic_script_object::fromRadius(scrTile(p.p1.x), scrTile(p.p1.y), scrTile(p.p2.x));
 			break;
 		case SCRIPT_AREA:
-			return generic_script_object::fromArea(map_coord(p.p1.x), map_coord(p.p1.y), map_coord(p.p2.x), map_coord(p.p2.y));
+			return generic_script_object::fromArea(scrTile(p.p1.x), scrTile(p.p1.y), scrTile(p.p2.x), scrTile(p.p2.y));
 			break;
 		case SCRIPT_POSITION:
-			return generic_script_object::fromPosition(map_coord(p.p1.x), map_coord(p.p1.y));
+			return generic_script_object::fromPosition(scrTile(p.p1.x), scrTile(p.p1.y));
 			break;
 		case SCRIPT_GROUP:
 			return generic_script_object::fromGroup(p.id);
@@ -3604,10 +3604,10 @@ typedef std::vector<BASE_OBJECT *> GridList;
 
 std::vector<const BASE_OBJECT *> scripting_engine::enumArea(WZAPI_PARAMS(scr_area area, optional<int> _playerFilter, optional<bool> _seen))
 {
-	int x1 = world_coord(area.x1);
-	int y1 = world_coord(area.y1);
-	int x2 = world_coord(area.x2);
-	int y2 = world_coord(area.y2);
+	int x1 = scrWorld(area.x1);
+	int y1 = scrWorld(area.y1);
+	int x2 = scrWorld(area.x2);
+	int y2 = scrWorld(area.y2);
 	return _enumAreaWorldCoords(context, x1, y1, x2, y2, _playerFilter, _seen);
 }
 
@@ -3686,10 +3686,10 @@ int scripting_engine::newGroup(WZAPI_NO_PARAMS)
 wzapi::no_return_value scripting_engine::groupAddArea(WZAPI_PARAMS(int groupId, int _x1, int _y1, int _x2, int _y2))
 {
 	int player = context.player();
-	int x1 = world_coord(_x1);
-	int y1 = world_coord(_y1);
-	int x2 = world_coord(_x2);
-	int y2 = world_coord(_y2);
+	int x1 = scrWorld(_x1);
+	int y1 = scrWorld(_y1);
+	int x2 = scrWorld(_x2);
+	int y2 = scrWorld(_y2);
 
 	if (player < 0 || player >= MAX_PLAYERS)
 	{
