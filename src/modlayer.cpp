@@ -533,6 +533,14 @@ float transitionOffset(const DROID *d, UDWORD time)
 	return up ? -DEEP * r : HIGH * r;
 }
 
+void requestLayer(DROID *d, Layer target)
+{
+	if (d == nullptr || d->died || target == UNDERGROUND || !modlayermap::worldsExist() || !isFlier(d)) { return; }
+	if (layerOfId(d->id) == target || layerOfId(d->id) == UNDERGROUND || s_trans.count(d->id)) { return; }
+	s_trans[d->id] = Transition{target, gameTime};
+	orderDroid(d, DORDER_STOP, ModeImmediate);
+}
+
 bool inTransition(const DROID *d)
 {
 	return d != nullptr && !s_trans.empty() && s_trans.count(d->id) != 0;

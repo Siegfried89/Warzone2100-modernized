@@ -770,7 +770,9 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			if (a == "sonar") { return std::string("Sonar"); }
 			if (a == "recon") { return std::string("Recon"); }
 			if (a == "steady") { return std::string("Steady aim"); }
-			if (a == "hth") { return std::string("Melee"); }
+			if (a == "hth") { return std::string("Melee +50%"); }
+			if (a == "forcefield") { return std::string("Force field"); }
+			if (a == "strength") { return std::string("High strength"); }
 			return a;
 		};
 		for (const std::string &a : abil)

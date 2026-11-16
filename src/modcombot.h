@@ -109,6 +109,12 @@ bool canFly(const DROID *d);
 float flightOffset(const DROID *d);
 /// einmal pro Spielschritt: Selbstreparatur usw.
 void updateAbilities(DROID *d);
+/// (16.11.) MF-Faehigkeiten: Kraftfeld faengt ein Geschoss ab (true = Schaden verfaellt), Recon-Sicht (Prozent), HTH-Nahkampf (Prozent),
+/// Steady (Prozent fuer Teil-Treffer); Sonar lichtet den Untergrund-Schleier (in updateAbilities)
+bool absorbShot(DROID *d);
+int sensorPercent(const DROID *d);
+int meleePercent(const DROID *attacker);
+int severPercent(const DROID *attacker);
 
 using DrawPiece = std::function<void(const iIMDShape *, const glm::mat4 &, const Part *)>;
 /// Zusammenbau mit Skelett-Animation berechnen und jedes Einzelteil ueber das Callback zeichnen.

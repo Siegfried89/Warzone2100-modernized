@@ -72,6 +72,8 @@ bool isFlier(const DROID *psDroid);
 float transitionOffset(const DROID *psDroid, UDWORD time);
 /// wechselt die Einheit gerade die Ebene?
 bool inTransition(const DROID *psDroid);
+/// Spielschritt (z. B. KI): Flieger fliessend in eine andere Ebene schicken (Orbit <-> Oberflaeche)
+void requestLayer(DROID *psDroid, Layer target);
 /// beim Baubeginn: das Bauwerk entsteht auf der Ebene des Baumeisters
 void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder);
 /// eigenes Objekt in einer nicht angezeigten Ebene wurde getroffen: Meldung "Under attack: Orbit/Underground/Surface" (nur Anzeige, nicht synchronisiert)

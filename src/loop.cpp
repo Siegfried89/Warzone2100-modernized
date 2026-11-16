@@ -43,6 +43,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "loop.h"
+#include "modai.h"
 #include "gamestate_serialize.h"
 #include "gamestate_harness.h"
 #include "movebench.h"
@@ -604,6 +605,7 @@ static void gameStateUpdate()
 	modrecover::tick();          // MOD: Turm-Teile bergen, Werkstatt
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
+	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)
 	modinvade::tick(gameWorld);   // MOD: Invade (Bohrfahrzeug uebernimmt Gebaeude)
 	modlava::tick(gameWorld);   // MOD: Lavafelder, Solarpaneele, Energiebank
 	modgroundfire::tick(gameWorld);   // MOD: Bodenziel-Punkte, die kein Befehl mehr braucht, entfernen

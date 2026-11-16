@@ -169,6 +169,7 @@ void applyDamage(DROID *victim, Duel &vd, const DROID *attacker, Duel &ad)
 	{
 		dmg = std::max(10, weaponDamage(asWeaponStats[attacker->asWeaps[0].nStat], attacker->player));
 	}
+	if (modAtt) { dmg = dmg * modcombot::meleePercent(attacker) / 100; }   // MF HTH-Upgrade
 	const unsigned roll = gameRand(100);
 	const unsigned r2 = gameRand(100);
 	const unsigned blockPct = BLOCK_PCT + static_cast<unsigned>(modcombot::blockBonus(victim));
@@ -183,7 +184,7 @@ void applyDamage(DROID *victim, Duel &vd, const DROID *attacker, Duel &ad)
 	if (modcombot::isModular(victim))
 	{
 		// Teil-Treffer: Torso, Arme, Beine; abgeschlagen wird in modcombot
-		const int hit = modcombot::hitRandomPart(victim, dmg);
+		const int hit = modcombot::hitRandomPart(victim, modAtt ? dmg * modcombot::severPercent(attacker) / 100 : dmg);   // MF Steady
 		(void)hit;
 		if (static_cast<int>(victim->body) <= dmg)
 		{

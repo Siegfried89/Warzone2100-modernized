@@ -83,6 +83,7 @@
 #include "modhelp.h"
 #include "modammo.h"
 #include "modfuel.h"
+#include "modai.h"
 #include "modweather.h"
 #include "modinvade.h"
 #include "modlava.h"
@@ -749,6 +750,7 @@ void interfaceShutDown()
 	modhelp::reset();        // MOD
 	modammo::reset();        // MOD
 	modfuel::reset();        // MOD
+	modai::reset();          // MOD
 	modweather::reset();     // MOD
 	modinvade::reset();
 	modlava::reset();      // MOD

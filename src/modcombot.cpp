@@ -24,6 +24,8 @@
 #include "feature.h"
 #include "game_world.h"
 #include "map.h"
+#include "modlayermap.h"
+#include "modlayer.h"
 #include "random.h"
 #include "stats.h"
 
@@ -614,13 +616,79 @@ static bool airborne(const DROID *d)
 	return it != s_air.end() && it->second.cur > 0.4f;
 }
 
+namespace
+{
+std::unordered_map<uint32_t, unsigned> s_fieldReady;   // Kraftfeld: ab wann wieder bereit (gameTime)
+constexpr unsigned FIELD_RECHARGE_MS = 8000;
+constexpr int SONAR_RADIUS = 9;                        // Kacheln
+
+bool partHas(const DROID *d, const char *a)
+{
+	// schnelle Pruefung nur ueber Torso und Beine (zwischengespeicherte Zuordnung Stat -> Teil)
+	const Part *t = partOfBody(d->getBodyStats());
+	if (t == nullptr) { return false; }
+	const Part *l = partOfPropulsion(d->getPropulsionStats());
+	return t->hasAbility(a) || (l != nullptr && l->hasAbility(a));
+}
+}
+
+bool absorbShot(DROID *d)
+{
+	// MF Kraftfeld-Torso: faengt genau ein Geschoss ab, laedt dann nach (8 s); in der Zeit wie ein Basis-Torso
+	if (d == nullptr || d->died || !isModular(d) || !partHas(d, "forcefield")) { return false; }
+	unsigned &ready = s_fieldReady[d->id];
+	if (gameTime < ready) { return false; }
+	ready = gameTime + FIELD_RECHARGE_MS;
+	Vector3i p(d->pos.x, d->pos.z + 40, d->pos.y);
+	effectGiveAuxVar(60);
+	addEffect(&p, EFFECT_EXPLOSION, EXPLOSION_TYPE_PLASMA, false, nullptr, 0, gameTime - deltaGameTime + 1);
+	return true;
+}
+
+int sensorPercent(const DROID *d)
+{
+	// MF Recon-Teil: deutlich weitere Sicht
+	return (d != nullptr && isModular(d) && partHas(d, "recon")) ? 160 : 100;
+}
+
+int meleePercent(const DROID *attacker)
+{
+	// MF HTH-Upgrade-Beine: +50 % Nahkampfschaden
+	return (attacker != nullptr && isModular(attacker) && partHas(attacker, "hth")) ? 150 : 100;
+}
+
+int severPercent(const DROID *attacker)
+{
+	// MF Steady-Beine: stehen fester - Treffer auf Teile wirken staerker (mehr Abschlaege)
+	return (attacker != nullptr && isModular(attacker) && partHas(attacker, "steady")) ? 150 : 100;
+}
+
 void updateAbilities(DROID *d)
 {
 	if (d == nullptr || d->died || !isModular(d)) { return; }
+	const bool secondTick = gameTime / 1000 != (gameTime - deltaGameTime) / 1000;
 	// Selbstreparatur: jede Sekunde 2% der Trefferpunkte
-	if (gameTime / 1000 != (gameTime - deltaGameTime) / 1000 && d->body < d->originalBody && hasAbility(d, "repair"))
+	if (secondTick && d->body < d->originalBody && hasAbility(d, "repair"))
 	{
 		d->body = std::min<UDWORD>(d->originalBody, d->body + std::max<UDWORD>(1, d->originalBody / 50));
+	}
+	// MF Sonar-Beine: lichten den Schleier im Untergrund (alle 2 s, Umkreis 9 Kacheln)
+	if (secondTick && (gameTime / 1000) % 2 == 0 && d->player < MAX_PLAYER_SLOTS && modlayer::layerOf(d) == modlayer::UNDERGROUND && partHas(d, "sonar"))
+	{
+		modlayermap::Scope sc(modlayer::UNDERGROUND);
+		const int tx = map_coord(d->pos.x), ty = map_coord(d->pos.y);
+		for (int dy = -SONAR_RADIUS; dy <= SONAR_RADIUS; ++dy)
+		{
+			for (int dx = -SONAR_RADIUS; dx <= SONAR_RADIUS; ++dx)
+			{
+				if (dx * dx + dy * dy > SONAR_RADIUS * SONAR_RADIUS || !tileOnMap(gameWorld.map, tx + dx, ty + dy)) { continue; }
+				SET_TILE_VISIBLE(d->player, mapTile(gameWorld.map, tx + dx, ty + dy));
+			}
+		}
+	}
+	if (s_fieldReady.size() > 1024)
+	{
+		for (auto it = s_fieldReady.begin(); it != s_fieldReady.end();) { it = (gameTime > it->second + 60000) ? s_fieldReady.erase(it) : std::next(it); }
 	}
 }
 

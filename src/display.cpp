@@ -41,6 +41,7 @@
 
 #include "action.h"
 #include "display.h"
+#include "modsound.h"
 #include "modlayer.h"
 #include "modpaint.h"
 #include "uiobjectrefs.h"
@@ -2338,6 +2339,7 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 				}
 				/* Establish new one */
 				psStructure->selected = true;
+				modsound::structureSelected(psStructure);   // MOD: MF-Auswahlklang
 				triggerEventSelected();
 				jsDebugSelected(psStructure);
 			}
@@ -2829,6 +2831,7 @@ static void dealWithRMB()
 							printStructureInfo(psStructure);
 
 							psStructure->selected = true;
+							modsound::structureSelected(psStructure);   // MOD: MF-Auswahlklang
 							jsDebugSelected(psStructure);
 
 							// Open structure menu

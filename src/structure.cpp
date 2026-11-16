@@ -43,6 +43,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "modsound.h"
 #include "modaidiff.h"
 #include "modlayer.h"
 #include "modlayermap.h"
@@ -5010,6 +5011,7 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 
 	modlayermap::Scope destroyLayerScope(&world == &gameWorld ? modlayer::layerOf(psDel) : modlayer::SURFACE);   // MOD: Ebenen - Gelaende/Truemmer in der Karte der Ebene des Bauwerks
 
+	if (psDel->status == SS_BUILT) { modsound::structureDestroyed(psDel); }   // MOD: MF-Einsturzklang (Gebaeude mit MF-Modell)
 	modoil::onStructureDestroyed(psDel);   // MOD: Pipeline-Bruch, Oelturm-Explosion
 	modcrates::onStructureDestroyed(psDel);   // MOD: Kistenhaufen explodiert
 

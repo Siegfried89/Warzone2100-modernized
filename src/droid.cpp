@@ -331,6 +331,10 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 		damage = damage * 45 / 100;   // MOD: Infanterie im Graben / in der Grube / im Krater nimmt weniger als die Haelfte
 	}
 
+	if (psProjectile != nullptr && !isDamagePerSecond && modcombot::absorbShot(psDroid))
+	{
+		return -1;   // MOD: MF-Kraftfeld hat das Geschoss abgefangen
+	}
 	if (psProjectile != nullptr)
 	{
 		damage = modparts::scaleDamage(psDroid, damage);   // MOD: liegt der Rumpf frei (Turm und Laufwerk weg), 50 % mehr Schaden

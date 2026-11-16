@@ -27,6 +27,8 @@
 #include "droid.h"
 #include "modgrid.h"
 
+namespace modcombot { int sensorPercent(const DROID *d); }   // MOD (modcombot.h waere hier zu schwer)
+
 #include <string>
 #include <vector>
 
@@ -113,7 +115,7 @@ inline int objSensorRange(const BASE_OBJECT *psObj)
 		{
 			return ecmrange;
 		}
-		return ((const DROID*)psObj)->getSensorStats()->upgrade[psObj->player].range;
+		return ((const DROID*)psObj)->getSensorStats()->upgrade[psObj->player].range * modcombot::sensorPercent((const DROID*)psObj) / 100;   // MOD: MF Recon
 	}
 	else if (psObj->type == OBJ_STRUCTURE)
 	{
