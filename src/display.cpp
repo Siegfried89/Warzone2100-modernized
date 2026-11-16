@@ -74,6 +74,7 @@
 #include "modlava.h"
 #include "modgroundfire.h"
 #include "modrally.h"
+#include "modcrates.h"
 #include "modbuild.h"
 #include "lighting.h"
 #include "ingameop.h"
@@ -2265,6 +2266,12 @@ static void dealWithLMBDroid(DROID *psDroid, SELECTION_TYPE selection)
 static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selection)
 {
 	bool ownStruct = (psStructure->player == selectedPlayer);
+	// MOD (16.11.): Strg + Klick auf das eigene Munitionsdepot - gewaehlte Lkw laden Kisten
+	if (ownStruct && modbuild::keysForFortify() && modcrates::loadOrderSelected(selectedPlayer, psStructure))
+	{
+		audio_PlayTrack(ID_SOUND_SELECT);
+		return;
+	}
 	const bool isSpectator = bMultiPlayer && NetPlay.players[selectedPlayer].isSpectator;
 
 	if (isSpectator)

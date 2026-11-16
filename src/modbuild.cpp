@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Befestigungsbau - siehe modbuild.h
+#include "modcrates.h"
 #include "modbuild.h"
 
 #include "lib/framework/frame.h"
@@ -320,7 +321,8 @@ bool orderSelected(unsigned player, int worldX, int worldY)
 	{
 		if (d == nullptr || !d->selected || !canFortify(d)) { continue; }
 		DroidOrder sOrder(DORDER_FORTIFY, Vector2i(worldX, worldY));
-		sOrder.direction = static_cast<uint16_t>(s_tier);
+		// MOD (16.11.): Lkw mit Munitionskisten laden sie hier ab statt eine Befestigung zu bauen
+		sOrder.direction = modcrates::wantsUnload(d) ? modcrates::CODE_UNLOAD : static_cast<uint16_t>(s_tier);
 		sendDroidInfo(d, sOrder, false, currentOrderSource());
 		any = true;
 	}

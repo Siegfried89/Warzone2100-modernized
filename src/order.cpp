@@ -38,6 +38,7 @@
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modgroundfire.h"
+#include "modcrates.h"
 #include "modbuild.h"
 #include "modlayerdig.h"
 #include "modinvade.h"
@@ -1592,7 +1593,10 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		break;
 	case DORDER_FORTIFY:
 		// MOD: Befestigungsbau - Auftrag uebernehmen, der Rest laeuft in modbuild::tick
-		modbuild::startOrder(psDroid, psOrder->pos.x, psOrder->pos.y, psOrder->direction);
+		if (!modcrates::startOrder(psDroid, psOrder->pos.x, psOrder->pos.y, psOrder->direction))   // MOD: Munitionskisten laden/abladen
+		{
+			modbuild::startOrder(psDroid, psOrder->pos.x, psOrder->pos.y, psOrder->direction);
+		}
 		break;
 	case DORDER_ATTACKGROUND:
 		{

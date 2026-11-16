@@ -46,6 +46,7 @@
 #include "modaidiff.h"
 #include "modlayer.h"
 #include "modlayermap.h"
+#include "modcrates.h"
 #include "modoil.h"
 #include "research.h"
 #include "hci.h"
@@ -4973,6 +4974,7 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 	modlayermap::Scope destroyLayerScope(&world == &gameWorld ? modlayer::layerOf(psDel) : modlayer::SURFACE);   // MOD: Ebenen - Gelaende/Truemmer in der Karte der Ebene des Bauwerks
 
 	modoil::onStructureDestroyed(psDel);   // MOD: Pipeline-Bruch, Oelturm-Explosion
+	modcrates::onStructureDestroyed(psDel);   // MOD: Kistenhaufen explodiert
 
 	/* Firstly, are we dealing with a wall section */
 	const STRUCTURE_TYPE type = psDel->pStructureType->type;

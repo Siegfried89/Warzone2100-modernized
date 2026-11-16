@@ -37,6 +37,7 @@
 #include <utility>
 #include <vector>
 #include "modgrid.h"
+#include "modcrates.h"
 
 namespace modoil
 {
@@ -775,6 +776,7 @@ void logistics()
 			c.tank = isTank(d);
 			c.x = d->pos.x; c.y = d->pos.y; c.z = d->pos.z;
 			liveDroid.insert(d->id);
+			if (modcrates::busy(d->id)) { continue; }   // MOD: faehrt gerade Munitionskisten - kein Oel-Autopilot
 			if (c.pause > 0) { c.pause--; continue; }
 
 			const bool ownMove = d->order.type == DORDER_MOVE && d->order.pos == Vector2i(c.tx, c.ty);
