@@ -46,7 +46,7 @@ static SDWORD	fmLtRad = 40, fmMedRad = 50, fmHvyRad = 55;  // MOD: halbe Einheit
 #define F_DEFLENGTH		(4*fmLtRad)
 
 // how close to the formation a unit has to be to receive a formation point
-#define F_JOINRANGE		(TILE_UNITS * 3 / 2)
+#define F_JOINRANGE		(DIST_TILE * 3 / 2)
 
 // how far apart to keep the ranks in a formation
 #define RANK_DIST		(2*fmLtRad)
@@ -55,7 +55,7 @@ static SDWORD	fmLtRad = 40, fmMedRad = 50, fmHvyRad = 55;  // MOD: halbe Einheit
 #define MAX_RANK		15
 
 // the distance for finding formations
-#define FIND_RANGE		(TILE_UNITS/4)
+#define FIND_RANGE		(DIST_TILE/4)
 
 #define FORMATION_SPEED_INIT	100000L
 

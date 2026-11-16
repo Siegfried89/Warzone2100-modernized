@@ -87,27 +87,27 @@
 #define RUN_BURN_TIME	10000
 
 /** The distance a droid has in guard mode. */
-#define DEFEND_MAXDIST		(TILE_UNITS * 3)
+#define DEFEND_MAXDIST		(DIST_TILE * 3)
 
 /** The distance a droid has in guard mode.
  * @todo seems to be used as equivalent to GUARD_MAXDIST.
  */
-#define DEFEND_BASEDIST		(TILE_UNITS * 3)
+#define DEFEND_BASEDIST		(DIST_TILE * 3)
 
 /** The distance a droid has in guard mode. Equivalent to GUARD_MAXDIST, but used for droids being on a command group. */
-#define DEFEND_CMD_MAXDIST		(TILE_UNITS * 8)
+#define DEFEND_CMD_MAXDIST		(DIST_TILE * 8)
 
 /** The distance a droid has in guard mode. Equivalent to GUARD_BASEDIST, but used for droids being on a command group. */
-#define DEFEND_CMD_BASEDIST		(TILE_UNITS * 5)
+#define DEFEND_CMD_BASEDIST		(DIST_TILE * 5)
 
 /** The maximum distance a constructor droid has in guard mode. */
-#define CONSTRUCT_MAXDIST		(TILE_UNITS * 8)
+#define CONSTRUCT_MAXDIST		(DIST_TILE * 8)
 
 /** The maximum distance allowed to a droid to move out of the path on a patrol/scout. */
-#define SCOUT_DIST			(TILE_UNITS * 8)
+#define SCOUT_DIST			(DIST_TILE * 8)
 
 /** The maximum distance allowed to a droid to move out of the path if already attacking a target on a patrol/scout. */
-#define SCOUT_ATTACK_DIST	(TILE_UNITS * 5)
+#define SCOUT_ATTACK_DIST	(DIST_TILE * 5)
 
 static void orderClearDroidList(DROID *psDroid);
 
@@ -775,7 +775,7 @@ bool orderUpdateDroid(DROID *psDroid)
 			}
 
 			Vector2i edgeDiff = psDroid->pos.xy() - psDroid->actionPos;
-			if (psDroid->action != DACTION_MOVE || dot(edgeDiff, edgeDiff) <= TILE_UNITS * 4 * TILE_UNITS * 4)
+			if (psDroid->action != DACTION_MOVE || dot(edgeDiff, edgeDiff) <= DIST_TILE * 4 * DIST_TILE * 4)
 			{
 				//Watermelon:use orderX,orderY as local space origin and calculate droid direction in local space
 				Vector2i diff = psDroid->pos.xy() - psDroid->order.pos;
@@ -958,8 +958,8 @@ bool orderUpdateDroid(DROID *psDroid)
 					psDroid->order = DroidOrder(DORDER_NONE);
 					actionDroid(psDroid, DACTION_NONE);
 				}
-				else if (abs((SDWORD)psDroid->pos.x - (SDWORD)psDroid->order.psObj->pos.x) < TILE_UNITS
-				         && abs((SDWORD)psDroid->pos.y - (SDWORD)psDroid->order.psObj->pos.y) < TILE_UNITS)
+				else if (abs((SDWORD)psDroid->pos.x - (SDWORD)psDroid->order.psObj->pos.x) < DIST_TILE
+				         && abs((SDWORD)psDroid->pos.y - (SDWORD)psDroid->order.psObj->pos.y) < DIST_TILE)
 				{
 					// save the target of current droid (the transporter)
 					DROID *transporter = (DROID *)psDroid->order.psObj;

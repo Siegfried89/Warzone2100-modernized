@@ -38,10 +38,10 @@ namespace modincoming
 namespace
 {
 constexpr int LEAD_MS = 1500;               // so lange vor dem Einschlag beginnt das Pfeifen (= Laenge von incoming_*.ogg)
-constexpr int MIN_DANGER = 5 * TILE_UNITS / 2;  // Gefahrenzone mindestens 2,5 Felder um den Einschlag
-constexpr int ESCAPE_EXTRA = 3 * TILE_UNITS / 2; // so weit hinter die Gefahrenzone laufen
+constexpr int MIN_DANGER = 5 * DIST_TILE / 2;  // Gefahrenzone mindestens 2,5 Felder um den Einschlag
+constexpr int ESCAPE_EXTRA = 3 * DIST_TILE / 2; // so weit hinter die Gefahrenzone laufen
 constexpr unsigned ALERT_MERGE_MS = 2500;   // Granaten einer Salve auf dieselbe Stelle loesen nur eine Reaktion aus
-constexpr int ALERT_MERGE_DIST = 4 * TILE_UNITS;
+constexpr int ALERT_MERGE_DIST = 4 * DIST_TILE;
 constexpr unsigned COOLDOWN_MS = 12000;     // eine Einheit reagiert fruehestens dann wieder
 constexpr unsigned SPREAD_TIMEOUT_MS = 9000;
 constexpr unsigned DIG_MS = 4500;           // so lange graebt ein Soldat seine Mulde
@@ -149,8 +149,8 @@ bool escapePoint(const DROID *d, const Vector2i &impact, int danger, Vector2i &o
 		baseDir = iAtan2(v.x, v.y);
 	}
 	const int distNow = iHypot(v);
-	const int run = std::max(TILE_UNITS, danger + ESCAPE_EXTRA - distNow);
-	const int side = static_cast<int>((h >> 16) % static_cast<uint32_t>(2 * TILE_UNITS)) - TILE_UNITS;   // seitlich versetzt: nicht alle auf einen Haufen
+	const int run = std::max(DIST_TILE, danger + ESCAPE_EXTRA - distNow);
+	const int side = static_cast<int>((h >> 16) % static_cast<uint32_t>(2 * DIST_TILE)) - DIST_TILE;   // seitlich versetzt: nicht alle auf einen Haufen
 	static const int TURN[5] = { 0, 1, -1, 2, -2 };
 	for (int k : TURN)
 	{
@@ -183,7 +183,7 @@ void react(const PROJECTILE *p)
 	int danger = MIN_DANGER;
 	if (p->psWStats != nullptr && shooter >= 0 && shooter < MAX_PLAYERS)
 	{
-		danger = std::max(danger, static_cast<int>(p->psWStats->upgrade[shooter].radius) + TILE_UNITS);
+		danger = std::max(danger, static_cast<int>(p->psWStats->upgrade[shooter].radius) + DIST_TILE);
 	}
 	std::vector<DROID *> victims;
 	for (BASE_OBJECT *o : gridStartIterate(impact.x, impact.y, static_cast<uint32_t>(danger)))
@@ -342,7 +342,7 @@ void spreadUnits(const std::vector<DROID *> &unitsIn)
 	}
 	const Vector2i c(static_cast<int>(sx / static_cast<int64_t>(units.size())), static_cast<int>(sy / static_cast<int64_t>(units.size())));
 	// Sonnenblumen-Muster: gleichmaessige Abstaende (Infanterie 2 Felder, mit Fahrzeugen 2,5 Felder)
-	const double spacing = (anyVehicle ? 2.5 : 2.0) * TILE_UNITS;
+	const double spacing = (anyVehicle ? 2.5 : 2.0) * DIST_TILE;
 	const double cstep = spacing * 0.58;
 	const double golden = 2.399963229728653;
 	std::vector<Vector2i> spots;

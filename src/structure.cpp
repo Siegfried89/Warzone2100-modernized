@@ -3128,7 +3128,7 @@ RepairEvents aiUpdateRepair_obtainEvents(const STRUCTURE &station, DROID **psDro
 	{
 	case RepairState::Idle:
 	{
-		DROID *psDroid = findSomeoneToRepair(psStructure, (TILE_UNITS * 5 / 2));
+		DROID *psDroid = findSomeoneToRepair(psStructure, (DIST_TILE * 5 / 2));
 		*psDroidOut = psDroid;
 		return psDroid? RepairEvents::RepairTargetFound : RepairEvents::NoEvents;
 	}
@@ -3140,7 +3140,7 @@ RepairEvents aiUpdateRepair_obtainEvents(const STRUCTURE &station, DROID **psDro
 
 		xdiff = (SDWORD)psDroid->pos.x - (SDWORD)psStructure->pos.x;
 		ydiff = (SDWORD)psDroid->pos.y - (SDWORD)psStructure->pos.y;
-		if (xdiff * xdiff + ydiff * ydiff > (TILE_UNITS * 5 / 2) * (TILE_UNITS * 5 / 2))
+		if (xdiff * xdiff + ydiff * ydiff > (DIST_TILE * 5 / 2) * (DIST_TILE * 5 / 2))
 		{
 			return RepairEvents::UnitMovedAway;
 		}
@@ -3995,7 +3995,7 @@ void structureUpdate(STRUCTURE *psBuilding, GameWorld& world)
 		{
 			bool		found = false;
 
-			for (BASE_OBJECT *gridObj : gridStartIterate(psBuilding->pos.x, psBuilding->pos.y, TILE_UNITS))
+			for (BASE_OBJECT *gridObj : gridStartIterate(psBuilding->pos.x, psBuilding->pos.y, DIST_TILE))
 			{
 				// Not one that died or left the map earlier in this tick: the grid keeps it until the end of the tick
 				if (isDroid(gridObj) && !gridObj->died)
@@ -5034,9 +5034,9 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 
 		/* Set off some explosions, but not for walls */
 		/* First Explosions */
-		widthScatter = TILE_UNITS;
-		breadthScatter = TILE_UNITS;
-		heightScatter = TILE_UNITS;
+		widthScatter = DIST_TILE;
+		breadthScatter = DIST_TILE;
+		heightScatter = DIST_TILE;
 		for (i = 0; i < (bMinor ? 2 : 4); ++i)  // only add two for walls - gets crazy otherwise
 		{
 			pos.x = psDel->pos.x + widthScatter - rand() % (2 * widthScatter);

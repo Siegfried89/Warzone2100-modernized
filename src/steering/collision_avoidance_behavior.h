@@ -59,7 +59,7 @@ class CollisionAvoidanceBehavior : public ISteeringBehavior
 public:
 
 	/// Radius to scan for obstacles (world units)
-	static constexpr int32_t OBSTACLE_SCAN_RADIUS = TILE_UNITS * 2;
+	static constexpr int32_t OBSTACLE_SCAN_RADIUS = DIST_TILE * 2;
 
 
 	// Calculate collision avoidance force for the given context.

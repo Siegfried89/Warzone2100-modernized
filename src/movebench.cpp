@@ -217,13 +217,13 @@ const int32_t OVERLAP_FRACTION_PCT = 80;
 /// Two tracked droids within this of each other count as packed together. At a
 /// tile and a half it catches touching neighbours without counting a whole open
 /// field, so a tight blob reads high and two clean lanes read low.
-const int32_t DENSITY_RADIUS = 3 * TILE_UNITS / 2;
+const int32_t DENSITY_RADIUS = 3 * DIST_TILE / 2;
 
 /// A droid counts as arrived once it is within this of its ordered destination.
 /// Units settle next to a goal tile rather than on it when it is taken, so this
 /// allows a tile and a half - the same slack the movement code itself uses when
 /// deciding a droid is near enough to its destination.
-const int32_t ARRIVE_TOLERANCE = 3 * TILE_UNITS / 2;
+const int32_t ARRIVE_TOLERANCE = 3 * DIST_TILE / 2;
 
 /// A droid counts as near its destination within this. Where ARRIVE_TOLERANCE
 /// asks whether a unit parked on its goal, this asks whether it joined the
@@ -237,7 +237,7 @@ const int32_t NEAR_RADIUS = MOVEBENCH_NEAR_RADIUS;
 /// the open-field floor of just under two seconds per tile, so the cut sits
 /// far beneath that: only a unit whose motion is zeroed, or all but zeroed,
 /// falls under it.
-const int32_t STALL_STEP = TILE_UNITS / 64;
+const int32_t STALL_STEP = DIST_TILE / 64;
 
 const BenchScenario *findScenario(const std::string &name)
 {
@@ -288,7 +288,7 @@ void sampleMovementState()
 				continue;
 			}
 			const int32_t selfR = moveObjRadius(psDroid);
-			for (BASE_OBJECT *psObj : gridStartIterate(psDroid->pos.x, psDroid->pos.y, 2 * TILE_UNITS))
+			for (BASE_OBJECT *psObj : gridStartIterate(psDroid->pos.x, psDroid->pos.y, 2 * DIST_TILE))
 			{
 				const DROID *psOther = castDroid(psObj);
 				// Each pair once, by id order.
@@ -328,7 +328,7 @@ void sampleDroids()
 				t.goal = psDroid->order.pos;
 				t.lastPos = psDroid->pos.xy();
 				t.startTick = tickCount;
-				t.startDistTiles = static_cast<uint32_t>(iHypot(psDroid->order.pos - psDroid->pos.xy()) / TILE_UNITS);
+				t.startDistTiles = static_cast<uint32_t>(iHypot(psDroid->order.pos - psDroid->pos.xy()) / DIST_TILE);
 				tracked[psDroid->id] = t;
 				continue;
 			}
@@ -348,7 +348,7 @@ void sampleDroids()
 			{
 				t.goal = psDroid->order.pos;
 				t.startTick = tickCount;
-				t.startDistTiles = static_cast<uint32_t>(iHypot(psDroid->order.pos - psDroid->pos.xy()) / TILE_UNITS);
+				t.startDistTiles = static_cast<uint32_t>(iHypot(psDroid->order.pos - psDroid->pos.xy()) / DIST_TILE);
 				t.travelWorld = 0;
 				t.arrived = false;
 			}
@@ -468,7 +468,7 @@ uint32_t formationSpreadTiles()
 	{
 		sumDist += iHypot(entry.second.lastPos - centroid);
 	}
-	return static_cast<uint32_t>(sumDist / static_cast<int64_t>(tracked.size()) / TILE_UNITS);
+	return static_cast<uint32_t>(sumDist / static_cast<int64_t>(tracked.size()) / DIST_TILE);
 }
 
 uint32_t percentile(std::vector<uint32_t> &sorted, unsigned pct)
@@ -495,7 +495,7 @@ void writeScorecard(bool completed)
 		else
 		{
 			const Vector2i delta = entry.second.lastPos - entry.second.goal;
-			remaining.push_back(static_cast<uint32_t>(iHypot(delta) / TILE_UNITS));
+			remaining.push_back(static_cast<uint32_t>(iHypot(delta) / DIST_TILE));
 		}
 	}
 	std::sort(arrivals.begin(), arrivals.end());
@@ -619,7 +619,7 @@ void writeScorecard(bool completed)
 	// are excluded.
 	std::vector<uint32_t> detour;
 	uint32_t detoured = 0;
-	const uint32_t nearTiles = NEAR_RADIUS / TILE_UNITS;
+	const uint32_t nearTiles = NEAR_RADIUS / DIST_TILE;
 	for (const auto &entry : tracked)
 	{
 		if (entry.second.startDistTiles < 2 * nearTiles)
@@ -627,7 +627,7 @@ void writeScorecard(bool completed)
 			continue;
 		}
 		const uint32_t farTiles = entry.second.startDistTiles - nearTiles;
-		const uint32_t pct = entry.second.travelWorld * 100 / (farTiles * TILE_UNITS);
+		const uint32_t pct = entry.second.travelWorld * 100 / (farTiles * DIST_TILE);
 		detour.push_back(pct);
 		if (pct >= 150)
 		{

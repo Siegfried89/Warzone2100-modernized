@@ -34,8 +34,8 @@ namespace modrecover
 namespace
 {
 constexpr unsigned SPARE_MS = 150000;        // Ersatzteil aus der Werkstatt nach 2,5 Minuten Warten
-constexpr int NEAR_FACILITY = 3 * TILE_UNITS;
-constexpr int HELPER_RANGE = 16 * TILE_UNITS;
+constexpr int NEAR_FACILITY = 3 * DIST_TILE;
+constexpr int HELPER_RANGE = 16 * DIST_TILE;
 constexpr unsigned TICK_MS = 250;
 
 struct Part
@@ -120,8 +120,8 @@ void sendToFacility(DROID *d, unsigned player, const Vector2i &from)
 	const STRUCTURE *s = nearestFacility(player, from);
 	if (s == nullptr) { return; }
 	// neben die Werkstatt (nicht hinein), Seite aus der ID
-	const int side = (d->id & 1u) ? TILE_UNITS * 3 / 2 : -TILE_UNITS * 3 / 2;
-	orderDroidLoc(d, DORDER_MOVE, static_cast<UDWORD>(std::max(TILE_UNITS, s->pos.x + side)), static_cast<UDWORD>(std::max(TILE_UNITS, s->pos.y + TILE_UNITS)), ModeImmediate);
+	const int side = (d->id & 1u) ? DIST_TILE * 3 / 2 : -DIST_TILE * 3 / 2;
+	orderDroidLoc(d, DORDER_MOVE, static_cast<UDWORD>(std::max(TILE_UNITS, s->pos.x + side)), static_cast<UDWORD>(std::max(TILE_UNITS, s->pos.y + DIST_TILE)), ModeImmediate);
 }
 
 bool freeSpot(int x, int y)
@@ -151,7 +151,7 @@ void onTurretLost(DROID *d, unsigned weaponStat)
 		for (int k = 0; k < 6; ++k)
 		{
 			const uint16_t dir = static_cast<uint16_t>(baseDir + k * DEG(60));
-			const int dist = TILE_UNITS + static_cast<int>(d->id % 48u);
+			const int dist = DIST_TILE + static_cast<int>(d->id % 48u);
 			const int x = d->pos.x + iSinR(dir, dist), y = d->pos.y + iCosR(dir, dist);
 			if (!freeSpot(x, y)) { continue; }
 			FEATURE *f = buildFeature(gameWorld, fs, static_cast<UDWORD>(x), static_cast<UDWORD>(y), false);
@@ -356,7 +356,7 @@ void repairEffects(const STRUCTURE *s, const DROID *target, int &pitchWobble, in
 	pitchWobble = 0;
 	dirWobble = 0;
 	if (s == nullptr || target == nullptr) { return; }
-	if (dist2(s->pos.xy(), target->pos.xy()) > static_cast<int64_t>(TILE_UNITS * 5 / 2) * (TILE_UNITS * 5 / 2)) { return; }
+	if (dist2(s->pos.xy(), target->pos.xy()) > static_cast<int64_t>(DIST_TILE * 5 / 2) * (DIST_TILE * 5 / 2)) { return; }
 	// Arm bewegt sich leicht (Anzeige)
 	pitchWobble = iSinSR(static_cast<int32_t>(graphicsTime + s->id * 97u), 1100, DEG(7));
 	dirWobble = iSinSR(static_cast<int32_t>(graphicsTime + s->id * 131u), 1700, DEG(9));

@@ -56,7 +56,7 @@ const int32_t NARROW_DIST_MAX = 5;
 // which is small next to an isolated obstacle even where the passage is
 // wide, so the real width is checked here against the chain's narrowest
 // measured cross-section.
-const int32_t MAX_CORRIDOR_WIDTH_WORLD = 5 * TILE_UNITS;
+const int32_t MAX_CORRIDOR_WIDTH_WORLD = 5 * DIST_TILE;
 
 // How far off a tile to look for a centerline, in tiles. Half the widest corridor, since a droid can
 // sit that far to the side of the line. The claim mask is stamped to this same radius around every
@@ -614,7 +614,7 @@ void chainsBuild(CorridorMap &cmap)
 		int j;
 		int8_t rel;
 	};
-	const int32_t linkDist = CHAIN_LINK_TILES * TILE_UNITS;
+	const int32_t linkDist = CHAIN_LINK_TILES * DIST_TILE;
 	std::vector<Link> links;
 	for (size_t i = 0; i < n; ++i)
 	{

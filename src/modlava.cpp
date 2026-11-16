@@ -203,9 +203,9 @@ void placeLandfills(GameWorld &world)
 		for (const FEATURE *f : world.objects.features[0])
 		{
 			if (f->psStats == nullptr || f->psStats->subType != FEAT_OIL_RESOURCE) { continue; }
-			if (iHypot(f->pos.x - wx, f->pos.y - wy) < 6 * TILE_UNITS) { clash = true; break; }
+			if (iHypot(f->pos.x - wx, f->pos.y - wy) < 6 * DIST_TILE) { clash = true; break; }
 		}
-		for (const Vector2i &o : done) { if (!clash && iHypot(o.x - wx, o.y - wy) < 14 * TILE_UNITS) { clash = true; } }
+		for (const Vector2i &o : done) { if (!clash && iHypot(o.x - wx, o.y - wy) < 14 * DIST_TILE) { clash = true; } }
 		if (clash) { continue; }
 		if (buildFeature(world, fs, static_cast<UDWORD>(wx), static_cast<UDWORD>(wy), false) != nullptr)
 		{

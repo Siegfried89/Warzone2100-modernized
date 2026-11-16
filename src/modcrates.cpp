@@ -40,8 +40,8 @@ namespace modcrates
 namespace
 {
 constexpr unsigned TICK_MS = 250;
-constexpr int LOAD_RANGE = 5 * TILE_UNITS / 2;
-constexpr int DROP_RANGE = 3 * TILE_UNITS / 2;
+constexpr int LOAD_RANGE = 5 * DIST_TILE / 2;
+constexpr int DROP_RANGE = 3 * DIST_TILE / 2;
 constexpr unsigned JOB_TIMEOUT_MS = 120000;
 constexpr int CRATE_STOCK = 2000;          // eine Kiste = 2 volle Ladungen (Promille)
 constexpr int DEPOT_CAP = 30;              // Kisten im Depot
@@ -137,7 +137,7 @@ void approach(DROID *d, Truck &t, const STRUCTURE *s)
 {
 	const int dx = d->pos.x - s->pos.x, dy = d->pos.y - s->pos.y;
 	const int len = std::max(1, iHypot(Vector2i(dx, dy)));
-	const int r = 3 * TILE_UNITS / 2 + TILE_UNITS * std::max(s->pStructureType->baseWidth, s->pStructureType->baseBreadth) / 2;
+	const int r = 3 * DIST_TILE / 2 + TILE_UNITS * std::max(s->pStructureType->baseWidth, s->pStructureType->baseBreadth) / 2;
 	moveTo(d, t, s->pos.x + dx * r / len, s->pos.y + dy * r / len);
 }
 
@@ -619,7 +619,7 @@ void tick()
 		{
 			effects(b.x, b.y, b.z, b.n);
 			const int m = std::clamp(b.n, 1, 6);
-			areaDamage(b.x, b.y, 5 * TILE_UNITS / 2 + m * TILE_UNITS / 2, 160 * m);
+			areaDamage(b.x, b.y, 5 * DIST_TILE / 2 + m * DIST_TILE / 2, 160 * m);
 		}
 	}
 
@@ -653,7 +653,7 @@ void tick()
 			{
 				STRUCTURE *s = findStruct(t.source, t.player);
 				if (s == nullptr) { t.job = J_NONE; }
-				else if (dist2(d->pos.x, d->pos.y, s->pos.x, s->pos.y) <= static_cast<int64_t>(LOAD_RANGE + TILE_UNITS) * (LOAD_RANGE + TILE_UNITS))
+				else if (dist2(d->pos.x, d->pos.y, s->pos.x, s->pos.y) <= static_cast<int64_t>(LOAD_RANGE + DIST_TILE) * (LOAD_RANGE + DIST_TILE))
 				{
 					if (t.job == J_LOAD) { loadFrom(d, t, s); } else { storeInto(t, s); }
 					t.job = J_NONE;
@@ -674,7 +674,7 @@ void tick()
 			{
 				if (t.crates <= 0) { t.job = J_NONE; }
 				else if (dist2(d->pos.x, d->pos.y, t.tx, t.ty) <= static_cast<int64_t>(DROP_RANGE) * DROP_RANGE
-				         || (d->order.type == DORDER_NONE && t.tries >= 4 && dist2(d->pos.x, d->pos.y, t.tx, t.ty) <= static_cast<int64_t>(3 * TILE_UNITS) * (3 * TILE_UNITS)))
+				         || (d->order.type == DORDER_NONE && t.tries >= 4 && dist2(d->pos.x, d->pos.y, t.tx, t.ty) <= static_cast<int64_t>(3 * DIST_TILE) * (3 * DIST_TILE)))
 				{
 					if (d->order.type == DORDER_MOVE) { orderDroid(d, DORDER_STOP, ModeImmediate); }
 					dropPile(d, t);

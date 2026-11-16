@@ -114,7 +114,7 @@ struct DAMAGE
 
 // Watermelon:they are from droid.c
 /* The range for neighbouring objects */
-#define PROJ_NEIGHBOUR_RANGE (TILE_UNITS*4)
+#define PROJ_NEIGHBOUR_RANGE (DIST_TILE*4)
 // used to create a specific ID for projectile objects to facilitate tracking them.
 static const uint32_t ProjectileTrackerID = 0xdead0000;
 static uint32_t projectileTrackerIDIncrement = 0;
@@ -1762,7 +1762,7 @@ ObjectShape establishTargetShape(const BASE_OBJECT *psTarget)
 		case DROID_TRANSPORTER:
 		case DROID_SUPERTRANSPORTER:
 		default:
-			return TILE_UNITS / 4; // how will we arrive at this?
+			return DIST_TILE / 4; // how will we arrive at this?
 		}
 		break;
 	case OBJ_STRUCTURE:  // Rectangular.
@@ -1771,7 +1771,7 @@ ObjectShape establishTargetShape(const BASE_OBJECT *psTarget)
 		return Vector2i(castFeature(psTarget)->psStats->baseWidth, castFeature(psTarget)->psStats->baseBreadth) * TILE_UNITS / 2;
 	case OBJ_PROJECTILE:  // Circular, but can't happen since a PROJECTILE isn't a BASE_OBJECT.
 		//Watermelon 1/2 radius of a droid?
-		return TILE_UNITS / 8;
+		return DIST_TILE / 8;
 	default:
 		break;
 	}

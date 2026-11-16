@@ -957,7 +957,7 @@ static void showCorridorCenterlines(const GameWorld& world)
 		return;
 	}
 	const Vector2i cam(playerPos.p.x, playerPos.p.z);
-	const int64_t cullSq = static_cast<int64_t>(30 * TILE_UNITS) * static_cast<int64_t>(30 * TILE_UNITS);
+	const int64_t cullSq = static_cast<int64_t>(30 * DIST_TILE) * static_cast<int64_t>(30 * DIST_TILE);
 	for (const Corridor &c : cmap->corridors)
 	{
 		const size_t last = c.centerline.size() - 1;
@@ -1250,7 +1250,7 @@ static int calcAverageTerrainHeight(WorldMapState& mapState, int tileX, int tile
 	}
 	if (numTilesAveraged == 0) // might be if off map
 	{
-		return ELEVATION_SCALE * TILE_UNITS;
+		return ELEVATION_SCALE * DIST_TILE;
 	}
 
 	/**
@@ -2990,7 +2990,7 @@ static void renderStructureTurrets(STRUCTURE *psStructure, const iIMDShape *strI
 						SDWORD xdiff, ydiff;
 						xdiff = (SDWORD)psDroid->pos.x - (SDWORD)psStructure->pos.x;
 						ydiff = (SDWORD)psDroid->pos.y - (SDWORD)psStructure->pos.y;
-						if (xdiff * xdiff + ydiff * ydiff <= (TILE_UNITS * 5 / 2) * (TILE_UNITS * 5 / 2))
+						if (xdiff * xdiff + ydiff * ydiff <= (DIST_TILE * 5 / 2) * (DIST_TILE * 5 / 2))
 						{
 							const iIMDShape	*pRepImd = getDisplayImdFromIndex(MI_FLAME);
 
@@ -4474,8 +4474,8 @@ static void renderSurroundings(const glm::mat4& projectionMatrix, const glm::mat
 			const float islandY = static_cast<float>(map_Height(gameWorld.map, world_coord(W) / 2, world_coord(H) / 2));
 			constexpr float MODV_DEPTH = 4600.f;   // wie im Gelaende-Shader
 			const glm::mat4 worldView = skyboxViewMatrix * glm::translate(glm::vec3(-playerPos.p.x, 0, playerPos.p.z));
-			pie_DrawOrbitGround(tex.c_str(), hazeTint, 0.22f, cx, cz, halfDiag + 2.f * TILE_UNITS, halfDiag + 42000.f, islandY - MODV_DEPTH,
-			                    static_cast<float>(TILE_UNITS) * 4.f, projectionMatrix, worldView, glm::vec4(lightC, 1.f), hazeColour);
+			pie_DrawOrbitGround(tex.c_str(), hazeTint, 0.22f, cx, cz, halfDiag + 2.f * DIST_TILE, halfDiag + 42000.f, islandY - MODV_DEPTH,
+			                    static_cast<float>(DIST_TILE) * 4.f, projectionMatrix, worldView, glm::vec4(lightC, 1.f), hazeColour);
 		}
 		return;
 	}

@@ -85,6 +85,13 @@ static WZMAPLIB_FORCE_INLINE unsigned short TileNumber_texture(unsigned short ti
 /* The number of units across a tile */
 #define TILE_UNITS (1<<TILE_SHIFT)
 
+/* MOD (Kachel-Viertelung, Stufe 1): Abstandsmass "Kachel" = Welteinheiten einer Original-Kachel. Bleibt 128, auch wenn das
+ * Kartenraster des Spiels (TILE_UNITS, map_coord, world_coord) spaeter feiner wird. Reichweiten, Radien und Strecken "in Kacheln"
+ * rechnen mit DIST_TILE, alles was am Raster haengt (Kachelmitte, Kachelindex <-> Welt, Grundflaechen) mit TILE_UNITS. */
+#ifndef DIST_TILE
+#define DIST_TILE 128
+#endif
+
 static WZMAPLIB_FORCE_INLINE int32_t world_coord(int32_t mapCoord)
 {
 	return (uint32_t)mapCoord << TILE_SHIFT;  // Cast because -1 << 7 is undefined, but (unsigned)-1 << 7 gives -128 as desired.

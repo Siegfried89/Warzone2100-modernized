@@ -1574,7 +1574,7 @@ static bool intSetSystemForm(COMPONENT_STATS *psStats)
 		sBarInit.id = IDDES_SENSORRANGE;
 		sBarInit.iRange = getDesignMaxSensorRange();
 		sBarInit.pTip = _("Sensor Range");
-		sBarInit.denominator = TILE_UNITS;
+		sBarInit.denominator = DIST_TILE;
 		sBarInit.precision = 1;
 		systemForm->attach(std::make_shared<DesignStatsBar>(&sBarInit));
 
@@ -1705,7 +1705,7 @@ static bool intSetSystemForm(COMPONENT_STATS *psStats)
 		sBarInit.id = IDDES_WEAPRANGE;
 		sBarInit.iRange = findMaxWeaponAttribute(proj_GetLongRange);
 		sBarInit.pTip = _("Range");
-		sBarInit.denominator = TILE_UNITS;
+		sBarInit.denominator = DIST_TILE;
 		sBarInit.precision = 1;
 		systemForm->attach(std::make_shared<DesignStatsBar>(&sBarInit));
 
@@ -1869,7 +1869,7 @@ static bool intSetPropulsionForm(PROPULSION_STATS *psStats)
 		sBarInit.id = IDDES_PROPAIR;
 		sBarInit.iRange = findMaxPropulsionSpeed(TER_ROAD);
 		sBarInit.pTip = _("Air Speed");
-		sBarInit.denominator = TILE_UNITS;
+		sBarInit.denominator = DIST_TILE;
 		sBarInit.precision = 2;
 		propulsionForm->attach(std::make_shared<DesignStatsBar>(&sBarInit));
 
@@ -1903,7 +1903,7 @@ static bool intSetPropulsionForm(PROPULSION_STATS *psStats)
 		sBarInit.id = IDDES_PROPROAD;
 		sBarInit.pTip = _("Road Speed");
 		sBarInit.iRange = findMaxPropulsionSpeed(TER_ROAD);
-		sBarInit.denominator = TILE_UNITS;
+		sBarInit.denominator = DIST_TILE;
 		sBarInit.precision = 2;
 		propulsionForm->attach(std::make_shared<DesignStatsBar>(&sBarInit));
 

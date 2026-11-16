@@ -25,7 +25,7 @@ namespace
 {
 constexpr int NUM_CLIPS = 4;
 const char *const CLIP_FILES[NUM_CLIPS] = {"atc_a.ogg", "atc_b.ogg", "atc_c.ogg", "atc_d.ogg"};
-constexpr int HEAR_RANGE = 14 * TILE_UNITS;     // Kamera hoechstens so weit entfernt (Weltkoordinaten)
+constexpr int HEAR_RANGE = 14 * DIST_TILE;     // Kamera hoechstens so weit entfernt (Weltkoordinaten)
 constexpr unsigned MIN_GAP_MS = 6000;           // kleinste Pause zwischen zwei Durchsagen
 constexpr unsigned MAX_EXTRA_MS = 11000;        // dazu zufaellig 0..MAX_EXTRA_MS
 

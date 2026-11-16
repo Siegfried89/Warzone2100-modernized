@@ -431,8 +431,8 @@ static SDWORD targetAttackWeightIfGreaterThan(SDWORD currentBest, BASE_OBJECT *p
 		/* Now calculate the overall weight */
 		attackWeight = asWeaponModifier[weaponEffect][targetDroid->getPropulsionStats()->propulsionType] // Our weapon's effect against target
 		               + asWeaponModifierBody[weaponEffect][targetDroid->getBodyStats()->size]
-		               + WEIGHT_DIST_TILE_DROID * objSensorRange(psAttacker) / TILE_UNITS
-		               - WEIGHT_DIST_TILE_DROID * dist / TILE_UNITS // farther droids are less attractive
+		               + WEIGHT_DIST_TILE_DROID * objSensorRange(psAttacker) / DIST_TILE
+		               - WEIGHT_DIST_TILE_DROID * dist / DIST_TILE // farther droids are less attractive
 		               + WEIGHT_HEALTH_DROID * damageRatio / 100 // we prefer damaged droids
 		               + targetTypeBonus; // some droid types have higher priority
 
@@ -474,8 +474,8 @@ static SDWORD targetAttackWeightIfGreaterThan(SDWORD currentBest, BASE_OBJECT *p
 
 		/* Now calculate the overall weight */
 		attackWeight = asStructStrengthModifier[weaponEffect][targetStructure->pStructureType->strength] // Our weapon's effect against target
-		               + WEIGHT_DIST_TILE_STRUCT * objSensorRange(psAttacker) / TILE_UNITS
-		               - WEIGHT_DIST_TILE_STRUCT * dist / TILE_UNITS // farther structs are less attractive
+		               + WEIGHT_DIST_TILE_STRUCT * objSensorRange(psAttacker) / DIST_TILE
+		               - WEIGHT_DIST_TILE_STRUCT * dist / DIST_TILE // farther structs are less attractive
 		               + WEIGHT_HEALTH_STRUCT * damageRatio / 100 // we prefer damaged structures
 		               + targetTypeBonus; // some structure types have higher priority
 
@@ -618,7 +618,7 @@ int aiBestNearestTarget(DROID *psDroid, BASE_OBJECT **ppsObj, int weapon_slot, i
 	electronic = electronicDroid(psDroid);
 
 	// Range was previously 9*TILE_UNITS. Increasing this doesn't seem to help much, though. Not sure why.
-	int droidRange = std::min(aiDroidRange(psDroid, weapon_slot) + extraRange, objSensorRange(psDroid) + 6 * TILE_UNITS);
+	int droidRange = std::min(aiDroidRange(psDroid, weapon_slot) + extraRange, objSensorRange(psDroid) + 6 * DIST_TILE);
 
 	for (BASE_OBJECT *gridObj : gridStartIterate(psDroid->pos.x, psDroid->pos.y, droidRange))
 	{

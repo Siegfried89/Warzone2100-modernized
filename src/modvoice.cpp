@@ -33,7 +33,7 @@ namespace modvoice
 {
 namespace
 {
-constexpr int HEAR_RANGE = 18 * TILE_UNITS;      // nur Einheiten so nah an der Kamera werden gehoert
+constexpr int HEAR_RANGE = 18 * DIST_TILE;      // nur Einheiten so nah an der Kamera werden gehoert
 constexpr unsigned TICK_MS = 250;
 constexpr unsigned HIT_WINDOW_MS = 1400;         // so lange gilt ein Treffer als "gerade beschossen"
 constexpr int NUM_CATS = static_cast<int>(sizeof(kVoiceCats) / sizeof(kVoiceCats[0]));
@@ -242,7 +242,7 @@ void onDroidDamaged(const DROID *psVictim, const PROJECTILE *psProj, bool killed
 		as.killPending = true;
 	}
 	// Kameraden der Gefallenen im Umkreis von 7 Kacheln rufen "Man down!" (die zwei naechsten)
-	const int64_t r2 = static_cast<int64_t>(7 * TILE_UNITS) * (7 * TILE_UNITS);
+	const int64_t r2 = static_cast<int64_t>(7 * DIST_TILE) * (7 * DIST_TILE);
 	const DROID *near1 = nullptr, *near2 = nullptr;
 	int64_t d1 = r2 + 1, d2 = r2 + 1;
 	for (const DROID *d : gameWorld.objects.droids[psVictim->player])

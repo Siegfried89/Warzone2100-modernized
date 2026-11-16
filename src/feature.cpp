@@ -521,9 +521,9 @@ bool destroyFeature(FEATURE *psDel, unsigned impactTime, GameWorld& world)
 	{
 		/* Set off a destruction effect */
 		/* First Explosions */
-		widthScatter = TILE_UNITS / 2;
-		breadthScatter = TILE_UNITS / 2;
-		heightScatter = TILE_UNITS / 4;
+		widthScatter = DIST_TILE / 2;
+		breadthScatter = DIST_TILE / 2;
+		heightScatter = DIST_TILE / 4;
 		//set which explosion to use based on size of feature
 		if (psDel->psStats->baseWidth < 2 && psDel->psStats->baseBreadth < 2)
 		{

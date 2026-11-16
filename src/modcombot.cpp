@@ -587,7 +587,7 @@ float flightOffset(const DROID *d)
 	if (!want && d->sMove.Status != MOVEINACTIVE && d->sMove.Status != MOVEHOVER)
 	{
 		const int dist = iHypot(d->sMove.destination - d->pos.xy());
-		want = dist > TILE_UNITS * 5 / 2;   // weitere Strecke: abheben (kurze Wege werden gelaufen)
+		want = dist > DIST_TILE * 5 / 2;   // weitere Strecke: abheben (kurze Wege werden gelaufen)
 	}
 	Air &a = s_air[d->id];
 	const unsigned now = graphicsTime;

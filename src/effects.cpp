@@ -1176,24 +1176,24 @@ static bool updateDestruction(EFFECT *psEffect, LightingData& lightData)
 		switch (psEffect->type)
 		{
 		case DESTRUCTION_TYPE_SKYSCRAPER:
-			widthScatter = TILE_UNITS;
-			breadthScatter = TILE_UNITS;
-			heightScatter = TILE_UNITS;
+			widthScatter = DIST_TILE;
+			breadthScatter = DIST_TILE;
+			heightScatter = DIST_TILE;
 			break;
 
 		case DESTRUCTION_TYPE_POWER_STATION:
 		case DESTRUCTION_TYPE_STRUCTURE:
-			widthScatter = TILE_UNITS / 2;
-			breadthScatter = TILE_UNITS / 2;
-			heightScatter = TILE_UNITS / 4;
+			widthScatter = DIST_TILE / 2;
+			breadthScatter = DIST_TILE / 2;
+			heightScatter = DIST_TILE / 4;
 			break;
 
 		case DESTRUCTION_TYPE_DROID:
 		case DESTRUCTION_TYPE_WALL_SECTION:
 		case DESTRUCTION_TYPE_FEATURE:
-			widthScatter = TILE_UNITS / 6;
-			breadthScatter = TILE_UNITS / 6;
-			heightScatter = TILE_UNITS / 6;
+			widthScatter = DIST_TILE / 6;
+			breadthScatter = DIST_TILE / 6;
+			heightScatter = DIST_TILE / 6;
 			break;
 		default:
 			ASSERT(false, "Weirdy destruction type effect");

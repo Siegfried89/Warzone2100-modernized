@@ -238,7 +238,7 @@ Vector2i spread(const Vector2i &c, size_t i)
 	if (i == 0) { return c; }
 	const int ring = 1 + static_cast<int>(std::sqrt(static_cast<double>(i)));
 	const uint16_t ang = static_cast<uint16_t>(i * 10273u);
-	const int r = ring * (TILE_UNITS * 3 / 4);
+	const int r = ring * (DIST_TILE * 3 / 4);
 	Vector2i p(c.x + iSinR(ang, r), c.y + iCosR(ang, r));
 	p.x = std::clamp(p.x, TILE_UNITS, world_coord(gameWorld.map.width - 2));
 	p.y = std::clamp(p.y, TILE_UNITS, world_coord(gameWorld.map.height - 2));
@@ -543,7 +543,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	}
 	if (mouseDown(MOUSE_LMB))
 	{
-		if (dist2(worldPos, s_cur.back()) >= static_cast<int64_t>(TILE_UNITS / 2) * (TILE_UNITS / 2) && s_cur.size() < 400) { s_cur.push_back(worldPos); }
+		if (dist2(worldPos, s_cur.back()) >= static_cast<int64_t>(DIST_TILE / 2) * (DIST_TILE / 2) && s_cur.size() < 400) { s_cur.push_back(worldPos); }
 		return true;
 	}
 	// losgelassen: Zeichnung fertig

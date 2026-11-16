@@ -803,7 +803,7 @@ void tick(GameWorld &world)
 		{
 			const Vector2i dw(world_coord(dent.x) + TILE_UNITS / 2, world_coord(dent.y) + TILE_UNITS / 2);
 			const int dx = d->pos.x - dw.x, dy = d->pos.y - dw.y;
-			if (dx * dx + dy * dy > (TILE_UNITS * 2) * (TILE_UNITS * 2))
+			if (dx * dx + dy * dy > (DIST_TILE * 2) * (DIST_TILE * 2))
 			{
 				j.moving = true;
 				j.moveTarget = dw;
@@ -887,7 +887,7 @@ unsigned craneBoost(const DROID *psDroid, unsigned points)
 			}
 		}
 	}
-	constexpr int R = 9 * TILE_UNITS;
+	constexpr int R = 9 * DIST_TILE;
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		if (s_cranes[p].empty() || (p != static_cast<int>(psDroid->player) && !aiCheckAlliances(p, psDroid->player))) { continue; }

@@ -167,11 +167,11 @@ bool tryOutpost(GameWorld &w, unsigned p, const Vector2i &base)
 	for (const STRUCTURE *der : w.objects.structures[p])
 	{
 		if (der->died || der->status != SS_BUILT || der->pStructureType->type != REF_RESOURCE_EXTRACTOR) { continue; }
-		if (iHypot(der->pos.xy() - base) < 16 * TILE_UNITS) { continue; }
+		if (iHypot(der->pos.xy() - base) < 16 * DIST_TILE) { continue; }
 		bool covered = false;
 		for (const STRUCTURE *s : w.objects.structures[p])
 		{
-			if (!s->died && s->pStructureType->id.toUtf8().rfind("A0BaBaOutpost", 0) == 0 && iHypot(s->pos.xy() - der->pos.xy()) < 8 * TILE_UNITS) { covered = true; break; }
+			if (!s->died && s->pStructureType->id.toUtf8().rfind("A0BaBaOutpost", 0) == 0 && iHypot(s->pos.xy() - der->pos.xy()) < 8 * DIST_TILE) { covered = true; break; }
 		}
 		if (covered) { continue; }
 		DROID *t = idleTruck(w, p);

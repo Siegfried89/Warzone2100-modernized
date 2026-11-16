@@ -333,6 +333,8 @@ static inline unsigned char terrainType(const MAPTILE *tile)
 }
 
 
+/// MOD: DIST_TILE (Abstandsmass "Kachel") steht in wzmaplib/map.h neben TILE_UNITS
+
 /* Additional tile <-> world coordinate overloads */
 
 static inline Vector2i world_coord(Vector2i const &mapCoord)

@@ -21,7 +21,7 @@ namespace modhelp
 {
 namespace
 {
-constexpr int HELP_RADIUS = 10 * TILE_UNITS;     // so weit hoeren Verbuendete den Ruf
+constexpr int HELP_RADIUS = 10 * DIST_TILE;     // so weit hoeren Verbuendete den Ruf
 constexpr unsigned HELP_COOLDOWN = 2500;         // pro getroffener Einheit hoechstens alle 2,5 s
 constexpr int MAX_HELPERS = 6;                   // so viele Einheiten reagieren je Ruf
 

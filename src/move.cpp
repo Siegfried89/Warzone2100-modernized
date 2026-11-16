@@ -77,7 +77,7 @@
 #define	VTOL_HEIGHT_MAX				350
 
 // Maximum size of an object for collision
-#define OBJ_MAXRADIUS	(TILE_UNITS * 4)
+#define OBJ_MAXRADIUS	(DIST_TILE * 4)
 
 // how long a shuffle can propagate before they all stop
 #define MOVE_SHUFFLETIME	10000
@@ -98,21 +98,21 @@
 #define BLOCK_DIR		90
 
 // How far out from an obstruction to start avoiding it
-#define AVOID_DIST		(TILE_UNITS*2)
+#define AVOID_DIST		(DIST_TILE*2)
 
 // Speed to approach a final way point, if possible.
 #define MIN_END_SPEED		60
 
 // distance from final way point to start slowing
-#define END_SPEED_RANGE		(3 * TILE_UNITS)
+#define END_SPEED_RANGE		(3 * DIST_TILE)
 
 // how long to pause after firing a FOM_NO weapon
 #define FOM_MOVEPAUSE		1500
 
 // distance to consider droids for a shuffle
-#define SHUFFLE_DIST		(3*TILE_UNITS/2)
+#define SHUFFLE_DIST		(3*DIST_TILE/2)
 // how far to move for a shuffle
-#define SHUFFLE_MOVE		(2*TILE_UNITS/2)
+#define SHUFFLE_MOVE		(2*DIST_TILE/2)
 
 /// Extra precision added to movement calculations.
 #define EXTRA_BITS                              8
@@ -679,7 +679,7 @@ static bool moveBestTarget(DROID *psDroid)
 	if (dist >= 0)
 	{
 		// Look ahead in the path.
-		while (dist >= 0 && dist < TILE_UNITS * 5)
+		while (dist >= 0 && dist < DIST_TILE * 5)
 		{
 			++positionIndex;
 			if (positionIndex >= (int)psDroid->sMove.asPath.size())
@@ -697,7 +697,7 @@ static bool moveBestTarget(DROID *psDroid)
 	else
 	{
 		// Lost sight of path, backtrack.
-		while (dist < 0 && dist >= -TILE_UNITS * 7 && positionIndex > 0)
+		while (dist < 0 && dist >= -DIST_TILE * 7 && positionIndex > 0)
 		{
 			--positionIndex;
 			dist = moveDirectPathToWaypoint(psDroid, positionIndex);
@@ -844,9 +844,9 @@ static void moveCheckSquished(DROID *psDroid, int32_t emx, int32_t emy)
 // How far apart two clicks may land and still count as the same rally point,
 // how much beyond body contact a settled neighbour still counts as touching,
 // and how far from the destination a droid may settle at all.
-#define SETTLE_DEST_MATCH	(TILE_UNITS * 2)
-#define SETTLE_CONTACT_SLACK	(TILE_UNITS / 2)
-#define SETTLE_MAX_RADIUS	(TILE_UNITS * 5)
+#define SETTLE_DEST_MATCH	(DIST_TILE * 2)
+#define SETTLE_CONTACT_SLACK	(DIST_TILE / 2)
+#define SETTLE_MAX_RADIUS	(DIST_TILE * 5)
 
 // A droid blocked against a neighbour that has already given up on the same
 // destination will not find a way through however often it repaths - the crowd
@@ -866,7 +866,7 @@ static bool moveSettledPackAtDestination(const DROID *psDroid)
 	{
 		return false;
 	}
-	for (BASE_OBJECT *gridObj : gridStartIterate(psDroid->pos.x, psDroid->pos.y, TILE_UNITS * 2))
+	for (BASE_OBJECT *gridObj : gridStartIterate(psDroid->pos.x, psDroid->pos.y, DIST_TILE * 2))
 	{
 		const DROID *psOther = castDroid(gridObj);
 		if (psOther == nullptr || psOther == psDroid || psOther->died
@@ -1511,7 +1511,7 @@ static void moveCalcDroidSlide(DROID *psDroid, int *pmx, int *pmy)
 const uint32_t BACKOFF_STALL_BASE = 40000;
 const uint32_t BACKOFF_STALL_JITTER = 8000;
 const uint32_t BACKOFF_TIME = 4000;
-const int32_t BACKOFF_DEST_EXEMPT = 6 * TILE_UNITS;
+const int32_t BACKOFF_DEST_EXEMPT = 6 * DIST_TILE;
 
 static bool moveBackoffActive(DROID *psDroid)
 {
@@ -1608,10 +1608,10 @@ static uint16_t moveGetDirection(DROID *psDroid)
 		Vector2i away = psDroid->pos.xy() - psDroid->sMove.target;
 		if (away.x == 0 && away.y == 0)
 		{
-			away = iSinCosR(static_cast<uint16_t>(psDroid->sMove.moveDir + DEG(180)), TILE_UNITS);
+			away = iSinCosR(static_cast<uint16_t>(psDroid->sMove.moveDir + DEG(180)), DIST_TILE);
 		}
 		const int32_t len = std::max(iHypot(away), 1);
-		ctx.targetPos = psDroid->pos.xy() + Vector2i(away.x * 2 * TILE_UNITS / len, away.y * 2 * TILE_UNITS / len);
+		ctx.targetPos = psDroid->pos.xy() + Vector2i(away.x * 2 * DIST_TILE / len, away.y * 2 * DIST_TILE / len);
 	}
 	ctx.velocity = iSinCosR(psDroid->sMove.moveDir, psDroid->sMove.speed);
 	ctx.moveDir = psDroid->sMove.moveDir;
@@ -1629,8 +1629,8 @@ static uint16_t moveGetDirection(DROID *psDroid)
 // has to get for that to read as progress rather than as jitter, and how much
 // ground it has to lose before its best is taken as stale.
 const uint32_t SETTLE_STALL_TIME = 3000;
-const int32_t SETTLE_STALL_SLACK = TILE_UNITS / 4;
-const int32_t SETTLE_STALL_RESET = 4 * TILE_UNITS;
+const int32_t SETTLE_STALL_SLACK = DIST_TILE / 4;
+const int32_t SETTLE_STALL_RESET = 4 * DIST_TILE;
 
 /// Updates the droid's progress record and reports whether it has stopped
 /// closing on its destination. Measured against the destination, not the
@@ -1655,8 +1655,8 @@ static bool moveReachedWayPoint(DROID *psDroid)
 	const Vector2i dist = Vector2i(psDroid->pos.xy()) - psDroid->sMove.target;
 	const unsigned int sqDist = dot(dist, dist);
 	const bool last = psDroid->sMove.pathIndex == (int)psDroid->sMove.asPath.size();
-	const unsigned int toleranceDist = 3 * (TILE_UNITS / 4);
-	unsigned int sqprecision = last ? ((TILE_UNITS / 4) * (TILE_UNITS / 4)) : ((TILE_UNITS / 2) * (TILE_UNITS / 2));
+	const unsigned int toleranceDist = 3 * (DIST_TILE / 4);
+	unsigned int sqprecision = last ? ((DIST_TILE / 4) * (DIST_TILE / 4)) : ((DIST_TILE / 2) * (DIST_TILE / 2));
 
 	// At the end of a route, how long a droid has been trying counts even when
 	// it is not yet close: the count below only runs within three quarters of a
@@ -1688,7 +1688,7 @@ static bool moveReachedWayPoint(DROID *psDroid)
 	if (last && psDroid->sMove.bumpTime != 0)
 	{
 		// Make waypoint tolerance 1 tile after 0 seconds, 2 tiles after 3 seconds, X tiles after (X + 1)² seconds.
-		sqprecision = (gameTime - psDroid->sMove.bumpTime + GAME_TICKS_PER_SEC) * (TILE_UNITS * TILE_UNITS / GAME_TICKS_PER_SEC);
+		sqprecision = (gameTime - psDroid->sMove.bumpTime + GAME_TICKS_PER_SEC) * (DIST_TILE * DIST_TILE / GAME_TICKS_PER_SEC);
 	}
 	else if (psDroid->sMove.tolerance >= toleranceDist)
 	{
@@ -2457,8 +2457,8 @@ static void checkLocalFeatures(DROID *psDroid)
 	}
 
 	// scan the neighbours
-#define DROIDDIST ((TILE_UNITS*5)/2)
-	constexpr int MAX_PICKUP_DISTANCE = (TILE_UNITS / 2);
+#define DROIDDIST ((DIST_TILE*5)/2)
+	constexpr int MAX_PICKUP_DISTANCE = (DIST_TILE / 2);
 	for (BASE_OBJECT *psObj : gridStartIterate(psDroid->pos.x, psDroid->pos.y, DROIDDIST))
 	{
 		bool pickedUp = false;

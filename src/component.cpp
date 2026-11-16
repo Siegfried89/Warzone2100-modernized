@@ -1139,8 +1139,8 @@ void destroyFXDroid(DROID *psDroid, unsigned impactTime, Vector3f &velocity)
 	{
 		const iIMDBaseShape *psImd = nullptr;
 
-		int maxHorizontalScatter = TILE_UNITS / 4;
-		int heightScatter = TILE_UNITS / 5;
+		int maxHorizontalScatter = DIST_TILE / 4;
+		int heightScatter = DIST_TILE / 5;
 		Vector2i horizontalScatter = iSinCosR(rand(), rand() % maxHorizontalScatter);
 
 		Vector3i pos = (psDroid->pos + Vector3i(horizontalScatter, 16 + heightScatter)).xzy();

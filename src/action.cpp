@@ -533,13 +533,13 @@ static void actionCalcPullBackPoint(BASE_OBJECT *psObj, BASE_OBJECT *psTarget, i
 
 	if (len == 0)
 	{
-		xdiff = TILE_UNITS;
-		ydiff = TILE_UNITS;
+		xdiff = DIST_TILE;
+		ydiff = DIST_TILE;
 	}
 	else
 	{
-		xdiff = (xdiff * TILE_UNITS) / len;
-		ydiff = (ydiff * TILE_UNITS) / len;
+		xdiff = (xdiff * DIST_TILE) / len;
+		ydiff = (ydiff * DIST_TILE) / len;
 	}
 
 	// create the position
@@ -661,7 +661,7 @@ static bool actionRemoveDroidsFromBuildPos(unsigned player, Vector2i pos, uint16
 		if (bestDist != UINT32_MAX)
 		{
 			// Push the droid out of the way.
-			Vector2i newPos = droid->pos.xy() + iSinCosR(iAtan2(bestDest - droid->pos.xy()), gameTimeAdjustedIncrement(TILE_UNITS));
+			Vector2i newPos = droid->pos.xy() + iSinCosR(iAtan2(bestDest - droid->pos.xy()), gameTimeAdjustedIncrement(DIST_TILE));
 			droidSetPosition(droid, gameWorld.map, newPos.x, newPos.y);
 		}
 	}
@@ -1362,7 +1362,7 @@ void actionUpdateDroid(DROID *psDroid)
 
 			/* circle around target if hovering and not cyborg */
 			Vector2i attackRunDelta = psDroid->pos.xy() - psDroid->sMove.destination;
-			if (DROID_STOPPED(psDroid) || dot(attackRunDelta, attackRunDelta) < TILE_UNITS * TILE_UNITS)
+			if (DROID_STOPPED(psDroid) || dot(attackRunDelta, attackRunDelta) < DIST_TILE * DIST_TILE)
 			{
 				actionAddVtolAttackRun(psDroid);
 			}

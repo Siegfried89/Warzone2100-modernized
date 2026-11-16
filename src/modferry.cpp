@@ -206,7 +206,7 @@ void drawOverlay(const glm::mat4 &m)
 			for (int k = 0; k < 4; ++k)
 			{
 				if ((k < 2) ? !on : !on2) { continue; }
-				const int wx = s->pos.x + C[k][0] * (TILE_UNITS * 2 / 5), wy = s->pos.y + C[k][1] * (TILE_UNITS * 2 / 5);
+				const int wx = s->pos.x + C[k][0] * (DIST_TILE * 2 / 5), wy = s->pos.y + C[k][1] * (DIST_TILE * 2 / 5);
 				Vector2i sp(0, 0);
 				if (!project(Vector3i(wx, wy, map_Height(gameWorld.map, wx, wy) + 14), m, sp)) { continue; }
 				const PIELIGHT c = (k < 2) ? pal_RGBA(255, 70, 50, 255) : pal_RGBA(90, 255, 110, 255);

@@ -28,8 +28,8 @@ namespace
 {
 constexpr int SEGMENTS = 10;   // (16.11. 19:28) Abschnitte halb so lang (wie alle Balken)
 constexpr unsigned TICK_MS = 500;
-constexpr int SUPPLY_RADIUS = 5 * TILE_UNITS;
-constexpr int DEPOT_RADIUS = 6 * TILE_UNITS;
+constexpr int SUPPLY_RADIUS = 5 * DIST_TILE;
+constexpr int DEPOT_RADIUS = 6 * DIST_TILE;
 constexpr unsigned RESUPPLY_TIMEOUT_MS = 300000;   // nach 5 Minuten ohne Erfolg gibt die Einheit die Fahrt auf
 
 struct State
@@ -212,7 +212,7 @@ void tick(GameWorld &world)
 				if (d->order.type == DORDER_MOVE)
 				{
 					const int ox = d->order.pos.x - st.goalX, oy = d->order.pos.y - st.goalY;
-					if (ox * ox + oy * oy > 2 * TILE_UNITS * 2 * TILE_UNITS) { taken = true; }    // anderes Marschziel
+					if (ox * ox + oy * oy > 2 * DIST_TILE * 2 * DIST_TILE) { taken = true; }    // anderes Marschziel
 				}
 				if (full || timedOut || taken)
 				{
@@ -221,7 +221,7 @@ void tick(GameWorld &world)
 					else
 					{
 						const int dx = st.originX - d->pos.x, dy = st.originY - d->pos.y;
-						if (dx * dx + dy * dy > 6 * TILE_UNITS * 6 * TILE_UNITS)
+						if (dx * dx + dy * dy > 6 * DIST_TILE * 6 * DIST_TILE)
 						{
 							orderDroidLoc(const_cast<DROID *>(d), DORDER_SCOUT, st.originX, st.originY, ModeImmediate);
 						}
@@ -238,8 +238,8 @@ void tick(GameWorld &world)
 					{
 						// Zielpunkt: 3 Felder vor dem Depot, auf der Seite der Einheit
 						const float len = std::max(1.f, std::sqrt(static_cast<float>(dx) * dx + static_cast<float>(dy) * dy));
-						st.goalX = src->pos.x - static_cast<int>(static_cast<float>(dx) / len * 3.f * TILE_UNITS);
-						st.goalY = src->pos.y - static_cast<int>(static_cast<float>(dy) / len * 3.f * TILE_UNITS);
+						st.goalX = src->pos.x - static_cast<int>(static_cast<float>(dx) / len * 3.f * DIST_TILE);
+						st.goalY = src->pos.y - static_cast<int>(static_cast<float>(dy) / len * 3.f * DIST_TILE);
 						st.originX = d->pos.x; st.originY = d->pos.y;
 						st.since = gameTime;
 						st.resupply = true;

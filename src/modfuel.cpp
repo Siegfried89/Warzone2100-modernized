@@ -27,9 +27,9 @@ namespace modfuel
 namespace
 {
 constexpr unsigned TICK_MS = 500;
-constexpr int FUEL_RANGE = 480 * TILE_UNITS;            // "recht lange": ein voller Tank reicht fuer 480 Kacheln Fahrweg
+constexpr int FUEL_RANGE = 480 * DIST_TILE;            // "recht lange": ein voller Tank reicht fuer 480 Kacheln Fahrweg
 constexpr int MIN_SPEED_PERCENT = 15;                   // leerer Tank: Mindesttempo
-constexpr int STATION_RADIUS = 3 * TILE_UNITS;          // in diesem Umkreis um die Tankstelle wird getankt
+constexpr int STATION_RADIUS = 3 * DIST_TILE;          // in diesem Umkreis um die Tankstelle wird getankt
 constexpr int REFUEL_PER_TICK = FUEL_RANGE / 16;        // voll in 8 Sekunden
 constexpr unsigned TRIP_TIMEOUT_MS = 300000;            // nach 5 Minuten ohne Erfolg gibt die Einheit die Fahrt auf
 
@@ -184,7 +184,7 @@ void tick(GameWorld &world)
 			if (st.havePos)
 			{
 				const int moved = iHypot(d->pos.x - st.lastX, d->pos.y - st.lastY);
-				if (moved > 0 && moved < 8 * TILE_UNITS) { st.fuel = std::max(0, st.fuel - moved); }   // Spruenge (Transport, Ebenenwechsel) zaehlen nicht
+				if (moved > 0 && moved < 8 * DIST_TILE) { st.fuel = std::max(0, st.fuel - moved); }   // Spruenge (Transport, Ebenenwechsel) zaehlen nicht
 			}
 			st.lastX = d->pos.x; st.lastY = d->pos.y; st.havePos = true;
 
@@ -210,7 +210,7 @@ void tick(GameWorld &world)
 				if (d->order.type == DORDER_MOVE)
 				{
 					const int ox = d->order.pos.x - st.goalX, oy = d->order.pos.y - st.goalY;
-					if (ox * ox + oy * oy > 2 * TILE_UNITS * 2 * TILE_UNITS) { taken = true; }
+					if (ox * ox + oy * oy > 2 * DIST_TILE * 2 * DIST_TILE) { taken = true; }
 				}
 				if (full || timedOut || taken)
 				{
@@ -219,7 +219,7 @@ void tick(GameWorld &world)
 					else
 					{
 						const int dx = st.originX - d->pos.x, dy = st.originY - d->pos.y;
-						if (dx * dx + dy * dy > 6 * TILE_UNITS * 6 * TILE_UNITS)
+						if (dx * dx + dy * dy > 6 * DIST_TILE * 6 * DIST_TILE)
 						{
 							orderDroidLoc(const_cast<DROID *>(d), DORDER_MOVE, st.originX, st.originY, ModeImmediate);
 						}
@@ -236,8 +236,8 @@ void tick(GameWorld &world)
 					{
 						// Zielpunkt: 2 Felder vor der Tankstelle, auf der Seite der Einheit
 						const int len = std::max(1, iHypot(dx, dy));
-						st.goalX = src->pos.x - dx * 2 * TILE_UNITS / len;
-						st.goalY = src->pos.y - dy * 2 * TILE_UNITS / len;
+						st.goalX = src->pos.x - dx * 2 * DIST_TILE / len;
+						st.goalY = src->pos.y - dy * 2 * DIST_TILE / len;
 						st.originX = d->pos.x; st.originY = d->pos.y;
 						st.since = gameTime;
 						st.trip = true;

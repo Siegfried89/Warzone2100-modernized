@@ -87,7 +87,7 @@ struct Query
 
 // Keep a lane centre this far from a wall and from the centreline, so a droid is
 // off the wall and clearly on its own side. About a unit radius.
-const int32_t LANE_MARGIN = TILE_UNITS / 2;
+const int32_t LANE_MARGIN = DIST_TILE / 2;
 
 // Within this many centerline points of a mouth an entering droid may be
 // pre-sorted across the opposing lane onto its own side, provided the opposing
@@ -110,7 +110,7 @@ const int32_t PASS_MARGIN = 40;
 
 // On a turn-taking corridor the waiting direction queues from this far back, so
 // the mouth stays clear for the flow coming out of it.
-const int32_t HOLD_STANDOFF = 2 * TILE_UNITS;
+const int32_t HOLD_STANDOFF = 2 * DIST_TILE;
 
 // An inside droid bumped against something for longer than this is stalled,
 // not just nudging past neighbours in a moving stream. Well under the give-up
@@ -126,7 +126,7 @@ const uint32_t STALL_WEDGED = 20000;
 
 // Gap between queued droids on top of their bodies, so the file has room to
 // stop and start without shoving.
-const int32_t QUEUE_GAP = TILE_UNITS / 4;
+const int32_t QUEUE_GAP = DIST_TILE / 4;
 
 // The lane is extended out past a mouth as an approach funnel: a droid this far
 // out, heading in, is already drawn onto its own side, so it arrives tucked to the
@@ -134,27 +134,27 @@ const int32_t QUEUE_GAP = TILE_UNITS / 4;
 // entrance and catching the corner. Exactly as far as mouths chain and as far as
 // the claim mask is stamped around every mouth, so capture, claim and chaining
 // share one reach.
-const int32_t APPROACH_RADIUS = CHAIN_LINK_TILES * TILE_UNITS;
+const int32_t APPROACH_RADIUS = CHAIN_LINK_TILES * DIST_TILE;
 
 // Aim this far ahead along the lane, toward and into the mouth, so the funnel
 // leads a droid in smoothly instead of at one fixed point it would pile onto.
-const int32_t APPROACH_LEAD = 2 * TILE_UNITS;
+const int32_t APPROACH_LEAD = 2 * DIST_TILE;
 
 // How far ahead along a passage a droid crossing into it is aimed. Shorter than
 // the approach lead on purpose: see the use site.
-const int32_t JUNCTION_LEAD = TILE_UNITS;
+const int32_t JUNCTION_LEAD = DIST_TILE;
 
 // Ignore a droid further than this to the side of a mouth. It is not lined up to
 // enter here, so the funnel leaves it to its own route.
-const int32_t APPROACH_SIDE_MAX = 5 * TILE_UNITS;
+const int32_t APPROACH_SIDE_MAX = 5 * DIST_TILE;
 
 // While still far out the funnel aims this much wider than the lane, onto open
 // ground beside the corridor's line, tapering to nothing by FUNNEL_MERGE before
 // the mouth. The two approaches then run well apart, the middle of the field
 // stays clear for the flow coming out, and a droid rounds the entrance corner
 // with room and is straight for the last stretch in.
-const int32_t FUNNEL_FLARE = 2 * TILE_UNITS;
-const int32_t FUNNEL_MERGE = 2 * TILE_UNITS;
+const int32_t FUNNEL_FLARE = 2 * DIST_TILE;
+const int32_t FUNNEL_MERGE = 2 * DIST_TILE;
 
 // Fixed-point length for the unit direction vectors the funnel projects along.
 const int32_t DIR_UNIT = 4096;
@@ -171,7 +171,7 @@ const int32_t DIR_UNIT = 4096;
 // Mouths closer than this butt together: a droid crossing is on one passage or
 // the other throughout, and handing it the next one's lane while it is still
 // departing fights the turn it is making. Only a wider gap has ground to span.
-const int32_t JUNCTION_GAP_MIN = 4 * TILE_UNITS;
+const int32_t JUNCTION_GAP_MIN = 4 * DIST_TILE;
 
 int64_t distSqTo(const Vector2i &a, const Vector2i &b)
 {
@@ -304,7 +304,7 @@ Query queryCorridor(const GameWorld &world, const CorridorFlowState &flow, const
 	// outside while the droid stands almost on the centerline itself. Plain
 	// closeness to the line also counts as inside, which no frame can dispute.
 	const bool withinWidth = lateral <= static_cast<int64_t>(sideRoom) * cmap->chains.axisLen[static_cast<size_t>(bestId)][nearest]
-	                         || nearestDistSq <= static_cast<int64_t>(TILE_UNITS) * TILE_UNITS;
+	                         || nearestDistSq <= static_cast<int64_t>(DIST_TILE) * DIST_TILE;
 
 	if (!endpoint && withinWidth)
 	{
@@ -452,7 +452,7 @@ int routeDir(const DROID *psDroid, const Corridor &c, bool *strongOut = nullptr,
 		// ground mid-line. There the footprint overlaps other passages and
 		// their legs of the route would read as this corridor's evidence,
 		// and a lane claim in a section that wide says nothing anyway.
-		const int32_t nearRadius = std::min(c.widthProfile[wIdx] / 2, TILE_UNITS) + TILE_UNITS;
+		const int32_t nearRadius = std::min(c.widthProfile[wIdx] / 2, DIST_TILE) + DIST_TILE;
 		bool counts = distSqTo(path[i], c.centerline[static_cast<size_t>(idx)]) <= static_cast<int64_t>(nearRadius) * nearRadius;
 		if (!counts && (idx == 0 || idx == last))
 		{
@@ -531,7 +531,7 @@ int routeTurnSide(const GameWorld &world, const CorridorFlowState &flow, const D
 	for (int i = start; i < stop; ++i)
 	{
 		const Vector2i next = path[i] - prev;
-		if (iHypot(next) < TILE_UNITS / 2)
+		if (iHypot(next) < DIST_TILE / 2)
 		{
 			continue;   // too short to carry a direction
 		}
@@ -669,7 +669,7 @@ bool routeEntersMouth(const DROID *psDroid, const Corridor &c, int dir)
 			// The passable width here, read a couple in from the end where the
 			// measured width balloons into open space.
 			const int wIdx = profileReadIdx(idx, last);
-			const int32_t nearRadius = c.widthProfile[wIdx] / 2 + TILE_UNITS / 2;
+			const int32_t nearRadius = c.widthProfile[wIdx] / 2 + DIST_TILE / 2;
 			const Vector2i toP = p - prev;
 			int64_t distSq;
 			const int64_t t = static_cast<int64_t>(toP.x) * seg.x + static_cast<int64_t>(toP.y) * seg.y;
@@ -778,7 +778,7 @@ void logClassification(const DROID *psDroid, const Query &q, int rdir)
 // How many body-wide sub-lanes fit in a band this wide.
 int lanesForBand(int32_t bandWidth, const DROID *psDroid)
 {
-	const int32_t laneWidth = std::max(2 * moveObjRadius(psDroid), TILE_UNITS / 2);
+	const int32_t laneWidth = std::max(2 * moveObjRadius(psDroid), DIST_TILE / 2);
 	return std::max(1, (bandWidth + laneWidth / 2) / laneWidth);
 }
 
@@ -1671,7 +1671,7 @@ bool corridorLaneTarget(const GameWorld &world, const DROID *psDroid, Vector2i &
 // the file compresses and rolls smoothly instead of stopping and starting.
 // Shorter than the slot spacing, so a droid runs at full speed for most of each
 // advance and only brakes over the last stretch.
-const int32_t QUEUE_RAMP = TILE_UNITS / 2;
+const int32_t QUEUE_RAMP = DIST_TILE / 2;
 
 namespace
 {

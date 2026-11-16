@@ -44,10 +44,10 @@ const char *getDroidActionName(DROID_ACTION action);
 #define EMP_DISABLE_TIME (10000)     // 10 secs
 
 /** How far away the repair droid can be from the damaged droid to function. */
-#define REPAIR_RANGE  (2 * TILE_UNITS)
+#define REPAIR_RANGE  (2 * DIST_TILE)
 
 /// The maximum distance a repair droid will automatically go in guard mode.
-#define REPAIR_MAXDIST  (5 * TILE_UNITS)
+#define REPAIR_MAXDIST  (5 * DIST_TILE)
 
 // The minimum structure strength modifier needed to automatically target blocking walls.
 #define MIN_STRUCTURE_BLOCK_STRENGTH 33

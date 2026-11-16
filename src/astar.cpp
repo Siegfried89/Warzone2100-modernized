@@ -714,7 +714,7 @@ static int32_t bendAllowedOffset(const PATHJOB *psJob, Vector2i p, Vector2i outw
 {
 	for (int32_t o = want; o > 0; o -= 32)
 	{
-		Vector2i q(p.x + outwardStep.x * o / TILE_UNITS, p.y + outwardStep.y * o / TILE_UNITS);
+		Vector2i q(p.x + outwardStep.x * o / DIST_TILE, p.y + outwardStep.y * o / DIST_TILE);
 		Vector2i qm = map_coord(q);
 		Vector2i qb = map_coord(Vector2i(q.x + outwardStep.x / 2, q.y + outwardStep.y / 2));
 		if (!bendBlockedTile(psJob, qm.x, qm.y) && !bendBlockedTile(psJob, qb.x, qb.y))
@@ -728,7 +728,7 @@ static int32_t bendAllowedOffset(const PATHJOB *psJob, Vector2i p, Vector2i outw
 // How far the lane pass looks for room beside the route, and the widest shift
 // it will ask for. A fixed lane-width nudge does nothing in a wide channel, so
 // the shift follows the room instead.
-constexpr int32_t LANE_PROBE_FAR = 8 * TILE_UNITS;
+constexpr int32_t LANE_PROBE_FAR = 8 * DIST_TILE;
 constexpr int32_t KEEP_RIGHT_MAX = 640;
 
 constexpr int32_t WALL_PROBE_STEP = 64;
@@ -739,12 +739,12 @@ constexpr int32_t WALL_KEEP = 320;                  // lane offsets stop this fa
 /// the near wall the clearance floor is measured against.
 static int32_t laneRoom(const PATHJOB *psJob, Vector2i p, Vector2i stepT)
 {
-	for (int32_t d = TILE_UNITS; d <= LANE_PROBE_FAR; d += TILE_UNITS)
+	for (int32_t d = DIST_TILE; d <= LANE_PROBE_FAR; d += DIST_TILE)
 	{
-		Vector2i t = map_coord(Vector2i(p.x + stepT.x * d / TILE_UNITS, p.y + stepT.y * d / TILE_UNITS));
+		Vector2i t = map_coord(Vector2i(p.x + stepT.x * d / DIST_TILE, p.y + stepT.y * d / DIST_TILE));
 		if (bendBlockedTile(psJob, t.x, t.y))
 		{
-			return d - TILE_UNITS;
+			return d - DIST_TILE;
 		}
 	}
 	return LANE_PROBE_FAR;
@@ -756,7 +756,7 @@ static int32_t wallDistance(const PATHJOB *psJob, Vector2i p, Vector2i stepT)
 {
 	for (int32_t d = WALL_PROBE_STEP; d <= WALL_CLEAR; d += WALL_PROBE_STEP)
 	{
-		Vector2i t = map_coord(Vector2i(p.x + stepT.x * d / TILE_UNITS, p.y + stepT.y * d / TILE_UNITS));
+		Vector2i t = map_coord(Vector2i(p.x + stepT.x * d / DIST_TILE, p.y + stepT.y * d / DIST_TILE));
 		if (bendBlockedTile(psJob, t.x, t.y))
 		{
 			return d;
@@ -814,7 +814,7 @@ static void fpathWallClearance(const PATHJOB *psJob, MOVE_CONTROL *psMove)
 		{
 			continue;
 		}
-		Vector2i right(-d.y * TILE_UNITS / len, d.x * TILE_UNITS / len);
+		Vector2i right(-d.y * DIST_TILE / len, d.x * DIST_TILE / len);
 		if (right.x == 0 && right.y == 0)
 		{
 			continue;
@@ -871,8 +871,8 @@ static void fpathWallClearance(const PATHJOB *psJob, MOVE_CONTROL *psMove)
 	{
 		if (want[k] > 0)
 		{
-			path[k].x += awayStep[k].x * want[k] / TILE_UNITS;
-			path[k].y += awayStep[k].y * want[k] / TILE_UNITS;
+			path[k].x += awayStep[k].x * want[k] / DIST_TILE;
+			path[k].y += awayStep[k].y * want[k] / DIST_TILE;
 		}
 	}
 
@@ -933,7 +933,7 @@ static void fpathKeepRightOffset(const PATHJOB *psJob, MOVE_CONTROL *psMove)
 		{
 			continue;
 		}
-		Vector2i right(-d.y * TILE_UNITS / len, d.x * TILE_UNITS / len);
+		Vector2i right(-d.y * DIST_TILE / len, d.x * DIST_TILE / len);
 		if (right.x == 0 && right.y == 0)
 		{
 			continue;
@@ -985,8 +985,8 @@ static void fpathKeepRightOffset(const PATHJOB *psJob, MOVE_CONTROL *psMove)
 	{
 		if (want[k] > 0)
 		{
-			path[k].x += rightStep[k].x * want[k] / TILE_UNITS;
-			path[k].y += rightStep[k].y * want[k] / TILE_UNITS;
+			path[k].x += rightStep[k].x * want[k] / DIST_TILE;
+			path[k].y += rightStep[k].y * want[k] / DIST_TILE;
 		}
 	}
 }

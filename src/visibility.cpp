@@ -1253,7 +1253,7 @@ static bool heightChangeReaches(const BASE_OBJECT *psObj, const std::pair<Vector
 	const Vector2i hi = world_coord(r.second + Vector2i(1, 1));
 	const int64_t dx = std::max<int64_t>({0, lo.x - psObj->pos.x, psObj->pos.x - hi.x});
 	const int64_t dy = std::max<int64_t>({0, lo.y - psObj->pos.y, psObj->pos.y - hi.y});
-	const int64_t reach = objSensorRange(psObj) + 2 * TILE_UNITS;
+	const int64_t reach = objSensorRange(psObj) + 2 * DIST_TILE;
 	return dx * dx + dy * dy <= reach * reach;
 }
 
