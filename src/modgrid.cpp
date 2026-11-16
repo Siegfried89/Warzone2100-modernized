@@ -39,7 +39,7 @@ constexpr int LINK_RANGE = 6 * 128;        // Masten bis 6 Felder voneinander we
 constexpr int SUPPLY_RANGE = 448;          // 3,5 Felder Versorgungsradius um Mast und Kraftwerk
 constexpr int GEN_LINK_RANGE = 576;        // Kraftwerk speist Masten bis zu dieser Entfernung ein
 constexpr int MAX_LINKS_PER_POLE = 3;
-constexpr int CABLE_HEIGHT = 140;          // Hoehe der Kabelanschluesse am Mast
+constexpr int CABLE_HEIGHT = 75;           // Hoehe der Kabelanschluesse am Mast (16.11.: WZ-Stahlgittermast, halbe Groesse - Ausleger bei 75)
 constexpr int GEN_CABLE_HEIGHT = 90;
 constexpr int SAG_STEPS = 12;
 

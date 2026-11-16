@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Gelaende verformen (Krater, Graeben, Zuschaufeln) - siehe modterrain.h
+// MOD: Gelaende verformen (Krater, Schuetzenloecher, tiefe Graeben, Zuschaufeln) - siehe modterrain.h
+//
+// 16.11. 18:24 (Wunsch): Krater nur 1 Kachel gross, mit Kratertextur, zurueck in den Originalzustand, sobald zugeschuettet; Graeben tiefer;
+// harte Kante pro Kachel statt weicher Mulde. Umsetzung: statt Eckpunkte abzusenken, bekommt jede betroffene KACHEL eine Absenkung
+// ("Sink"). Die Hoehe einer Stelle = Gelaende minus Absenkung, die an den Kachelraendern nur auf einem schmalen Streifen (SINK_EDGE
+// Einheiten je Seite) uebergeht - fast senkrechte Waende. Die Originalhoehen werden nie veraendert; nur die Kacheltextur wird
+// fuer Krater getauscht und beim Zuschuetten wiederhergestellt.
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
 #include "lib/framework/fixedpoint.h"
@@ -7,14 +13,15 @@
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
+#include <vector>
 
 #include "modterrain.h"
 
-#include <vector>
 #include "modgroundfire.h"
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "map.h"
+#include "terrain.h"
 #include "droid.h"
 #include "droiddef.h"
 #include "effects.h"
@@ -31,110 +38,94 @@ namespace modterrain
 {
 namespace
 {
-constexpr int MAX_DEPTH = 110;        // tiefer als so wird der Boden an einem Eckpunkt nie abgesenkt (gegenueber der Ausgangshoehe)
-constexpr int MAX_RAISE = 16;         // so hoch wird der Randwall hoechstens
-constexpr int COVER_DEPTH = 10;       // ab dieser mittleren Tiefe gibt die Mulde Deckung
+constexpr int SINK_EDGE = 14;          // Uebergangsbreite je Kachelseite (Weltmasseinheiten; Kachel = 128) -> fast senkrechte Kante
+constexpr int MAX_CRATER_SINK = 64;    // tiefer werden Krater auch bei vielen Treffern nicht
+constexpr int MAX_SINK = 120;          // absolute Grenze (Graeben)
+constexpr int COVER_DEPTH = 10;        // ab dieser Tiefe gibt die Mulde Deckung
 
-struct Vertex
+struct Cell
 {
-	int32_t orig = 0;   // Hoehe, bevor das Modul den Punkt veraendert hat
-	int32_t ours = 0;   // Hoehe, die das Modul zuletzt gesetzt hat
+	int16_t dyn = 0;            // Krater / Schuetzenloch (zuschuettbar)
+	int16_t fixed = 0;          // tiefer Graben (Bauwerk) - verschwindet mit dem Bauwerk
+	uint16_t origTexture = 0;   // Kacheltextur vor dem Krater
+	bool texSwapped = false;
+	bool origDecal = false;
+	int depth() const { return std::max<int>(dyn, fixed); }
 };
 
-std::unordered_map<uint64_t, Vertex> s_table;
+std::unordered_map<uint64_t, Cell> s_cells;
 
 int layerTag()
 {
 	return modlayermap::worldsExist() ? static_cast<int>(modlayermap::resident()) : static_cast<int>(modlayer::SURFACE);
 }
 
-uint64_t keyOf(int x, int y)
+uint64_t keyOf(int layer, int x, int y)
 {
-	return (static_cast<uint64_t>(layerTag()) << 48) | (static_cast<uint64_t>(static_cast<uint32_t>(x) & 0xffffff) << 24) | static_cast<uint64_t>(static_cast<uint32_t>(y) & 0xffffff);
+	return (static_cast<uint64_t>(layer) << 48) | (static_cast<uint64_t>(static_cast<uint32_t>(x) & 0xffffff) << 24) | static_cast<uint64_t>(static_cast<uint32_t>(y) & 0xffffff);
 }
 
-bool vertexOk(const WorldMapState &m, int x, int y)
+int cellDepth(int layer, int x, int y)
+{
+	const auto it = s_cells.find(keyOf(layer, x, y));
+	return it == s_cells.end() ? 0 : it->second.depth();
+}
+
+bool tileOk(const WorldMapState &m, int x, int y)
 {
 	if (x < 2 || y < 2 || x >= m.width - 2 || y >= m.height - 2)
 	{
 		return false;
 	}
-	for (int dy = -1; dy <= 0; dy++)
-	{
-		for (int dx = -1; dx <= 0; dx++)
-		{
-			const MAPTILE *t = &m.tiles[(x + dx) + (y + dy) * m.width];
-			if (TileHasStructure(t))
-			{
-				return false;
-			}
-			const uint8_t tt = terrainType(t);
-			if (tt == TER_WATER || tt == TER_CLIFFFACE)
-			{
-				return false;
-			}
-		}
-	}
-	return true;
-}
-
-/// Eckpunkt um delta verschieben (Tiefe/Wall begrenzt, Fremdaenderungen werden erkannt). true, wenn sich etwas geaendert hat.
-bool applyDelta(WorldMapState &m, int x, int y, int delta, int maxRaise = MAX_RAISE)
-{
-	if (delta == 0 || !vertexOk(m, x, y))
+	const MAPTILE *t = &m.tiles[x + y * m.width];
+	if (TileHasStructure(t) || TileHasFeature(t))
 	{
 		return false;
 	}
-	const int cur = m.tiles[x + y * m.width].height;
-	const uint64_t k = keyOf(x, y);
-	int orig = cur;
-	const auto it = s_table.find(k);
-	if (it != s_table.end())
-	{
-		if (it->second.ours == cur)
-		{
-			orig = it->second.orig;
-		}
-		else
-		{
-			s_table.erase(it);   // jemand anders hat die Hoehe veraendert (Fundament, Grube): als neue Ausgangshoehe nehmen
-		}
-	}
-	const int target = std::clamp(cur + delta, orig - MAX_DEPTH, orig + maxRaise);
-	if (target == cur)
-	{
-		return false;
-	}
-	setTileHeight(m, x, y, target);
-	if (target == orig)
-	{
-		s_table.erase(k);
-	}
-	else
-	{
-		s_table[k] = Vertex{orig, target};
-	}
-	return true;
+	const uint8_t tt = terrainType(t);
+	return tt != TER_WATER && tt != TER_CLIFFFACE;
 }
 
-/// Ausgangshoehe minus aktuelle Hoehe (positiv = Mulde); 0, wenn der Punkt nicht vom Modul veraendert wurde
-int vertexDepth(const WorldMapState &m, int x, int y)
+void dirtyAround(int x, int y)
 {
-	if (x < 0 || y < 0 || x >= m.width || y >= m.height)
+	for (int dy = -1; dy <= 1; ++dy)
 	{
-		return 0;
+		for (int dx = -1; dx <= 1; ++dx)
+		{
+			if (tileOnMap(gameWorld.map, x + dx, y + dy)) { markTileDirty(x + dx, y + dy); }
+		}
 	}
-	const auto it = s_table.find(keyOf(x, y));
-	if (it == s_table.end())
+}
+
+/// Kratertextur setzen (Original merken) bzw. wiederherstellen
+void swapTexture(Cell &c, int x, int y, bool crater)
+{
+	MAPTILE *t = mapTile(gameWorld.map, x, y);
+	if (crater && !c.texSwapped)
 	{
-		return 0;
+		c.origTexture = t->texture;
+		c.origDecal = TILE_HAS_DECAL(t) != 0;
+		c.texSwapped = true;
+		// Drehung/Spiegelung aus der Lage ableiten (deterministisch) - nicht jeder Krater sieht gleich aus
+		const unsigned rot = static_cast<unsigned>(x * 7 + y * 13) & 3u;
+		t->texture = static_cast<uint16_t>((RUBBLE_TILE & TILE_NUMMASK) | (rot << TILE_ROTSHIFT));
+		SET_TILE_DECAL(t);
 	}
-	const int cur = m.tiles[x + y * m.width].height;
-	if (cur != it->second.ours)
+	else if (!crater && c.texSwapped)
 	{
-		return 0;
+		t->texture = c.origTexture;
+		if (c.origDecal) { SET_TILE_DECAL(t); } else { CLEAR_TILE_DECAL(t); }
+		c.texSwapped = false;
 	}
-	return it->second.orig - cur;
+}
+
+/// Kachel loeschen, wenn nichts mehr abgesenkt ist (Textur zurueck)
+void tidy(uint64_t k, int x, int y)
+{
+	const auto it = s_cells.find(k);
+	if (it == s_cells.end()) { return; }
+	if (it->second.dyn <= 0) { swapTexture(it->second, x, y, false); }
+	if (it->second.dyn <= 0 && it->second.fixed <= 0) { s_cells.erase(it); }
 }
 
 void dust(int wx, int wy, int size)
@@ -144,13 +135,13 @@ void dust(int wx, int wy, int size)
 		return;
 	}
 	Vector3i pos(wx, map_Height(gameWorld.map, wx, wy) + 12, wy);
-	// MOD (16.11. Punkt 11): grosse Staubwolke - verdeckt das Einsinken des Kraters (der Krater entsteht erst kurz danach, siehe tick())
-	const int n = 4 + size * 4;
+	// grosse Staubwolke - verdeckt das Einsinken des Kraters (der Krater entsteht erst kurz danach, siehe tick())
+	const int n = 3 + size * 3;
 	for (int i = 0; i < n; i++)
 	{
 		Vector3i p = pos;
-		p.x += ((i * 53) % 61 - 30) * size * 3 / 2;
-		p.z += ((i * 37) % 59 - 29) * size * 3 / 2;
+		p.x += ((i * 53) % 61 - 30) * size;
+		p.z += ((i * 37) % 59 - 29) * size;
 		p.y += (i % 3) * 10 * size;
 		addEffect(&p, EFFECT_SMOKE, (i % 3 != 2) ? SMOKE_TYPE_BILLOW : SMOKE_TYPE_DRIFTING, false, nullptr, 0, gameTime);
 	}
@@ -163,19 +154,13 @@ struct PendingCrater
 };
 std::vector<PendingCrater> s_pending;   // Reihenfolge = Einschlagsreihenfolge (auf allen Rechnern gleich)
 
-struct CraterShape
-{
-	float radius;      // Kacheln
-	int depth;         // Weltmasseinheiten
-};
-
-CraterShape shapeOf(int size)
+int craterDepth(int size)
 {
 	switch (size)
 	{
-	case 1: return {1.5f, 26};
-	case 2: return {2.3f, 44};
-	default: return {3.3f, 66};
+	case 1: return 16;
+	case 2: return 26;
+	default: return 36;
 	}
 }
 
@@ -188,7 +173,79 @@ bool isLegged(const DROID *d)
 	const PROPULSION_STATS *p = d->getPropulsionStats();
 	return p != nullptr && p->propulsionType == PROPULSION_TYPE_LEGGED;
 }
+
+/// Anteil (in 1/(2E)) der Strecke [c-E, c+E] in der Kachel lo..lo+TILE_UNITS (ganzzahlig)
+inline int overlapI(int c, int lo)
+{
+	const int a = std::max(c - SINK_EDGE, lo), b = std::min(c + SINK_EDGE, lo + TILE_UNITS);
+	return std::max(0, b - a);
+}
+inline float overlapF(float c, float lo)
+{
+	const float e = static_cast<float>(SINK_EDGE);
+	const float a = std::max(c - e, lo), b = std::min(c + e, lo + static_cast<float>(TILE_UNITS));
+	return std::max(0.f, b - a);
+}
 } // namespace
+
+int sinkAt(const WorldMapState &mapState, int worldX, int worldY)
+{
+	if (s_cells.empty() || &mapState != &gameWorld.map)
+	{
+		return 0;
+	}
+	const int layer = layerTag();
+	const int tx = worldX >> TILE_SHIFT, ty = worldY >> TILE_SHIFT;
+	int sum = 0;
+	for (int dy = -1; dy <= 1; ++dy)
+	{
+		const int wy = overlapI(worldY, (ty + dy) << TILE_SHIFT);
+		if (wy == 0) { continue; }
+		for (int dx = -1; dx <= 1; ++dx)
+		{
+			const int wx = overlapI(worldX, (tx + dx) << TILE_SHIFT);
+			if (wx == 0) { continue; }
+			const int d = cellDepth(layer, tx + dx, ty + dy);
+			if (d != 0) { sum += d * wx * wy; }
+		}
+	}
+	constexpr int norm = 4 * SINK_EDGE * SINK_EDGE;
+	return (sum + norm / 2) / norm;
+}
+
+float sinkAtF(const WorldMapState &mapState, float worldX, float worldY)
+{
+	if (s_cells.empty() || &mapState != &gameWorld.map)
+	{
+		return 0.f;
+	}
+	const int layer = layerTag();
+	const int tx = static_cast<int>(std::floor(worldX / TILE_UNITS)), ty = static_cast<int>(std::floor(worldY / TILE_UNITS));
+	float sum = 0.f;
+	for (int dy = -1; dy <= 1; ++dy)
+	{
+		const float wy = overlapF(worldY, static_cast<float>((ty + dy) * TILE_UNITS));
+		if (wy <= 0.f) { continue; }
+		for (int dx = -1; dx <= 1; ++dx)
+		{
+			const float wx = overlapF(worldX, static_cast<float>((tx + dx) * TILE_UNITS));
+			if (wx <= 0.f) { continue; }
+			const int d = cellDepth(layer, tx + dx, ty + dy);
+			if (d != 0) { sum += static_cast<float>(d) * wx * wy; }
+		}
+	}
+	return sum / static_cast<float>(4 * SINK_EDGE * SINK_EDGE);
+}
+
+int sinkAtCorner(const WorldMapState &mapState, int x, int y)
+{
+	if (s_cells.empty() || &mapState != &gameWorld.map)
+	{
+		return 0;
+	}
+	const int layer = layerTag();
+	return std::max({cellDepth(layer, x - 1, y - 1), cellDepth(layer, x, y - 1), cellDepth(layer, x - 1, y), cellDepth(layer, x, y)});
+}
 
 bool addCrater(int worldX, int worldY, int size)
 {
@@ -198,47 +255,23 @@ bool addCrater(int worldX, int worldY, int size)
 	{
 		return false;
 	}
-	const CraterShape sh = shapeOf(size);
-	const float cx = static_cast<float>(worldX) / TILE_UNITS;
-	const float cy = static_cast<float>(worldY) / TILE_UNITS;
-	const int r = static_cast<int>(std::ceil(sh.radius)) + 1;
-	const int ix = static_cast<int>(std::floor(cx));
-	const int iy = static_cast<int>(std::floor(cy));
-	// Mitte muss gueltig sein, sonst kein Krater (verhindert halbe Krater an Mauern und Wasser)
-	if (!vertexOk(m, ix, iy) && !vertexOk(m, ix + 1, iy + 1))
+	const int tx = map_coord(worldX), ty = map_coord(worldY);
+	if (!tileOk(m, tx, ty))
 	{
 		return false;
 	}
-	bool any = false;
-	for (int vy = iy - r; vy <= iy + r + 1; vy++)
+	const uint64_t k = keyOf(layerTag(), tx, ty);
+	Cell &c = s_cells[k];
+	const int before = c.dyn;
+	const int add = c.dyn > 0 ? craterDepth(size) / 2 : craterDepth(size);   // weitere Treffer vertiefen nur noch halb so viel
+	c.dyn = static_cast<int16_t>(std::min(MAX_CRATER_SINK, std::max<int>(c.dyn, 0) + add));
+	swapTexture(c, tx, ty, true);
+	if (c.dyn == before)
 	{
-		for (int vx = ix - r; vx <= ix + r + 1; vx++)
-		{
-			const float dx = vx - cx, dy = vy - cy;
-			const float d = std::sqrt(dx * dx + dy * dy);
-			int delta = 0;
-			if (d <= sh.radius)
-			{
-				const float t = d / sh.radius;
-				const float s = 1.0f - t * t;
-				delta = -static_cast<int>(std::lround(sh.depth * s * s));
-			}
-			else if (d <= sh.radius + 1.0f)
-			{
-				const float u = (d - sh.radius);
-				delta = static_cast<int>(std::lround(sh.depth * 0.2f * (1.0f - u)));
-			}
-			if (delta != 0)
-			{
-				any = applyDelta(m, vx, vy, delta) || any;
-			}
-		}
+		return false;
 	}
-	if (any)
-	{
-		dust(worldX, worldY, size);
-	}
-	return any;
+	dirtyAround(tx, ty);
+	return true;
 }
 
 void onProjectileImpact(const PROJECTILE *psProj)
@@ -263,8 +296,8 @@ void onProjectileImpact(const PROJECTILE *psProj)
 		size = (dmg >= 70 || rad >= 192) ? 3 : (dmg >= 35 || rad >= 96) ? 2 : 1;
 		break;
 	case WSC_MORTARS:
-		size = (dmg >= 70 || rad >= 192) ? 3 : 2;
 		if (dmg < 12) { return; }
+		size = (dmg >= 70 || rad >= 192) ? 3 : 2;
 		break;
 	case WSC_HOWITZERS:
 	case WSC_BOMB:
@@ -282,7 +315,7 @@ void onProjectileImpact(const PROJECTILE *psProj)
 			return;
 		}
 	}
-	// MOD (16.11. Punkt 11): erst die Staubwolke, der Krater sinkt 0,35 s spaeter darunter ein (kein sichtbares "Aufploppen")
+	// erst die Staubwolke, der Krater sinkt 0,35 s spaeter darunter ein (kein sichtbares "Aufploppen")
 	dust(psProj->pos.x, psProj->pos.y, size);
 	s_pending.push_back({ psProj->pos.x, psProj->pos.y, size, gameTime + 350 });
 }
@@ -308,13 +341,11 @@ void tick()
 
 int depthAtTile(int tileX, int tileY)
 {
-	const WorldMapState &m = gameWorld.map;
-	if (s_table.empty() || tileX < 0 || tileY < 0 || tileX >= m.width - 1 || tileY >= m.height - 1)
+	if (s_cells.empty())
 	{
 		return 0;
 	}
-	const int sum = vertexDepth(m, tileX, tileY) + vertexDepth(m, tileX + 1, tileY) + vertexDepth(m, tileX, tileY + 1) + vertexDepth(m, tileX + 1, tileY + 1);
-	return std::max(0, sum / 4);
+	return cellDepth(layerTag(), tileX, tileY);
 }
 
 bool tileGivesCover(int tileX, int tileY)
@@ -324,7 +355,7 @@ bool tileGivesCover(int tileX, int tileY)
 
 bool droidInCover(const DROID *psDroid)
 {
-	if (s_table.empty() || !isLegged(psDroid))
+	if (s_cells.empty() || !isLegged(psDroid))
 	{
 		return false;
 	}
@@ -333,65 +364,39 @@ bool droidInCover(const DROID *psDroid)
 
 int fillTile(int tileX, int tileY, int amount)
 {
-	WorldMapState &m = gameWorld.map;
-	if (s_table.empty() || amount <= 0)
+	if (s_cells.empty() || amount <= 0)
 	{
 		return 0;
 	}
-	for (int vy = tileY - 1; vy <= tileY + 2; vy++)
+	const uint64_t k = keyOf(layerTag(), tileX, tileY);
+	const auto it = s_cells.find(k);
+	if (it == s_cells.end() || it->second.dyn <= 0)
 	{
-		for (int vx = tileX - 1; vx <= tileX + 2; vx++)
-		{
-			if (vx < 0 || vy < 0 || vx >= m.width || vy >= m.height)
-			{
-				continue;
-			}
-			const auto it = s_table.find(keyOf(vx, vy));
-			if (it == s_table.end())
-			{
-				continue;
-			}
-			const int cur = m.tiles[vx + vy * m.width].height;
-			if (cur != it->second.ours)
-			{
-				s_table.erase(it);
-				continue;
-			}
-			const int diff = it->second.orig - cur;   // > 0: Mulde, < 0: Wall
-			const int step = std::clamp(diff, -amount, amount);
-			if (step == 0)
-			{
-				s_table.erase(it);
-				continue;
-			}
-			const int target = cur + step;
-			setTileHeight(m, vx, vy, target);
-			if (target == it->second.orig)
-			{
-				s_table.erase(it);
-			}
-			else
-			{
-				it->second.ours = target;
-			}
-		}
+		return depthAtTile(tileX, tileY);
 	}
+	// Zuschuetten geht schneller als das Graben dauerte: je Aufruf mindestens 2 Einheiten
+	it->second.dyn = static_cast<int16_t>(std::max(0, it->second.dyn - std::max(2, amount * 2)));
+	dirtyAround(tileX, tileY);
+	tidy(k, tileX, tileY);   // ganz zu -> Originaltextur zurueck
 	return depthAtTile(tileX, tileY);
 }
 
 bool findDent(const Vector2i &worldCenter, int radiusTiles, int minDepth, Vector2i &outTile)
 {
-	if (s_table.empty())
+	if (s_cells.empty())
 	{
 		return false;
 	}
+	const int layer = layerTag();
 	const int cx = map_coord(worldCenter.x), cy = map_coord(worldCenter.y);
 	int best = minDepth - 1;
 	for (int ty = cy - radiusTiles; ty <= cy + radiusTiles; ty++)
 	{
 		for (int tx = cx - radiusTiles; tx <= cx + radiusTiles; tx++)
 		{
-			const int d = depthAtTile(tx, ty);
+			const auto it = s_cells.find(keyOf(layer, tx, ty));
+			if (it == s_cells.end()) { continue; }
+			const int d = it->second.dyn;   // nur Krater/Loecher, keine Graben-Bauwerke
 			if (d > best)
 			{
 				best = d;
@@ -404,45 +409,42 @@ bool findDent(const Vector2i &worldCenter, int radiusTiles, int minDepth, Vector
 
 bool dig(int tileX, int tileY, int depth, int bermHeight, unsigned dirAngle)
 {
+	(void)bermHeight; (void)dirAngle;   // 16.11.: kein Erdwall mehr - harte Kante, das Loch ist einfach tiefer
 	WorldMapState &m = gameWorld.map;
-	bool any = false;
-	for (int dy = 0; dy <= 1; dy++)
+	if (!tileOk(m, tileX, tileY))
 	{
-		for (int dx = 0; dx <= 1; dx++)
-		{
-			any = applyDelta(m, tileX + dx, tileY + dy, -depth) || any;
-		}
+		return false;
 	}
-	if (bermHeight > 0)
+	Cell &c = s_cells[keyOf(layerTag(), tileX, tileY)];
+	const int want = std::clamp(depth * 2, 0, MAX_CRATER_SINK);   // Schuetzenloch: doppelt so tief wie frueher
+	if (c.dyn >= want)
 	{
-		const int b = std::min(bermHeight, MAX_RAISE);
-		// Laengsrichtung auf die naechste Achse runden: Richtung 0 = Norden (-y); 16384 = Osten (+x)
-		const unsigned q = ((dirAngle + 8192u) >> 14) & 3u;   // 0 Nord, 1 Ost, 2 Sued, 3 West
-		const bool alongY = (q == 0 || q == 2);
-		if (alongY)
-		{
-			// Graben laeuft in y-Richtung: Wall links und rechts (x)
-			for (int dy = 0; dy <= 1; dy++)
-			{
-				any = applyDelta(m, tileX - 1, tileY + dy, b, b) || any;
-				any = applyDelta(m, tileX + 2, tileY + dy, b, b) || any;
-			}
-		}
-		else
-		{
-			for (int dx = 0; dx <= 1; dx++)
-			{
-				any = applyDelta(m, tileX + dx, tileY - 1, b, b) || any;
-				any = applyDelta(m, tileX + dx, tileY + 2, b, b) || any;
-			}
-		}
+		return false;
 	}
-	return any;
+	c.dyn = static_cast<int16_t>(want);
+	dirtyAround(tileX, tileY);
+	return true;
+}
+
+void setStructureSink(int tileX, int tileY, int depth)
+{
+	const uint64_t k = keyOf(layerTag(), tileX, tileY);
+	depth = std::clamp(depth, 0, MAX_SINK);
+	auto it = s_cells.find(k);
+	if (it == s_cells.end())
+	{
+		if (depth <= 0) { return; }
+		it = s_cells.emplace(k, Cell()).first;
+	}
+	if (it->second.fixed == depth) { return; }
+	it->second.fixed = static_cast<int16_t>(depth);
+	dirtyAround(tileX, tileY);
+	tidy(k, tileX, tileY);
 }
 
 void reset()
 {
-	s_table.clear();
+	s_cells.clear();
 	s_pending.clear();
 }
 } // namespace modterrain

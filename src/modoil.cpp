@@ -2,6 +2,7 @@
 // MOD: Oelkreislauf, siehe modoil.h
 
 #include "modoil.h"
+#include "modterrain.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
@@ -98,7 +99,7 @@ std::map<uint32_t, int> s_store;            // Wasserturm (Feature) -> rohe Faes
 std::map<uint32_t, int> s_storeR;           // Wasserturm (Feature) -> veredelte Faesser
 std::map<uint32_t, int> s_refIn, s_refOut, s_refT;   // Raffinerie: Eingang, Ausgang, Sekunden im laufenden Fass
 std::map<uint32_t, CargoState> s_cargo;     // Lkw -> Zustand
-std::map<std::pair<int, int>, int> s_lowered;   // tiefe Graeben: abgesenkter Eckpunkt -> urspruengliche Hoehe
+std::map<std::pair<int, int>, int> s_lowered;   // tiefe Graeben: abgesenkte Kachel -> Tiefe (modterrain)
 std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
 bool s_have = false;
@@ -956,7 +957,7 @@ void logistics()
 
 // ---------------------------------------------------------------- tiefe Graeben: Gelaende absenken
 
-constexpr int TRENCH_DEPTH = 20;
+constexpr int TRENCH_DEPTH = 40;   // 16.11.: tiefer und mit harter Kante (modterrain: Kachel-Absenkung statt Eckpunkte)
 
 bool isDeepTrench(const STRUCTURE_STATS *st)
 {
@@ -972,35 +973,23 @@ void updateTerrain()
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s == nullptr || s->died || s->status != SS_BUILT || !isDeepTrench(s->pStructureType)) { continue; }
-			const int tx = map_coord(s->pos.x), ty = map_coord(s->pos.y);
-			for (int dx = 0; dx <= 1; dx++)
-			{
-				for (int dy = 0; dy <= 1; dy++)
-				{
-					const int vx = tx + dx, vy = ty + dy;
-					if (vx > 0 && vy > 0 && vx < static_cast<int>(gameWorld.map.width) - 1 && vy < static_cast<int>(gameWorld.map.height) - 1)
-					{
-						want.insert(std::make_pair(vx, vy));
-					}
-				}
-			}
+			want.insert(std::make_pair(map_coord(s->pos.x), map_coord(s->pos.y)));
 		}
 	}
 	if (want.empty() && s_lowered.empty()) { return; }
-	for (const auto &v : want)
+	for (const auto &t : want)
 	{
-		if (s_lowered.find(v) == s_lowered.end())
+		if (s_lowered.find(t) == s_lowered.end())
 		{
-			const int h = map_TileHeight(gameWorld.map, v.first, v.second);
-			s_lowered[v] = h;
-			setTileHeight(gameWorld.map, v.first, v.second, h - TRENCH_DEPTH);
+			s_lowered[t] = TRENCH_DEPTH;
+			modterrain::setStructureSink(t.first, t.second, TRENCH_DEPTH);
 		}
 	}
 	for (auto it = s_lowered.begin(); it != s_lowered.end();)
 	{
 		if (want.count(it->first) == 0)
 		{
-			setTileHeight(gameWorld.map, it->first.first, it->first.second, it->second);
+			modterrain::setStructureSink(it->first.first, it->first.second, 0);
 			it = s_lowered.erase(it);
 		}
 		else { ++it; }

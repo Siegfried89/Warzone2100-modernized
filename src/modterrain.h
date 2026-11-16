@@ -41,6 +41,15 @@ bool findDent(const Vector2i &worldCenter, int radiusTiles, int minDepth, Vector
 /// des Grabens). Wird vom Befestigungsbau fuer reine Erdgraeben verwendet.
 bool dig(int tileX, int tileY, int depth, int bermHeight, unsigned dirAngle);
 
+/// 16.11.: Absenkung (Weltmasseinheiten) an einem Weltpunkt der aktiven Karte - Kacheln sinken mit fast senkrechten Kanten ab.
+/// Ganzzahlig und deterministisch (fuer map_Height / Spiellogik); sinkAtF ist dasselbe fuer die Anzeige (Gelaendenetz).
+int sinkAt(const WorldMapState &mapState, int worldX, int worldY);
+float sinkAtF(const WorldMapState &mapState, float worldX, float worldY);
+/// groesste Absenkung der vier Kacheln an einer Kachelecke (Klassik-Netz ohne Unterteilung)
+int sinkAtCorner(const WorldMapState &mapState, int x, int y);
+/// Absenkung durch ein Bauwerk (tiefer Graben) setzen; 0 = aufheben
+void setStructureSink(int tileX, int tileY, int depth);
+
 /// jeden Spielschritt: verzoegerte Krater anlegen (unter der Staubwolke)
 void tick();
 

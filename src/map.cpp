@@ -58,6 +58,7 @@
 #include "pathfinding_backend.h"
 #include "levels.h"
 #include "modlayer.h"
+#include "modterrain.h"
 #include "lib/framework/wzapp.h"
 #include "lib/framework/load_result.h"
 #include "lib/ivis_opengl/pielighting.h"
@@ -2117,7 +2118,7 @@ extern int32_t map_Height(const WorldMapState& mapState, int x, int y)
 	onBottom = left * (TILE_UNITS - towardsRight) + right * towardsRight;
 	result = onBottom + (center - middle) * towardsCenter * 2;
 
-	return (result + TILE_UNITS / 2) / TILE_UNITS;
+	return (result + TILE_UNITS / 2) / TILE_UNITS - modterrain::sinkAt(mapState, x, y);   // MOD: Krater/Graeben (harte Kante je Kachel)
 }
 
 /* returns true if object is above ground */

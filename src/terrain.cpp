@@ -65,6 +65,7 @@
 #include "lib/framework/math_ext.h"
 
 #include "terrain.h"
+#include "modterrain.h"
 #include "terrain_surface.h"
 #include "terrain_bake.h"
 #include "map.h"
@@ -365,7 +366,7 @@ static void getGridPos(const WorldMapState& mapState, Vector3i *result, int x, i
 	{
 		if (terrainShaderQuality != TerrainShaderQuality::CLASSIC)
 		{
-			result->y = map_TileHeight(mapState, x, y);
+			result->y = map_TileHeight(mapState, x, y) - modterrain::sinkAtCorner(mapState, x, y);   // MOD: Krater/Graeben (Netz ohne Unterteilung)
 			if (water)
 			{
 				result->y = map_WaterHeight(mapState, x, y);
@@ -373,7 +374,7 @@ static void getGridPos(const WorldMapState& mapState, Vector3i *result, int x, i
 		}
 		else
 		{
-			result->y = map_TileHeightSurface(mapState, x, y);
+			result->y = map_TileHeightSurface(mapState, x, y) - modterrain::sinkAtCorner(mapState, x, y);   // MOD: Krater/Graeben im Klassik-Netz
 		}
 	}
 }
@@ -913,10 +914,8 @@ static TerrainShaderQuality determineDefaultTerrainQuality();
 static int effectiveTerrainMeshSubdivision()
 {
 	int factor = (terrainSubdivisionSetting > 0) ? terrainSubdivisionSetting : 1;
-	if (terrainShaderQuality == TerrainShaderQuality::CLASSIC)
-	{
-		factor = 1; // preserve the classic low-poly appearance
-	}
+	// MOD (16.11.): Klassik ist jetzt die Standardgrafik und braucht das unterteilte Netz fuer die harten Kanten der Krater/Graeben
+	// (vorher fest 1 = "low-poly")
 	return factor;
 }
 
@@ -994,11 +993,8 @@ static int determineDefaultTerrainMeshSubdivision()
 #if defined(__EMSCRIPTEN__)
 	return 2;
 #else
-	if (determineDefaultTerrainQuality() != TerrainShaderQuality::NORMAL_MAPPING)
-	{
-		return 1;
-	}
-	return 3;
+	// MOD (16.11.): feines Netz als Standard - Krater/Graeben haben harte Kanten pro Kachel (braucht Unterteilung)
+	return 4;
 #endif
 }
 
@@ -2764,6 +2760,11 @@ bool isSupportedTerrainShaderQualityOption(TerrainShaderQuality value)
 
 static TerrainShaderQuality determineDefaultTerrainQuality()
 {
+	// MOD (Wunsch 16.11. 18:48): Klassik ist die Standardgrafik
+	if ((true))
+	{
+		return TerrainShaderQuality::CLASSIC;
+	}
 	// Based on system properties, determine a reasonable default (for performance reasons)
 	// (Uses a heuristic based on system RAM, graphics renderer, and estimated VRAM)
 

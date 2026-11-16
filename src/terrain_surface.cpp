@@ -24,6 +24,7 @@
  */
 
 #include "terrain_surface.h"
+#include "modterrain.h"
 #include "terrain_surface_math.h"
 #include "map.h"
 
@@ -418,7 +419,16 @@ static float applyShoreFillet(const WorldMapState& mapState, int i, int j, float
 	return h + (remapped - h) * weight;
 }
 
+static float heightAtNoSink(const WorldMapState& mapState, float worldX, float worldY, HeightMode mode);
+
 float heightAt(const WorldMapState& mapState, float worldX, float worldY, HeightMode mode)
+{
+	// MOD (16.11.): Krater/Graeben als Kachel-Absenkung mit fast senkrechter Kante (Wasserflaeche bleibt unberuehrt)
+	const float h = heightAtNoSink(mapState, worldX, worldY, mode);
+	return (mode == HeightMode::Water) ? h : h - modterrain::sinkAtF(mapState, worldX, worldY);
+}
+
+static float heightAtNoSink(const WorldMapState& mapState, float worldX, float worldY, HeightMode mode)
 {
 	const float fx = worldX / static_cast<float>(TILE_UNITS);
 	const float fy = worldY / static_cast<float>(TILE_UNITS);
