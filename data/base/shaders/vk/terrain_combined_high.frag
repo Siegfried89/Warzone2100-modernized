@@ -42,7 +42,6 @@ layout(location = 0) out vec4 FragColor;
 //    sonst tief unten der Boden mit den Inselschatten. Die Schrittweite richtet sich nach dem Blickwinkel (keine Zacken/Treppen bei
 //    flacher Kamera), Ferne geht in Dunst ueber, Texturen mit passender Mip-Stufe (kein Flimmern beim Drehen/Neigen der Kamera).
 const int MODV_TILE = 256;
-const float MODV_TILE_SIZE = 128.0;
 const float MODV_THICK = 760.0;          // Dicke des Felssockels unter der Inseloberflaeche
 const float MODV_TAPER = 5.8;            // so viele Felder zieht der Sockel bis ganz unten ein (unten geschlossen)
 const float MODV_DEPTH = 4600.0;         // so tief liegt der Boden unter den Inseln
@@ -50,6 +49,12 @@ const float MODV_REACH = 7000.0;         // so weit (waagrecht) wird nach Insels
 const float MODV_FLOOR_REPEAT = 1024.0;  // Wiederholung der Bodentextur (Welteinheiten)
 const float MODV_ROCK_REPEAT = 300.0;    // Wiederholung der Gesteinstextur (Welteinheiten)
 const int MODV_MAX_STEPS = 72;
+
+// Feldgroesse in Welteinheiten aus der Lichtkarten-Matrix (1 / (Feldgroesse * Lichtkartenbreite)) - gilt fuer jedes Raster (128 oder 64)
+float modvTileSize()
+{
+	return 1.0 / max(abs(ModelUVLightmapMatrix[0][0]) * float(textureSize(lightmap_tex, 0).x), 0.000001);
+}
 
 float modvDistAt(ivec2 t, ivec2 sz)
 {
@@ -62,7 +67,7 @@ float modvDistAt(ivec2 t, ivec2 sz)
 float modvField(vec2 xz)
 {
 	ivec2 sz = textureSize(lightmap_tex, 0);
-	vec2 tc = vec2(xz.x, -xz.y) / MODV_TILE_SIZE - 0.5;
+	vec2 tc = vec2(xz.x, -xz.y) / modvTileSize() - 0.5;
 	ivec2 t0 = ivec2(floor(tc));
 	vec2 fr = tc - vec2(t0);
 	float v00 = modvDistAt(t0, sz);
