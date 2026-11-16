@@ -297,7 +297,8 @@ bool texLoad(const char *fileName)
 			const int extSize = haveSmall ? maxTileTexSize : 128;
 			for (k = maxTileNo + 1; k < 256; ++k)
 			{
-				tile_base_filepaths.push_back(gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(astringf("%s/tile-%02d.png", partialPath, k))));
+				// MOD: Luecke mit der letzten vorhandenen Kachel fuellen (nie gezeichnet) - sonst je Kachel eine Fehlermeldung im Log
+				tile_base_filepaths.push_back(gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(astringf("%s/tile-%02d.png", partialPath, maxTileNo))));
 				if (has_nm && has_auxillary_texture_info) { tile_nm_filepaths.push_back(WzString()); }
 				if (has_sm && has_auxillary_texture_info) { tile_sm_filepaths.push_back(WzString()); }
 				if (has_hm && has_auxillary_texture_info) { tile_hm_filepaths.push_back(WzString()); }

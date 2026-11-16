@@ -31,8 +31,12 @@
 static WzModCompatibilityResult isWZModVersionCompatible(const WZModInfo& modInfo)
 {
 	const auto tagResult = version_extractVersionNumberFromTag(version_getLatestTag());
-	ASSERT(tagResult.has_value(), "No extractable latest tag?? - Please try re-downloading the latest official source bundle");
-	const TagVer latestTaggedVersion = tagResult.value_or(TagVer());
+	// MOD: Fork-Builds haben keinen Versions-Tag - dann gelten alle Kampagnen-Mods als passend (keine Fehlermeldung im Log)
+	if (!tagResult.has_value())
+	{
+		return WzModCompatibilityResult::OK;
+	}
+	const TagVer latestTaggedVersion = tagResult.value();
 
 	// minVersionSupported incompatibility check
 	const auto minVerResult = version_extractVersionNumberFromTag(modInfo.minVersionSupported);
