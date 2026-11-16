@@ -35,6 +35,7 @@
 
 #include "modduel.h"
 #include "modlayer.h"
+#include "modrecover.h"
 #include "modsalvage.h"
 #include "modparts.h"
 #include "move.h"
@@ -2466,11 +2467,16 @@ static void checkLocalFeatures(DROID *psDroid)
 			{
 				continue; // Don't pickup if height difference is more than half of a tile.
 			}
+			if (modrecover::blocksPickup(static_cast<FEATURE *>(psObj), psDroid))
+			{
+				continue; // MOD: Turm-Teile nehmen nur Bergungseinheiten (Bau-/Reparaturfahrzeuge) mit
+			}
 
 			switch (((FEATURE *)psObj)->psStats->subType)
 			{
 			case FEAT_OIL_DRUM:
-				pickedUp = modsalvage::onPickup(static_cast<FEATURE *>(psObj), psDroid->player)   // MOD: Beute-Teile (Combots) statt Oelfass-Energie
+				pickedUp = modrecover::onPickup(static_cast<FEATURE *>(psObj), psDroid)   // MOD (16.11.): geborgener Turm
+				           || modsalvage::onPickup(static_cast<FEATURE *>(psObj), psDroid->player)   // MOD: Beute-Teile (Combots) statt Oelfass-Energie
 				           || pickupOilDrum(psDroid->player, psObj->player);
 				triggerEventPickup((FEATURE *)psObj, psDroid);
 				break;

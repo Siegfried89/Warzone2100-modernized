@@ -97,6 +97,7 @@
 #include "modpaint.h"
 #include "modferry.h"
 #include "modoil.h"
+#include "modrecover.h"
 #include "modwreck.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
@@ -2700,9 +2701,24 @@ void	renderFeature(FEATURE *psFeature, const glm::mat4 &viewMatrix, const glm::m
 			}
 		}
 
+		// MOD (16.11. Punkt 10): abgeschossener Turm am Boden - die echte Waffe (Halterung + Rohr) liegt schraeg im Dreck
+		const unsigned modPartWeapon = modrecover::partWeapon(psFeature);
+		if (modPartWeapon > 0 && modPartWeapon < asWeaponStats.size() && asWeaponStats[modPartWeapon].pIMD != nullptr)
+		{
+			const WEAPON_STATS &ws = asWeaponStats[modPartWeapon];
+			const glm::mat4 lying = modelMatrix * glm::translate(glm::vec3(0.f, 6.f, 0.f)) * glm::rotate(UNDEG(DEG(-62)), glm::vec3(0.f, 0.f, 1.f));
+			if (ws.pMountGraphic != nullptr)
+			{
+				pie_Draw3DShape(ws.pMountGraphic->displayModel(), 0, 0, brightness, pieFlags, 0, lying, viewMatrix);
+			}
+			pie_Draw3DShape(ws.pIMD->displayModel(), 0, 0, brightness, pieFlags, 0, lying, viewMatrix);
+		}
+		else
+		{
 		/* Translate the feature  - N.B. We can also do rotations here should we require
 		buildings to face different ways - Don't know if this is necessary - should be IMO */
 		pie_Draw3DShape(strImd, 0, 0, brightness, pieFlags, 0, modelMatrix, viewMatrix, stretchDepth);
+		}
 	}
 
 	setScreenDispWithPerspective(&psFeature->sDisplay, perspectiveViewMatrix * modelMatrix);
@@ -2896,6 +2912,18 @@ static void renderStructureTurrets(STRUCTURE *psStructure, const iIMDShape *strI
 	for (int i = 0; i < psStructure->numWeaps || i == 0; i++)
 	{
 		Rotation rot = structureGetInterpolatedWeaponRotation(psStructure, i, graphicsTime);
+		// MOD (16.11. Punkt 10): Reparaturarm bewegt sich leicht, blaue Funken und elektrisches Zischen beim Reparieren
+		if (i == 0 && psStructure->pStructureType->type == REF_REPAIR_FACILITY && psStructure->status == SS_BUILT && psStructure->pFunctionality != nullptr)
+		{
+			const REPAIR_FACILITY *modRf = &psStructure->pFunctionality->repairFacility;
+			if (modRf->psObj != nullptr && modRf->psObj->type == OBJ_DROID)
+			{
+				int modPw = 0, modDw = 0;
+				modrecover::repairEffects(psStructure, static_cast<const DROID *>(modRf->psObj), modPw, modDw);
+				rot.pitch = static_cast<uint16_t>(rot.pitch + modPw);
+				rot.direction = static_cast<uint16_t>(rot.direction + modDw);
+			}
+		}
 
 		if (weaponImd[i] != nullptr && static_cast<size_t>(i) < strImd->connectors.size())
 		{

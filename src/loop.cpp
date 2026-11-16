@@ -119,6 +119,7 @@
 #include "modwreck.h"
 #include "modparts.h"
 #include "modmorale.h"
+#include "modrecover.h"
 #include "modincoming.h"
 #include "modterrain.h"
 #include "modferry.h"
@@ -596,6 +597,7 @@ static void gameStateUpdate()
 	modmorale::tick();
 	modincoming::tick();         // MOD: Granate im Anflug - Verteilen und Eingraben
 	modterrain::tick();          // MOD: Krater sinken unter der Staubwolke ein
+	modrecover::tick();          // MOD: Turm-Teile bergen, Werkstatt
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modinvade::tick(gameWorld);   // MOD: Invade (Bohrfahrzeug uebernimmt Gebaeude)

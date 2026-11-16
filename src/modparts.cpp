@@ -15,6 +15,7 @@
 #include "map.h"
 #include "modarty.h"
 #include "modcombot.h"
+#include "modrecover.h"
 #include "modvoice.h"
 #include "move.h"
 #include "objmem.h"
@@ -100,6 +101,7 @@ void loseTurret(DROID *d, State &s, GameWorld &world)
 		s.savedStat[i] = d->asWeaps[i].nStat;
 		s.savedAmmo[i] = d->asWeaps[i].ammo;
 	}
+	const unsigned firstStat = d->asWeaps[0].nStat;
 	const bool show = visibleAt(d->pos.x, d->pos.y);
 	const Vector3i top(d->pos.x, d->pos.z + 45, d->pos.y);
 	for (unsigned i = 0; i < d->numWeaps && i < MAX_WEAPONS; ++i)
@@ -132,6 +134,7 @@ void loseTurret(DROID *d, State &s, GameWorld &world)
 	{
 		orderDroid(d, DORDER_STOP, ModeImmediate);
 	}
+	modrecover::onTurretLost(d, firstStat);   // MOD (16.11.): Turm liegt am Boden, Fahrzeug faehrt in die Werkstatt
 	// der Schuetze jubelt
 	if (s.shooterId != 0)
 	{
@@ -290,9 +293,14 @@ void tick(GameWorld &world)
 		s.lastBody = d->body;
 		if (d->body >= d->originalBody)
 		{
-			restore(d, s);
-			it = s_state.erase(it);
-			continue;
+			if (!s.turretGone || modrecover::partReady(d))
+			{
+				restore(d, s);
+				modrecover::onRestored(d);
+				it = s_state.erase(it);
+				continue;
+			}
+			// MOD (16.11.): Rumpf heil, aber der Turm kommt erst mit dem geborgenen Teil (bzw. dem Ersatzteil der Werkstatt) zurueck
 		}
 		if (s.trackGone)
 		{

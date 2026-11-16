@@ -55,6 +55,7 @@
 #include "display3d.h"
 #include "random.h"
 #include "game_world.h"
+#include "modrecover.h"
 #include "modgarrison.h"
 
 /* The statistics for the features */
@@ -444,6 +445,7 @@ bool removeFeature(FEATURE *psDel, GameWorld& world)
 	ASSERT_OR_RETURN(false, !psDel->died, "Feature already dead");
 
 	modgarrison::onFeatureRemoved(psDel, world);   // MOD: Besatzung stirbt an den Fenstern
+	modrecover::onFeatureRemoved(psDel);            // MOD: geborgene Turm-Teile
 
 	//remove from the map data
 	StructureBounds b = getStructureBounds(psDel);
