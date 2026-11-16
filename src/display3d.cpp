@@ -2365,8 +2365,8 @@ void displayBlueprints(const glm::mat4 &viewMatrix, const glm::mat4 &perspective
 		for (const modbuild::Placement &p : *plan)
 		{
 			if (p.stats == nullptr) { continue; }
-			const Vector2i w1(world_coord(p.tile.x) + TILE_UNITS / 2, world_coord(p.tile.y) + TILE_UNITS / 2);
-			const Vector2i w2(world_coord(p.tile2.x) + TILE_UNITS / 2, world_coord(p.tile2.y) + TILE_UNITS / 2);
+			const Vector2i w1 = modbuild::planTileWorld(p.tile);
+			const Vector2i w2 = modbuild::planTileWorld(p.tile2);
 			if (p.line)
 			{
 				drawLineBuild(selectedPlayer, p.stats, w1, w2, static_cast<uint16_t>(p.direction), SS_BLUEPRINT_VALID);

@@ -144,19 +144,39 @@ bool isBaseStructure(const STRUCTURE *s)
 	}
 }
 
+// MOD (Kachel-Viertelung): Der Befestigungsplan rechnet in Plan-Kacheln = Original-Kacheln (DIST_TILE), unabhaengig vom (feineren)
+// Kartenraster. Ein Bauwerk der Groesse 1 belegt eine Plan-Kachel (= TILE_SPLIT x TILE_SPLIT Feinfelder).
+inline int ptOf(int worldCoord) { return worldCoord / DIST_TILE; }
+inline int ptW(int planTile) { return planTile * DIST_TILE + DIST_TILE / 2; }
+inline int ptMapW() { return gameWorld.map.width / TILE_SPLIT; }
+inline int ptMapH() { return gameWorld.map.height / TILE_SPLIT; }
+/// alle Feinfelder der Plan-Kachel frei (nicht belegt, kein Wasser, keine Klippe)?
+bool ptGroundFree(int tx, int ty)
+{
+	for (int y = ty * TILE_SPLIT; y < (ty + 1) * TILE_SPLIT; y++)
+	{
+		for (int x = tx * TILE_SPLIT; x < (tx + 1) * TILE_SPLIT; x++)
+		{
+			const MAPTILE *t = tileOnMap(gameWorld.map, x, y) ? mapTile(gameWorld.map, x, y) : nullptr;
+			if (t == nullptr || TileIsOccupied(t) || terrainType(t) == TER_WATER || terrainType(t) == TER_CLIFFFACE) { return false; }
+		}
+	}
+	return true;
+}
+
 /// Rechteck der eigenen Gebaeude im Kreis; ohne Gebaeude ein 3x3-Feld um die Mitte
 Rect baseRect(unsigned player, const Vector2i &center, int radiusTiles)
 {
-	const int cx = map_coord(center.x), cy = map_coord(center.y);
+	const int cx = ptOf(center.x), cy = ptOf(center.y);
 	Rect r{cx - 1, cy - 1, cx + 1, cy + 1};
 	bool any = false;
 	for (const STRUCTURE *s : gameWorld.objects.structures[player])
 	{
 		if (!isBaseStructure(s)) { continue; }
-		const int sx = map_coord(s->pos.x), sy = map_coord(s->pos.y);
+		const int sx = ptOf(s->pos.x), sy = ptOf(s->pos.y);
 		if (std::abs(sx - cx) > radiusTiles || std::abs(sy - cy) > radiusTiles) { continue; }
-		const int hw = std::max(1, static_cast<int>(s->pStructureType->baseWidth)) / 2;
-		const int hb = std::max(1, static_cast<int>(s->pStructureType->baseBreadth)) / 2;
+		const int hw = std::max(1, static_cast<int>(s->pStructureType->baseWidth) / TILE_SPLIT) / 2;
+		const int hb = std::max(1, static_cast<int>(s->pStructureType->baseBreadth) / TILE_SPLIT) / 2;
 		if (!any)
 		{
 			r = Rect{sx - hw, sy - hb, sx + hw, sy + hb};
@@ -230,8 +250,8 @@ unsigned outwardDir(int side)
 
 bool tileOk(unsigned player, STRUCTURE_STATS *st, int tx, int ty, unsigned dir)
 {
-	if (tx < 3 || ty < 3 || tx >= gameWorld.map.width - 3 || ty >= gameWorld.map.height - 3) { return false; }
-	const Vector2i w(world_coord(tx) + TILE_UNITS / 2, world_coord(ty) + TILE_UNITS / 2);
+	if (tx < 3 || ty < 3 || tx >= ptMapW() - 3 || ty >= ptMapH() - 3) { return false; }
+	const Vector2i w(ptW(tx), ptW(ty));
 	return validLocation(gameWorld, st, w, static_cast<uint16_t>(dir), player, false);
 }
 
@@ -250,8 +270,8 @@ inline int manhattan(const Vector2i &a, const Vector2i &b) { return std::abs(a.x
 /// eigenes Gebaeude auf dem Feld (schon gebaut - bei erneutem Befehl nicht noch einmal daneben setzen)
 STRUCTURE *ownStructAt(unsigned player, const Vector2i &t)
 {
-	if (t.x < 0 || t.y < 0 || t.x >= gameWorld.map.width || t.y >= gameWorld.map.height) { return nullptr; }
-	const MAPTILE *mt = mapTile(gameWorld.map, t.x, t.y);
+	if (t.x < 0 || t.y < 0 || t.x >= ptMapW() || t.y >= ptMapH()) { return nullptr; }
+	const MAPTILE *mt = mapTile(gameWorld.map, map_coord(ptW(t.x)), map_coord(ptW(t.y)));
 	if (mt == nullptr || !TileHasStructure(mt)) { return nullptr; }
 	STRUCTURE *os = static_cast<STRUCTURE *>(mt->psObject);
 	return (os != nullptr && !os->died && os->player == player) ? os : nullptr;
@@ -351,9 +371,9 @@ int radiusOfTier(int tier)
 {
 	switch (std::clamp(tier, 1, 3))
 	{
-	case 1: return 5 * TILE_SPLIT;    // (Kachel-Viertelung: Radien in Feinfeldern, gleiche Groesse in der Welt)
-	case 2: return 8 * TILE_SPLIT;
-	default: return 12 * TILE_SPLIT;
+	case 1: return 5;    // Plan-Kacheln (Original-Kacheln)
+	case 2: return 8;
+	default: return 12;
 	}
 }
 
@@ -380,14 +400,13 @@ static void placeDeco(unsigned player, const Vector2i &worldCenter, int tier)
 		{
 			const uint32_t h = static_cast<uint32_t>(c.x) * 73856093u ^ static_cast<uint32_t>(c.y) * 19349663u ^ static_cast<uint32_t>(k) * 83492791u;
 			if (h % 5u != 0u) { continue; }   // etwa jedes fuenfte Feld
-			if (c.x < 2 || c.y < 2 || c.x >= gameWorld.map.width - 2 || c.y >= gameWorld.map.height - 2) { continue; }
-			MAPTILE *t = mapTile(gameWorld.map, c.x, c.y);
-			if (t == nullptr || TileIsOccupied(t) || terrainType(t) == TER_WATER || terrainType(t) == TER_CLIFFFACE) { continue; }
+			if (c.x < 2 || c.y < 2 || c.x >= ptMapW() - 2 || c.y >= ptMapH() - 2) { continue; }
+			if (!ptGroundFree(c.x, c.y)) { continue; }
 			FEATURE_STATS *fs = nullptr;
 			const char *want = decoNames[(h >> 8) % static_cast<uint32_t>(NDECO)];
 			for (auto &s : asFeatureStats) { if (s.id == want) { fs = &s; break; } }
 			if (fs == nullptr) { continue; }
-			FEATURE *f = buildFeature(gameWorld, fs, static_cast<UDWORD>(world_coord(c.x) + TILE_UNITS / 2), static_cast<UDWORD>(world_coord(c.y) + TILE_UNITS / 2), false);
+			FEATURE *f = buildFeature(gameWorld, fs, static_cast<UDWORD>(ptW(c.x)), static_cast<UDWORD>(ptW(c.y)), false);
 			if (f != nullptr) { f->rot.direction = static_cast<uint16_t>((h >> 4) & 0xffffu); }
 		}
 	}
@@ -524,7 +543,7 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
 	static const int FWD[4][2] = { {0, -1}, {1, 0}, {0, 1}, {-1, 0} };
 	const int fx = FWD[q][0], fy = FWD[q][1];
 	const int sx = -fy, sy = fx;   // seitlich (rechts)
-	const Vector2i c(map_coord(order.pos.x), map_coord(order.pos.y));
+	const Vector2i c(ptOf(order.pos.x), ptOf(order.pos.y));
 	auto tileAt = [&](int side, int fwd) { return Vector2i(c.x + sx * side + fx * fwd, c.y + sy * side + fy * fwd); };
 	auto stat = [&](const char *a, const char *b) -> STRUCTURE_STATS * {
 		for (const char *nm : {a, b})
@@ -555,7 +574,7 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
 	TileSet used;
 	used.insert(keyOf(coreT));
 	auto inWindow = [&](const Vector2i &t) { return std::abs(t.x - coreT.x) <= 7 && std::abs(t.y - coreT.y) <= 7; };
-	auto worldOf = [](const Vector2i &t) { return Vector2i(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2); };
+	auto worldOf = [](const Vector2i &t) { return Vector2i(ptW(t.x), ptW(t.y)); };
 	auto issueTrench = [&](const std::vector<Vector2i> &cells) {
 		if (trench == nullptr) { return; }
 		for (const auto &run : straightRuns(cells))
@@ -711,7 +730,7 @@ void updatePreview(bool wanted, const Vector2i &worldPos)
 	{
 		if (mousePressed(MOUSE_WUP)) { s_tier = std::min(3, s_tier + 1); }
 		if (mousePressed(MOUSE_WDN)) { s_tier = std::max(1, s_tier - 1); }
-		range_rings::setDebugRange(static_cast<float>(worldPos.x), static_cast<float>(worldPos.y), static_cast<float>(radiusOfTier(s_tier) * TILE_UNITS));
+		range_rings::setDebugRange(static_cast<float>(worldPos.x), static_cast<float>(worldPos.y), static_cast<float>(radiusOfTier(s_tier) * DIST_TILE));
 		s_ringOn = true;
 		// Vorschau des Bauplans (nur Anzeige; planFor veraendert nichts und wuerfelt nicht)
 		const Vector2i tile = map_coord(worldPos);
@@ -756,6 +775,11 @@ bool gateFromWall(unsigned player, const STRUCTURE *w, bool add)
 	if (gate == nullptr) { return false; }
 	orderSelectedStatsLocDir(player, DORDER_BUILD, gate, w->pos.x, w->pos.y, w->rot.direction, add);
 	return true;
+}
+
+Vector2i planTileWorld(const Vector2i &planTile)
+{
+	return Vector2i(ptW(planTile.x), ptW(planTile.y));
 }
 
 const std::vector<Placement> *previewPlan()
@@ -822,8 +846,8 @@ void tick(GameWorld &world)
 		placeDeco(j.player, j.center, j.tier);
 		for (const Placement &p : plan)
 		{
-			const Vector2i w1(world_coord(p.tile.x) + TILE_UNITS / 2, world_coord(p.tile.y) + TILE_UNITS / 2);
-			const Vector2i w2(world_coord(p.tile2.x) + TILE_UNITS / 2, world_coord(p.tile2.y) + TILE_UNITS / 2);
+			const Vector2i w1 = planTileWorld(p.tile);
+			const Vector2i w2 = planTileWorld(p.tile2);
 			DroidOrder o = p.line ? DroidOrder(DORDER_LINEBUILD, p.stats, w1, w2, static_cast<uint16_t>(p.direction))
 			                      : DroidOrder(DORDER_BUILD, p.stats, w1, static_cast<uint16_t>(p.direction));
 			orderDroidAdd(d, &o);

@@ -218,7 +218,7 @@ bool freeTileNear(const STRUCTURE *s, int extra, int &ox, int &oy)
 bool dropPile(DROID *d, Truck &t)
 {
 	const int cx = map_coord(t.tx), cy = map_coord(t.ty);
-	for (int r = 0; r <= 2; ++r)
+	for (int r = 0; r <= 2 * TILE_SPLIT; ++r)
 	{
 		for (int dy = -r; dy <= r; ++dy)
 		{

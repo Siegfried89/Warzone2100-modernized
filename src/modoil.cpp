@@ -759,9 +759,9 @@ void logistics()
 			{
 				std::set<int> roots;
 				const int tx = map_coord(wx), ty = map_coord(wy);
-				for (int dx = -2; dx <= 2; dx++)       // Raffinerie ist 3x3: Rohr darf bis 2 Felder neben der Mitte liegen
+				for (int dx = -2 * TILE_SPLIT; dx <= 2 * TILE_SPLIT; dx++)       // Raffinerie ist 3x3: Rohr darf bis 2 Felder neben der Mitte liegen
 				{
-					for (int dy = -2; dy <= 2; dy++)
+					for (int dy = -2 * TILE_SPLIT; dy <= 2 * TILE_SPLIT; dy++)
 					{
 						const auto it = pidx.find(std::make_pair(tx + dx, ty + dy));
 						if (it != pidx.end()) { roots.insert(ufind(par, it->second)); }
@@ -773,9 +773,9 @@ void logistics()
 			{
 				std::set<int> roots;
 				const int tx = map_coord(wx), ty = map_coord(wy);
-				for (int dx = -1; dx <= 1; dx++)
+				for (int dx = -TILE_SPLIT; dx <= TILE_SPLIT; dx++)   // (Kachel-Viertelung: in Feinfeldern)
 				{
-					for (int dy = -1; dy <= 1; dy++)
+					for (int dy = -TILE_SPLIT; dy <= TILE_SPLIT; dy++)
 					{
 						const auto it = pidx.find(std::make_pair(tx + dx, ty + dy));
 						if (it != pidx.end()) { roots.insert(ufind(par, it->second)); }

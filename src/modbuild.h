@@ -52,6 +52,8 @@ const char *activeLabel();
 int currentTier();
 /// Anzeige (16.11. 19:54): Bauplan-Vorschau am Mauszeiger, solange der Kreis zu sehen ist (gruen gezeichnet), sonst nullptr
 const std::vector<Placement> *previewPlan();
+/// Weltpunkt (Mitte) einer Plan-Kachel (Placement::tile) - der Plan rechnet in Original-Kacheln, auch auf dem feinen Raster
+Vector2i planTileWorld(const Vector2i &planTile);
 
 /// Baukran-Bonus: Baupunkte pro Sekunde eines Baufahrzeugs, das im Umkreis (9 Kacheln) eines fertigen eigenen/verbuendeten Krans (A0BaBaCrane) arbeitet, +25 %
 unsigned craneBoost(const DROID *psDroid, unsigned points);
