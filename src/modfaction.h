@@ -20,4 +20,8 @@ void splash(int faction);
 void drawSplash();
 /// Bilder freigeben (Spielende)
 void shutdown();
+/// MOD (16.11. 18:00): grosses Symbol laeuft gerade (Menue ist dann ausgeblendet und nimmt keine Klicks an)
+bool splashActive();
+/// Symbol sofort beenden (Klick/Esc)
+void endSplash();
 }

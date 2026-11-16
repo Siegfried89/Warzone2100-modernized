@@ -367,6 +367,16 @@ void runContinue()
 
 bool runTitleMenu()
 {
+	// MOD (16.11. 18:00): waehrend das grosse Fraktionssymbol laeuft, ist das Menue ausgeblendet; ein Klick oder Esc beendet es sofort
+	if (modfaction::splashActive())
+	{
+		if (mousePressed(MOUSE_LMB) || mousePressed(MOUSE_RMB) || keyPressed(KEY_ESC) || keyPressed(KEY_RETURN) || keyPressed(KEY_SPACE))
+		{
+			inputLoseFocus();   // der Klick soll nicht noch einen Menuepunkt ausloesen
+			modfaction::endSplash();
+		}
+		return true;
+	}
 	WidgetTriggers const &triggers = widgRunScreen(psWScreen);
 	unsigned id = triggers.empty() ? 0 : triggers.front().widget->id; // Just use first click here, since the next click could be on another menu.
 
@@ -428,7 +438,10 @@ bool runTitleMenu()
 
 void displayTitleMenu()
 {
-	widgDisplayScreen(psWScreen); // show the widgets currently running
+	if (!modfaction::splashActive())   // MOD (16.11. 18:00): Menue waehrend des grossen Fraktionssymbols ausblenden
+	{
+		widgDisplayScreen(psWScreen); // show the widgets currently running
+	}
 	modfaction::drawSplash();     // MOD: grosses Fraktionssymbol nach dem Anklicken (ueber allem)
 }
 

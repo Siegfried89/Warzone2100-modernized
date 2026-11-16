@@ -148,10 +148,18 @@ void drawSplash()
 	const int sz = std::min(static_cast<int>(screenHeight) * 2 / 5, 320);
 	const int x = (static_cast<int>(screenWidth) - sz) / 2;
 	const int y = (static_cast<int>(screenHeight) - sz) / 2;
-	// dunkler weicher Hintergrund, damit das Symbol vor dem Menue steht
-	pie_UniTransBoxFill(static_cast<float>(x - 16), static_cast<float>(y - 16), static_cast<float>(x + sz + 16), static_cast<float>(y + sz + 16),
-	                    pal_RGBA(0, 0, 0, static_cast<uint8_t>(120.0f * al)));
+	// MOD (16.11. 18:00): kein grauer Kasten mehr - das Menue wird waehrend des Symbols ausgeblendet (frontend.cpp), das Symbol steht frei
 	draw(s_splashFaction, SIZE_X, x, y, sz, sz, t, true, static_cast<uint8_t>(255.0f * al));
+}
+
+bool splashActive()
+{
+	return s_splashFaction >= 0 && (realTime - s_splashStart) < SPLASH_MS;
+}
+
+void endSplash()
+{
+	s_splashFaction = -1;
 }
 
 void shutdown()
