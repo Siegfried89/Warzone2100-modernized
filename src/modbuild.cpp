@@ -30,6 +30,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <deque>
+#include <functional>
+#include <map>
+#include <set>
 #include <unordered_map>
 
 namespace modbuild
@@ -224,6 +228,117 @@ bool tileOk(unsigned player, STRUCTURE_STATS *st, int tx, int ty, unsigned dir)
 	const Vector2i w(world_coord(tx) + TILE_UNITS / 2, world_coord(ty) + TILE_UNITS / 2);
 	return validLocation(gameWorld, st, w, static_cast<uint16_t>(dir), player, false);
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// MOD (Wunsch 16.11. 17:54): dynamisch um Hindernisse herum bauen. Blockiert Gelaende oder etwas im Weg (Steine, Wracks,
+// Gebaeude) einen Graben, eine Mauer oder eine Stellung, wird drumherum gebaut: Stellungen rutschen auf das naechste freie
+// Feld, Graeben/Mauern laufen um die Ecke (Weg in 4er-Nachbarschaft, damit die Stuecke verbunden bleiben), werden dabei
+// verlaengert - oder verkuerzt, wenn es gar keinen Weg gibt. Alles deterministisch (feste Reihenfolge, keine Zufallszahlen).
+// ---------------------------------------------------------------------------------------------------------------------
+using TileKey = std::pair<int, int>;
+using TileSet = std::set<TileKey>;
+
+inline TileKey keyOf(const Vector2i &v) { return TileKey(v.x, v.y); }
+inline int manhattan(const Vector2i &a, const Vector2i &b) { return std::abs(a.x - b.x) + std::abs(a.y - b.y); }
+
+/// eigenes Gebaeude auf dem Feld (schon gebaut - bei erneutem Befehl nicht noch einmal daneben setzen)
+STRUCTURE *ownStructAt(unsigned player, const Vector2i &t)
+{
+	if (t.x < 0 || t.y < 0 || t.x >= gameWorld.map.width || t.y >= gameWorld.map.height) { return nullptr; }
+	const MAPTILE *mt = mapTile(gameWorld.map, t.x, t.y);
+	if (mt == nullptr || !TileHasStructure(mt)) { return nullptr; }
+	STRUCTURE *os = static_cast<STRUCTURE *>(mt->psObject);
+	return (os != nullptr && !os->died && os->player == player) ? os : nullptr;
+}
+
+bool freeFor(unsigned player, STRUCTURE_STATS *st, const Vector2i &t, unsigned dir, const TileSet &used)
+{
+	return st != nullptr && used.count(keyOf(t)) == 0 && tileOk(player, st, t.x, t.y, dir);
+}
+
+/// Felder um want nach Abstand (Manhattan-Ringe 0..maxR), feste Reihenfolge
+std::vector<Vector2i> candidatesAround(const Vector2i &want, int maxR)
+{
+	std::vector<Vector2i> v;
+	for (int r = 0; r <= maxR; ++r)
+	{
+		for (int dy = -r; dy <= r; ++dy)
+		{
+			for (int dx = -r; dx <= r; ++dx)
+			{
+				if (std::abs(dx) + std::abs(dy) == r) { v.emplace_back(want.x + dx, want.y + dy); }
+			}
+		}
+	}
+	return v;
+}
+
+/// Weg aus Feldern (4er-Nachbarschaft) von einem Nachbarn von 'from' bis zu einem Nachbarn von 'to' (beide selbst nicht im Weg).
+/// true + leerer Weg, wenn from und to schon benachbart sind. Kuerzester Weg, bei Gleichstand der geradere (Richtung zum Ziel zuerst).
+bool routeTiles(const Vector2i &from, const Vector2i &to, const std::function<bool(const Vector2i &)> &passable, int maxLen, std::vector<Vector2i> &out)
+{
+	out.clear();
+	if (manhattan(from, to) == 1) { return true; }
+	static const int D[4][2] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
+	auto sortedNeighbours = [&](const Vector2i &t) {
+		std::vector<Vector2i> n;
+		for (const auto &d : D) { n.emplace_back(t.x + d[0], t.y + d[1]); }
+		std::stable_sort(n.begin(), n.end(), [&](const Vector2i &a, const Vector2i &b) { return manhattan(a, to) < manhattan(b, to); });
+		return n;
+	};
+	std::map<TileKey, TileKey> prev;
+	std::deque<std::pair<Vector2i, int>> q;
+	for (const Vector2i &n : sortedNeighbours(from))
+	{
+		if (n == to || !passable(n)) { continue; }
+		prev[keyOf(n)] = keyOf(from);
+		q.emplace_back(n, 1);
+	}
+	while (!q.empty())
+	{
+		const Vector2i t = q.front().first;
+		const int len = q.front().second;
+		q.pop_front();
+		if (manhattan(t, to) == 1)
+		{
+			TileKey k = keyOf(t);
+			while (k != keyOf(from))
+			{
+				out.emplace_back(k.first, k.second);
+				k = prev[k];
+			}
+			std::reverse(out.begin(), out.end());
+			return true;
+		}
+		if (len >= maxLen) { continue; }
+		for (const Vector2i &n : sortedNeighbours(t))
+		{
+			if (n == from || n == to || prev.count(keyOf(n)) != 0 || !passable(n)) { continue; }
+			prev[keyOf(n)] = keyOf(t);
+			q.emplace_back(n, len + 1);
+		}
+	}
+	return false;
+}
+
+/// Feldfolge in gerade Stuecke zerlegen (fuer Linienbau): Paare (Anfang, Ende) in Bau-Reihenfolge
+std::vector<std::pair<Vector2i, Vector2i>> straightRuns(const std::vector<Vector2i> &cells)
+{
+	std::vector<std::pair<Vector2i, Vector2i>> runs;
+	size_t i = 0;
+	while (i < cells.size())
+	{
+		size_t j = i;
+		if (j + 1 < cells.size() && manhattan(cells[j], cells[j + 1]) == 1)
+		{
+			const int dx = cells[j + 1].x - cells[j].x, dy = cells[j + 1].y - cells[j].y;
+			while (j + 1 < cells.size() && cells[j + 1].x - cells[j].x == dx && cells[j + 1].y - cells[j].y == dy) { ++j; }
+		}
+		runs.emplace_back(cells[i], cells[j]);
+		i = j + 1;
+	}
+	return runs;
+}
 } // namespace
 
 int radiusOfTier(int tier)
@@ -278,6 +393,13 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 	if (player >= MAX_PLAYERS) { return out; }
 	tier = std::clamp(tier, 1, 3);
 	const Rect b = baseRect(player, worldCenter, radiusOfTier(tier));
+	TileSet used;   // MOD 16.11.: schon verplante Felder (Ausweichen darf nichts doppelt belegen)
+	// Abstand eines Feldes vom Gebaeuderechteck (Schachbrett-Abstand)
+	auto ringDist = [&](const Vector2i &t) {
+		const int dx = std::max({b.x0 - t.x, 0, t.x - b.x1});
+		const int dy = std::max({b.y0 - t.y, 0, t.y - b.y1});
+		return std::max(dx, dy);
+	};
 	for (const RingSpec &rs : kRings)
 	{
 		if (tier < rs.minTier) { continue; }
@@ -289,24 +411,52 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 		const std::vector<Cell> ring = perimeter(b, rs.k);
 		if (rs.role == Role::Wall)
 		{
-			// zusammenhaengende Laeufe je Seite (Tore ausgespart), als Linienbau
-			int runStart = -1;
-			for (size_t i = 0; i <= ring.size(); i++)
+			// MOD 16.11.: Mauerring ohne Tore als Feldfolge; blockierte Stuecke werden umgangen (Umweg nach aussen/innen, um die Ecke),
+			// geht es gar nicht, bleibt dort eine Luecke. Danach in gerade Linienbau-Stuecke zerlegt.
+			const int k = rs.k;
+			auto wallPassable = [&](const Vector2i &t) {
+				const int d = ringDist(t);
+				return d >= std::max(1, k - 2) && d <= k + 2 && (freeFor(player, st, t, 0, used) || (used.count(keyOf(t)) == 0 && ownStructAt(player, t) != nullptr));
+			};
+			std::vector<std::vector<Vector2i>> pieces;   // zusammenhaengende Mauerstuecke (zwischen den Toren)
+			std::vector<Vector2i> cur;
+			auto flush = [&]() { if (!cur.empty()) { pieces.push_back(cur); cur.clear(); } };
+			size_t i = 0;
+			while (i < ring.size())
 			{
-				const bool open = i < ring.size() && !inGate(b, rs.k, ring[i]) && (runStart < 0 || ring[i].side == ring[runStart].side);
-				if (open && runStart < 0) { runStart = static_cast<int>(i); }
-				if (!open && runStart >= 0)
+				const Cell &c = ring[i];
+				const Vector2i t(c.x, c.y);
+				if (inGate(b, k, c)) { flush(); ++i; continue; }
+				// frei - oder schon ein eigenes Bauwerk dort (Linienbau ueberspringt es, die Mauer bleibt durchgehend)
+				if (freeFor(player, st, t, 0, used) || (used.count(keyOf(t)) == 0 && ownStructAt(player, t) != nullptr)) { cur.push_back(t); used.insert(keyOf(t)); ++i; continue; }
+				// blockiert: naechstes freies Feld dieses Laufs suchen (nicht ueber ein Tor hinweg)
+				size_t j = i + 1;
+				while (j < ring.size() && !inGate(b, k, ring[j]) && !wallPassable(Vector2i(ring[j].x, ring[j].y))) { ++j; }
+				const bool haveNext = j < ring.size() && !inGate(b, k, ring[j]);
+				std::vector<Vector2i> detour;
+				if (!cur.empty() && haveNext)
 				{
-					const Cell &a = ring[runStart], &z = ring[i - 1];
-					if (a.x != z.x || a.y != z.y)
+					const Vector2i nextT(ring[j].x, ring[j].y);
+					if (routeTiles(cur.back(), nextT, wallPassable, static_cast<int>(j - i) * 2 + 8, detour))
 					{
-						Placement p;
-						p.stats = st; p.tile = Vector2i(a.x, a.y); p.tile2 = Vector2i(z.x, z.y); p.line = true; p.direction = 0;
-						out.push_back(p);
+						for (const Vector2i &d : detour) { cur.push_back(d); used.insert(keyOf(d)); }
+						i = j;   // weiter mit dem freien Feld hinter dem Hindernis (gehoert zum selben Stueck)
+						continue;
 					}
-					runStart = -1;
-					// die Zelle, die den Lauf beendet hat, beginnt ggf. einen neuen (Seitenwechsel)
-					if (i < ring.size() && !inGate(b, rs.k, ring[i])) { runStart = static_cast<int>(i); }
+				}
+				// kein Umweg: Luecke (Stueck endet hier, verkuerzt)
+				flush();
+				i = j;
+			}
+			flush();
+			for (const auto &piece : pieces)
+			{
+				for (const auto &run : straightRuns(piece))
+				{
+					Placement p;
+					p.stats = st; p.tile = run.first; p.tile2 = run.second; p.line = true; p.direction = 0;
+					out.push_back(p);
+					if (static_cast<int>(out.size()) >= MAX_PLACEMENTS) { break; }
 				}
 				if (static_cast<int>(out.size()) >= MAX_PLACEMENTS) { break; }
 			}
@@ -318,9 +468,31 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 			const Cell &c = ring[i];
 			if (rs.gates && inGate(b, rs.k, c)) { continue; }
 			const unsigned dir = outwardDir(c.side);
-			if (!tileOk(player, st, c.x, c.y, dir)) { continue; }
+			// MOD 16.11.: blockiert? auf das naechste freie Feld ausweichen - erst entlang des Rings, dann nach aussen/innen
+			static const int TAN[4][2] = { {1, 0}, {0, 1}, {-1, 0}, {0, -1} };
+			static const int NRM[4][2] = { {0, -1}, {1, 0}, {0, 1}, {-1, 0} };
+			const int tx = TAN[c.side & 3][0], ty = TAN[c.side & 3][1], nx = NRM[c.side & 3][0], ny = NRM[c.side & 3][1];
+			const int shifts[][2] = { {0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {2, 0}, {-2, 0}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1} };
+			if (ownStructAt(player, Vector2i(c.x, c.y)) != nullptr) { continue; }   // steht schon (erneuter Befehl)
+			bool already = false;   // frueher schon ausgewichen? dann nicht noch einmal
+			for (const auto &sh : shifts)
+			{
+				const STRUCTURE *os = ownStructAt(player, Vector2i(c.x + tx * sh[0] + nx * sh[1], c.y + ty * sh[0] + ny * sh[1]));
+				if (os != nullptr && os->pStructureType == st) { already = true; break; }
+			}
+			if (already) { continue; }
+			bool placed = false;
+			Vector2i at(c.x, c.y);
+			for (const auto &sh : shifts)
+			{
+				const Vector2i t(c.x + tx * sh[0] + nx * sh[1], c.y + ty * sh[0] + ny * sh[1]);
+				if (ringDist(t) < 1) { continue; }
+				if (freeFor(player, st, t, dir, used)) { at = t; placed = true; break; }
+			}
+			if (!placed) { continue; }
+			used.insert(keyOf(at));
 			Placement p;
-			p.stats = st; p.tile = Vector2i(c.x, c.y); p.tile2 = p.tile; p.direction = dir;
+			p.stats = st; p.tile = at; p.tile2 = p.tile; p.direction = dir;
 			out.push_back(p);
 			if (static_cast<int>(out.size()) >= MAX_PLACEMENTS) { break; }
 		}
@@ -365,41 +537,113 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
 	STRUCTURE_STATS *pitA = stat(nest ? "A0BaBaPitSquare" : "A0BaBaMGNestSquare", "A0BaBaPitHex");
 	STRUCTURE_STATS *pitB = stat(nest ? "A0BaBaPitHex" : "A0BaBaMGNestHex", "A0BaBaPitSquare");
 	STRUCTURE_STATS *box = stat("A0BaBaAmmoBox", nullptr);
-	auto add = [&](STRUCTURE_STATS *st, const Vector2i &t, const Vector2i *t2) {
-		if (st == nullptr) { return; }
-		const Vector2i w1(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2);
-		if (!tileOk(player, st, t.x, t.y, order.direction)) { return; }
-		if (t2 != nullptr)
-		{
-			const Vector2i w2(world_coord(t2->x) + TILE_UNITS / 2, world_coord(t2->y) + TILE_UNITS / 2);
-			DroidOrder o(DORDER_LINEBUILD, st, w1, w2, static_cast<uint16_t>(order.direction));
-			orderDroidAdd(psDroid, &o);
-		}
-		else
-		{
-			DroidOrder o(DORDER_BUILD, st, w1, static_cast<uint16_t>(order.direction));
-			orderDroidAdd(psDroid, &o);
-		}
-	};
-	// Schuetzengraben links und rechts (je 2 Felder), Stellungen an den Enden.
-	// Wunsch 16.11. 17:14: dazu ein Verbindungsgraben nach hinten (3 Felder) mit einer 90-Grad-Abzweigung, die nach hinten versetzt
-	// zur Seite laeuft und in einer weiteren Stellung endet; die Munitionskiste liegt am Verbindungsgraben. Alles haengt per Graben zusammen.
-	//
+	// MOD (Wunsch 16.11. 17:14 + 17:54): Graben-Komplex, dynamisch um Hindernisse herum.
 	//      [A]==[=][=]( K )[=][=]==[B]      vorne (Front)
 	//                  [=]
 	//            [M]   [=]
-	//                  [=][=][=][A]         hinten, versetzt
-	const Vector2i l1 = tileAt(-1, 0), l2 = tileAt(-2, 0), r1 = tileAt(1, 0), r2 = tileAt(2, 0);
-	add(trench, l1, &l2);
-	add(trench, r1, &r2);
-	add(pitA, tileAt(-3, 0), nullptr);
-	add(pitB, tileAt(3, 0), nullptr);
-	const Vector2i b1 = tileAt(0, -1), b3 = tileAt(0, -3);
-	add(trench, b1, &b3);                       // Verbindungsgraben nach hinten
-	const Vector2i a1 = tileAt(1, -3), a2 = tileAt(2, -3);
-	add(trench, a1, &a2);                       // 90-Grad-Abzweigung, nach hinten versetzt
-	add(pitA, tileAt(3, -3), nullptr);          // Stellung am Ende der Abzweigung
-	add(box, tileAt(-1, -2), nullptr);          // Munitionskiste direkt am Verbindungsgraben
+	//                  [=][=][=][A]         hinten, versetzt (90-Grad-Abzweigung)
+	// Ist ein Wunschfeld blockiert (Gelaende, Steine, Wracks, Gebaeude), rutscht die Stellung auf ein freies Feld in der Naehe
+	// und der Graben laeuft um die Ecke dorthin (laenger); gibt es keinen Weg, wird der Graben verkuerzt.
+	const unsigned dir = order.direction;
+	const Vector2i coreT = c;
+	TileSet used;
+	used.insert(keyOf(coreT));
+	auto inWindow = [&](const Vector2i &t) { return std::abs(t.x - coreT.x) <= 7 && std::abs(t.y - coreT.y) <= 7; };
+	auto worldOf = [](const Vector2i &t) { return Vector2i(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2); };
+	auto issueTrench = [&](const std::vector<Vector2i> &cells) {
+		if (trench == nullptr) { return; }
+		for (const auto &run : straightRuns(cells))
+		{
+			DroidOrder o(DORDER_LINEBUILD, trench, worldOf(run.first), worldOf(run.second), static_cast<uint16_t>(dir));
+			orderDroidAdd(psDroid, &o);
+		}
+	};
+	auto issueOne = [&](STRUCTURE_STATS *st, const Vector2i &t) {
+		DroidOrder o(DORDER_BUILD, st, worldOf(t), static_cast<uint16_t>(dir));
+		orderDroidAdd(psDroid, &o);
+	};
+	auto trenchFree = [&](const Vector2i &t) { return inWindow(t) && freeFor(player, trench, t, dir, used); };
+	auto chain = [&](const Vector2i &anchor, const std::vector<Vector2i> &plan, STRUCTURE_STATS *posSt, const Vector2i &posWant) -> std::vector<Vector2i> {
+		std::vector<Vector2i> cells;
+		Vector2i pos = posWant;
+		bool havePos = false;
+		const bool planFree = trench != nullptr && std::all_of(plan.begin(), plan.end(), trenchFree);
+		if (planFree && (posSt == nullptr || (inWindow(posWant) && freeFor(player, posSt, posWant, dir, used))))
+		{
+			cells = plan;
+			havePos = posSt != nullptr;
+		}
+		else if (trench != nullptr)
+		{
+			bool done = false;
+			if (posSt != nullptr)
+			{
+				// Stellung auf ein freies Feld nahe dem Wunschfeld, Graben um die Hindernisse herum dorthin
+				for (const Vector2i &cand : candidatesAround(posWant, 2))
+				{
+					if (!inWindow(cand) || !freeFor(player, posSt, cand, dir, used)) { continue; }
+					std::vector<Vector2i> r;
+					if (routeTiles(anchor, cand, trenchFree, static_cast<int>(plan.size()) + 6, r))
+					{
+						cells = r; pos = cand; havePos = true; done = true;
+						break;
+					}
+				}
+			}
+			if (!done)
+			{
+				// kein Weg: verkuerzen - der zusammenhaengende freie Anfang der Wunschform, Stellung ans Ende, wenn dort Platz ist
+				for (const Vector2i &t : plan)
+				{
+					if (!trenchFree(t)) { break; }
+					cells.push_back(t);
+				}
+				if (posSt != nullptr)
+				{
+					const Vector2i end = cells.empty() ? anchor : cells.back();
+					for (const Vector2i &cand : candidatesAround(end, 1))
+					{
+						if (manhattan(cand, end) != 1 || !inWindow(cand)) { continue; }
+						if (std::find(cells.begin(), cells.end(), cand) != cells.end()) { continue; }
+						if (freeFor(player, posSt, cand, dir, used)) { pos = cand; havePos = true; break; }
+					}
+				}
+			}
+		}
+		else if (posSt != nullptr && inWindow(posWant) && freeFor(player, posSt, posWant, dir, used))
+		{
+			havePos = true;
+		}
+		for (const Vector2i &t : cells) { used.insert(keyOf(t)); }
+		if (havePos) { used.insert(keyOf(pos)); }
+		issueTrench(cells);
+		if (havePos) { issueOne(posSt, pos); }
+		return cells;
+	};
+
+	chain(coreT, { tileAt(-1, 0), tileAt(-2, 0) }, pitA, tileAt(-3, 0));
+	chain(coreT, { tileAt(1, 0), tileAt(2, 0) }, pitB, tileAt(3, 0));
+	const std::vector<Vector2i> back = chain(coreT, { tileAt(0, -1), tileAt(0, -2), tileAt(0, -3), tileAt(1, -3), tileAt(2, -3) }, pitA, tileAt(3, -3));
+	// Munitionskiste direkt am Verbindungsgraben (Wunschfeld neben dem 2. Grabenfeld, sonst ein freies Nachbarfeld des Grabens)
+	if (box != nullptr)
+	{
+		std::vector<Vector2i> cands = { tileAt(-1, -2) };
+		static const int D4[4][2] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1} };
+		const std::vector<Vector2i> &touch = back.empty() ? std::vector<Vector2i>{ coreT } : back;
+		for (const Vector2i &t : touch)
+		{
+			for (const auto &d : D4) { cands.emplace_back(t.x + d[0], t.y + d[1]); }
+		}
+		for (const Vector2i &cand : cands)
+		{
+			bool adjacent = false;
+			for (const Vector2i &t : touch) { if (manhattan(t, cand) == 1) { adjacent = true; break; } }
+			if (!adjacent || !inWindow(cand) || !freeFor(player, box, cand, dir, used)) { continue; }
+			used.insert(keyOf(cand));
+			issueOne(box, cand);
+			break;
+		}
+	}
 }
 
 bool canFortify(const DROID *psDroid)
