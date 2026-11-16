@@ -232,9 +232,27 @@ vec4 main_bumpMapping() {
 	return doBumpMapping(bump, frag.groundLightDir, frag.groundHalfVec);
 }
 
+// MOD (Wunsch 16.11.): Terrain strahlender - etwas heller, kraeftigere Farben, leicht mehr Kontrast (im Anzeige-Farbraum)
+vec3 modGradeDisplay(vec3 c)
+{
+	c *= 1.12;
+	float l = dot(c, vec3(0.299, 0.587, 0.114));
+	c = mix(vec3(l), c, 1.25);
+	c = mix(c, c * c * (3.0 - 2.0 * c), 0.18);
+	return clamp(c, 0.0, 1.0);
+}
+vec4 modGrade(vec4 c)
+{
+	if (linearLighting != 0)
+	{
+		return vec4(wzSrgbToLinear(modGradeDisplay(wzLinearToSrgb(c.rgb))), c.a);
+	}
+	return vec4(modGradeDisplay(c.rgb), c.a);
+}
+
 void main()
 {
-	vec4 fragColor = (fragf.tileNo == MODV_TILE) ? vec4(modvColor(frag.posModelSpace), 1.0) : main_bumpMapping();   // MOD: Orbit-Leere
+	vec4 fragColor = (fragf.tileNo == MODV_TILE) ? vec4(modvColor(frag.posModelSpace), 1.0) : modGrade(main_bumpMapping());   // MOD: Orbit-Leere
 
 	FragColor = fragColor;
 }

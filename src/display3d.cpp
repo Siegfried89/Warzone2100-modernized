@@ -1660,6 +1660,7 @@ void shutdown3DView()
 	txtShowOrders = WzText();
 	// show Droid visible/draw counts text
 	droidText = WzText();
+	modTxtCmdLabel = WzText();   // MOD: sonst Absturzmeldung beim Beenden (Textur nicht freigegeben)
 
 	batchedObjectStatusRenderer.clear(); // NOTE: *NOT* reset() - see shutdown3DView_FullReset below for why
 

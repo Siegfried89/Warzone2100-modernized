@@ -657,6 +657,10 @@ bool loadConfig()
 	}
 	war_SetDisplayScale(static_cast<unsigned int>(displayScale));
 	war_setAutoAdjustDisplayScale(iniGetBool("autoAdjustDisplayScale", true).value());
+	// MOD: Wunsch des Spielers - jeder Start im Vollbild mit Anzeigemassstab 125 %, ohne automatische Anpassung
+	war_setWindowMode(WINDOW_MODE::fullscreen);
+	war_SetDisplayScale(125);
+	war_setAutoAdjustDisplayScale(false);
 	// 640x480 is minimum that we will support, but default to something more sensible
 	int width = iniGetInteger("width", war_GetWidth()).value();
 	int height = iniGetInteger("height", war_GetHeight()).value();

@@ -234,8 +234,7 @@ void animateToViewDistance(float target, float speed)
 		.start();
 }
 
-// MOD: stufenloser, proportionaler Zoom. Jede Mausrad-Raste aendert die Distanz um ~8 % (statt fester grober Stufen);
-// nahe am Boden werden die Schritte dadurch automatisch fein, weit weg grosszuegig.
+// MOD: stufenloser Zoom mit konstanter Geschwindigkeit (gleicher Schritt nah und fern).
 static const float MOD_ZOOM_MIN_DISTANCE = 40.0f;
 void incrementViewDistance(float amount)
 {
@@ -248,7 +247,10 @@ void incrementViewDistance(float amount)
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	const float current = viewDistanceAnimation.isActive() ? viewDistanceAnimation.getFinalData() : getViewDistance();
 	const float notches = amount / static_cast<float>(MAP_ZOOM_RATE_DEFAULT);          // +-1 pro Raste
-	float target = std::max(current, MOD_ZOOM_MIN_DISTANCE) * std::pow(1.08f, notches * 1.0f);
+	// MOD (Wunsch 16.11.): konstante Zoomgeschwindigkeit ueberall - jede Raste aendert die Distanz um denselben festen Betrag,
+	// kein Abbremsen mehr nahe am Boden
+	static const float MOD_ZOOM_STEP = 150.0f;
+	float target = current + notches * MOD_ZOOM_STEP;
 	if (!dbgInputManager.debugMappingsAllowed())
 	{
 		CLIP(target, MOD_ZOOM_MIN_DISTANCE, (!NETisReplay()) ? static_cast<float>(MAXDISTANCE) : static_cast<float>(MAXDISTANCE_REPLAY));
@@ -978,7 +980,8 @@ void processMouseClickInput()
 		dealWithLMBDClick();
 	}
 
-	if (mouseReleased(MOUSE_RMB) && !rotActive && !panActive && !ignoreRMBC && !(ignoreOrder && ctrlShiftDown()))
+	if (mouseReleased(MOUSE_RMB) && !rotActive && !panActive && !ignoreRMBC && !(ignoreOrder && ctrlShiftDown())
+	    && !(ctrlShiftDown() && buildState != BUILD3D_NONE))   // MOD: Baukette mit Rechtsklick - nie zusaetzlich einen Fahrbefehl anhaengen
 	{
 		OrderSourceScope orderScope(pointerOrderSource());
 		dragBox3D.status = DRAG_INACTIVE;
