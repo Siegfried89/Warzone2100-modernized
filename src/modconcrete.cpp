@@ -96,7 +96,8 @@ int overrideTexture(WorldMapState &m, int x, int y, bool classic)
 	if (s_first < 0) { return -1; }
 	if (concreteAt(m, x, y))
 	{
-		const unsigned rot = static_cast<unsigned>(x * 7 + y * 13) & 3u;
+		constexpr int split = DIST_TILE / TILE_UNITS;   // (Kachel-Viertelung: eine Drehung je Original-Kachel)
+		const unsigned rot = static_cast<unsigned>((x / split) * 7 + (y / split) * 13) & 3u;
 		return static_cast<int>((static_cast<unsigned>(s_first) & TILE_NUMMASK) | (rot << TILE_ROTSHIFT));
 	}
 	if (classic) { return -1; }
@@ -116,6 +117,11 @@ int overrideTexture(WorldMapState &m, int x, int y, bool classic)
 	mask = canonical(mask);
 	if (mask == 0 || s_maskIndex[mask] < 0) { return -1; }
 	return (s_first + s_maskIndex[mask]) & TILE_NUMMASK;
+}
+
+bool isEdgeTile(int tex)
+{
+	return s_first >= 0 && tex >= 0 && static_cast<int>(TileNumber_tile(static_cast<unsigned short>(tex))) != s_first;
 }
 
 void footprintChanged(const STRUCTURE *psStruct, int tileX, int tileY, int sizeX, int sizeY)
