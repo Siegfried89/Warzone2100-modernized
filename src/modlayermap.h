@@ -13,6 +13,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
 #include "modlayer.h"
 
 struct WorldMapState;
@@ -69,6 +71,16 @@ bool drillTile(int tileX, int tileY, int player, int revealRad);
 
 /// alles freigeben (Spielende, neue Karte)
 void reset();
+/// MOD (16.11. 22:58): echte MF-Asteroiden unter den Orbit-Inseln (Weltposition des Modell-Ursprungs = Oberkante der Plattform)
+struct IslandModel
+{
+	std::string model;
+	int worldX = 0;
+	int worldY = 0;
+	int rot = 0;          // x 90 Grad
+	float scale = 1.f;
+};
+const std::vector<IslandModel> &orbitIslandModels();
 /// MOD (16.11. 18:06): Orbit-Abstandsfeld fuer den Terrain-Shader (lightmap.a): 0 = Leere, sonst 1 + Abstand zum Inselrand (Felder) * 42.
 /// true, wenn gerade die Orbit-Karte in gameWorld.map liegt und das Feld berechnet ist; level dann gesetzt.
 bool islandLevel(int x, int y, uint8_t &level);

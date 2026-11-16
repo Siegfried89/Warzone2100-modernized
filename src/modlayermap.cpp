@@ -252,7 +252,16 @@ struct IslandShape
 	int h = 0;
 	std::vector<int16_t> t;   // w*h, -1 = Leere
 	bool preferred = true;    // (16.11. 21:00) graue/blaue MF-Plattform, kompakt, ohne Loecher (mf/islandpref.txt)
+	// (16.11. 22:58) echtes MF-Asteroiden-Modell unter der Insel (mf/islandmodels.txt): Modell, Drehung (x90 Grad), Massstab,
+	// Lage des Modell-Ursprungs in Feldern relativ zur linken oberen Ecke der Form
+	std::string model;
+	int rot = 0;
+	float scale = 1.f;
+	float ox = 0.f;
+	float oy = 0.f;
 };
+
+std::vector<IslandModel> s_islandModels;
 
 const std::vector<IslandShape> &islandLibrary()
 {
@@ -295,6 +304,31 @@ const std::vector<IslandShape> &islandLibrary()
 		}
 	}
 	free(buf);
+	// MOD (16.11. 22:58): MF-Asteroiden-Modelle je Form (eine Zeile je Form: Modell Drehung Massstab ox oy; "-" = keins)
+	char *mbuf = nullptr;
+	UDWORD msize = 0;
+	if (!lib.empty() && loadFile("mf/islandmodels.txt", &mbuf, &msize, false) && mbuf != nullptr)
+	{
+		std::string all(mbuf, msize);
+		free(mbuf);
+		size_t k = 0, pos = 0;
+		while (pos < all.size() && k < lib.size())
+		{
+			size_t eol = all.find('\n', pos);
+			if (eol == std::string::npos) { eol = all.size(); }
+			const std::string line = all.substr(pos, eol - pos);
+			pos = eol + 1;
+			if (line.empty() || line[0] == '#') { continue; }
+			char name[128] = {};
+			int rot = 0;
+			float sc = 1.f, ox = 0.f, oy = 0.f;
+			if (sscanf(line.c_str(), "%127s %d %f %f %f", name, &rot, &sc, &ox, &oy) == 5 && std::string(name) != "-")
+			{
+				lib[k].model = name; lib[k].rot = rot; lib[k].scale = sc; lib[k].ox = ox; lib[k].oy = oy;
+			}
+			++k;
+		}
+	}
 	// MOD (Wunsch 16.11. 20:56, MF-Bilder): bevorzugt die Inseln, die wie in MF aussehen (graue/blaue Plattformen statt Erdbrocken)
 	char *pbuf = nullptr;
 	UDWORD psize = 0;
@@ -350,6 +384,16 @@ bool genOrbitGridMF(Grid &g, Rng &r)
 			}
 		}
 		if (!free) { continue; }
+		if (!s.model.empty())
+		{
+			IslandModel m;
+			m.model = s.model;
+			m.rot = s.rot;
+			m.scale = s.scale;
+			m.worldX = static_cast<int>((static_cast<float>(x0) + s.ox) * static_cast<float>(TILE_UNITS * TILE_SPLIT));   // (Kachel-Viertelung: Inselraster in Original-Kacheln)
+			m.worldY = static_cast<int>((static_cast<float>(y0) + s.oy) * static_cast<float>(TILE_UNITS * TILE_SPLIT));
+			s_islandModels.push_back(m);
+		}
 		for (int y = 0; y < s.h; ++y)
 		{
 			for (int x = 0; x < s.w; ++x)
@@ -369,6 +413,7 @@ bool genOrbitGridMF(Grid &g, Rng &r)
 
 void genOrbitGrid(Grid &g, Rng &r)
 {
+	s_islandModels.clear();
 	if (!genOrbitGridMF(g, r))
 	{
 		debug(LOG_INFO, "modlayermap: MF-Inseln NICHT verwendet (Bibliothek %d Formen, Zusatzkacheln %d) - Notloesung mit Tileset-Kacheln", static_cast<int>(islandLibrary().size()), modExtTileCount);
@@ -884,6 +929,11 @@ bool drillTile(int tileX, int tileY, int player, int revealRad)
 	return any;
 }
 
+const std::vector<IslandModel> &orbitIslandModels()
+{
+	return s_islandModels;
+}
+
 bool islandLevel(int x, int y, uint8_t &level)
 {
 	if (resident() != modlayer::ORBIT || s_islandLevel.empty()) { return false; }
@@ -907,6 +957,7 @@ void reset()
 		s_parked = false;
 	}
 	s_islandLevel.clear();   // MOD 16.11.
+	s_islandModels.clear();  // MOD 16.11. 22:58
 	s_islandW = s_islandH = 0;
 	freeSlots();
 	s_built = false;

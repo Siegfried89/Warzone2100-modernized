@@ -47,7 +47,8 @@ OptionInfo::AvailabilityResult TerrainShadingQualityAvailable(const OptionInfo&)
 OptionInfo::AvailabilityResult TerrainDetailAvailable(const OptionInfo&)
 {
 	OptionInfo::AvailabilityResult result;
-	result.available = (getTerrainShaderQuality() != TerrainShaderQuality::CLASSIC);
+	// MOD (16.11. 22:58 "Grafikoptionen ausgegraut bei Klassisch"): Klassik nutzt im Mod das unterteilte Netz -> immer einstellbar
+	result.available = true;
 	result.localizedUnavailabilityReason = _("Terrain Detail is not available when using terrain appearance: Classic");
 	return result;
 }

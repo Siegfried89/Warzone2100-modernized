@@ -63,7 +63,7 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Rally", "Rally point: units gather here before an attack", "Rally: drag around the rally point (right click cancels)", 255, 150, 40, false },
 	{ "Attack", "Attack vector: units advance along it and fight everything on the way", "Attack: drag the attack vector (right click cancels)", 235, 50, 40, false },
 	{ "Defend", "Defensive line: units take up positions on it, builders dig trenches along it", "Defend: drag the defensive line (right click cancels)", 60, 130, 255, false },
-	{ "Arty base", "Build an artillery base here: 4 artillery emplacements, a sensor tower and a wall around it", "Artillery base: drag around the place (right click cancels)", 170, 120, 60, true },
+	{ "Arty base", "Build a compact artillery base here: sensor tower, 4 artillery emplacements around it, wall ring", "Artillery base: drag around the place (right click cancels)", 170, 120, 60, true },
 	{ "Artillery", "Artillery: bombard this area", "Artillery: drag the target area (right click cancels)", 240, 200, 90, true },
 	{ "Aircraft", "Aircraft: patrol over this area", "Aircraft: drag the patrol area (right click cancels)", 255, 235, 50, true },
 	{ "Combots", "Combot area: combots patrol and fight in this area on their own", "Combots: drag the combot area (right click cancels)", 190, 90, 255, true },
@@ -408,12 +408,13 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		if (sensor != nullptr) { plan.emplace_back(DORDER_BUILD, sensor, worldOf(ct.x, ct.y), 0); }
 		if (arty != nullptr)
 		{
-			static const int OFF[4][2] = { { -2, -2 }, { 2, -2 }, { -2, 2 }, { 2, 2 } };
+			// (16.11. 22:50 "immer noch zu gross, nicht so viel Platz verschwenden") dicht um den Sensor: 3 x 3 Felder
+			static const int OFF[4][2] = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } };
 			for (const auto &o : OFF) { plan.emplace_back(DORDER_BUILD, arty, worldOf(ct.x + o[0], ct.y + o[1]), 0); }
 		}
 		if (wall != nullptr)
 		{
-			const int r = 4;
+			const int r = 2;   // Mauerring direkt um den 3x3-Block (vorher 4 = 9x9 Felder)
 			plan.emplace_back(DORDER_LINEBUILD, wall, worldOf(ct.x - r, ct.y - r), worldOf(ct.x + r, ct.y - r), 0);
 			plan.emplace_back(DORDER_LINEBUILD, wall, worldOf(ct.x + r, ct.y - r + 1), worldOf(ct.x + r, ct.y + r), 0);
 			plan.emplace_back(DORDER_LINEBUILD, wall, worldOf(ct.x + r - 1, ct.y + r), worldOf(ct.x - r, ct.y + r), 0);

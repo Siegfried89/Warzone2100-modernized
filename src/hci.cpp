@@ -84,6 +84,8 @@
 #include "modammo.h"
 #include "modfuel.h"
 #include "modai.h"
+#include "modpointdef.h"
+#include "modoutpost.h"
 #include "modweather.h"
 #include "modinvade.h"
 #include "modlava.h"
@@ -751,6 +753,8 @@ void interfaceShutDown()
 	modammo::reset();        // MOD
 	modfuel::reset();        // MOD
 	modai::reset();          // MOD
+	modpointdef::reset();    // MOD: Punktverteidigung
+	modoutpost::reset();     // MOD: Aussenposten-Teleport
 	modweather::reset();     // MOD
 	modinvade::reset();
 	modlava::reset();      // MOD

@@ -1038,6 +1038,12 @@ void IntFancyButton::displayIMD(AtlasImage image, ImdObject imdObject, int xOffs
 		}
 
 		model.scale = DROID_BUT_SCALE;
+		// MOD (16.11. 22:50 "tausende Scavenger-Varianten in der Fabrik"): kleine Modelle (Scav-Infanterie, halbierte Einheiten)
+		// waren im Knopf nur Punkte - jetzt fuellen sie den Knopf wie ein normales Fahrzeug
+		if (Radius > 0 && Radius < 48)
+		{
+			model.scale = DROID_BUT_SCALE * 48 / std::max<int>(static_cast<int>(Radius), 12);
+		}
 		ASSERT(Radius <= 128, "create PIE button big component found");
 
 		displayClear(xOffset, yOffset);

@@ -983,6 +983,20 @@ bool loadConfig()
 	war_setLobbyDisableIPv6(iniGetBool("lobbyDisableIPv6", war_getLobbyDisableIPv6()).value());
 	war_setLobbyFilterIPv6Only(iniGetBool("lobbyFilterIPv6Only", war_getLobbyFilterIPv6Only()).value());
 
+	// MOD (Wunsch 16.11. 22:58 "Starte das Spiel default mit sehr niedrigen Optionen... mein PC wird heiss"): einmalig (Schalter
+	// modPerfPreset in der Einstellungsdatei) die sparsamen Grafikwerte setzen - danach bleiben eigene Aenderungen im Menue erhalten.
+	if (iniGetInteger("modPerfPreset", 0).value() < 1)
+	{
+		setDrawShadows(false);
+		setDrawTerrainShadows(false);
+		war_setShadowFilterSize(1);
+		war_setShadowMapResolution(1024);
+		setTerrainMeshSubdivision(2);
+		setTextureSize(1024);
+		war_setBloomMode(BLOOM_MODE::OFF);
+		debug(LOG_INFO, "MOD: sparsame Grafikwerte gesetzt (Schatten aus, Gelaendedetail mittel, Texturen 1024, kein Bloom)");
+	}
+
 	ActivityManager::instance().endLoadingSettings();
 	return true;
 }
@@ -1193,6 +1207,7 @@ bool saveConfig()
 		case TerrainTessellationPreference::ForceHardware: iniSetString("terrainTessellation", "hw"); break;
 	}
 	iniSetInteger("terrainShadows", (int)(getDrawTerrainShadows()));
+	iniSetInteger("modPerfPreset", 1);   // MOD: sparsame Grafikwerte sind einmal gesetzt worden
 	iniSetInteger("shadowFilterSize", (int)war_getShadowFilterSize());
 	iniSetInteger("shadowMapResolution", (int)war_getShadowMapResolution());
 	iniSetInteger("renderResolution", (int)war_getRenderResolutionPercent());

@@ -212,12 +212,17 @@ void rebuildList()
 	}
 	else
 	{
+		// MOD (Wunsch 16.11. 22:51 "so viele Einzelteile waren es nie"): wie in MF nur die Teile des Konzerns, zu dem der gewaehlte
+		// Torso gehoert (Arme/Beine); den Konzern waehlt man ueber den Torso
+		const Part *torso = s_target[modcombot::SLOT_TORSO];
+		const int corp = (torso != nullptr) ? torso->corp : -1;
 		for (const Part &p : parts)
 		{
 			const bool match = (s_tab == TAB_ARMS && p.kind == modcombot::KIND_ARM && p.side == s_side)
 			                   || (s_tab == TAB_LEGS && p.kind == modcombot::KIND_LEG)
 			                   || (s_tab == TAB_TORSO && p.kind == modcombot::KIND_TORSO);
 			if (!match) { continue; }
+			if (s_tab != TAB_TORSO && corp >= 0 && p.corp >= 0 && p.corp != corp) { continue; }
 			Entry e;
 			e.name = p.name;
 			e.part = &p;
@@ -482,7 +487,7 @@ void doMirror()
 	const Part *best = nullptr;
 	for (const Part &p : modcombot::parts())
 	{
-		if (p.kind == modcombot::KIND_ARM && p.file == src->file && p.side == wantSide) { best = &p; break; }
+		if (p.kind == modcombot::KIND_ARM && p.file == src->file && p.side == wantSide && (p.corp == src->corp || src->corp < 0)) { best = &p; break; }
 	}
 	if (best == nullptr) { setStatus("This arm has no mirrored counterpart.", true); return; }
 	assign(slotOfArm(best), best);
