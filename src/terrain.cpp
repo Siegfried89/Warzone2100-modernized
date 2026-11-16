@@ -68,6 +68,7 @@
 #include "terrain_surface.h"
 #include "terrain_bake.h"
 #include "map.h"
+#include "modlayermap.h"   // MOD 16.11.: Orbit-Inselfeld
 #include "texture.h"
 #include "display3d.h"
 #include "hci.h"
@@ -1787,6 +1788,7 @@ bool terrainHasWater()
 
 static void updateLightMap(WorldMapState& mapState, const LightMap& lightmap)
 {
+	const bool orbitView = (modlayermap::resident() == modlayer::ORBIT);   // MOD 16.11.
 	size_t lightmapChannels = lightmapPixmap->channels(); // should always be 4 now...
 	unsigned char* lightMapWritePtr = lightmapPixmap->bmp_w();
 	for (int j = 0; j < mapState.height; ++j)
@@ -1809,7 +1811,14 @@ static void updateLightMap(WorldMapState& mapState, const LightMap& lightmap)
 			}
 			// MOD: Inselmaske fuer den Orbit-Leere-Effekt der Terrain-Shader (schwebende MF-Inseln): Leere-Kachel = Helligkeit 0,
 			// jede andere Kachel mindestens 1 (1/255 - unsichtbar)
-			if (TileNumber_tile(psTile->texture) == MOD_TILE_VOID)
+			// MOD (16.11. 18:06): im Orbit traegt lightmap.a das Abstandsfeld der Inseln (weiche Umrisse, Felskoerper); die Shader
+			// setzen die Helligkeit der Inselkacheln dann auf voll.
+			uint8_t modIslandLevel = 0;
+			if (orbitView && modlayermap::islandLevel(i, j, modIslandLevel))
+			{
+				level = modIslandLevel;
+			}
+			else if (TileNumber_tile(psTile->texture) == MOD_TILE_VOID)
 			{
 				level = 0;
 			}
@@ -1826,7 +1835,7 @@ static void updateLightMap(WorldMapState& mapState, const LightMap& lightmap)
 			// (For more, see avUpdateTiles() and getTileIllumination())
 			lightMapWritePtr[(i + j * lightmapWidth) * lightmapChannels + 3] = level;
 
-			if (!pie_GetFogStatus())
+			if (!pie_GetFogStatus() && !orbitView)   // MOD: im Orbit nicht abdunkeln (lightmap.a ist dort das Inselfeld)
 			{
 				// fade to black at the edges of the visible terrain area
 				const float playerX = map_coordf(playerPos.p.x);

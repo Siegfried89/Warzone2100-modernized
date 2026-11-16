@@ -80,6 +80,7 @@ static AtmosStyle modStyle = AS_NORMAL;
 static float	modIntensity = 1.f;
 static float	modWindX = 0.f, modWindZ = 0.f;
 static iIMDBaseShape *modSandImd = nullptr;
+static bool modSandTried = false;   // MOD 16.11.: nur EINMAL suchen (fehlte das Modell, kostete jede Suche je Teilchen Leistung + Logzeile)
 
 /* Setup all the particles */
 void atmosInitSystem()
@@ -244,7 +245,7 @@ static void atmosAddParticle(const Vector3f &pos, AP_TYPE type)
 		asAtmosParts[freeParticle].size = (modStyle == AS_STORM_RAIN) ? 62 : 50;
 		break;
 	case AP_SAND:
-		if (modSandImd == nullptr) { modSandImd = modelGet(WzString("misand.pie")); }
+		if (modSandImd == nullptr && !modSandTried) { modSandTried = true; modSandImd = modelGet(WzString("misand.pie")); }
 		asAtmosParts[freeParticle].imd = (modSandImd != nullptr) ? modSandImd : getImdFromIndex(MI_SNOW);
 		asAtmosParts[freeParticle].size = 90 + rand() % 70;
 		break;

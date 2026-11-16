@@ -155,6 +155,7 @@ void setCamTweakOptions(std::unordered_map<std::string, nlohmann::json> options)
 {
 	camTweakOptions = options;
 	camTweakOptions["infiniteTime"] = true;   // MOD (16.11.): Kampagne immer ohne Zeitlimit
+	camTweakOptions["classicTimers"] = false;   // MOD (16.11. 18:03): Option "Classic Timers" komplett entfernt (nie aktiv)
 }
 
 void clearCamTweakOptions()

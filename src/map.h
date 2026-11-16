@@ -319,9 +319,10 @@ static inline bool TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(MAPTILE *pTile)
 
 extern UBYTE terrainTypes[MAX_TILE_TEXTURES];
 
-/// MOD: Zusatzkacheln (MF-Inseln): 256 = Leere (Felswand, blockiert), 257.. = Inselboden
+/// MOD: Zusatzkacheln (MF-Inseln): 256 = Leere (Wolkenmeer, blockiert), 257 = Inselfels (nur Shader), 258.. = Inselboden
 #define MOD_TILE_VOID		256
-#define MOD_TILE_ISLAND0	257
+#define MOD_TILE_ROCK		257
+#define MOD_TILE_ISLAND0	258
 #define MOD_TILE_MAX		2048
 
 static inline unsigned char terrainType(const MAPTILE *tile)

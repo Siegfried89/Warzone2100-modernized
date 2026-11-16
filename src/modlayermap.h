@@ -69,4 +69,7 @@ bool drillTile(int tileX, int tileY, int player, int revealRad);
 
 /// alles freigeben (Spielende, neue Karte)
 void reset();
+/// MOD (16.11. 18:06): Orbit-Abstandsfeld fuer den Terrain-Shader (lightmap.a): 0 = Leere, sonst 1 + Abstand zum Inselrand (Felder) * 42.
+/// true, wenn gerade die Orbit-Karte in gameWorld.map liegt und das Feld berechnet ist; level dann gesetzt.
+bool islandLevel(int x, int y, uint8_t &level);
 }

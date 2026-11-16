@@ -440,12 +440,59 @@ std::unique_ptr<MAPTILE[]> makeTiles(Layer layer, const Grid &g, const Palette &
 	return tiles;
 }
 
+// MOD (16.11. 18:06): Abstandsfeld der Orbit-Inseln (Abstand Feldmitte -> naechste Leere-Feldmitte, Fasen-Abstand 1 / 1.414)
+std::vector<uint8_t> s_islandLevel;
+int s_islandW = 0;
+int s_islandH = 0;
+
+void computeIslandLevels(const Grid &g)
+{
+	const int W = g.W, H = g.H;
+	s_islandW = W; s_islandH = H;
+	std::vector<float> d(static_cast<size_t>(W) * static_cast<size_t>(H), 0.f);
+	auto at = [&](int x, int y) -> float & { return d[static_cast<size_t>(x) + static_cast<size_t>(y) * W]; };
+	const float INF = 1e9f;
+	for (int y = 0; y < H; ++y)
+	{
+		for (int x = 0; x < W; ++x)
+		{
+			const bool island = !g.tid.empty() ? (g.tid[static_cast<size_t>(x) + static_cast<size_t>(y) * W] >= 0) : g.at(x, y);
+			// Kartenrand zaehlt als Leere
+			at(x, y) = (!island || x == 0 || y == 0 || x == W - 1 || y == H - 1) ? 0.f : INF;
+		}
+	}
+	const float D1 = 1.f, D2 = 1.41421356f;
+	for (int y = 1; y < H; ++y)
+	{
+		for (int x = 1; x < W - 1; ++x)
+		{
+			float &v = at(x, y);
+			v = std::min({v, at(x - 1, y) + D1, at(x, y - 1) + D1, at(x - 1, y - 1) + D2, at(x + 1, y - 1) + D2});
+		}
+	}
+	for (int y = H - 2; y >= 0; --y)
+	{
+		for (int x = W - 2; x >= 1; --x)
+		{
+			float &v = at(x, y);
+			v = std::min({v, at(x + 1, y) + D1, at(x, y + 1) + D1, at(x + 1, y + 1) + D2, at(x - 1, y + 1) + D2});
+		}
+	}
+	s_islandLevel.assign(d.size(), 0);
+	for (size_t i = 0; i < d.size(); ++i)
+	{
+		if (d[i] <= 0.f) { continue; }
+		const float c = std::min(d[i], 6.f);
+		s_islandLevel[i] = static_cast<uint8_t>(std::min(253, 1 + static_cast<int>(c * 42.f + 0.5f)));
+	}
+}
+
 bool buildLayer(Layer layer, const Palette &pal, uint32_t seed)
 {
 	const int W = s_w, H = s_h;
 	Rng r(seed ^ (layer == modlayer::UNDERGROUND ? 0xA5A5A5A5u : 0x5A5A5A5Au));
 	Grid g(W, H);
-	if (layer == modlayer::UNDERGROUND) { genUndergroundGrid(g, r); } else { genOrbitGrid(g, r); }
+	if (layer == modlayer::UNDERGROUND) { genUndergroundGrid(g, r); } else { genOrbitGrid(g, r); computeIslandLevels(g); }
 
 	WorldMapState tmp;
 	tmp.width = W;
@@ -774,6 +821,14 @@ bool drillTile(int tileX, int tileY, int player, int revealRad)
 	return true;
 }
 
+bool islandLevel(int x, int y, uint8_t &level)
+{
+	if (resident() != modlayer::ORBIT || s_islandLevel.empty()) { return false; }
+	if (x < 0 || y < 0 || x >= s_islandW || y >= s_islandH) { level = 0; return true; }
+	level = s_islandLevel[static_cast<size_t>(x) + static_cast<size_t>(y) * s_islandW];
+	return true;
+}
+
 void reset()
 {
 	if (s_built && s_resident != modlayer::SURFACE)
@@ -786,6 +841,8 @@ void reset()
 		mapDangerSerializeEnd(true);
 		s_parked = false;
 	}
+	s_islandLevel.clear();   // MOD 16.11.
+	s_islandW = s_islandH = 0;
 	freeSlots();
 	s_built = false;
 	s_failed = false;

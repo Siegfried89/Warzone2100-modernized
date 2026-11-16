@@ -1623,12 +1623,7 @@ static std::vector<WzCampaignTweakOptionSetting> buildTweakOptionSettings(option
 		true, true
 	);
 
-	results.emplace_back(
-		"classicTimers",
-		_("Classic Timers"),
-		_("Alter / disable timers on specific levels, like the original release. (Allows power-cheating.)"),
-		false, true
-	);
+	// MOD (16.11. 18:03): "Classic Timers" komplett entfernt (Kampagne laeuft immer ohne Zeitlimit, siehe setCamTweakOptions)
 
 	results.emplace_back(
 		"playerUnitCap40",
