@@ -371,7 +371,9 @@ static inline void renderParticleInternal(ATPART *psPart, const glm::mat4 &viewM
 	/* Make it face camera */
 	/* Scale it... */
 	const glm::mat4 modelMatrix = glm::translate(dv) * rotateScaleMatrix;
-	pie_Draw3DShape(psPart->imd->displayModel(), 0, 0, WZCOL_WHITE, 0, 0, modelMatrix, viewMatrix);
+	// MOD (16.11. 21:25): Teilchen im durchsichtigen Durchgang zeichnen - als undurchsichtiges Modell kamen sie in den Tiefen-Vorlauf und
+	// der Nebel (FogApply) faerbte das ganze Quadrat ein ("Staubteilchen sind quadratisch mit Nebel an")
+	pie_Draw3DShape(psPart->imd->displayModel(), 0, 0, WZCOL_WHITE, pie_TRANSLUCENT | pie_NODEPTHWRITE, 255, modelMatrix, viewMatrix);
 	/* Draw it... */
 }
 

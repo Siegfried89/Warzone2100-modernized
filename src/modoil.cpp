@@ -118,6 +118,12 @@ bool isPipe(const STRUCTURE_STATS *st)
 	return st != nullptr && st->type == REF_WALL && idStarts(st->id, "A0BaBaPipeline");
 }
 
+/// MOD (Wunsch 16.11. 21:25): baubarer Oellagerturm (Modell = WZ-Wasserturm) - arbeitet wie die Wasserturm-Features als Lager
+bool isOilStore(const STRUCTURE_STATS *st)
+{
+	return st != nullptr && st->type == REF_GENERIC && idStarts(st->id, "A0BaBaOilStore");
+}
+
 bool isRefinery(const STRUCTURE_STATS *st)
 {
 	return st != nullptr && st->type == REF_GENERIC && idIs(st->id, "A0BaBaRefinery");
@@ -535,6 +541,15 @@ void onStructureDestroyed(const STRUCTURE *psDel)
 		}
 		s_progress.erase(psDel->id);
 	}
+	else if (isOilStore(st))
+	{
+		int n = 0;
+		const auto it = s_store.find(psDel->id);
+		if (it != s_store.end()) { n = it->second; s_store.erase(it); }
+		const auto ir = s_storeR.find(psDel->id);
+		if (ir != s_storeR.end()) { n += ir->second; s_storeR.erase(ir); }
+		if (n > 0 && psDel->status == SS_BUILT) { queueBoom(psDel->pos.x, psDel->pos.y, psDel->pos.z, n, true, 100); }
+	}
 	else if (isRefinery(st))
 	{
 		const int n = s_refIn[psDel->id] + s_refOut[psDel->id];
@@ -649,13 +664,11 @@ void autoTrain(int p, const Snap &sn)
 
 void logistics()
 {
-	std::vector<FEATURE *> towers;
+	std::vector<BASE_OBJECT *> featureTowers;
 	for (FEATURE *f : gameWorld.objects.features[0])
 	{
-		if (f != nullptr && !f->died && f->psStats != nullptr && idIs(f->psStats->id, "WaterTower")) { towers.push_back(f); }
+		if (f != nullptr && !f->died && f->psStats != nullptr && idIs(f->psStats->id, "WaterTower")) { featureTowers.push_back(f); }
 	}
-	std::map<uint32_t, FEATURE *> towerById;
-	for (FEATURE *t : towers) { towerById[t->id] = t; }
 
 	std::set<uint32_t> liveStruct, liveDroid;
 	std::vector<STRUCTURE *> brokenPieces;
@@ -664,6 +677,14 @@ void logistics()
 
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
+		// Lager dieses Spielers: Wassertuerme auf der Karte (fuer alle) + eigene gebaute Oellagertuerme
+		std::vector<BASE_OBJECT *> towers = featureTowers;
+		for (STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s != nullptr && !s->died && s->status == SS_BUILT && isOilStore(s->pStructureType)) { towers.push_back(s); liveStruct.insert(s->id); }
+		}
+		std::map<uint32_t, BASE_OBJECT *> towerById;
+		for (BASE_OBJECT *t : towers) { towerById[t->id] = t; }
 		Snap sn;
 		std::map<uint32_t, STRUCTURE *> sById;
 		for (STRUCTURE *s : gameWorld.objects.structures[p])
@@ -708,9 +729,9 @@ void logistics()
 		for (STRUCTURE *g : sn.gens)
 		{
 			if (s_fuel[g->id] > PULL_BELOW) { continue; }
-			FEATURE *best = nullptr;
+			BASE_OBJECT *best = nullptr;
 			int64_t bd = INT64_MAX;
-			for (FEATURE *t : towers)
+			for (BASE_OBJECT *t : towers)
 			{
 				if (s_store[t->id] + s_storeR[t->id] <= 0) { continue; }
 				const int64_t dd = d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y);
@@ -809,9 +830,9 @@ void logistics()
 					s_refIn[br->id]++;
 					continue;
 				}
-				FEATURE *bt = nullptr;
+				BASE_OBJECT *bt = nullptr;
 				bd = INT64_MAX;
-				for (FEATURE *t : towers)
+				for (BASE_OBJECT *t : towers)
 				{
 					if (storeRoom(t->id) <= 0) { continue; }
 					if (!shares(rd, touchSmall(t->pos.x, t->pos.y))) { continue; }
@@ -991,9 +1012,9 @@ void logistics()
 					}
 					if (br != nullptr) { go(2, 2, br->id, br->pos.x, br->pos.y); continue; }
 				}
-				FEATURE *bt = nullptr;
+				BASE_OBJECT *bt = nullptr;
 				int64_t bd = INT64_MAX;
-				for (FEATURE *t : towers)
+				for (BASE_OBJECT *t : towers)
 				{
 					if (storeRoom(t->id) <= 0) { continue; }
 					bool closeBy = false;
@@ -1222,6 +1243,13 @@ void drawOverlay(const glm::mat4 &m)
 			const auto ro = s_refOut.find(s->id);
 			squares(m, s->pos.x, s->pos.y, s->pos.z + 300, ri == s_refIn.end() ? 0 : ri->second, REF_CAP, barrelOn, barrelOff);
 			squares(m, s->pos.x, s->pos.y, s->pos.z + 330, ro == s_refOut.end() ? 0 : ro->second, REF_CAP, refinedOn, storeOff);
+		}
+		else if (isOilStore(s->pStructureType))
+		{
+			const auto it = s_store.find(s->id);
+			const auto ir = s_storeR.find(s->id);
+			const int have = (it == s_store.end() ? 0 : it->second) + (ir == s_storeR.end() ? 0 : ir->second);
+			squares(m, s->pos.x, s->pos.y, s->pos.z + 330, have, STORAGE_CAP, storeOn, storeOff);
 		}
 		else if (s->pStructureType->type == REF_POWER_GEN)
 		{

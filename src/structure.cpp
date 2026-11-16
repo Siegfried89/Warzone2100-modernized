@@ -4491,7 +4491,20 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 		auto rank = [](const STRUCTURE_STATS *st) {
 			const std::string id = st->id.toUtf8();
 			const bool scav = id.find("BaBa") != std::string::npos || id.find("Baba") != std::string::npos;
-			return modBuildCategory(st) * 2 + (scav ? 0 : 1);
+			const int cat = modBuildCategory(st);
+			// MOD (Wunsch 16.11. 21:25): Wirtschaft in der Reihenfolge des Oelkreislaufs:
+			// Bohrturm - Pipeline - Raffinerie - Oellagerturm - Kraftwerk, danach der Rest (Masten, Solar, HQ ...)
+			int eco = 9;
+			if (cat == 0)
+			{
+				if (st->type == REF_RESOURCE_EXTRACTOR) { eco = 0; }
+				else if (id.find("Pipeline") != std::string::npos) { eco = 1; }
+				else if (id.find("Refinery") != std::string::npos) { eco = 2; }
+				else if (id.find("OilStore") != std::string::npos) { eco = 3; }
+				else if (st->type == REF_POWER_GEN) { eco = 4; }
+				else if (st->type == REF_POWER_MODULE) { eco = 5; }
+			}
+			return cat * 100 + eco * 2 + (scav ? 0 : 1);
 		};
 		return rank(a) < rank(b);
 	});
@@ -6000,13 +6013,15 @@ bool validTemplateForFactory(const DROID_TEMPLATE *psTemplate, STRUCTURE *psFact
 		return false;
 	}
 
+	// MOD (Wunsch 16.11. 21:25): die Scav-Fabrik bildet auch Infanterie aus (Scav-Infanterie und Cyborgs)
+	const bool scavFactory = psFactory->pStructureType->type == REF_FACTORY && psFactory->pStructureType->id.toUtf8().find("BaBa") != std::string::npos;
 	//check if droid is a cyborg
 	if (psTemplate->droidType == DROID_CYBORG ||
 	    psTemplate->droidType == DROID_CYBORG_SUPER ||
 	    psTemplate->droidType == DROID_CYBORG_CONSTRUCT ||
 	    psTemplate->droidType == DROID_CYBORG_REPAIR)
 	{
-		if (psFactory->pStructureType->type != REF_CYBORG_FACTORY)
+		if (psFactory->pStructureType->type != REF_CYBORG_FACTORY && !scavFactory)
 		{
 			debug(level, "Cannot build cyborg except in cyborg factory, not in %s.", objInfo(psFactory));
 			return false;

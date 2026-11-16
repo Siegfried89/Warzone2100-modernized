@@ -2956,7 +2956,10 @@ static void renderStructureTurrets(STRUCTURE *psStructure, const iIMDShape *strI
 	}
 	// check for sensor (or repair center)
 	bool noRecoil = false;
-	if (weaponImd[0] == nullptr && psStructure->pStructureType->pSensor != nullptr)
+	// MOD (16.11. 21:25): der Platzhalter-Sensor ZNULLSENSOR wird nicht gezeichnet (Strommasten/Raffinerie haben Anschlusspunkte fuer
+	// Kabel/Fackel - dort erschien sonst eine sich drehende Sensorschuessel)
+	const bool modNullSensor = psStructure->pStructureType->pSensor != nullptr && psStructure->pStructureType->pSensor->id == "ZNULLSENSOR";
+	if (weaponImd[0] == nullptr && psStructure->pStructureType->pSensor != nullptr && !modNullSensor)
 	{
 		weaponImd[0] =  psStructure->pStructureType->pSensor->pIMD;
 		/* No recoil for sensors */
