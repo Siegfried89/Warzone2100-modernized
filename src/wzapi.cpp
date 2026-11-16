@@ -829,7 +829,7 @@ bool wzapi::benchTileBlocked(WZAPI_PARAMS(std::string propulsionName, int x, int
 	SCRIPT_ASSERT(true, context, movementBenchGame(), "benchTileBlocked() is only available in a movement bench scenario");
 	int propulsionIndex = getCompFromName(COMP_PROPULSION, WzString::fromUtf8(propulsionName));
 	SCRIPT_ASSERT(true, context, propulsionIndex > 0, "No such propulsion: %s", propulsionName.c_str());
-	return fpathBlockingTile(gameWorld.map, x, y, asPropulsionStats[propulsionIndex].propulsionType);
+	return fpathBlockingTile(gameWorld.map, scrGrid(x), scrGrid(y), asPropulsionStats[propulsionIndex].propulsionType);
 }
 
 //-- ## setCampaignNumber(campaignNumber)
@@ -2256,7 +2256,7 @@ bool wzapi::safeDest(WZAPI_PARAMS(int player, int x, int y))
 {
 	SCRIPT_ASSERT_PLAYER(false, context, player);
 	SCRIPT_ASSERT(false, context, tileOnMap(gameWorld.map, scrGrid(x), scrGrid(y)), "Out of bounds coordinates(%d, %d)", x, y);
-	return !(auxTile(gameWorld.map, x, y, player) & AUXBITS_DANGER);
+	return !(auxTile(gameWorld.map, scrGrid(x), scrGrid(y), player) & AUXBITS_DANGER);
 }
 
 //-- ## activateStructure(structure[, target])
@@ -3661,7 +3661,7 @@ wzapi::no_return_value wzapi::setNoGoArea(WZAPI_PARAMS(int x1, int y1, int x2, i
 wzapi::no_return_value wzapi::startTransporterEntry(WZAPI_PARAMS(int x, int y, int player))
 {
 	SCRIPT_ASSERT_PLAYER({}, context, player);
-	missionSetTransporterEntry(player, x, y);
+	missionSetTransporterEntry(player, scrGrid(x), scrGrid(y));   // MOD: Skript-Kacheln -> Raster
 	missionFlyTransportersIn(player, false);
 	return {};
 }
@@ -3673,7 +3673,7 @@ wzapi::no_return_value wzapi::startTransporterEntry(WZAPI_PARAMS(int x, int y, i
 wzapi::no_return_value wzapi::setTransporterExit(WZAPI_PARAMS(int x, int y, int player))
 {
 	SCRIPT_ASSERT_PLAYER({}, context, player);
-	missionSetTransporterExit(player, x, y);
+	missionSetTransporterExit(player, scrGrid(x), scrGrid(y));   // MOD: Skript-Kacheln -> Raster
 	return {};
 }
 
