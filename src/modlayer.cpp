@@ -464,7 +464,7 @@ void gameTick()
 	{
 		if (s_openedShafts.insert(s->id).second)
 		{
-			modlayermap::openSite(map_coord(s->pos.x), map_coord(s->pos.y), s->player, 1, 3);
+			modlayermap::openSite(map_coord(s->pos.x), map_coord(s->pos.y), s->player, 1 * TILE_SPLIT, 3 * TILE_SPLIT);   // (Kachel-Viertelung: in Feinfeldern)
 		}
 	}
 

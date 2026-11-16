@@ -798,7 +798,7 @@ void openSite(int tileX, int tileY, int player, int rad, int revealRad)
 	if (s_view == modlayer::UNDERGROUND) { s_dirtyView = true; }
 }
 
-bool drillTile(int tileX, int tileY, int player, int revealRad)
+static bool drillOne(int tileX, int tileY, int player, int revealRad, bool refresh)
 {
 	if (!s_built) { return false; }
 	Scope sc(modlayer::UNDERGROUND);
@@ -815,7 +815,7 @@ bool drillTile(int tileX, int tileY, int player, int revealRad)
 	// das Feld selbst wird Boden
 	{
 		MAPTILE &t = m.tiles[static_cast<size_t>(tileX) + static_cast<size_t>(tileY) * W];
-		const uint32_t hv = hash2(tileX, tileY, salt);
+		const uint32_t hv = hash2(tileX / TILE_SPLIT, tileY / TILE_SPLIT, salt);   // (Kachel-Viertelung: eine Textur je Original-Kachel)
 		t.texture = pal.floor[(hv >> 16) % pal.floor.size()];
 	}
 	// Eckpunkte: tief, wenn irgendeines der vier angrenzenden Felder offen ist (gleiche Regel wie makeTiles)
@@ -829,7 +829,7 @@ bool drillTile(int tileX, int tileY, int player, int revealRad)
 			mapTile(m, cx, cy)->height = low ? static_cast<int32_t>(hv % 24u) : static_cast<int32_t>(330u + (hv >> 8) % 110u);
 		}
 	}
-	mapSetupLayerWorld(m);
+	if (refresh) { mapSetupLayerWorld(m); }
 	if (player >= 0 && player < MAX_PLAYER_SLOTS && revealRad > 0)
 	{
 		for (int dy = -revealRad; dy <= revealRad; ++dy)
@@ -846,6 +846,24 @@ bool drillTile(int tileX, int tileY, int player, int revealRad)
 	             static_cast<UDWORD>(std::min(W, tileX + 5)), static_cast<UDWORD>(std::min(H, tileY + 5)));
 	if (s_view == modlayer::UNDERGROUND) { s_dirtyView = true; }
 	return true;
+}
+
+bool drillTile(int tileX, int tileY, int player, int revealRad)
+{
+	// MOD (Kachel-Viertelung): Gaenge so breit wie vorher - es wird immer die ganze Original-Kachel (TILE_SPLIT x TILE_SPLIT Feinfelder) frei
+	if (TILE_SPLIT <= 1) { return drillOne(tileX, tileY, player, revealRad, true); }
+	const int x0 = tileX - tileX % TILE_SPLIT, y0 = tileY - tileY % TILE_SPLIT;
+	bool any = false;
+	for (int y = y0; y < y0 + TILE_SPLIT; ++y)
+	{
+		for (int x = x0; x < x0 + TILE_SPLIT; ++x) { any = drillOne(x, y, player, revealRad, false) || any; }
+	}
+	if (any && s_built)
+	{
+		Scope sc(modlayer::UNDERGROUND);
+		mapSetupLayerWorld(gameWorld.map);
+	}
+	return any;
 }
 
 bool islandLevel(int x, int y, uint8_t &level)
