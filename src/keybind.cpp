@@ -37,6 +37,7 @@
 #include "range_rings.h"
 #include "edit3d.h"
 #include "keybind.h"
+#include "modsalvage.h"
 #include "screens/researchtreescreen.h"
 #include "mechanics.h"
 #include "lib/sound/audio.h"
@@ -1628,6 +1629,7 @@ void	kf_FinishAllResearch()
 			}
 		}
 	}
+	modsalvage::unlockAll(static_cast<int>(selectedPlayer));   // MOD: auch alle Combot-Teile (Beute-Forschung) freischalten
 	std::string cmsg = astringf(_("(Player %u) is using cheat :%s"),
 	          selectedPlayer, _("Researched EVERYTHING for you!"));
 	sendInGameSystemMessage(cmsg.c_str());

@@ -587,6 +587,10 @@ bool actionCanBuildFromHere(DROID const *psDroid, int x, int y, uint16_t dir, ST
 	{
 		return false;
 	}
+	if (psDroid->droidType == DROID_PERSON)
+	{
+		return false;   // MOD: Infanterie muss bis an die Baustelle heran (kein Bauen aus der Ferne)
+	}
 	const bool blocked = psDroid->sMove.bumpTime != 0 && gameTime - psDroid->sMove.bumpTime > BUILD_FROM_HERE_BLOCKED_TIME;
 	if (!DROID_STOPPED(psDroid) && !blocked)
 	{

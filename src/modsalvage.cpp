@@ -147,6 +147,13 @@ bool researchMode()
 	return game.techLevel < 2;
 }
 
+void unlockAll(int player)
+{
+	load();
+	for (const Comp &c : s_comps) { setAvailability(player, c, AVAILABLE); }
+	if (player >= 0 && player < MAX_PLAYERS) { s_prog[player].clear(); }
+}
+
 bool isLocked(int player, const modcombot::Part *part)
 {
 	if (part == nullptr || !researchMode()) { return false; }

@@ -27,6 +27,8 @@ void onDroidDestroyed(const DROID *psDroid);
 /// Artefakt aus einer zerstoerten Fabrik/Forschungsstation aufgesammelt: ein Teil, das der Besitzer kannte, wird "gefunden"
 void onArtefact(int toPlayer, int fromPlayer);
 /// jeden Spielschritt: Analyse in den Forschungsstationen
+/// Cheat "Alles erforschen": alle Combot-Teile fuer den Spieler sofort frei (Wunsch 16.11. 18:36)
+void unlockAll(int player);
 void tick();
 void reset();
 }

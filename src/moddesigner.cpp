@@ -605,7 +605,9 @@ void drawBay(const Ctx &c)
 	lo.severed = 0;
 	if (lo.torso == nullptr) { return; }
 	const float unit = BAY_DEPTH / 990.f / c.S;   // Punkte -> Modelleinheiten im Augenraum
-	modcombot::drawLoadout(lo, modcombot::ANIM_IDLE, now, 0, base, [&](const iIMDShape *shape, const glm::mat4 &m, const Part *p) {
+	// MOD (16.11.): Combots sind im Spiel groesser geworden - die Montagehalle zeigt sie weiter in der gewohnten Groesse
+	const glm::mat4 bodyBase = base * glm::scale(glm::mat4(1.f), glm::vec3(1.8f / std::max(0.5f, modcombot::modelScale())));
+	modcombot::drawLoadout(lo, modcombot::ANIM_IDLE, now, 0, bodyBase, [&](const iIMDShape *shape, const glm::mat4 &m, const Part *p) {
 		glm::mat4 mm = m;
 		for (int s = 0; s < modcombot::SLOT_COUNT; ++s)
 		{

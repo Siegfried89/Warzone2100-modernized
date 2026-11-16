@@ -39,6 +39,7 @@ struct Part
 	std::vector<std::string> abil;
 	PartStats st;
 	glm::vec3 shR = glm::vec3(0.f), shL = glm::vec3(0.f);
+	glm::vec3 neck = glm::vec3(0.f, -0.2f, 6.6f);   // Torso: Halspunkt (Kopf = Knochen 8)
 	glm::vec3 hipR = glm::vec3(0.f), hipL = glm::vec3(0.f), mount = glm::vec3(0.f);
 	glm::vec3 kneeA = glm::vec3(0.f), ankA = glm::vec3(0.f), kneeB = glm::vec3(0.f), ankB = glm::vec3(0.f);
 	std::vector<glm::vec3> chain;
@@ -65,6 +66,8 @@ enum AnimKind { ANIM_IDLE = 0, ANIM_WALK = 1, ANIM_FIRE = 2, ANIM_DIE = 3 };
 
 /// Daten laden (einmalig). false = keine modularen Combot-Daten vorhanden.
 bool ready();
+/// Modellmassstab der Combot-Teile (parts.json "scale"; Designer gleicht damit seine Ansicht ab)
+float modelScale();
 const std::vector<Part> &parts();
 const Part *find(const std::string &id);
 

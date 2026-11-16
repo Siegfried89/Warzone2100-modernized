@@ -4903,6 +4903,11 @@ static void addConstructionLine(DROID *psDroid, STRUCTURE *psStructure, const gl
 	{
 		return;
 	}
+	// MOD (16.11. 18:41): Scavenger-Infanterie baut ohne Baustrahl - sie geht direkt an die Baustelle (vorerst keine Animation)
+	if (psDroid->droidType == DROID_PERSON)
+	{
+		return;
+	}
 	const iIMDShape *pDisplayModel = psStructure->sDisplay.imd->displayModel();
 
 	auto deltaPlayer = Vector3f(0,0,0);

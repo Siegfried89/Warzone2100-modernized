@@ -138,6 +138,7 @@ bool loadAll()
 			p.st.dmg = s.value("dmg", 0); p.st.rng = s.value("rng", 0); p.st.blk = s.value("blk", 0); p.st.melee = s.value("melee", 0) != 0;
 		}
 		p.shR = jv(d, "shR"); p.shL = jv(d, "shL");
+		if (d.contains("neck")) { p.neck = jv(d, "neck"); }
 		p.hipR = jv(d, "hipR"); p.hipL = jv(d, "hipL"); p.mount = jv(d, "mount");
 		p.kneeA = jv(d, "kneeA"); p.ankA = jv(d, "ankA"); p.kneeB = jv(d, "kneeB"); p.ankB = jv(d, "ankB");
 		if (d.contains("chain"))
@@ -302,7 +303,8 @@ void computePose(const Loadout &lo, const float ang[15][3], const glm::vec3 &roo
 	const M3 R7 = mul(R0, euler(ang[7]));
 	const glm::vec3 p7 = p0 + mv(R0, L->mount);
 	T.R[7] = R7; T.p[7] = p7; T.present[7] = true;
-	T.R[8] = mul(R7, euler(ang[8])); T.p[8] = p7; T.present[8] = true;
+	// MOD (16.11. 18:36): der Kopf sitzt am Hals, nicht im Torso-Ursprung (war unsichtbar im Rumpf)
+	T.R[8] = mul(R7, euler(ang[8])); T.p[8] = p7 + mv(R7, lo.torso->neck); T.present[8] = true;
 	for (int s = 0; s < 2; ++s)
 	{
 		const Part *A = s == 0 ? lo.armR : lo.armL;
@@ -410,6 +412,11 @@ bool Part::hasAbility(const char *a) const
 }
 
 // ---------------------------------------------------------------- Zugriff
+
+float modelScale()
+{
+	return s_scale;
+}
 
 bool ready()
 {
@@ -697,6 +704,41 @@ std::string weaponLabel(const DROID *d, PartSlot arm)
 	return n;
 }
 
+// MOD (16.11. 18:27): Gehen = der einzige echte Lauf-Zyklus der MF-Daten (HighSpeed). "Basic" Nr. 0 war ein Ausfallschritt
+// des Waffenarms (sah aus wie Angreifen im Laufen). Die Abspielgeschwindigkeit folgt der Bewegung -> die Fuesse gleiten nicht.
+constexpr float WALK_STRIDE_MF = 44.f;   // Bodenweg je Laufzyklus in MF-Einheiten (aus der Fussbahn gemessen)
+
+const Anim *walkAnim()
+{
+	const Anim *a = fileAnim("HighSpeed", 0);
+	return a != nullptr ? a : fileAnim("Basic", 0);
+}
+
+struct WalkPhase
+{
+	unsigned last = 0;
+	double ms = 0.0;
+};
+std::unordered_map<uint32_t, WalkPhase> s_walk;
+
+unsigned walkPhaseMs(const DROID *d)
+{
+	const Anim *a = walkAnim();
+	if (s_walk.size() > 4000) { s_walk.clear(); }
+	WalkPhase &w = s_walk[d->id];
+	const unsigned now = graphicsTime;
+	if (w.last == 0 || now < w.last || now - w.last > 1000) { w.last = now; }
+	const float cycleMs = a != nullptr ? static_cast<float>(a->nf * a->ms) : 1100.f;
+	const float spd = std::fabs(static_cast<float>(d->sMove.speed));
+	const float strideWorld = WALK_STRIDE_MF * s_scale;
+	float rate = spd > 1.f ? spd * cycleMs / 1000.f / strideWorld : 0.5f;
+	rate = std::clamp(rate, 0.25f, 3.f);
+	w.ms += static_cast<double>(now - w.last) * static_cast<double>(rate);
+	w.last = now;
+	if (w.ms > 3.6e6) { w.ms = std::fmod(w.ms, static_cast<double>(cycleMs)); }
+	return static_cast<unsigned>(w.ms);
+}
+
 // ---------------------------------------------------------------- Zeichnen
 
 void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVariant, const glm::mat4 &base, const DrawPiece &emit)
@@ -707,7 +749,7 @@ void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVa
 	switch (kind)
 	{
 	case ANIM_WALK:
-		an = (lo.legs && lo.legs->file == "HighSpeed") ? fileAnim("HighSpeed", 0) : fileAnim("Basic", 0);
+		an = walkAnim();
 		break;
 	case ANIM_FIRE: an = attackAnim(lo); centerMean = false; break;
 	case ANIM_DIE: an = baseAnim(50 + (dieVariant % 5 + 5) % 5); loop = false; centerMean = false; break;
@@ -774,6 +816,7 @@ bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view,
 		}
 	}
 	unsigned elapsed = bButton ? graphicsTime : (graphicsTime > d->timeAnimationStarted ? graphicsTime - d->timeAnimationStarted : 0u);
+	if (!bButton && kind == ANIM_WALK) { elapsed = walkPhaseMs(d); }   // MOD: Schrittfolge passend zur Geschwindigkeit
 	bool drew = false;
 	const float stretch = -(static_cast<float>(d->heightAboveMap));
 	if (!bButton && kind != ANIM_DIE && hasAbility(d, "cloak"))
