@@ -3414,6 +3414,40 @@ void renderDeliveryPoint(FLAG_POSITION *psPosition, bool blueprint, const glm::m
 		pie_Draw3DShape(psIMD->displayModel(), 0, 0, colour, pieFlag, pieFlagData, modelMatrix, viewMatrix);
 	}
 
+	// MOD (16.11. 23:30): Reparatur-Sammelpunkt = stark leuchtendes, hellgruen blinkendes Leuchtfeuer - ein einzelner Punkt wie ein
+	// Landezonen-Licht (Lichthof zur Kamera gedreht, im Takt hell/dunkel, dazu gruenes Licht auf dem Boden)
+	if (!blueprint && psPosition->factoryType == REPAIR_FLAG)
+	{
+		const iIMDBaseShape *beacon = modelGet(WzString::fromUtf8("modrallybeacon.pie"));
+		const unsigned phase = graphicsTime % 1000u;
+		const bool on = phase < 520u;
+		const float pulse = on ? (1.f - 0.25f * static_cast<float>(phase) / 520.f) : 0.18f;
+		if (beacon != nullptr)
+		{
+			const glm::mat3 camRot(viewMatrix);
+			const glm::vec3 p(static_cast<float>(dv.x), static_cast<float>(dv.y) + 24.f, static_cast<float>(dv.z));
+			const float sc = on ? 2.6f : 1.5f;
+			const glm::mat4 bb = glm::translate(glm::mat4(1.f), p) * glm::mat4(glm::transpose(camRot)) * glm::scale(glm::mat4(1.f), glm::vec3(sc));
+			const int alpha = std::clamp(static_cast<int>(255.f * pulse), 0, 255);
+			pie_Draw3DShape(beacon->displayModel(), 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, bb, viewMatrix, 0.f, true);
+			if (on)
+			{
+				// zweiter, kleinerer Kern - "stark leuchtend"
+				const glm::mat4 core = glm::translate(glm::mat4(1.f), p) * glm::mat4(glm::transpose(camRot)) * glm::scale(glm::mat4(1.f), glm::vec3(sc * 0.55f));
+				pie_Draw3DShape(beacon->displayModel(), 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, core, viewMatrix, 0.f, true);
+			}
+		}
+		if (on)
+		{
+			LIGHT light;
+			light.position = Vector3i(psPosition->coords.x, psPosition->coords.z + 40, psPosition->coords.y);
+			light.range = 420;
+			light.colour = pal_Colour(150, 255, 140);
+			light.intensity = 2.2f * pulse;
+			getCurrentLightingData().lights.push_back(light);
+		}
+	}
+
 	//get the screen coords for the DP
 	calcFlagPosScreenCoords(&x, &y, &r, perspectiveViewMatrix * modelMatrix);
 	psPosition->screenX = x;

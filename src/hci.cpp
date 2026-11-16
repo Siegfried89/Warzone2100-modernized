@@ -86,6 +86,7 @@
 #include "modai.h"
 #include "modpointdef.h"
 #include "modoutpost.h"
+#include "modconcrete.h"
 #include "modweather.h"
 #include "modinvade.h"
 #include "modlava.h"
@@ -755,6 +756,7 @@ void interfaceShutDown()
 	modai::reset();          // MOD
 	modpointdef::reset();    // MOD: Punktverteidigung
 	modoutpost::reset();     // MOD: Aussenposten-Teleport
+	modconcrete::reset();    // MOD: Betonboden unter Gebaeuden
 	modweather::reset();     // MOD
 	modinvade::reset();
 	modlava::reset();      // MOD
