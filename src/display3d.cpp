@@ -127,6 +127,7 @@ static void displayProximityMsgs(const glm::mat4& viewMatrix, const glm::mat4 &p
 static void displayDynamicObjects(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix);
 static void displayStaticObjects(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix);
 static void displayFeatures(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix);
+static void displayOrbitAsteroids(const glm::mat4 &viewMatrix);
 static UDWORD	getTargettingGfx();
 static void	drawGroupNumber(BASE_OBJECT *psObject);
 static void	trackHeight(float desiredHeight);
@@ -1525,6 +1526,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	/* ---------------------------------------------------------------- */
 	displayStaticObjects(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
 	displayFeatures(viewMatrix, perspectiveViewMatrix);
+	displayOrbitAsteroids(viewMatrix);   // MOD: echte MF-Asteroiden unter den Orbit-Inseln
 	displayDynamicObjects(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
 	if (doWeDrawProximitys())
 	{
@@ -2500,6 +2502,31 @@ bool clipFeatureOnScreen(FEATURE *psFeature)
 }
 
 /// Draw the features
+// MOD (Wunsch 16.11. 22:58 "nutz doch die MF-Modelle!"): Im Orbit haengt unter jeder Insel ein echter MF-Asteroid (misc.tbd, drei
+// Groessen): flache Plattform oben (liegt knapp ueber den Inselfeldern), Felskoerper nach unten spitz zulaufend. Die Leere-Felder
+// schreiben keine Tiefe (terrain.cpp), daher sieht man die Asteroiden bis unten; darunter der verschwommene Planetenboden.
+static void displayOrbitAsteroids(const glm::mat4 &viewMatrix)
+{
+	if (modlayermap::viewLayer() != modlayer::ORBIT) { return; }
+	static std::map<std::string, const iIMDShape *> cache;
+	for (const modlayermap::IslandModel &m : modlayermap::orbitIslandModels())
+	{
+		if (!quickClipXYToMaximumTilesFromCurrentPosition(m.worldX, m.worldY)) { continue; }
+		auto it = cache.find(m.model);
+		if (it == cache.end())
+		{
+			const iIMDBaseShape *b = modelGet(WzString::fromUtf8(m.model));
+			it = cache.emplace(m.model, b ? b->displayModel() : nullptr).first;
+		}
+		if (it->second == nullptr) { continue; }
+		const int h = map_Height(gameWorld.map, m.worldX, m.worldY);
+		const glm::mat4 modelMatrix = glm::translate(glm::vec3(static_cast<float>(m.worldX), static_cast<float>(h) + 2.f, -static_cast<float>(m.worldY)))
+			* glm::rotate(UNDEG(DEG(90 * m.rot)), glm::vec3(0.f, 1.f, 0.f))
+			* glm::scale(glm::vec3(m.scale));
+		pie_Draw3DShape(it->second, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, modelMatrix, viewMatrix);
+	}
+}
+
 static void displayFeatures(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	WZ_PROFILE_SCOPE(displayFeatures);

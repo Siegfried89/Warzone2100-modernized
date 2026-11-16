@@ -89,9 +89,12 @@ const float MODV_THICK = 760.0;          // Dicke des Felssockels unter der Inse
 const float MODV_TAPER = 5.8;            // so viele Felder zieht der Sockel bis ganz unten ein (unten geschlossen)
 const float MODV_DEPTH = 4600.0;         // so tief liegt der Boden unter den Inseln
 const float MODV_REACH = 7000.0;         // so weit (waagrecht) wird nach Inselsockeln gesucht
-const float MODV_FLOOR_REPEAT = 1024.0;  // Wiederholung der Bodentextur (Welteinheiten)
+const float MODV_FLOOR_REPEAT = 2048.0;  // Wiederholung der Bodentextur (Welteinheiten)
 const float MODV_ROCK_REPEAT = 300.0;    // Wiederholung der Gesteinstextur (Welteinheiten)
 const int MODV_MAX_STEPS = 72;
+// MOD (Wunsch 16.11. 22:58 "nutz doch die MF-Modelle"): die Inselsockel sind jetzt die echten MF-Asteroiden-Modelle (Engine zeichnet
+// sie unter jede Insel); der nachgebildete Felssockel im Shader ist aus. Nur noch der verschwommene Planetenboden tief unten.
+const bool MODV_BODY = false;
 
 // Feldgroesse in Welteinheiten aus der Lichtkarten-Matrix (1 / (Feldgroesse * Lichtkartenbreite)) - gilt fuer jedes Raster (128 oder 64)
 float modvTileSize()
@@ -195,7 +198,7 @@ vec3 modvColor(vec3 P)
 	int n = int(clamp(ceil(dMax * max(hor, 0.3) / 40.0), 10.0, float(MODV_MAX_STEPS)));
 	float stepD = dMax / float(n);
 	float prevD = 0.0;
-	for (int i = 1; i <= MODV_MAX_STEPS; ++i)
+	for (int i = 1; i <= (MODV_BODY ? MODV_MAX_STEPS : 0); ++i)
 	{
 		if (i > n) { break; }
 		float d = stepD * float(i);
@@ -231,7 +234,7 @@ vec3 modvColor(vec3 P)
 	vec3 g = P + dir * MODV_DEPTH;
 	float distG = lenV + length(dir) * MODV_DEPTH;
 	vec2 uvg = vec2(g.x, -g.z) / MODV_FLOOR_REPEAT;
-	vec3 col = textureLod(decalTex, vec3(fract(uvg), float(MODV_TILE)), modvLod(distG, cosI, MODV_FLOOR_REPEAT) + 1.5).rgb;
+	vec3 col = textureLod(decalTex, vec3(fract(uvg), float(MODV_TILE)), modvLod(distG, cosI, MODV_FLOOR_REPEAT) + 2.5).rgb;
 	if (sd.y > 0.15)
 	{
 		float sh = 0.0;

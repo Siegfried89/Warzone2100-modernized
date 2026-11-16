@@ -162,6 +162,14 @@ static const unsigned int LIGHTMAP_REFRESH = 80;
 
 /// VBOs
 static gfx_api::buffer *geometryVBO = nullptr, *geometryIndexVBO = nullptr;
+
+// MOD (Wunsch 16.11. 22:58, Orbit wie in MF): Leere-Felder des Orbits (Kachel 256) schreiben keine Tiefe. So verdecken sie die
+// MF-Asteroiden nicht, die unter den Inseln haengen (die Leere zeigt im Farbdurchgang nur den Planetenboden tief unten).
+static bool modOrbitVoidTile(const WorldMapState &mapState, int tx, int ty)
+{
+	if (tx < 0 || ty < 0 || tx >= mapState.width || ty >= mapState.height) { return false; }
+	return TileNumber_tile(mapTile(mapState, tx, ty)->texture) == MOD_TILE_VOID;
+}
 /// VBOs
 static gfx_api::buffer *waterVBO = nullptr, *waterIndexVBO = nullptr;
 static gfx_api::buffer *terrainDecalVBO = nullptr, *terrainDecalIndexVBO = nullptr;
@@ -1463,12 +1471,13 @@ bool initTerrain(WorldMapState& mapState)
 							continue; // off map, so skip
 						}
 						const bool tileIsWater = isWater(mapState, i + x * sectorSize, j + y * sectorSize);
+						const bool tileIsVoid = modOrbitVoidTile(mapState, i + x * sectorSize, j + y * sectorSize);
 						for (int a = 0; a < N; a++)
 						{
 							for (int b = 0; b < N; b++)
 							{
 								const GLuint qA = sectorBase + (i * N + a) * gridStride + (j * N + b);
-								emitSubQuadIndices(geometryIndex, geometryIndexSize, qA, gridStride);
+								if (!tileIsVoid) { emitSubQuadIndices(geometryIndex, geometryIndexSize, qA, gridStride); }
 								if (tileIsWater)
 								{
 									emitSubQuadIndices(waterIndex, waterIndexSize, qA, gridStride);
@@ -1503,6 +1512,8 @@ bool initTerrain(WorldMapState& mapState)
 					 * This is the source of the '*2' and '+1' in the index math below.
 					 */
 #define q(i,j,center) ((x*ySectors+y)*(sectorSize+1)*(sectorSize+1)*2 + ((i)*(sectorSize+1)+(j))*2+(center))
+					if (!modOrbitVoidTile(mapState, i + x * sectorSize, j + y * sectorSize))
+					{
 					// First triangle
 					geometryIndex[geometryIndexSize + 0]  = q(i  , j  , 1);	// Center vertex
 					geometryIndex[geometryIndexSize + 1]  = q(i  , j  , 0);	// Bottom left
@@ -1520,6 +1531,7 @@ bool initTerrain(WorldMapState& mapState)
 					geometryIndex[geometryIndexSize + 10] = q(i + 1, j  , 0);	// Bottom right
 					geometryIndex[geometryIndexSize + 11] = q(i + 1, j + 1, 0);	// Top right
 					geometryIndexSize += 12;
+					}
 					if (isWater(mapState, i + x * sectorSize, j + y * sectorSize))
 					{
 						waterIndex[waterIndexSize + 0]  = q(i  , j  , 1);
