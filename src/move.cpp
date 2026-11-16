@@ -38,6 +38,7 @@
 #include "modrecover.h"
 #include "modsalvage.h"
 #include "modparts.h"
+#include "modfuel.h"
 #include "move.h"
 
 #include "objects.h"
@@ -1740,6 +1741,7 @@ SDWORD moveCalcDroidSpeed(DROID *psDroid)
 	{
 		speed = 2 * speed / 3; // slow down damaged droids.
 	}
+	speed = speed * modfuel::speedPercent(psDroid) / 100;   // MOD: leerer Tank -> Mindesttempo
 	if (speed <= 10)
 	{
 		// Very nasty hack to deal with buggy maps, where some cliffs are

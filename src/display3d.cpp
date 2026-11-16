@@ -103,6 +103,7 @@
 #include "modgroundfire.h"
 #include "modbuild.h"
 #include "modammo.h"
+#include "modfuel.h"
 #include "modweather.h"
 #include "modlayer.h"
 #include "modlayermap.h"
@@ -3763,6 +3764,22 @@ static void modQueueAmmoBar(BatchedMultiRectRenderer& renderer, size_t rectGroup
 	modQueueBarSegments(renderer, rectGroup, x0, full, y0 + 1, y0 + 4);
 }
 
+// MOD (16.11.): dritter Balken ganz unten - Treibstoff (blau)
+static void modQueueFuelBar(BatchedMultiRectRenderer& renderer, size_t rectGroup, int cx, int cy, int half, int permille, int row)
+{
+	const int x0 = cx - half;
+	const int y0 = cy + 2 + 6 * row;
+	const int full = 2 * half;
+	const bool empty = permille <= 0;
+	const PIELIGHT fuelCol = empty ? pal_RGBA(255, 60, 50, 255) : pal_RGBA(70, 150, 255, 255);
+	const PIELIGHT fuelShadow = empty ? pal_RGBA(150, 30, 25, 255) : pal_RGBA(30, 80, 175, 255);
+	renderer.addRect(PIERECT_DrawRequest(x0 - 1, y0, cx + half + 1, y0 + 5, WZCOL_RELOAD_BACKGROUND), rectGroup);
+	const int fill = empty ? full : (std::clamp(permille, 0, 1000) * full + 999) / 1000;
+	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 3, fuelCol), rectGroup);
+	renderer.addRect(PIERECT_DrawRequest(x0, y0 + 3, x0 + fill, y0 + 4, fuelShadow), rectGroup);
+	modQueueBarSegments(renderer, rectGroup, x0, full, y0 + 1, y0 + 4);
+}
+
 static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiRectRenderer& batchedMultiRectRenderer, size_t rectGroup)
 {
 	UDWORD damage = PERCENT(psDroid->body, psDroid->originalBody);
@@ -3821,6 +3838,11 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 		if (ammoSegs >= 0)
 		{
 			modQueueAmmoBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), barHalf, ammoSegs);
+		}
+		const int fuelPm = modfuel::permille(psDroid);
+		if (fuelPm >= 0)
+		{
+			modQueueFuelBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), barHalf, fuelPm, ammoSegs >= 0 ? 2 : 1);
 		}
 	}
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(

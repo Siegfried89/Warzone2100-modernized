@@ -191,10 +191,10 @@ vec4 main_classic() {
 // MOD (Wunsch 16.11.): Terrain strahlender - etwas heller, kraeftigere Farben, leicht mehr Kontrast (im Anzeige-Farbraum)
 vec3 modGradeDisplay(vec3 c)
 {
-	c *= 1.24;   // Klassik (16.11. 18:30): noch strahlender als die anderen Stufen
+	c *= 1.06;   // Klassik (16.11. 19:07): nur ein kleines bisschen strahlender - nicht uebertreiben
 	float l = dot(c, vec3(0.299, 0.587, 0.114));
-	c = mix(vec3(l), c, 1.32);
-	c = mix(c, c * c * (3.0 - 2.0 * c), 0.18);
+	c = mix(vec3(l), c, 1.10);
+	c = mix(c, c * c * (3.0 - 2.0 * c), 0.06);
 	return clamp(c, 0.0, 1.0);
 }
 vec4 modGrade(vec4 c)
