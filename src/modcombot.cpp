@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <glm/gtc/matrix_transform.hpp>
 #include <map>
 #include <unordered_map>
 
@@ -144,6 +145,13 @@ bool loadAll()
 		if (d.contains("neck")) { p.neck = jv(d, "neck"); }
 		p.hipR = jv(d, "hipR"); p.hipL = jv(d, "hipL"); p.mount = jv(d, "mount");
 		p.kneeA = jv(d, "kneeA"); p.ankA = jv(d, "ankA"); p.kneeB = jv(d, "kneeB"); p.ankB = jv(d, "ankB");
+		if (d.contains("eye") && d["eye"].is_object())
+		{
+			const auto &e = d["eye"];
+			p.eyePiece = e.value("piece", -1);
+			if (e.contains("pos") && e["pos"].is_array() && e["pos"].size() == 3) { p.eyePos = glm::vec3(e["pos"][0].get<float>(), e["pos"][1].get<float>(), e["pos"][2].get<float>()); }
+			p.eyeGlow = e.value("glow", "");
+		}
 		if (d.contains("chain"))
 		{
 			for (const auto &c : d["chain"]) { p.chain.emplace_back(c[0].get<float>(), c[1].get<float>(), c[2].get<float>()); }
@@ -870,6 +878,20 @@ unsigned walkPhaseMs(const DROID *d)
 
 // ---------------------------------------------------------------- Zeichnen
 
+// MOD (Wunsch 16.11. 21:41): leuchtendes Auge - nur beim Zeichnen lebender Combots im Spiel (nicht Designer/Leichen) mitgeben
+static bool s_emitGlow = false;
+
+static const iIMDShape *glowShape(const std::string &name)
+{
+	static std::map<std::string, const iIMDShape *> cache;
+	auto it = cache.find(name);
+	if (it != cache.end()) { return it->second; }
+	const iIMDBaseShape *b = name.empty() ? nullptr : modelGet(WzString::fromUtf8(name));
+	const iIMDShape *sh = b ? b->displayModel() : nullptr;
+	cache[name] = sh;
+	return sh;
+}
+
 void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVariant, const glm::mat4 &base, const DrawPiece &emit)
 {
 	if (!ready() || !lo.torso) { return; }
@@ -915,6 +937,15 @@ void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVa
 		for (int i : range(2, n, n)) { a.push_back(i); }
 		emitBone(lo.torso, a, boneMatrix(T.R[7], T.p[7]), em);
 		emitBone(lo.torso, range(1, 2, n), boneMatrix(T.R[8], T.p[8]), em);
+		if (s_emitGlow && lo.torso->eyePiece >= 0 && kind != ANIM_DIE)
+		{
+			const iIMDShape *g = glowShape(lo.torso->eyeGlow);
+			if (g != nullptr)
+			{
+				const glm::mat4 bm = lo.torso->eyePiece == 1 ? boneMatrix(T.R[8], T.p[8]) : boneMatrix(T.R[7], T.p[7]);
+				em(g, bm * glm::translate(glm::mat4(1.f), lo.torso->eyePos), nullptr);   // nullptr = Lichthof (siehe draw)
+			}
+		}
 	}
 	for (int s = 0; s < 2; ++s)
 	{
@@ -954,9 +985,25 @@ bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view,
 		pieFlag |= pie_TRANSLUCENT;   // Tarnung: nur zu sehen als Schemen
 		pieFlagData = 110;
 	}
-	drawLoadout(lo, kind, elapsed, static_cast<int>(d->id), model, [&](const iIMDShape *s, const glm::mat4 &m, const Part *) {
+	s_emitGlow = !bButton && !(pieFlag & pie_TRANSLUCENT);
+	drawLoadout(lo, kind, elapsed, static_cast<int>(d->id), model, [&](const iIMDShape *s, const glm::mat4 &m, const Part *p) {
+		if (p == nullptr)
+		{
+			// Lichthof des Auges: zur Kamera gedreht, langsam drehende kurze Strahlen, leichtes Flackern, additiv - nicht zu hell
+			const float t = static_cast<float>(graphicsTime % 600000u) * 0.001f;
+			const float ph = static_cast<float>(d->id % 97u);
+			const float k = 1.f + 0.07f * std::sin(t * 7.3f + ph) + 0.04f * std::sin(t * 17.1f + ph * 0.5f);
+			const float sc = glm::length(glm::vec3(m[0])) * k;
+			const glm::mat3 camRot(view);
+			const glm::mat4 bb = glm::translate(glm::mat4(1.f), glm::vec3(m[3])) * glm::mat4(glm::transpose(camRot))
+			                     * glm::rotate(glm::mat4(1.f), t * 0.35f + ph, glm::vec3(0.f, 0.f, 1.f)) * glm::scale(glm::mat4(1.f), glm::vec3(sc));
+			const int alpha = std::clamp(static_cast<int>(165.f + 35.f * std::sin(t * 5.1f + ph)), 0, 255);
+			pie_Draw3DShape(s, 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, bb, view, 0.f, true);
+			return;
+		}
 		if (pie_Draw3DShape(s, 0, colour, brightness, pieFlag, pieFlagData, m, view, stretch, true)) { drew = true; }
 	});
+	s_emitGlow = false;
 	return drew;
 }
 
