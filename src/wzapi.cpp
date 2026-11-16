@@ -1431,8 +1431,8 @@ std::vector<const BASE_OBJECT *> wzapi::enumRange(WZAPI_PARAMS(int _x, int _y, i
 {
 	_x = std::max<int>(_x, 0);
 	_y = std::max<int>(_y, 0);
-	_x = std::min<int>(_x, gameWorld.map.width);
-	_y = std::min<int>(_y, gameWorld.map.height);
+	_x = std::min<int>(_x, scrMapSize(gameWorld.map.width));
+	_y = std::min<int>(_y, scrMapSize(gameWorld.map.height));
 
 	int player = context.player();
 	int x = scrWorld(_x);
@@ -2363,8 +2363,8 @@ bool wzapi::addBeacon(WZAPI_PARAMS(int _x, int _y, int playerFilter, optional<st
 {
 	SCRIPT_ASSERT(false, context, _x >= 0, "Beacon x value %d is less than zero", _x);
 	SCRIPT_ASSERT(false, context, _y >= 0, "Beacon y value %d is less than zero", _y);
-	SCRIPT_ASSERT(false, context, _x <= gameWorld.map.width, "Beacon x value %d is greater than mapWidth %d", _x, (int)gameWorld.map.width);
-	SCRIPT_ASSERT(false, context, _y <= gameWorld.map.height, "Beacon y value %d is greater than mapHeight %d", _y, (int)gameWorld.map.height);
+	SCRIPT_ASSERT(false, context, _x <= scrMapSize(gameWorld.map.width), "Beacon x value %d is greater than mapWidth %d", _x, (int)scrMapSize(gameWorld.map.width));
+	SCRIPT_ASSERT(false, context, _y <= scrMapSize(gameWorld.map.height), "Beacon y value %d is greater than mapHeight %d", _y, (int)scrMapSize(gameWorld.map.height));
 
 	int x = scrWorld(_x) + (DIST_TILE / 2);
 	int y = scrWorld(_y) + (DIST_TILE / 2);
@@ -2626,9 +2626,9 @@ bool wzapi::centreView(WZAPI_PARAMS(int x, int y))
 {
 	SCRIPT_ASSERT(false, context, x >= 0, "x value %d is less than zero", x);
 	SCRIPT_ASSERT(false, context, y >= 0, "y value %d is less than zero", y);
-	SCRIPT_ASSERT(false, context, x <= gameWorld.map.width, "x value %d is greater than mapWidth %d", x, (int)gameWorld.map.width);
-	SCRIPT_ASSERT(false, context, y <= gameWorld.map.height, "y value %d is greater than mapHeight %d", y, (int)gameWorld.map.height);
-	setViewPos(x, y, false);
+	SCRIPT_ASSERT(false, context, x <= scrMapSize(gameWorld.map.width), "x value %d is greater than mapWidth %d", x, (int)scrMapSize(gameWorld.map.width));
+	SCRIPT_ASSERT(false, context, y <= scrMapSize(gameWorld.map.height), "y value %d is greater than mapHeight %d", y, (int)scrMapSize(gameWorld.map.height));
+	setViewPos(scrGrid(x), scrGrid(y), false);   // MOD: Skript-Kacheln -> Raster
 	return true;
 }
 
@@ -2670,8 +2670,8 @@ bool wzapi::emitSound(WZAPI_PARAMS(std::string sound, int x, int y))
 {
 	SCRIPT_ASSERT(false, context, x >= 0, "x value %d is less than zero", x);
 	SCRIPT_ASSERT(false, context, y >= 0, "y value %d is less than zero", y);
-	SCRIPT_ASSERT(false, context, x <= gameWorld.map.width, "x value %d is greater than mapWidth %d", x, (int)gameWorld.map.width);
-	SCRIPT_ASSERT(false, context, y <= gameWorld.map.height, "y value %d is greater than mapHeight %d", y, (int)gameWorld.map.height);
+	SCRIPT_ASSERT(false, context, x <= scrMapSize(gameWorld.map.width), "x value %d is greater than mapWidth %d", x, (int)scrMapSize(gameWorld.map.width));
+	SCRIPT_ASSERT(false, context, y <= scrMapSize(gameWorld.map.height), "y value %d is greater than mapHeight %d", y, (int)scrMapSize(gameWorld.map.height));
 
 	int soundID = audio_GetTrackID(sound.c_str());
 	if (soundID == SAMPLE_NOT_FOUND)
@@ -3356,15 +3356,16 @@ bool wzapi::removeObject(WZAPI_PARAMS(BASE_OBJECT *psObj, optional<bool> _sfx))
 //--
 wzapi::no_return_value wzapi::setScrollLimits(WZAPI_PARAMS(int x1, int y1, int x2, int y2)) WZAPI_AI_UNSAFE
 {
-	const int minX = x1;
-	const int minY = y1;
-	const int maxX = x2;
-	const int maxY = y2;
+	// MOD (Kachel-Viertelung): Skript-Kacheln -> Raster
+	const int minX = scrGrid(x1);
+	const int minY = scrGrid(y1);
+	const int maxX = scrGrid(x2);
+	const int maxY = scrGrid(y2);
 
-	SCRIPT_ASSERT({}, context, minX >= 0, "Minimum scroll x value %d is less than zero - ", minX);
-	SCRIPT_ASSERT({}, context, minY >= 0, "Minimum scroll y value %d is less than zero - ", minY);
-	SCRIPT_ASSERT({}, context, maxX <= gameWorld.map.width, "Maximum scroll x value %d is greater than mapWidth %d", maxX, (int)gameWorld.map.width);
-	SCRIPT_ASSERT({}, context, maxY <= gameWorld.map.height, "Maximum scroll y value %d is greater than mapHeight %d", maxY, (int)gameWorld.map.height);
+	SCRIPT_ASSERT({}, context, minX >= 0, "Minimum scroll x value %d is less than zero - ", x1);
+	SCRIPT_ASSERT({}, context, minY >= 0, "Minimum scroll y value %d is less than zero - ", y1);
+	SCRIPT_ASSERT({}, context, maxX <= gameWorld.map.width, "Maximum scroll x value %d is greater than mapWidth %d", x2, (int)scrMapSize(gameWorld.map.width));
+	SCRIPT_ASSERT({}, context, maxY <= gameWorld.map.height, "Maximum scroll y value %d is greater than mapHeight %d", y2, (int)scrMapSize(gameWorld.map.height));
 	SCRIPT_ASSERT({}, context, maxX > minX && maxY > minY, "Invalid scroll limits (%d, %d) - (%d, %d)", minX, minY, maxX, maxY);
 
 	const int prevMinX = gameWorld.map.scroll.minX;
@@ -3394,11 +3395,11 @@ wzapi::no_return_value wzapi::setScrollLimits(WZAPI_PARAMS(int x1, int y1, int x
 //--
 scr_area wzapi::getScrollLimits(WZAPI_NO_PARAMS)
 {
-	scr_area limits;
-	limits.x1 = gameWorld.map.scroll.minX;
-	limits.y1 = gameWorld.map.scroll.minY;
-	limits.x2 = gameWorld.map.scroll.maxX;
-	limits.y2 = gameWorld.map.scroll.maxY;
+	scr_area limits;   // MOD: in Skript-Kacheln
+	limits.x1 = scrTile(world_coord(gameWorld.map.scroll.minX));
+	limits.y1 = scrTile(world_coord(gameWorld.map.scroll.minY));
+	limits.x2 = scrTile(world_coord(gameWorld.map.scroll.maxX));
+	limits.y2 = scrTile(world_coord(gameWorld.map.scroll.maxY));
 	return limits;
 }
 
@@ -3625,9 +3626,11 @@ wzapi::no_return_value wzapi::setNoGoArea(WZAPI_PARAMS(int x1, int y1, int x2, i
 {
 	SCRIPT_ASSERT({}, context, x1 >= 0, "Minimum scroll x value %d is less than zero - ", x1);
 	SCRIPT_ASSERT({}, context, y1 >= 0, "Minimum scroll y value %d is less than zero - ", y1);
-	SCRIPT_ASSERT({}, context, x2 <= gameWorld.map.width, "Maximum scroll x value %d is greater than mapWidth %d", x2, (int)gameWorld.map.width);
-	SCRIPT_ASSERT({}, context, y2 <= gameWorld.map.height, "Maximum scroll y value %d is greater than mapHeight %d", y2, (int)gameWorld.map.height);
+	SCRIPT_ASSERT({}, context, x2 <= scrMapSize(gameWorld.map.width), "Maximum scroll x value %d is greater than mapWidth %d", x2, (int)scrMapSize(gameWorld.map.width));
+	SCRIPT_ASSERT({}, context, y2 <= scrMapSize(gameWorld.map.height), "Maximum scroll y value %d is greater than mapHeight %d", y2, (int)scrMapSize(gameWorld.map.height));
 	SCRIPT_ASSERT({}, context, (playerFilter >= 0 && playerFilter < MAX_PLAYERS) || playerFilter == ALL_PLAYERS, "Bad player filter value %d", playerFilter);
+	// MOD (Kachel-Viertelung): Skript-Kacheln -> Raster (Landezonen werden als uint8 gespeichert - bei feinem Raster Grenze beachten)
+	x1 = scrGrid(x1); y1 = scrGrid(y1); x2 = scrGrid(x2); y2 = scrGrid(y2);
 	x1 = std::min<int>(x1, UINT8_MAX);
 	y1 = std::min<int>(y1, UINT8_MAX);
 	x2 = std::min<int>(x2, UINT8_MAX);
