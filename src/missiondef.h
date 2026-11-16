@@ -44,10 +44,11 @@
 
 struct LANDING_ZONE
 {
-	uint8_t x1;
-	uint8_t y1;
-	uint8_t x2;
-	uint8_t y2;
+	// MOD (Kachel-Viertelung): 16 Bit - feine Karten haben bis zu 512 Felder
+	uint16_t x1;
+	uint16_t y1;
+	uint16_t x2;
+	uint16_t y2;
 };
 
 // How the mission timer behaves

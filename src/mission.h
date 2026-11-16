@@ -168,7 +168,7 @@ LANDING_ZONE *getLandingZone(SDWORD i);
 void initNoGoAreas();
 
 /** Sets the coords for a no go area. */
-void setNoGoArea(UBYTE x1, UBYTE y1, UBYTE x2, UBYTE y2, UBYTE area);
+void setNoGoArea(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, UBYTE area);
 
 /** Fly in transporters at start of level. */
 /// Returns the transporter flown in (the player's first at the home base with droids aboard), or nullptr if none

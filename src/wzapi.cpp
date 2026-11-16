@@ -3629,12 +3629,14 @@ wzapi::no_return_value wzapi::setNoGoArea(WZAPI_PARAMS(int x1, int y1, int x2, i
 	SCRIPT_ASSERT({}, context, x2 <= scrMapSize(gameWorld.map.width), "Maximum scroll x value %d is greater than mapWidth %d", x2, (int)scrMapSize(gameWorld.map.width));
 	SCRIPT_ASSERT({}, context, y2 <= scrMapSize(gameWorld.map.height), "Maximum scroll y value %d is greater than mapHeight %d", y2, (int)scrMapSize(gameWorld.map.height));
 	SCRIPT_ASSERT({}, context, (playerFilter >= 0 && playerFilter < MAX_PLAYERS) || playerFilter == ALL_PLAYERS, "Bad player filter value %d", playerFilter);
-	// MOD (Kachel-Viertelung): Skript-Kacheln -> Raster (Landezonen werden als uint8 gespeichert - bei feinem Raster Grenze beachten)
-	x1 = scrGrid(x1); y1 = scrGrid(y1); x2 = scrGrid(x2); y2 = scrGrid(y2);
-	x1 = std::min<int>(x1, UINT8_MAX);
-	y1 = std::min<int>(y1, UINT8_MAX);
-	x2 = std::min<int>(x2, UINT8_MAX);
-	y2 = std::min<int>(y2, UINT8_MAX);
+	// MOD (Kachel-Viertelung): Skript-Kacheln -> Raster; das Ende ist einschliesslich, also bis zum letzten Feinfeld der Kachel
+	const bool emptyZone = (x1 | y1 | x2 | y2) == 0;
+	x1 = scrGrid(x1); y1 = scrGrid(y1);
+	x2 = emptyZone ? 0 : scrGrid(x2) + TILE_SPLIT - 1; y2 = emptyZone ? 0 : scrGrid(y2) + TILE_SPLIT - 1;
+	x1 = std::min<int>(x1, UINT16_MAX);
+	y1 = std::min<int>(y1, UINT16_MAX);
+	x2 = std::min<int>(x2, UINT16_MAX);
+	y2 = std::min<int>(y2, UINT16_MAX);
 
 	if (playerFilter == ALL_PLAYERS)
 	{
