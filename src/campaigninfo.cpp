@@ -154,6 +154,7 @@ void from_json(const nlohmann::json& j, CAMPAIGN_FILE& v)
 void setCamTweakOptions(std::unordered_map<std::string, nlohmann::json> options)
 {
 	camTweakOptions = options;
+	camTweakOptions["infiniteTime"] = true;   // MOD (16.11.): Kampagne immer ohne Zeitlimit
 }
 
 void clearCamTweakOptions()

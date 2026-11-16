@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Schlachtfeld-Autonomie - kurzer Rueckzug unter schwerem Beschuss (siehe modmorale.h)
 
+#include "modcontrol.h"
 #include "modmorale.h"
 
 #include "lib/framework/frame.h"
@@ -73,7 +74,7 @@ void onHit(DROID *psDroid, int hpLost, const PROJECTILE *psProj)
 	if (modlayer::layerOf(psDroid) != modlayer::SURFACE) { return; }
 	if (modoil::droidInTrench(psDroid) || modterrain::droidInCover(psDroid)) { return; }   // im Graben / in der eigenen Mulde bleibt man in Deckung
 	Entry &e = s_state[psDroid->id];
-	if (e.pending || gameTime < e.cooldownUntil || !interruptible(psDroid)) { return; }
+	if (e.pending || gameTime < e.cooldownUntil || !interruptible(psDroid) || modcontrol::manual(psDroid)) { return; }
 
 	// Richtung: weg vom Schuetzen (sonst weg vom Einschlag)
 	Vector2i from = psProj->psSource ? psProj->psSource->pos.xy() : psProj->pos.xy();

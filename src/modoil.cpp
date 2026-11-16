@@ -424,6 +424,12 @@ bool isCargo(uint32_t droidId)
 	return s_cargo.find(droidId) != s_cargo.end();
 }
 
+bool isBusy(uint32_t droidId)
+{
+	const auto it = s_cargo.find(droidId);
+	return it != s_cargo.end() && (it->second.mode != 0 || it->second.n > 0);
+}
+
 bool generatorRunning(const STRUCTURE *psGen)
 {
 	if (!manages(psGen->player)) { return true; }

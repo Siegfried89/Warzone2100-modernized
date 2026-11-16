@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Munition - siehe modammo.h
+#include "modcontrol.h"
 #include "modammo.h"
+#include "modcrates.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -94,17 +96,17 @@ int radiusOf(const STRUCTURE *s)
 	return s->pStructureType->id.toUtf8().find("AmmoDepot") != std::string::npos ? DEPOT_RADIUS : SUPPLY_RADIUS;
 }
 
-/// Nachschub-Rate der naechsten Quelle (0 = keine Quelle in der Naehe)
-float supplyRate(const DROID *d)
+/// Nachschub-Rate der naechsten Quelle (0 = keine Quelle in der Naehe); src = die liefernde Quelle
+float supplyRate(const DROID *d, const STRUCTURE **src = nullptr)
 {
 	float best = 0.f;
 	for (const STRUCTURE *s : gameWorld.objects.structures[d->player])
 	{
 		const float rate = rateOf(s);
-		if (rate <= 0.f) { continue; }
+		if (rate <= 0.f || !modcrates::hasStock(s)) { continue; }   // MOD: leere Depots/Kisten/Haufen liefern nichts
 		const int dx = s->pos.x - d->pos.x, dy = s->pos.y - d->pos.y, r = radiusOf(s);
 		if (dx * dx + dy * dy > r * r) { continue; }
-		best = std::max(best, rate);
+		if (rate > best) { best = rate; if (src) { *src = s; } }
 	}
 	return best;
 }
@@ -117,7 +119,7 @@ const STRUCTURE *nearestSource(const DROID *d)
 	for (const STRUCTURE *s : gameWorld.objects.structures[d->player])
 	{
 		const float rate = rateOf(s);
-		if (rate <= 0.f) { continue; }
+		if (rate <= 0.f || !modcrates::hasStock(s)) { continue; }   // MOD: leere Depots/Kisten/Haufen liefern nichts
 		const float dx = static_cast<float>(s->pos.x - d->pos.x), dy = static_cast<float>(s->pos.y - d->pos.y);
 		const float score = std::sqrt(dx * dx + dy * dy) * (rate >= 0.1f ? 0.7f : 1.f);
 		if (score < bestScore) { bestScore = score; best = s; }
@@ -144,6 +146,11 @@ bool mayAutoResupply(const DROID *d)
 	}
 }
 } // namespace
+
+bool isSource(const STRUCTURE *s)
+{
+	return rateOf(s) > 0.f;
+}
 
 bool usesAmmo(const DROID *d)
 {
@@ -221,7 +228,7 @@ void tick(GameWorld &world)
 					}
 				}
 			}
-			else if (left == 0 && gameTime >= st.nextAllowed && mayAutoResupply(d))
+			else if (left == 0 && gameTime >= st.nextAllowed && mayAutoResupply(d) && !modcontrol::manual(d))
 			{
 				const STRUCTURE *src = nearestSource(d);
 				if (src != nullptr)
@@ -242,11 +249,18 @@ void tick(GameWorld &world)
 			}
 			if (left < 0) { continue; }
 			if (left >= cap) { if (!st.resupply) { left = -1; } continue; }
-			const float rate = supplyRate(d);
+			const STRUCTURE *src = nullptr;
+			const float rate = supplyRate(d, &src);
 			if (rate > 0.f)
 			{
 				const float add = rate * static_cast<float>(cap) * (static_cast<float>(TICK_MS) / 1000.f);
+				const int before = left;
 				left = std::min(cap, left + std::max(1, static_cast<int>(add + 0.5f)));
+				// MOD (16.11.): abgeladene Kistenhaufen verbrauchen sich (Anteil einer vollen Ladung in Promille)
+				if (src != nullptr && left > before)
+				{
+					modcrates::consume(src, (left - before) * 1000 / std::max(1, cap));
+				}
 			}
 		}
 	}

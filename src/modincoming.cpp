@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Artilleriegranate im Anflug - Pfeifen, Warnrufe, Verteilen, Eingraben (siehe modincoming.h)
 
+#include "modcontrol.h"
 #include "modincoming.h"
 
 #include "lib/framework/frame.h"
@@ -203,7 +204,7 @@ void react(const PROJECTILE *p)
 		auto it = s_units.find(d->id);
 		if (it != s_units.end()) { continue; }   // reagiert schon / Sperre
 		if (caller == nullptr) { caller = d; }
-		if (inCover(d) || !interruptible(d)) { continue; }
+		if (inCover(d) || !interruptible(d) || modcontrol::manual(d)) { continue; }
 		Vector2i to;
 		if (!escapePoint(d, impact, danger, to)) { continue; }
 		orderDroidLoc(d, DORDER_MOVE, static_cast<UDWORD>(to.x), static_cast<UDWORD>(to.y), ModeImmediate);

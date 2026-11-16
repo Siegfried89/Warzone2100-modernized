@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Munitionskisten per Lkw (siehe modcrates.h)
+// MOD: Munitions-Nachschub Fabrik -> Lkw -> Depot -> Front (siehe modcrates.h)
 
 #include "modcrates.h"
+#include "modammo.h"
+#include "modcontrol.h"
+#include "modoil.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/fixedpoint.h"
@@ -28,6 +31,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -38,15 +42,25 @@ namespace
 constexpr unsigned TICK_MS = 250;
 constexpr int LOAD_RANGE = 5 * TILE_UNITS / 2;
 constexpr int DROP_RANGE = 3 * TILE_UNITS / 2;
-constexpr unsigned JOB_TIMEOUT_MS = 90000;
+constexpr unsigned JOB_TIMEOUT_MS = 120000;
+constexpr int CRATE_STOCK = 2000;          // eine Kiste = 2 volle Ladungen (Promille)
+constexpr int DEPOT_CAP = 30;              // Kisten im Depot
+constexpr int BOX_CAP = 4;                 // Kisten in einer gebauten Munitionskiste
+constexpr int PILE_CAP = 4;                // Kisten im Haufen an der Fabrik
+constexpr int DEPOT_START = 4, BOX_START = 1;
+constexpr unsigned PRODUCE_MS = 45000;     // Fabrik: eine Kiste alle 45 s
+
+enum Job { J_NONE = 0, J_LOAD = 1, J_DROP = 2, J_STORE = 3 };
 
 struct Truck
 {
 	uint8_t player = 0;
 	int crates = 0;
-	int job = 0;          // 0 keiner, 1 laden, 2 abladen
-	int tx = 0, ty = 0;   // Ziel (Depot bzw. Abladestelle)
-	int mx = 0, my = 0;   // eigener Fahrbefehl (um Spieler-Befehle zu erkennen)
+	int job = J_NONE;
+	bool autopilot = false;   // vom Autopiloten (Fabrik -> Depot) vergeben
+	int tx = 0, ty = 0;       // Ziel
+	uint32_t source = 0;      // Ziel-Bauwerk (Quelle / Depot)
+	int mx = -1, my = -1;     // eigener Fahrbefehl (um Spieler-Befehle zu erkennen)
 	unsigned since = 0;
 	int tries = 0;
 };
@@ -57,24 +71,28 @@ struct Boom
 };
 
 std::map<uint32_t, Truck> s_trucks;
-std::map<uint32_t, int> s_piles;     // Kistenhaufen (Bauwerk) -> Kisten
+std::map<uint32_t, int> s_stock;        // Depot/Kiste/Haufen -> Vorrat (Promille-Ladungen)
+std::map<uint32_t, uint32_t> s_facPile; // Fabrik -> ihr Ausgabe-Haufen
+std::map<uint32_t, unsigned> s_facNext; // Fabrik -> naechste fertige Kiste
 std::vector<Boom> s_booms;
 unsigned s_nextTick = 0;
+unsigned s_nextAuto = 0;
 
 bool idHas(const STRUCTURE *s, const char *what)
 {
 	return s != nullptr && s->pStructureType != nullptr && s->pStructureType->id.toUtf8().find(what) != std::string::npos;
 }
-
-bool isDepot(const STRUCTURE *s)
+bool alive(const STRUCTURE *s) { return s != nullptr && !s->died && s->status == SS_BUILT; }
+bool isPile(const STRUCTURE *s) { return idHas(s, "AmmoBoxDrop"); }
+bool isDepot(const STRUCTURE *s) { return idHas(s, "AmmoDepot"); }
+bool isBox(const STRUCTURE *s) { return idHas(s, "AmmoBox") && !isPile(s); }
+bool isFactory(const STRUCTURE *s)
 {
-	return idHas(s, "AmmoDepot") && !s->died && s->status == SS_BUILT;
+	return s != nullptr && s->pStructureType != nullptr && (s->pStructureType->type == REF_FACTORY || s->pStructureType->type == REF_CYBORG_FACTORY);
 }
+int capOf(const STRUCTURE *s) { return isDepot(s) ? DEPOT_CAP : (isBox(s) ? BOX_CAP : PILE_CAP); }
 
-bool isPileStats(const STRUCTURE *s)
-{
-	return idHas(s, "AmmoBoxDrop");
-}
+int cratesIn(int stock) { return std::max(0, (stock + CRATE_STOCK - 1) / CRATE_STOCK); }
 
 int64_t dist2(int ax, int ay, int bx, int by)
 {
@@ -82,18 +100,23 @@ int64_t dist2(int ax, int ay, int bx, int by)
 	return dx * dx + dy * dy;
 }
 
-const STRUCTURE *nearestDepot(unsigned player, int x, int y)
+/// Vorrat einer begrenzten Quelle (wird beim ersten Mal angelegt)
+int &stockRef(const STRUCTURE *s)
 {
-	if (player >= MAX_PLAYERS) { return nullptr; }
-	const STRUCTURE *best = nullptr;
-	int64_t bd = 0;
-	for (const STRUCTURE *s : gameWorld.objects.structures[player])
+	auto it = s_stock.find(s->id);
+	if (it == s_stock.end())
 	{
-		if (!isDepot(s)) { continue; }
-		const int64_t d = dist2(s->pos.x, s->pos.y, x, y);
-		if (best == nullptr || d < bd) { best = s; bd = d; }
+		const int start = isDepot(s) ? DEPOT_START : (isBox(s) ? BOX_START : 1);
+		it = s_stock.emplace(s->id, start * CRATE_STOCK).first;
 	}
-	return best;
+	return it->second;
+}
+
+STRUCTURE *findStruct(uint32_t id, unsigned player)
+{
+	if (id == 0 || player >= MAX_PLAYERS) { return nullptr; }
+	STRUCTURE *s = IdToStruct(id, player);
+	return alive(s) ? s : nullptr;
 }
 
 void moveTo(DROID *d, Truck &t, int x, int y)
@@ -107,6 +130,15 @@ void moveTo(DROID *d, Truck &t, int x, int y)
 bool ownMove(const DROID *d, const Truck &t)
 {
 	return d->order.type == DORDER_MOVE && d->order.pos.x == t.mx && d->order.pos.y == t.my;
+}
+
+/// Anfahrpunkt neben einem Bauwerk (auf der Seite des Lkw)
+void approach(DROID *d, Truck &t, const STRUCTURE *s)
+{
+	const int dx = d->pos.x - s->pos.x, dy = d->pos.y - s->pos.y;
+	const int len = std::max(1, iHypot(Vector2i(dx, dy)));
+	const int r = 3 * TILE_UNITS / 2 + TILE_UNITS * std::max(s->pStructureType->baseWidth, s->pStructureType->baseBreadth) / 2;
+	moveTo(d, t, s->pos.x + dx * r / len, s->pos.y + dy * r / len);
 }
 
 STRUCTURE_STATS *pileStats(int n)
@@ -124,12 +156,68 @@ bool tileFree(int tx, int ty)
 	return t != nullptr && !TileIsOccupied(t) && terrainType(t) != TER_WATER && terrainType(t) != TER_CLIFFFACE;
 }
 
+STRUCTURE *buildPile(unsigned player, int tx, int ty, int stock, uint16_t dir)
+{
+	STRUCTURE_STATS *st = pileStats(cratesIn(stock));
+	if (st == nullptr) { return nullptr; }
+	STRUCTURE *s = buildStructureDir(gameWorld, st, static_cast<UDWORD>(world_coord(tx) + TILE_UNITS / 2), static_cast<UDWORD>(world_coord(ty) + TILE_UNITS / 2),
+	                                 dir, player, false, generateSynchronisedObjectId(), false, true, true);
+	if (s == nullptr) { return nullptr; }
+	s->status = SS_BUILT;
+	buildingComplete(s, gameWorld);
+	s_stock[s->id] = stock;
+	return s;
+}
+
+/// Haufen mit neuer Kistenzahl neu aufstellen (Modell 1-4 Kisten); gibt den (neuen) Haufen zurueck, nullptr wenn leer/entfernt
+STRUCTURE *refreshPile(STRUCTURE *s)
+{
+	if (s == nullptr) { return nullptr; }
+	const int stock = stockRef(s);
+	const int n = cratesIn(stock);
+	char want[40];
+	snprintf(want, sizeof(want), "A0BaBaAmmoBoxDrop%d", std::clamp(n, 1, 4));
+	if (n > 0 && s->pStructureType->id.toUtf8() == want) { return s; }
+	const unsigned player = s->player;
+	const int tx = map_coord(s->pos.x), ty = map_coord(s->pos.y);
+	const uint16_t dir = s->rot.direction;
+	const uint32_t oldId = s->id;
+	s_stock.erase(oldId);
+	removeStruct(s, true, gameWorld);
+	if (n <= 0) { return nullptr; }
+	STRUCTURE *ns = buildPile(player, tx, ty, stock, dir);
+	if (ns != nullptr)
+	{
+		for (auto &kv : s_facPile) { if (kv.second == oldId) { kv.second = ns->id; } }
+		for (auto &kv : s_trucks) { if (kv.second.source == oldId) { kv.second.source = ns->id; } }
+	}
+	return ns;
+}
+
+/// freies Feld neben einem Bauwerk (feste Reihenfolge)
+bool freeTileNear(const STRUCTURE *s, int extra, int &ox, int &oy)
+{
+	const int w = std::max(1, static_cast<int>(s->pStructureType->baseWidth)), b = std::max(1, static_cast<int>(s->pStructureType->baseBreadth));
+	const int x0 = map_coord(s->pos.x) - w / 2, y0 = map_coord(s->pos.y) - b / 2;
+	for (int r = 1; r <= 1 + extra; ++r)
+	{
+		for (int y = y0 - r; y < y0 + b + r; ++y)
+		{
+			for (int x = x0 - r; x < x0 + w + r; ++x)
+			{
+				const bool ring = (x == x0 - r || x == x0 + w + r - 1 || y == y0 - r || y == y0 + b + r - 1);
+				if (!ring || !tileFree(x, y)) { continue; }
+				ox = x; oy = y;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 bool dropPile(DROID *d, Truck &t)
 {
-	STRUCTURE_STATS *st = pileStats(t.crates);
-	if (st == nullptr) { return false; }
 	const int cx = map_coord(t.tx), cy = map_coord(t.ty);
-	// Zielfeld, sonst Ring 1 und 2 (feste Reihenfolge)
 	for (int r = 0; r <= 2; ++r)
 	{
 		for (int dy = -r; dy <= r; ++dy)
@@ -139,14 +227,8 @@ bool dropPile(DROID *d, Truck &t)
 				if (std::max(std::abs(dx), std::abs(dy)) != r) { continue; }
 				const int tx = cx + dx, ty = cy + dy;
 				if (!tileFree(tx, ty)) { continue; }
-				// nicht auf das Feld des Lkw selbst
 				if (tx == map_coord(d->pos.x) && ty == map_coord(d->pos.y)) { continue; }
-				STRUCTURE *s = buildStructureDir(gameWorld, st, static_cast<UDWORD>(world_coord(tx) + TILE_UNITS / 2), static_cast<UDWORD>(world_coord(ty) + TILE_UNITS / 2),
-				                                 static_cast<uint16_t>((d->id * 9973u) & 0xc000u), d->player, false, generateSynchronisedObjectId(), false, true, true);
-				if (s == nullptr) { continue; }
-				s->status = SS_BUILT;
-				buildingComplete(s, gameWorld);
-				s_piles[s->id] = t.crates;
+				if (buildPile(d->player, tx, ty, t.crates * CRATE_STOCK, static_cast<uint16_t>((d->id * 9973u) & 0xc000u)) == nullptr) { continue; }
 				t.crates = 0;
 				return true;
 			}
@@ -251,6 +333,138 @@ void areaDamage(int x, int y, int radius, int base)
 		}
 	}
 }
+
+/// Laden an der Quelle s; gibt true zurueck, wenn etwas geladen wurde
+bool loadFrom(DROID *d, Truck &t, STRUCTURE *s)
+{
+	const int want = capacity(d) - t.crates;
+	if (want <= 0) { return false; }
+	if (!modcrates::finite(s))
+	{
+		return false;   // Fabrik, HQ, Werkstatt: dort wird nichts gelagert (Fabrik-Kisten liegen im Haufen daneben)
+	}
+	int &st = stockRef(s);
+	const int take = std::min(want, st / CRATE_STOCK);   // nur ganze Kisten
+	if (take <= 0) { return false; }
+	t.crates += take;
+	st -= take * CRATE_STOCK;
+	if (isPile(s)) { refreshPile(s); }
+	return true;
+}
+
+/// Einlagern in Depot/Kiste/Haufen s
+bool storeInto(Truck &t, STRUCTURE *s)
+{
+	if (!modcrates::finite(s)) { return false; }
+	int &st = stockRef(s);
+	const int space = capOf(s) - cratesIn(st);
+	const int put = std::min(space, t.crates);
+	if (put <= 0) { return false; }
+	st += put * CRATE_STOCK;
+	t.crates -= put;
+	if (isPile(s)) { refreshPile(s); }
+	return true;
+}
+
+/// Ausgabe-Haufen einer Fabrik (Fabrik-Kisten); nullptr wenn keiner
+STRUCTURE *facPile(const STRUCTURE *fac)
+{
+	auto it = s_facPile.find(fac->id);
+	if (it == s_facPile.end()) { return nullptr; }
+	STRUCTURE *p = findStruct(it->second, fac->player);
+	if (p == nullptr) { s_facPile.erase(it); }
+	return p;
+}
+
+void produce()
+{
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		if (!isHumanPlayer(p)) { continue; }   // Munition gilt nur fuer menschliche Spieler (modammo)
+		std::vector<STRUCTURE *> facs;
+		for (STRUCTURE *s : gameWorld.objects.structures[p]) { if (alive(s) && isFactory(s)) { facs.push_back(s); } }
+		std::sort(facs.begin(), facs.end(), [](const STRUCTURE *a, const STRUCTURE *b) { return a->id < b->id; });
+		for (STRUCTURE *f : facs)
+		{
+			auto nx = s_facNext.find(f->id);
+			if (nx == s_facNext.end()) { s_facNext[f->id] = gameTime + PRODUCE_MS; continue; }
+			if (gameTime < nx->second) { continue; }
+			STRUCTURE *pile = facPile(f);
+			if (pile != nullptr && cratesIn(stockRef(pile)) >= PILE_CAP) { continue; }   // voll: Fabrik wartet
+			nx->second = gameTime + PRODUCE_MS;
+			if (pile != nullptr)
+			{
+				stockRef(pile) += CRATE_STOCK;
+				pile = refreshPile(pile);
+				if (pile != nullptr) { s_facPile[f->id] = pile->id; }
+			}
+			else
+			{
+				int tx = 0, ty = 0;
+				if (!freeTileNear(f, 1, tx, ty)) { continue; }
+				STRUCTURE *np = buildPile(p, tx, ty, CRATE_STOCK, 0);
+				if (np != nullptr) { s_facPile[f->id] = np->id; }
+			}
+		}
+	}
+}
+
+/// Autopilot: freie Lkw bringen Fabrik-Kisten zum naechsten Depot mit Platz
+void autopilot()
+{
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		if (!isHumanPlayer(p)) { continue; }
+		std::vector<STRUCTURE *> piles, depots;
+		std::set<uint32_t> reserved;
+		for (const auto &kv : s_trucks) { if (kv.second.player == p && kv.second.job == J_LOAD) { reserved.insert(kv.second.source); } }
+		for (const auto &kv : s_facPile)
+		{
+			STRUCTURE *ps = findStruct(kv.second, p);
+			if (ps != nullptr && cratesIn(stockRef(ps)) > 0 && reserved.count(ps->id) == 0) { piles.push_back(ps); }
+		}
+		for (STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (alive(s) && isDepot(s) && cratesIn(stockRef(s)) < DEPOT_CAP) { depots.push_back(s); }
+		}
+		if (depots.empty()) { continue; }
+		std::vector<DROID *> trucks;
+		for (DROID *d : gameWorld.objects.droids[p])
+		{
+			if (d == nullptr || d->died || capacity(d) <= 0 || d->order.type != DORDER_NONE) { continue; }
+			if (modoil::isBusy(d->id) || modcontrol::manual(d)) { continue; }
+			auto it = s_trucks.find(d->id);
+			if (it != s_trucks.end() && it->second.job != J_NONE) { continue; }
+			trucks.push_back(d);
+		}
+		std::sort(trucks.begin(), trucks.end(), [](const DROID *a, const DROID *b) { return a->id < b->id; });
+		for (DROID *d : trucks)
+		{
+			Truck &t = s_trucks[d->id];
+			t.player = static_cast<uint8_t>(p);
+			if (t.crates > 0)
+			{
+				// geladen (vom Autopiloten): zum naechsten Depot mit Platz
+				if (!t.autopilot) { continue; }   // vom Spieler beladen: der Spieler entscheidet
+				STRUCTURE *best = nullptr; int64_t bd = 0;
+				for (STRUCTURE *s : depots) { const int64_t dd = dist2(s->pos.x, s->pos.y, d->pos.x, d->pos.y); if (!best || dd < bd) { best = s; bd = dd; } }
+				if (best == nullptr) { continue; }
+				t.job = J_STORE; t.source = best->id; t.tx = best->pos.x; t.ty = best->pos.y; t.since = gameTime; t.tries = 0; t.mx = -1; t.my = -1;
+				continue;
+			}
+			if (piles.empty()) { continue; }
+			size_t bi = 0; int64_t bd = -1;
+			for (size_t i = 0; i < piles.size(); ++i)
+			{
+				const int64_t dd = dist2(piles[i]->pos.x, piles[i]->pos.y, d->pos.x, d->pos.y);
+				if (bd < 0 || dd < bd) { bd = dd; bi = i; }
+			}
+			STRUCTURE *ps = piles[bi];
+			piles.erase(piles.begin() + static_cast<long>(bi));
+			t.job = J_LOAD; t.autopilot = true; t.source = ps->id; t.tx = ps->pos.x; t.ty = ps->pos.y; t.since = gameTime; t.tries = 0; t.mx = -1; t.my = -1;
+		}
+	}
+}
 } // namespace
 
 int capacity(const DROID *d)
@@ -276,7 +490,7 @@ int crates(const DROID *d)
 bool busy(uint32_t droidId)
 {
 	auto it = s_trucks.find(droidId);
-	return it != s_trucks.end() && (it->second.crates > 0 || it->second.job != 0);
+	return it != s_trucks.end() && (it->second.crates > 0 || it->second.job != J_NONE);
 }
 
 bool startOrder(DROID *d, int x, int y, uint16_t code)
@@ -285,12 +499,44 @@ bool startOrder(DROID *d, int x, int y, uint16_t code)
 	if (d == nullptr || capacity(d) <= 0) { return true; }   // falscher Typ: Befehl verwerfen
 	Truck &t = s_trucks[d->id];
 	t.player = static_cast<uint8_t>(d->player);
-	if (code == CODE_UNLOAD && t.crates <= 0) { return true; }
-	t.job = (code == CODE_LOAD) ? 1 : 2;
+	t.autopilot = false;
 	t.tx = x; t.ty = y;
 	t.mx = -1; t.my = -1;
 	t.since = gameTime;
 	t.tries = 0;
+	t.source = 0;
+	if (code == CODE_UNLOAD)
+	{
+		if (t.crates <= 0) { t.job = J_NONE; return true; }
+		t.job = J_DROP;
+	}
+	else
+	{
+		// angeklicktes Bauwerk an dieser Stelle; mit Kisten an Bord und Platz dort: einlagern, sonst laden
+		STRUCTURE *src = nullptr;
+		if (d->player < MAX_PLAYERS)
+		{
+			for (STRUCTURE *s : gameWorld.objects.structures[d->player])
+			{
+				if (!alive(s) || !modammo::isSource(s)) { continue; }
+				if (s->pos.x == x && s->pos.y == y) { src = s; break; }
+			}
+		}
+		if (src == nullptr) { t.job = J_NONE; return true; }
+		t.source = src->id;
+		const bool canStore = finite(src) && cratesIn(stockRef(src)) < capOf(src);
+		if (isFactory(src))
+		{
+			STRUCTURE *fp = facPile(src);   // Fabrik angeklickt: deren Kisten-Haufen
+			if (fp == nullptr) { t.job = J_NONE; return true; }
+			t.source = fp->id; t.tx = fp->pos.x; t.ty = fp->pos.y;
+			t.job = J_LOAD;
+		}
+		else
+		{
+			t.job = (t.crates > 0 && canStore) ? J_STORE : J_LOAD;
+		}
+	}
 	d->order = DroidOrder(DORDER_NONE);
 	actionDroid(d, DACTION_NONE);
 	return true;
@@ -298,12 +544,11 @@ bool startOrder(DROID *d, int x, int y, uint16_t code)
 
 bool loadOrderSelected(unsigned player, const STRUCTURE *s)
 {
-	if (player >= MAX_PLAYERS || s == nullptr || s->player != player || !isDepot(s)) { return false; }
+	if (player >= MAX_PLAYERS || s == nullptr || s->player != player || !alive(s) || !modammo::isSource(s)) { return false; }
 	bool any = false;
 	for (DROID *d : gameWorld.objects.droids[player])
 	{
-		if (d == nullptr || !d->selected || d->died) { continue; }
-		if (capacity(d) <= 0 || crates(d) >= capacity(d)) { continue; }
+		if (d == nullptr || !d->selected || d->died || capacity(d) <= 0) { continue; }
 		DroidOrder o(DORDER_FORTIFY, s->pos.xy());
 		o.direction = CODE_LOAD;
 		sendDroidInfo(d, o, false, currentOrderSource());
@@ -317,19 +562,41 @@ bool wantsUnload(const DROID *d)
 	return crates(d) > 0;
 }
 
+bool finite(const STRUCTURE *s)
+{
+	return isDepot(s) || isBox(s) || isPile(s);
+}
+
+bool hasStock(const STRUCTURE *s)
+{
+	if (!finite(s)) { return true; }
+	return stockRef(s) > 0;
+}
+
+void consume(const STRUCTURE *s, int permille)
+{
+	if (s == nullptr || permille <= 0 || !finite(s)) { return; }
+	stockRef(s) -= permille;
+}
+
+int cratesAt(const STRUCTURE *s)
+{
+	if (!finite(s)) { return -1; }
+	return cratesIn(stockRef(s));
+}
+
 void onStructureDestroyed(const STRUCTURE *s)
 {
 	if (s == nullptr) { return; }
-	auto it = s_piles.find(s->id);
-	if (it == s_piles.end())
+	s_facNext.erase(s->id);
+	auto it = s_stock.find(s->id);
+	int n = 0;
+	if (it != s_stock.end()) { n = cratesIn(it->second); s_stock.erase(it); }
+	else if (isPile(s)) { n = 2; }
+	if (isPile(s) && n > 0)
 	{
-		if (!isPileStats(s)) { return; }
-		s_booms.push_back({ gameTime + 60, s->pos.x, s->pos.y, s->pos.z, 2 });   // Haufen ohne Zaehlung (z. B. nach dem Laden)
-		return;
+		s_booms.push_back({ gameTime + 60 + static_cast<unsigned>(s->id % 4u) * 40u, s->pos.x, s->pos.y, s->pos.z, n });
 	}
-	const int n = it->second;
-	s_piles.erase(it);
-	if (n > 0) { s_booms.push_back({ gameTime + 60 + static_cast<unsigned>(s->id % 4u) * 40u, s->pos.x, s->pos.y, s->pos.z, n }); }
 }
 
 void onDroidDestroyed(const DROID *d)
@@ -343,7 +610,6 @@ void onDroidDestroyed(const DROID *d)
 
 void tick()
 {
-	// Explosionen (sofort faellig, Kettenreaktion durch neue Eintraege)
 	if (!s_booms.empty())
 	{
 		std::vector<Boom> due, keep;
@@ -359,50 +625,61 @@ void tick()
 
 	if (gameTime < s_nextTick) { return; }
 	s_nextTick = gameTime + TICK_MS;
+
+	if (gameTime >= s_nextAuto)
+	{
+		s_nextAuto = gameTime + 1000;
+		produce();
+		autopilot();
+	}
+
 	for (auto it = s_trucks.begin(); it != s_trucks.end();)
 	{
 		Truck &t = it->second;
 		DROID *d = IdToDroid(gameWorld.objects, it->first, t.player);
 		if (d == nullptr || d->died) { it = s_trucks.erase(it); continue; }
-		if (t.job != 0)
+		if (t.job != J_NONE)
 		{
 			const bool mine = ownMove(d, t);
 			if (!mine && d->order.type != DORDER_NONE && t.mx >= 0)
 			{
-				t.job = 0;   // Spieler hat einen anderen Befehl gegeben
+				t.job = J_NONE; t.autopilot = false;   // der Spieler hat einen anderen Befehl gegeben
 			}
 			else if (gameTime - t.since > JOB_TIMEOUT_MS)
 			{
-				t.job = 0;
+				t.job = J_NONE;
 			}
-			else if (t.job == 1)
+			else if (t.job == J_LOAD || t.job == J_STORE)
 			{
-				const STRUCTURE *dep = nearestDepot(t.player, t.tx, t.ty);
-				if (dep == nullptr) { t.job = 0; }
-				else if (dist2(d->pos.x, d->pos.y, dep->pos.x, dep->pos.y) <= static_cast<int64_t>(LOAD_RANGE) * LOAD_RANGE)
+				STRUCTURE *s = findStruct(t.source, t.player);
+				if (s == nullptr) { t.job = J_NONE; }
+				else if (dist2(d->pos.x, d->pos.y, s->pos.x, s->pos.y) <= static_cast<int64_t>(LOAD_RANGE + TILE_UNITS) * (LOAD_RANGE + TILE_UNITS))
 				{
-					t.crates = capacity(d);   // voll geladen
-					t.job = 0;
+					if (t.job == J_LOAD) { loadFrom(d, t, s); } else { storeInto(t, s); }
+					t.job = J_NONE;
 					if (d->order.type == DORDER_MOVE) { orderDroid(d, DORDER_STOP, ModeImmediate); }
+					if (t.crates <= 0) { t.autopilot = false; }
 				}
 				else if (d->order.type == DORDER_NONE && t.tries < 4)
 				{
-					// neben das Depot, auf der Seite des Lkw
-					const int dx = d->pos.x - dep->pos.x, dy = d->pos.y - dep->pos.y;
-					const int len = std::max(1, iHypot(Vector2i(dx, dy)));
-					moveTo(d, t, dep->pos.x + dx * (3 * TILE_UNITS / 2) / len, dep->pos.y + dy * (3 * TILE_UNITS / 2) / len);
+					approach(d, t, s);
 					t.tries++;
 				}
+				else if (d->order.type == DORDER_NONE)
+				{
+					t.job = J_NONE;
+				}
 			}
-			else if (t.job == 2)
+			else if (t.job == J_DROP)
 			{
-				if (t.crates <= 0) { t.job = 0; }
+				if (t.crates <= 0) { t.job = J_NONE; }
 				else if (dist2(d->pos.x, d->pos.y, t.tx, t.ty) <= static_cast<int64_t>(DROP_RANGE) * DROP_RANGE
 				         || (d->order.type == DORDER_NONE && t.tries >= 4 && dist2(d->pos.x, d->pos.y, t.tx, t.ty) <= static_cast<int64_t>(3 * TILE_UNITS) * (3 * TILE_UNITS)))
 				{
 					if (d->order.type == DORDER_MOVE) { orderDroid(d, DORDER_STOP, ModeImmediate); }
 					dropPile(d, t);
-					t.job = 0;
+					t.job = J_NONE;
+					t.autopilot = false;
 				}
 				else if (d->order.type == DORDER_NONE && t.tries < 4)
 				{
@@ -411,21 +688,39 @@ void tick()
 				}
 				else if (d->order.type == DORDER_NONE)
 				{
-					t.job = 0;
+					t.job = J_NONE;
 				}
 			}
 		}
-		if (t.job == 0 && t.crates <= 0) { it = s_trucks.erase(it); continue; }
+		if (t.job == J_NONE && t.crates <= 0) { it = s_trucks.erase(it); continue; }
 		++it;
 	}
-	// zerstoerte/abgerissene Haufen vergessen (zur Sicherheit; normal ueber onStructureDestroyed)
+
+	// leere Haufen verschwinden (ohne Explosion); Haufen-Modell an die Kistenzahl anpassen
+	std::vector<std::pair<uint32_t, unsigned>> check;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (alive(s) && isPile(s) && s_stock.count(s->id)) { check.emplace_back(s->id, p); }
+		}
+	}
+	std::sort(check.begin(), check.end());
+	for (const auto &c : check)
+	{
+		STRUCTURE *s = findStruct(c.first, c.second);
+		if (s != nullptr) { refreshPile(s); }
+	}
 }
 
 void reset()
 {
 	s_trucks.clear();
-	s_piles.clear();
+	s_stock.clear();
+	s_facPile.clear();
+	s_facNext.clear();
 	s_booms.clear();
 	s_nextTick = 0;
+	s_nextAuto = 0;
 }
 } // namespace modcrates

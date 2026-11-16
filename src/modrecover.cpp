@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Turm-Teile bergen und Reparatur mit Teil (siehe modrecover.h)
 
+#include "modcontrol.h"
 #include "modrecover.h"
 
 #include "lib/framework/frame.h"
@@ -256,7 +257,7 @@ void tick()
 			{
 				w.ready = true;   // Werkstatt hat ein Ersatzteil gebaut
 			}
-			else if (!atFac && d->order.type == DORDER_NONE && gameTime >= w.nextRtr && nearestFacility(w.player, d->pos.xy()) != nullptr)
+			else if (!atFac && d->order.type == DORDER_NONE && gameTime >= w.nextRtr && !modcontrol::manual(d) && nearestFacility(w.player, d->pos.xy()) != nullptr)
 			{
 				orderDroid(d, DORDER_RTR, ModeImmediate);   // steht untaetig herum: zurueck in die Werkstatt
 				w.nextRtr = gameTime + 8000;

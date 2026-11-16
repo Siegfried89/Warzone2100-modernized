@@ -43,6 +43,7 @@
 #include "keybind.h"
 #include "multiplay.h"
 #include "musicmanager.h"
+#include "modcolour.h"
 #include "ingameop.h"
 #include "mission.h"
 #include "notifications.h"
@@ -190,6 +191,13 @@ static bool _intAddInGameOptions()
 	addIGTextButton(INTINGAMEOP_OPTIONS, INTINGAMEOP_1_X, INTINGAMEOPAUTO_Y_LINE(row), INTINGAMEOP_OP_W, _("Options"), OPALIGN);
 	row++;
 
+	// MOD (16.11. Punkt 3): Spielerfarbe jederzeit aendern (nicht in Netzwerkspielen)
+	if (!((bMultiPlayer && NetPlay.bComms) || NETisReplay()))
+	{
+		addIGTextButton(INTINGAMEOP_COLOUR, INTINGAMEOP_1_X, INTINGAMEOPAUTO_Y_LINE(row), INTINGAMEOP_OP_W, _("Unit Colour"), OPALIGN);
+		row++;
+	}
+
 	if (!((bMultiPlayer && NetPlay.bComms) || bInTutorial || NETisReplay()))
 	{
 		if (bMultiPlayer)
@@ -281,6 +289,35 @@ static bool startInGameConfirmQuit()
 		psWidget->setGeometry(INTINGAMEOP4_X, INTINGAMEOPAUTO_Y(row), INTINGAMEOP4_W, INTINGAMEOPAUTO_H(row));
 	});
 
+	return true;
+}
+
+// MOD (16.11. Punkt 3): Farbwahl im Spiel
+static bool startInGameColour()
+{
+	widgDelete(psWScreen, INTINGAMEOP);
+	auto const& parent = psWScreen->psForm;
+	auto ingameOp = std::make_shared<IntFormAnimated>();
+	parent->attach(ingameOp);
+	ingameOp->id = INTINGAMEOP;
+
+	int row = 1;
+	auto label = std::make_shared<W_LABEL>();
+	ingameOp->attach(label);
+	label->setGeometry(INTINGAMEOP_2_X, INTINGAMEOPAUTO_Y_LINE(row), INTINGAMEOP4_OP_W, INTINGAMEOP_OP_H);
+	label->setString(_("Choose your unit colour"));
+	label->setTextAlignment(WLAB_ALIGNCENTRE);
+	label->setFont(font_medium, WZCOL_TEXT_BRIGHT);
+	row++;
+	const int size = 22, gap = 5, cols = 8;
+	const int swW = cols * size + (cols - 1) * gap;
+	const int swH = modcolour::addSwatches(ingameOp.get(), INTINGAMEOP_2_X + (INTINGAMEOP4_OP_W - swW) / 2, INTINGAMEOPAUTO_Y_LINE(row) + 4, cols, size, gap, true);
+	row += (swH + INTINGAMEOPLINE_H - 1) / INTINGAMEOPLINE_H + 1;
+	addIGTextButton(INTINGAMEOP_GO_BACK, INTINGAMEOP_2_X, INTINGAMEOPAUTO_Y_LINE(row), INTINGAMEOP4_OP_W, _("Back"), OPALIGN);
+
+	ingameOp->setCalcLayout([row](WIDGET* psWidget) {
+		psWidget->setGeometry(INTINGAMEOP4_X, INTINGAMEOPAUTO_Y(row), INTINGAMEOP4_W, INTINGAMEOPAUTO_H(row));
+	});
 	return true;
 }
 
@@ -503,6 +540,9 @@ void intProcessInGameOptions(UDWORD id)
 		}, true);
 		break;
 
+	case INTINGAMEOP_COLOUR:			// MOD: Farbwahl
+		startInGameColour();
+		break;
 	case INTINGAMEOP_OPTIONS:			//game options  was pressed
 		intCloseInGameOptions(false, false);
 		startIGOptionsMenu();

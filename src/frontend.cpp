@@ -57,6 +57,7 @@
 #include "droid.h"
 #include "faction.h"
 #include "frend.h"
+#include "modcolour.h"
 #include "modfaction.h"
 #include "frontend.h"
 #include "group.h"
@@ -291,6 +292,9 @@ static void addFactionChoice()
 		// TRANSLATORS: tooltip of a faction button in the main menu; %s is the faction name
 		button->setTip(astringf(_("Play as %s (valid for every game mode)"), to_localized_string(static_cast<FactionID>(f))));
 	}
+
+	// MOD (16.11. Punkt 3): Farbwahl fuer den Einzelspieler - Farbfelder links neben den Fraktionen (2 Reihen)
+	modcolour::addSwatches(topForm, std::max(4, x0 - 8 - 7 * 17), stripY + 2, 7, 14, 3, false);
 
 	auto label = std::make_shared<W_LABEL>();
 	topForm->attach(label);

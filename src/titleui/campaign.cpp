@@ -1651,12 +1651,8 @@ static std::vector<WzCampaignTweakOptionSetting> buildTweakOptionSettings(option
 		false, true
 	);
 
-	results.emplace_back(
-		"infiniteTime",
-		_("Infinite Time"),
-		_("Missions have no timer where possible (Timer Power Bonus replaced with a small power reward if enabled)."),
-		false, true
-	);
+	// MOD (16.11.): "Infinite Time" ist immer an und steht nicht mehr im Menue (siehe setCamTweakOptions). Ein Missions-Timer kann
+	// weiterhin von Szenario-Skripten direkt gesetzt werden (setMissionTime).
 
 	results.emplace_back(
 		"victoryHints",

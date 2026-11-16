@@ -40,6 +40,8 @@ bool trenchForInfantry(const BASE_OBJECT *obj, const DROID *dominantSelected);
 bool droidInTrench(const DROID *psDroid);
 /// ist das ein Lkw im Fass-Autopilot? (Ebenen-Schaechte duerfen ihn nicht umschalten)
 bool isCargo(uint32_t droidId);
+/// faehrt der Lkw gerade Oel (Auftrag laeuft oder Faesser geladen)?
+bool isBusy(uint32_t droidId);
 /// Hooks beim Zerstoeren (vor dem Entfernen aufrufen)
 void onStructureDestroyed(const STRUCTURE *psDel);
 void onFeatureDestroyed(const FEATURE *psDel);

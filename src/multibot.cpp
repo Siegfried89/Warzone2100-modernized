@@ -47,6 +47,7 @@
 #include "transporter.h"
 #include "game_world.h"
 #include "multibot_serde.h"
+#include "modcontrol.h"
 #include "modvoice.h"
 #include "ordersource.h"
 #include "ordersource_wire.h"
@@ -935,6 +936,10 @@ bool recvDroidInfo(NETQUEUE queue)
 
 				if (sOrder.psObj != TargetMissing)  // Only do order if the target didn't die.
 				{
+					if (isHumanPlayer(psDroid->player))
+					{
+						modcontrol::onPlayerOrder(psDroid);   // MOD: Spieler-Befehl hat Vorrang vor der Autonomie
+					}
 					if (!info.add)
 					{
 						orderDroidListEraseRange(psDroid, 0, psDroid->listSize + 1);  // Clear all non-pending orders, plus the first pending order (which is probably the order we just received).

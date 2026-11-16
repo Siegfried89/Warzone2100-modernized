@@ -10,6 +10,7 @@
 
 struct DROID;
 struct GameWorld;
+struct STRUCTURE;
 struct WEAPON_STATS;
 
 namespace modammo
@@ -22,6 +23,8 @@ int segments(const DROID *psDroid);
 unsigned firePauseFactor(const DROID *psDroid);
 /// ein Schuss wurde abgegeben
 void onShot(const DROID *psDroid);
+/// ist das Bauwerk eine Munitionsquelle (Depot, Kiste, Kistenhaufen, Fabrik, HQ, Werkstatt, Aussenposten)?
+bool isSource(const STRUCTURE *psStructure);
 /// Nachschub (alle 500 ms) und Aufraeumen
 void tick(GameWorld &world);
 void reset();
