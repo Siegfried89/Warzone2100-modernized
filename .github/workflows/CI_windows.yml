@@ -615,6 +615,31 @@ jobs:
         name: warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}_archive
         path: '${{ github.workspace }}\output\archive'
         if-no-files-found: 'error'
+    # MOD: das fertige x64-Archiv zusaetzlich als Git-Zweig "winbuild" ablegen (in 90-MB-Teilen). So kann die Installation
+    # den Build ueber Git holen, ohne den Artefakt-Speicher (blob.core.windows.net) zu benoetigen.
+    - name: 'MOD - Windows-Build als Git-Zweig winbuild ablegen'
+      if: success() && (matrix.deploy_release == true) && (matrix.architecture == 'x64') && (github.event_name == 'push') && (github.ref == 'refs/heads/master')
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        WZ_ARCHIVE_DIR: '${{ github.workspace }}\output\archive'
+      run: |
+        set -e
+        src="$(cygpath -u "${WZ_ARCHIVE_DIR}" 2>/dev/null || echo "${WZ_ARCHIVE_DIR}")"
+        zip="$(ls "${src}"/*.zip | head -n 1)"
+        work="${RUNNER_TEMP:-/tmp}/winbuild"
+        rm -rf "${work}" && mkdir -p "${work}" && cd "${work}"
+        split -b 90m -d -a 2 "${zip}" archive.zip.part_
+        (cd "$(dirname "${zip}")" && sha256sum "$(basename "${zip}")") > SHA256SUMS
+        echo "${GITHUB_SHA}" > COMMIT
+        echo "$(basename "${zip}")" > ARCHIVE_NAME
+        git init -q
+        git checkout -q -b winbuild
+        git add .
+        git -c user.name="ci" -c user.email="ci@users.noreply.github.com" commit -q -m "Windows x64 build ${GITHUB_SHA}"
+        git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" winbuild
+        ls -l
     #####################################################
     # Generate artifact attestations
     #####################################################
