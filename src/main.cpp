@@ -415,7 +415,11 @@ static std::string getPlatformPrefDir(const char * org, const std::string &app)
 				if (last == "spiel")
 				{
 					prefixPath = p.substr(0, cut);
+#if defined(WZ_MOD_FINE_GRID)
+					appendPath = "Benutzerdaten-Viertel";   // MOD (Kachel-Viertelung): Testversion mit eigenen Einstellungen/Spielstaenden
+#else
 					appendPath = "Benutzerdaten";
+#endif
 				}
 			}
 		}
