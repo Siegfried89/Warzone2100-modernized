@@ -4392,9 +4392,9 @@ void wzMainEventLoop(std::function<void()> onShutdown)
 	emscripten_set_main_loop_arg(wzEventLoopOneFrame, nullptr, -1, true);
 #else
 	bool bContinue = true;
-	// MOD (Wunsch 16.11. 22:50 "geht das ressourcen- und CPU-schonender?"): Bildrate auf 60 begrenzen - fuer ein Strategiespiel
+	// MOD (Wunsch 16.11. 22:50 "geht das ressourcen- und CPU-schonender?"): Bildrate auf 50 begrenzen - fuer ein Strategiespiel
 	// reicht das; auf 120/144-Hz-Bildschirmen halbiert das ungefaehr die Last von Grafikkarte und Prozessor.
-	constexpr uint64_t MOD_FRAME_NS = 1000000000ull / 60;
+	constexpr uint64_t MOD_FRAME_NS = 1000000000ull / 50;   // (16.11. 23:13: "mach 50 draus")
 	uint64_t modNextFrame = SDL_GetTicksNS();
 	while (bContinue)
 	{

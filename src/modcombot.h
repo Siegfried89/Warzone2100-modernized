@@ -35,6 +35,7 @@ struct Part
 	std::string feature;  // Bergungs-Feature (abgeschlagenes Teil)
 	Kind kind = KIND_TORSO;
 	int side = 0;         // Arme: +1 rechts, -1 links
+	int corp = -1;        // MF-Konzern des Teils (0 Rimtech, 1 Mil-Agro, 2 Neuropa; -1 unbekannt)
 	std::vector<std::string> pieNames;
 	std::vector<std::string> abil;
 	PartStats st;

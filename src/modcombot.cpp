@@ -133,6 +133,7 @@ bool loadAll()
 		const std::string k = d.value("kind", "");
 		p.kind = k == "torso" ? KIND_TORSO : (k == "leg" ? KIND_LEG : KIND_ARM);
 		p.side = d.value("side", 0);
+		p.corp = d.value("corp", -1);
 		for (const auto &n : d["pies"]) { p.pieNames.push_back(n.get<std::string>()); }
 		if (d.contains("abil")) { for (const auto &n : d["abil"]) { p.abil.push_back(n.get<std::string>()); } }
 		if (d.contains("st"))
