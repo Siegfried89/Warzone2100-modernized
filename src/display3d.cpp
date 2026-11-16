@@ -4345,6 +4345,11 @@ static void renderSurroundings(const glm::mat4& projectionMatrix, const glm::mat
 		wind = std::remainder(wind + graphicsTimeAdjustedIncrement(windSpeed), 360.0f);
 	}
 
+	// MOD (16.11. 18:20): im Untergrund gibt es keinen Himmel - dort bleibt es oben dunkel (Hoehlendecke)
+	if (modlayermap::viewLayer() == modlayer::UNDERGROUND)
+	{
+		return;
+	}
 	// MOD (16.11.): Orbit - Himmel mit Dunst und tiefer Planetenboden rundum (keine schwarzen Raender, weicher Uebergang)
 	if (modlayermap::viewLayer() == modlayer::ORBIT)
 	{
