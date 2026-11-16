@@ -121,6 +121,7 @@
 #include "urlhelpers.h"
 #include "urlrequest.h"
 #include <time.h>
+#include <cctype>
 #include <LaunchInfo.h>
 #include <sodium.h>
 #include "updatemanager.h"
@@ -400,6 +401,24 @@ static std::string getPlatformPrefDir(const char * org, const std::string &app)
 		}
 
 		std::string appendPath = app;
+
+		// MOD (16.11.): aufgeraeumte Ordner - liegt das Spiel in "<Ordner>\\Spiel\\bin", kommen Einstellungen, Mods, Logs und Spielstaende
+		// nach "<Ordner>\\Benutzerdaten" (neben "Spiel") statt in "Spiel\\Warzone 2100 <Version>".
+		{
+			std::string p = prefixPath;
+			while (!p.empty() && (p.back() == '\\' || p.back() == '/')) { p.pop_back(); }
+			const size_t cut = p.find_last_of("\\/");
+			if (cut != std::string::npos && cut > 0)
+			{
+				std::string last = p.substr(cut + 1);
+				for (char &ch : last) { ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch))); }
+				if (last == "spiel")
+				{
+					prefixPath = p.substr(0, cut);
+					appendPath = "Benutzerdaten";
+				}
+			}
+		}
 
 		// Create the folders within the prefixPath if they don't exist
 		if (!PHYSFS_setWriteDir(prefixPath.c_str())) // Workaround for PhysFS not creating the writedir as expected.

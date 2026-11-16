@@ -9,6 +9,8 @@
 // vorhandene Technik (Strom, Helfer, Abbruch, Netzwerk). Alles ist allgemein gehalten: planFor() kann auch von anderen Mod-Teilen benutzt werden.
 #pragma once
 
+struct DroidOrder;
+
 #include <vector>
 #include "lib/framework/vector.h"
 
@@ -56,6 +58,9 @@ unsigned craneBoost(const DROID *psDroid, unsigned points);
 bool armWork(const DROID *psDroid, unsigned anim, float &yawDeg, float &pitchDeg);
 /// Kampf-Infanterie mit Spaten (echte Infanterie mit Waffe UND Bauteil): zaehlt als Baufahrzeug, baut aber nur "infantryBuildable"-Bauwerke
 bool isInfantryBuilder(const DROID *psDroid);
+/// MOD (16.11.): Spieler-Baubefehl fuer Infanterie (multibot, auf allen Rechnern gleich): aus einer einzelnen Stellung (MG-Nest/Grube)
+/// wird ein kleiner Komplex - Schuetzengraben links und rechts, je eine weitere Grube an den Enden, Munitionskiste dahinter.
+void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued);
 /// darf dieses Fahrzeug dieses Bauwerk bauen? (Kampf-Infanterie nur Graeben/Gruben/Sandsack/MG-Nester; alle anderen Baufahrzeuge alles)
 bool mayBuild(const DROID *psDroid, const STRUCTURE_STATS *psStats);
 /// Abrissfaktor des Fahrzeugs (Abrissbirne reisst 4x so schnell ab, sonst 1)

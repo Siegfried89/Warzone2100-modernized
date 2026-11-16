@@ -48,6 +48,7 @@
 #include "game_world.h"
 #include "multibot_serde.h"
 #include "modcontrol.h"
+#include "modbuild.h"
 #include "modvoice.h"
 #include "ordersource.h"
 #include "ordersource_wire.h"
@@ -940,6 +941,7 @@ bool recvDroidInfo(NETQUEUE queue)
 					{
 						modcontrol::onPlayerOrder(psDroid);   // MOD: Spieler-Befehl hat Vorrang vor der Autonomie
 					}
+					const bool modQueuedBefore = info.add;
 					if (!info.add)
 					{
 						orderDroidListEraseRange(psDroid, 0, psDroid->listSize + 1);  // Clear all non-pending orders, plus the first pending order (which is probably the order we just received).
@@ -952,6 +954,10 @@ bool recvDroidInfo(NETQUEUE queue)
 					else
 					{
 						syncDebug("Order list full.");
+					}
+					if (isHumanPlayer(psDroid->player))
+					{
+						modbuild::onPlayerBuildOrder(psDroid, sOrder, modQueuedBefore);   // MOD: Infanterie baut einen kleinen Stellungskomplex
 					}
 				}
 				break;

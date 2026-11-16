@@ -72,7 +72,7 @@ enum class Role
 const char *const *namesOf(Role r, int &count)
 {
 	static const char *const dragon[] = {"A0TankTrapHeavy", "A0TankTrap"};
-	static const char *const hedge[] = {"A0TankTrap", "A0TankTrapHeavy"};
+	static const char *const hedge[] = {"A0BaBaHedgehog", "A0TankTrap", "A0TankTrapHeavy"};   // MOD 16.11.: echte 3D-Igel zuerst
 	static const char *const bunker[] = {"A0BaBaBunker", "PillBox1", "PillBox4"};
 	static const char *const flame[] = {"A0BaBaFlameTower", "PillBox5", "Emplacement-Rocket06-IDF"};
 	static const char *const wall[] = {"A0BaBaSandbagWall", "A0HardcreteMk1Wall", "A0BaBaHorizontalWall"};
@@ -83,7 +83,7 @@ const char *const *namesOf(Role r, int &count)
 	switch (r)
 	{
 	case Role::Dragon: count = 2; return dragon;
-	case Role::Hedgehog: count = 2; return hedge;
+	case Role::Hedgehog: count = 3; return hedge;
 	case Role::Bunker: count = 3; return bunker;
 	case Role::Flame: count = 3; return flame;
 	case Role::Wall: count = 3; return wall;
@@ -295,6 +295,69 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 		if (static_cast<int>(out.size()) >= MAX_PLACEMENTS) { break; }
 	}
 	return out;
+}
+
+void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
+{
+	if (psDroid == nullptr || psDroid->died || !isInfantryBuilder(psDroid)) { return; }
+	if (order.type != DORDER_BUILD || order.psStats == nullptr) { return; }
+	const auto *core = static_cast<const STRUCTURE_STATS *>(order.psStats);
+	const std::string id = core->id.toUtf8();
+	const bool nest = id.rfind("A0BaBaMGNest", 0) == 0;
+	const bool pit = id.rfind("A0BaBaPit", 0) == 0;
+	if (!nest && !pit) { return; }   // nur Kern-Stellungen loesen einen Komplex aus (Graeben/Kisten nicht)
+	const unsigned player = psDroid->player;
+	if (player >= MAX_PLAYERS) { return; }
+	(void)queued;
+	// Richtung der Stellung = Front; vorne/seitlich in Kachelschritten
+	const unsigned q = ((static_cast<unsigned>(order.direction) + 0x2000u) >> 14) & 3u;   // 0 N, 1 O, 2 S, 3 W
+	static const int FWD[4][2] = { {0, -1}, {1, 0}, {0, 1}, {-1, 0} };
+	const int fx = FWD[q][0], fy = FWD[q][1];
+	const int sx = -fy, sy = fx;   // seitlich (rechts)
+	const Vector2i c(map_coord(order.pos.x), map_coord(order.pos.y));
+	auto tileAt = [&](int side, int fwd) { return Vector2i(c.x + sx * side + fx * fwd, c.y + sy * side + fy * fwd); };
+	auto stat = [&](const char *a, const char *b) -> STRUCTURE_STATS * {
+		for (const char *nm : {a, b})
+		{
+			if (nm == nullptr) { continue; }
+			STRUCTURE_STATS *st = getStructStatsFromName(WzString::fromUtf8(nm));
+			if (st == nullptr) { continue; }
+			const int idx = static_cast<int>(st - asStructureStats);
+			if (idx < 0 || idx >= static_cast<int>(numStructureStats)) { continue; }
+			const int status = apStructTypeLists[player][idx];
+			if (status == AVAILABLE || status == REDUNDANT) { return st; }
+		}
+		return nullptr;
+	};
+	STRUCTURE_STATS *trench = stat("A0BaBaTrench", "A0BaBaTrenchEarth");
+	STRUCTURE_STATS *pitA = stat(nest ? "A0BaBaPitSquare" : "A0BaBaMGNestSquare", "A0BaBaPitHex");
+	STRUCTURE_STATS *pitB = stat(nest ? "A0BaBaPitHex" : "A0BaBaMGNestHex", "A0BaBaPitSquare");
+	STRUCTURE_STATS *box = stat("A0BaBaAmmoBox", nullptr);
+	auto add = [&](STRUCTURE_STATS *st, const Vector2i &t, const Vector2i *t2) {
+		if (st == nullptr) { return; }
+		const Vector2i w1(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2);
+		if (!tileOk(player, st, t.x, t.y, order.direction)) { return; }
+		if (t2 != nullptr)
+		{
+			const Vector2i w2(world_coord(t2->x) + TILE_UNITS / 2, world_coord(t2->y) + TILE_UNITS / 2);
+			DroidOrder o(DORDER_LINEBUILD, st, w1, w2, static_cast<uint16_t>(order.direction));
+			orderDroidAdd(psDroid, &o);
+		}
+		else
+		{
+			DroidOrder o(DORDER_BUILD, st, w1, static_cast<uint16_t>(order.direction));
+			orderDroidAdd(psDroid, &o);
+		}
+	};
+	// Schuetzengraben links und rechts (je 2 Felder), Stellungen an den Enden, Munitionskiste und Verbindungsgraben dahinter
+	const Vector2i l1 = tileAt(-1, 0), l2 = tileAt(-2, 0), r1 = tileAt(1, 0), r2 = tileAt(2, 0);
+	add(trench, l1, &l2);
+	add(trench, r1, &r2);
+	add(pitA, tileAt(-3, 0), nullptr);
+	add(pitB, tileAt(3, 0), nullptr);
+	const Vector2i b1 = tileAt(0, -1);
+	add(trench, b1, &b1);
+	add(box, tileAt(1, -2), nullptr);
 }
 
 bool canFortify(const DROID *psDroid)
