@@ -7,6 +7,8 @@
 #include "lib/framework/vector.h"
 #include "lib/gamelib/gtime.h"
 #include "lib/sound/audio.h"
+#include "lib/sound/track.h"
+#include "lib/framework/frameresource.h"
 
 #include "display3d.h"
 #include "droid.h"
@@ -57,6 +59,7 @@ struct State
 	unsigned nextFireCall = 0;   // naechster Feuerruf
 	int lastSeg = -1;            // zuletzt gesehene Anzahl Munitionsabschnitte (faellt sie, ruft die Einheit "Changing mag!" / "Reload!")
 	unsigned nextMag = 0;
+	int hitFireTrack = -1;       // MOD Punkt 3: Schussgeraeusch der Waffe, die zuletzt getroffen hat (Klangschicht zum Ruf)
 };
 
 std::unordered_map<unsigned, State> s_state;
@@ -154,6 +157,35 @@ bool say(const char *cat, const DROID *d, int forcedLine = -1)
 	return audio_PlayStaticTrack(d->pos.x, d->pos.y, track);
 }
 
+/// MOD (Wunsch 14.11. Punkt 3): Klangschicht zum Ruf - gleichzeitig mit dem Ruf erklingt das Schussgeraeusch der Waffe, die die Einheit
+/// gerade getroffen hat, in der Hall-Fassung (<name>_h1.ogg, sonst das Original). So hoert man im Funk/Geschrei der Infanterie den grossen
+/// Kanonenschuss mit, der gerade einschlug. Reine Anzeige (Ton), keine Auswirkung aufs Spiel.
+void playLayer(const DROID *d, int fireTrack)
+{
+	if (fireTrack < 0 || d == nullptr) { return; }
+	static std::unordered_map<int, int> s_layerOf;   // Original-Spur -> Hall-Spur (oder Original)
+	auto it = s_layerOf.find(fireTrack);
+	if (it == s_layerOf.end())
+	{
+		int layer = fireTrack;
+		const char *nm = sound_GetTrackName(fireTrack);
+		if (nm != nullptr)
+		{
+			std::string base(nm);
+			if (base.size() > 4 && base.compare(base.size() - 4, 4, ".ogg") == 0) { base.resize(base.size() - 4); }
+			if (base.size() > 3 && base[base.size() - 3] == '_' && base[base.size() - 2] == 'h') { base.resize(base.size() - 3); }   // schon eine Hall-Fassung
+			const std::string hall = base + "_h1.ogg";
+			if (resPresent("WAV", hall.c_str()))
+			{
+				const int t = audio_GetTrackID(hall.c_str());
+				if (t >= 0) { layer = t; }
+			}
+		}
+		it = s_layerOf.emplace(fireTrack, layer).first;
+	}
+	audio_PlayStaticTrack(d->pos.x, d->pos.y, it->second);
+}
+
 struct Cand
 {
 	int prio;
@@ -194,6 +226,7 @@ void onDroidDamaged(const DROID *psVictim, const PROJECTILE *psProj, bool killed
 	st.hitCount++;
 	st.hitTime = gameTime;
 	st.hitArty = isArtillery(psProj, psVictim->lastHitWeapon);
+	st.hitFireTrack = (psProj->psWStats != nullptr) ? psProj->psWStats->iAudioFireID : -1;
 	st.hitAir = false;
 	const BASE_OBJECT *src = psProj->psSource;
 	if (src != nullptr && src->type == OBJ_DROID && !src->died)
@@ -516,6 +549,12 @@ void tick(GameWorld &world)
 		State &st = s_state[c.d->id];
 		if (say(c.cat.c_str(), c.d))
 		{
+			// MOD Punkt 3: Treffer-Rufe bekommen die Klangschicht der treffenden Waffe
+			if (st.hitFireTrack >= 0 && (c.kind == 1 || c.kind == 2 || c.cat.find("_hit") != std::string::npos || c.cat.find("_retreat") != std::string::npos))
+			{
+				playLayer(c.d, st.hitFireTrack);
+				st.hitFireTrack = -1;
+			}
 			st.nextSpeak = now + c.unitPause;
 			if (c.kind == 1) { s_nextArty = now + 9000 + rnd() % 6000; }
 			if (c.kind == 2) { s_nextAir = now + 9000 + rnd() % 6000; }
