@@ -85,7 +85,7 @@ out vec4 FragColor;
 //    sonst tief unten der Boden mit den Inselschatten. Die Schrittweite richtet sich nach dem Blickwinkel (keine Zacken/Treppen bei
 //    flacher Kamera), Ferne geht in Dunst ueber, Texturen mit passender Mip-Stufe (kein Flimmern beim Drehen/Neigen der Kamera).
 const int MODV_TILE = 256;
-const float MODV_TILE_SIZE = 128.0;
+const float MODV_TILE_SIZE = 64.0;     // MOD (Kachel-Viertelung): Lichtkarte je Feinfeld (64 Einheiten)
 const float MODV_THICK = 760.0;          // Dicke des Felssockels unter der Inseloberflaeche
 const float MODV_TAPER = 5.8;            // so viele Felder zieht der Sockel bis ganz unten ein (unten geschlossen)
 const float MODV_DEPTH = 4600.0;         // so tief liegt der Boden unter den Inseln
