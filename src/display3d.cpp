@@ -3101,6 +3101,35 @@ static void modDrawSiteCrane(const STRUCTURE *psStructure, int colour, PIELIGHT 
 	pie_Draw3DShape(s_jib->displayModel(), 0, colour, brightness, pie_SHADOW, 0, jibM, viewMatrix);
 }
 
+// MOD (16.11. 19:28): an der Tankstelle stehen so viele Oelfaesser (WZ-Fass mioil.pie), wie sie gerade auf Vorrat hat -
+// zwei Reihen zu je fuenf vor der Vorderseite. Reine Anzeige.
+static void modDrawStationBarrels(const STRUCTURE *psStructure, int colour, PIELIGHT brightness, const glm::mat4 &viewMatrix)
+{
+	if (psStructure->isBlueprint() || !modfuel::isStation(psStructure)) { return; }
+	static iIMDBaseShape *s_drum = nullptr;
+	static bool s_tried = false;
+	if (!s_tried) { s_tried = true; s_drum = modelGet("mioil.pie"); }
+	if (s_drum == nullptr) { return; }
+	const int n = std::clamp(modoil::stationBarrels(psStructure), 0, 10);
+	if (n <= 0) { return; }
+	const STRUCTURE_STATS *st = psStructure->pStructureType;
+	const int b = std::max(1, static_cast<int>(st->baseBreadth));
+	const float dir = UNDEG(-psStructure->rot.direction);
+	const float cs = std::cos(dir), sn = std::sin(dir);
+	for (int i = 0; i < n; ++i)
+	{
+		const float ox = -44.f + static_cast<float>(i % 5) * 22.f;
+		const float oz = static_cast<float>(b * TILE_UNITS / 2 + 14 + (i / 5) * 20);
+		const float wx = static_cast<float>(psStructure->pos.x) + ox * cs + oz * sn;
+		const float wz = static_cast<float>(psStructure->pos.y) - (-ox * sn + oz * cs);
+		if (!worldOnMap(gameWorld.map, static_cast<int>(wx), static_cast<int>(wz))) { continue; }
+		const float gy = static_cast<float>(map_Height(gameWorld.map, static_cast<int>(wx), static_cast<int>(wz)));
+		const float yaw = dir + static_cast<float>((psStructure->id + static_cast<unsigned>(i) * 37u) % 360u) * 0.01745f;
+		const glm::mat4 m = glm::translate(glm::vec3(wx, gy, -wz)) * glm::rotate(yaw, glm::vec3(0.f, 1.f, 0.f)) * glm::scale(glm::vec3(0.6f));
+		pie_Draw3DShape(s_drum->displayModel(), 0, colour, brightness, pie_SHADOW, 0, m, viewMatrix);
+	}
+}
+
 void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	int colour, pieFlagData, ecmFlag = 0, pieFlag = 0;
@@ -3243,6 +3272,7 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 		}
 		strImd = strImd->next.get();
 	}
+	modDrawStationBarrels(psStructure, colour, buildingBrightness, viewMatrix);   // MOD: Oelfaesser an der Tankstelle
 	setScreenDispWithPerspective(&psStructure->sDisplay, perspectiveViewMatrix * modelMatrix);
 }
 
@@ -3574,6 +3604,24 @@ static void queueStructureHealth(STRUCTURE *psStruct, BatchedMultiRectRenderer& 
 	batchedMultiRectRenderer.addRectF(PIERECT_DrawRequest_f(scrX - scrR - 1, scrY - 1, scrX - scrR + 2 * width + 1, scrY + 3, WZCOL_RELOAD_BACKGROUND), rectGroup);
 	batchedMultiRectRenderer.addRectF(PIERECT_DrawRequest_f(scrX - scrR, scrY, scrX - scrR + health, scrY + 1, powerCol), rectGroup);
 	batchedMultiRectRenderer.addRectF(PIERECT_DrawRequest_f(scrX - scrR, scrY + 1, scrX - scrR + health, scrY + 2, powerColShadow), rectGroup);
+	// MOD (16.11.): Tankstelle - Oelbalken (blau) darunter, ein Abschnitt je Fass
+	if (modfuel::isStation(psStruct))
+	{
+		const int full = 2 * width;
+		const int capM = std::max(1, modoil::stationCapMilli());
+		const int milli = std::clamp(modoil::stationMilli(psStruct), 0, capM);
+		const int fill = static_cast<int>(static_cast<int64_t>(full) * milli / capM);
+		const int x0 = scrX - scrR, y0 = scrY + 5;
+		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0 - 1, y0 - 1, x0 + full + 1, y0 + 3, WZCOL_RELOAD_BACKGROUND), rectGroup);
+		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0, x0 + fill, y0 + 1, pal_RGBA(70, 150, 255, 255)), rectGroup);
+		batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 2, pal_RGBA(30, 80, 175, 255)), rectGroup);
+		const int segs = std::max(1, capM / 1000);
+		for (int k = 1; k < segs; ++k)
+		{
+			const int sx = x0 + full * k / segs;
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(sx, y0, sx + 1, y0 + 2, WZCOL_RELOAD_BACKGROUND), rectGroup);
+		}
+	}
 }
 
 /// draw the construction bar for the specified structure
@@ -3688,7 +3736,7 @@ bool	eitherSelected(DROID *psDroid)
 }
 
 // MOD: Balken in Abschnitte teilen (wie der StarCraft-1-Marine): duenne schwarze Trennstriche
-static constexpr int MOD_BAR_SEGMENTS = 5;
+static constexpr int MOD_BAR_SEGMENTS = 10;   // (16.11. 19:28) Abschnitte halb so lang wie vorher (5)
 static void modQueueBarSegments(BatchedMultiRectRenderer& renderer, size_t rectGroup, int xLeft, int width, int yTop, int yBottom)
 {
 	for (int seg = 1; seg < MOD_BAR_SEGMENTS; ++seg)

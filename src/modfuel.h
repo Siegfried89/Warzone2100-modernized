@@ -2,9 +2,10 @@
 // MOD (Wunsch 16.11. 18:33/19:07): Treibstoff fuer Fahrzeuge. Jedes Fahrzeug (Raeder, Ketten, Halbketten, Schweber - keine Infanterie,
 // Cyborgs, Combots, Flieger, Transporter) hat einen Tank, der fuer eine lange Strecke reicht (FUEL_RANGE Kacheln Fahrweg). Verbraucht wird
 // nur beim Fahren. Mit leerem Tank faehrt das Fahrzeug nur noch mit Mindesttempo und faehrt von selbst zur naechsten eigenen Tankstelle
-// (Reparatureinrichtung - nicht das Combot-Reparaturgeruest), tankt dort kostenlos voll und kehrt an die Stelle zurueck, wo der Tank
+// (Reparatureinrichtung - nicht das Combot-Reparaturgeruest), tankt dort voll und kehrt an die Stelle zurueck, wo der Tank
 // leer wurde. Ein neuer Befehl des Spielers bricht die Fahrt ab. Anzeige: dritter, blauer Balken ganz unten unter den Einheiten.
-// Gilt fuer Spieler (wie die Munition). Alles im Spielschritt, deterministisch.
+// Gilt fuer ALLE Spieler (auch die KI). Getankt wird aus dem Vorrat der Tankstelle (Oelfaesser, die Lkw aus der Oelproduktion bringen;
+// 1 Fass = 2 volle Tanks). KI ohne Tankstelle tankt an Fabrik/HQ. Alles im Spielschritt, deterministisch.
 #pragma once
 
 struct DROID;

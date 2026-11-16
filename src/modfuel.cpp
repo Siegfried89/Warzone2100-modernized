@@ -2,6 +2,7 @@
 // MOD: Treibstoff fuer Fahrzeuge - siehe modfuel.h
 #include "modcontrol.h"
 #include "modfuel.h"
+#include "modoil.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/fixedpoint.h"
@@ -52,29 +53,59 @@ bool stationRaw(const STRUCTURE *s)
 	return s->pStructureType->id.toUtf8().find("Gantry") == std::string::npos;   // Combot-Reparaturgeruest ist keine Tankstelle
 }
 
-const STRUCTURE *stationNear(const DROID *d)
+/// KI ohne eigene Tankstelle: Fabriken und Hauptquartier dienen als Notfall-Tankstelle (bis die KI selbst Tankstellen baut)
+bool aiFallbackStation(const STRUCTURE *s)
+{
+	if (s == nullptr || s->died || s->status != SS_BUILT || s->pStructureType == nullptr) { return false; }
+	switch (s->pStructureType->type)
+	{
+	case REF_FACTORY:
+	case REF_CYBORG_FACTORY:
+	case REF_VTOL_FACTORY:
+	case REF_HQ:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool hasStation(int player)
+{
+	for (const STRUCTURE *s : gameWorld.objects.structures[player]) { if (stationRaw(s)) { return true; } }
+	return false;
+}
+
+/// Tankstelle fuer diese Einheit? (Spieler: nur echte Tankstellen; KI ohne Tankstelle: auch Fabrik/HQ)
+bool stationFor(const DROID * /*d*/, const STRUCTURE *s, bool aiFallback)
+{
+	return stationRaw(s) || (aiFallback && aiFallbackStation(s));
+}
+
+const STRUCTURE *stationNear(const DROID *d, bool aiFallback)
 {
 	for (const STRUCTURE *s : gameWorld.objects.structures[d->player])
 	{
-		if (!stationRaw(s)) { continue; }
+		if (!stationFor(d, s, aiFallback) || modoil::stationMilli(s) <= 0) { continue; }
 		const int dx = s->pos.x - d->pos.x, dy = s->pos.y - d->pos.y;
 		if (dx * dx + dy * dy <= STATION_RADIUS * STATION_RADIUS) { return s; }
 	}
 	return nullptr;
 }
 
-const STRUCTURE *nearestStation(const DROID *d)
+const STRUCTURE *nearestStation(const DROID *d, bool aiFallback)
 {
-	const STRUCTURE *best = nullptr;
-	int64_t bestD = INT64_MAX;
+	// Tankstellen mit Vorrat zuerst; ist keine gefuellt, die naechste ueberhaupt (dort warten, bis Lkw Faesser bringen)
+	const STRUCTURE *best = nullptr, *bestEmpty = nullptr;
+	int64_t bestD = INT64_MAX, bestED = INT64_MAX;
 	for (const STRUCTURE *s : gameWorld.objects.structures[d->player])
 	{
-		if (!stationRaw(s)) { continue; }
+		if (!stationFor(d, s, aiFallback)) { continue; }
 		const int64_t dx = s->pos.x - d->pos.x, dy = s->pos.y - d->pos.y;
 		const int64_t dist = dx * dx + dy * dy;
-		if (dist < bestD) { bestD = dist; best = s; }
+		if (modoil::stationMilli(s) > 0) { if (dist < bestD) { bestD = dist; best = s; } }
+		else if (dist < bestED) { bestED = dist; bestEmpty = s; }
 	}
-	return best;
+	return best != nullptr ? best : bestEmpty;
 }
 
 bool mayAutoTrip(const DROID *d)
@@ -101,7 +132,7 @@ bool isStation(const STRUCTURE *s)
 bool usesFuel(const DROID *d)
 {
 	if (d == nullptr || d->died) { return false; }
-	if (!isHumanPlayer(d->player)) { return false; }
+	if (d->player >= MAX_PLAYERS) { return false; }   // (16.11. 19:28) gilt fuer ALLE Spieler, auch die KI
 	if (d->isVtol() || d->isTransporter()) { return false; }
 	switch (d->droidType)
 	{
@@ -143,7 +174,7 @@ void tick(GameWorld &world)
 	std::unordered_map<uint32_t, bool> seen;
 	for (unsigned p = 0; p < MAX_PLAYERS; p++)
 	{
-		if (!isHumanPlayer(p)) { continue; }
+		const bool aiFallback = !isHumanPlayer(p) && !hasStation(static_cast<int>(p));
 		for (const DROID *d : world.objects.droids[p])
 		{
 			if (!usesFuel(d)) { continue; }
@@ -157,10 +188,17 @@ void tick(GameWorld &world)
 			}
 			st.lastX = d->pos.x; st.lastY = d->pos.y; st.havePos = true;
 
-			// Tanken an der Tankstelle (kostenlos)
-			if (st.fuel < FUEL_RANGE && stationNear(d) != nullptr)
+			// Tanken an der Tankstelle: verbraucht Oel aus deren Vorrat (1 Fass = 2 volle Tanks)
+			if (st.fuel < FUEL_RANGE)
 			{
-				st.fuel = std::min(FUEL_RANGE, st.fuel + REFUEL_PER_TICK);
+				const STRUCTURE *stn = stationNear(d, aiFallback);
+				if (stn != nullptr)
+				{
+					const int want = std::min(REFUEL_PER_TICK, FUEL_RANGE - st.fuel);
+					const int milli = std::max(1, static_cast<int>(static_cast<int64_t>(want) * 1000 / (2 * static_cast<int64_t>(FUEL_RANGE))));
+					const int got = modoil::stationTake(stn, milli);
+					st.fuel = std::min(FUEL_RANGE, st.fuel + static_cast<int>(static_cast<int64_t>(got) * 2 * FUEL_RANGE / 1000));
+				}
 			}
 
 			// Selbstversorgung: zurueck an die Stelle, wo der Tank leer wurde, sobald wieder voll
@@ -190,7 +228,7 @@ void tick(GameWorld &world)
 			}
 			else if (st.fuel == 0 && gameTime >= st.nextAllowed && mayAutoTrip(d) && !modcontrol::manual(d))
 			{
-				const STRUCTURE *src = nearestStation(d);
+				const STRUCTURE *src = nearestStation(d, aiFallback);
 				if (src != nullptr)
 				{
 					const int dx = src->pos.x - d->pos.x, dy = src->pos.y - d->pos.y;

@@ -39,6 +39,7 @@
 #include <vector>
 #include "modgrid.h"
 #include "modcrates.h"
+#include "modfuel.h"
 
 namespace modoil
 {
@@ -58,6 +59,9 @@ constexpr int REF_SECS = 20;                // Sekunden je veredeltes Fass
 constexpr int REFINED_ENERGY = 150;         // Treibstoff-Fass direkt ins Kraftwerk
 constexpr int REFINED_STORED = 165;         // Treibstoff-Fass nach dem Lager (+10 %)
 constexpr int REFINED_GRID_SECS = 270;      // Treibstoff-Fass haelt das Netz 4,5 Minuten
+constexpr int STATION_CAP = 10;             // (16.11.) Fass-Plaetze an der Tankstelle
+constexpr int STATION_START = 3;           // neue Tankstelle startet mit 3 Faessern
+constexpr int STATION_LOW = 6;             // Lkw beliefern die Tankstelle bevorzugt, solange weniger Faesser da sind
 constexpr int64_t STORAGE_RANGE = 12 * 128; // Lager und Kraftwerk gehoeren zusammen bis zu dieser Entfernung
 constexpr int64_t LOAD_RANGE = 320;         // Lkw laedt / entlaedt in dieser Naehe
 
@@ -99,6 +103,7 @@ std::map<uint32_t, int> s_store;            // Wasserturm (Feature) -> rohe Faes
 std::map<uint32_t, int> s_storeR;           // Wasserturm (Feature) -> veredelte Faesser
 std::map<uint32_t, int> s_refIn, s_refOut, s_refT;   // Raffinerie: Eingang, Ausgang, Sekunden im laufenden Fass
 std::map<uint32_t, CargoState> s_cargo;     // Lkw -> Zustand
+std::map<uint32_t, int> s_station;           // (16.11.) Tankstelle -> Vorrat in Promille-Faessern (1000 = 1 Fass)
 std::map<std::pair<int, int>, int> s_lowered;   // tiefe Graeben: abgesenkte Kachel -> Tiefe (modterrain)
 std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
@@ -314,6 +319,35 @@ void processReplacements()
 
 // ---------------------------------------------------------------- oeffentliche Funktionen
 
+int stationCapMilli()
+{
+	return STATION_CAP * 1000;
+}
+
+int stationMilli(const STRUCTURE *st)
+{
+	if (st == nullptr) { return 0; }
+	if (!manages(static_cast<int>(st->player))) { return STATION_CAP * 1000; }   // KI ohne Oel-Wirtschaft: Tankstelle immer voll
+	const auto it = s_station.find(st->id);
+	return it == s_station.end() ? STATION_START * 1000 : it->second;
+}
+
+int stationTake(const STRUCTURE *st, int milli)
+{
+	if (st == nullptr || milli <= 0) { return 0; }
+	if (!manages(static_cast<int>(st->player))) { return milli; }
+	auto it = s_station.find(st->id);
+	if (it == s_station.end()) { it = s_station.emplace(st->id, STATION_START * 1000).first; }
+	const int take = std::min(milli, it->second);
+	it->second -= take;
+	return take;
+}
+
+int stationBarrels(const STRUCTURE *st)
+{
+	return (stationMilli(st) + 999) / 1000;
+}
+
 bool manages(int player)
 {
 	if (player < 0 || player >= MAX_PLAYERS || !modPresent()) { return false; }
@@ -333,6 +367,7 @@ void reset()
 	s_refT.clear();
 	s_cargo.clear();
 	s_lowered.clear();
+	s_station.clear();
 	s_booms.clear();
 	s_repl.clear();
 	s_have = false;
@@ -510,7 +545,7 @@ void updateTerrain();
 
 struct Snap
 {
-	std::vector<STRUCTURE *> derricks, gens, pipes, refs;
+	std::vector<STRUCTURE *> derricks, gens, pipes, refs, stations;
 };
 
 void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool refined)
@@ -593,6 +628,7 @@ void logistics()
 			if (st->type == REF_RESOURCE_EXTRACTOR) { sn.derricks.push_back(s); liveStruct.insert(s->id); sById[s->id] = s; }
 			else if (st->type == REF_POWER_GEN) { sn.gens.push_back(s); liveStruct.insert(s->id); sById[s->id] = s; }
 			else if (isRefinery(st)) { sn.refs.push_back(s); liveStruct.insert(s->id); sById[s->id] = s; }
+			else if (modfuel::isStation(s)) { sn.stations.push_back(s); liveStruct.insert(s->id); sById[s->id] = s; if (s_station.find(s->id) == s_station.end()) { s_station[s->id] = STATION_START * 1000; } }
 			else if (isPipe(st))
 			{
 				if (isBroken(st)) { brokenPieces.push_back(s); }
@@ -839,6 +875,15 @@ void logistics()
 						s_refIn[c.target] += m;
 						c.n -= m;
 					}
+					else if (c.kind == 4)
+					{
+						// (16.11.) Tankstelle: rohe Faesser zaehlen 1, veredelte (Tanker) 1,5
+						int &st = s_station[c.target];
+						const int per = c.tank ? 1500 : 1000;
+						const int m = std::min(c.n, std::max(0, (STATION_CAP * 1000 - st) / per));
+						st += m * per;
+						c.n -= m;
+					}
 					else
 					{
 						deliverToGenerator(p, ts, c.n, c.tank);
@@ -877,6 +922,18 @@ void logistics()
 			}
 			if (c.n > 0)
 			{
+				{
+					// (16.11.) Tankstellen mit wenig Vorrat werden zuerst beliefert (Fahrzeuge tanken dort)
+					STRUCTURE *bs = nullptr;
+					int64_t bsd = INT64_MAX;
+					for (STRUCTURE *s : sn.stations)
+					{
+						if (s_station[s->id] >= STATION_LOW * 1000) { continue; }
+						const int64_t dd = d2(d->pos.x, d->pos.y, s->pos.x, s->pos.y);
+						if (dd < bsd) { bsd = dd; bs = s; }
+					}
+					if (bs != nullptr) { go(2, 4, bs->id, bs->pos.x, bs->pos.y); continue; }
+				}
 				if (!c.tank)
 				{
 					STRUCTURE *br = nullptr;
@@ -927,6 +984,7 @@ void logistics()
 	for (auto it = s_barrels.begin(); it != s_barrels.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_barrels.erase(it); }
 	for (auto it = s_progress.begin(); it != s_progress.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_progress.erase(it); }
 	for (auto it = s_refIn.begin(); it != s_refIn.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_refIn.erase(it); }
+	for (auto it = s_station.begin(); it != s_station.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_station.erase(it); }
 	for (auto it = s_refOut.begin(); it != s_refOut.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_refOut.erase(it); }
 	for (auto it = s_refT.begin(); it != s_refT.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_refT.erase(it); }
 	for (auto it = s_cargo.begin(); it != s_cargo.end();) { it = liveDroid.count(it->first) ? std::next(it) : s_cargo.erase(it); }
@@ -1047,8 +1105,57 @@ void bar(const glm::mat4 &m, int wx, int wy, int wz, int value, int maxValue, PI
 
 } // namespace
 
+// (16.11.) Fenster ueber der gewaehlten Tankstelle: so viele Oelfaesser, wie gerade darin sind
+static void drawStationPanels(const glm::mat4 &m)
+{
+	const int p = static_cast<int>(selectedPlayer);
+	if (p < 0 || p >= MAX_PLAYERS) { return; }
+	for (const STRUCTURE *st : gameWorld.objects.structures[p])
+	{
+		if (st == nullptr || st->died || !st->selected || !modfuel::isStation(st)) { continue; }
+		Vector2i sc(0, 0);
+		if (!project(Vector3i(st->pos.x, st->pos.y, st->pos.z + 150), m, sc)) { continue; }
+		const int n = std::clamp(stationBarrels(st), 0, STATION_CAP);
+		const int milli = stationMilli(st);
+		constexpr int bw = 12, bh = 16, gap = 4, pad = 6;
+		const int cols = 5, rows = 2;
+		const int pw = pad * 2 + cols * bw + (cols - 1) * gap, ph = pad * 2 + rows * bh + (rows - 1) * gap + 8;
+		const int x0 = sc.x - pw / 2, y0 = sc.y - ph;
+		pie_BoxFill(x0 - 2, y0 - 2, x0 + pw + 2, y0 + ph + 2, pal_RGBA(140, 150, 170, 255));
+		pie_BoxFill(x0, y0, x0 + pw, y0 + ph, pal_RGBA(16, 22, 38, 235));
+		for (int i = 0; i < STATION_CAP; ++i)
+		{
+			const int cx = x0 + pad + (i % cols) * (bw + gap), cy = y0 + pad + (i / cols) * (bh + gap);
+			if (i < n)
+			{
+				// Oelfass: Koerper, zwei Ringe, heller Deckel
+				pie_BoxFill(cx, cy + 2, cx + bw, cy + bh, pal_RGBA(40, 90, 200, 255));
+				pie_BoxFill(cx + 2, cy + 2, cx + 4, cy + bh, pal_RGBA(90, 150, 255, 255));
+				pie_BoxFill(cx, cy + 5, cx + bw, cy + 6, pal_RGBA(15, 30, 70, 255));
+				pie_BoxFill(cx, cy + bh - 5, cx + bw, cy + bh - 4, pal_RGBA(15, 30, 70, 255));
+				pie_BoxFill(cx + 1, cy, cx + bw - 1, cy + 3, pal_RGBA(150, 190, 255, 255));
+			}
+			else
+			{
+				pie_BoxFill(cx, cy + 2, cx + bw, cy + bh, pal_RGBA(40, 44, 56, 255));
+			}
+		}
+		// Fuellstand als duenner Balken darunter (mit Abschnitten je Fass)
+		const int by = y0 + ph - 7, bx0 = x0 + pad, bx1 = x0 + pw - pad;
+		pie_BoxFill(bx0 - 1, by - 1, bx1 + 1, by + 4, pal_RGBA(0, 0, 0, 255));
+		const int fill = (bx1 - bx0) * std::clamp(milli, 0, STATION_CAP * 1000) / (STATION_CAP * 1000);
+		if (fill > 0) { pie_BoxFill(bx0, by, bx0 + fill, by + 3, pal_RGBA(70, 150, 255, 255)); }
+		for (int k = 1; k < STATION_CAP; ++k)
+		{
+			const int sx = bx0 + (bx1 - bx0) * k / STATION_CAP;
+			pie_BoxFill(sx, by, sx + 1, by + 3, pal_RGBA(0, 0, 0, 255));
+		}
+	}
+}
+
 void drawOverlay(const glm::mat4 &m)
 {
+	drawStationPanels(m);
 	if (range_rings::getMode() != 4 || !manages(static_cast<int>(selectedPlayer))) { return; }
 	const int p = static_cast<int>(selectedPlayer);
 	const PIELIGHT barrelOn = pal_RGBA(255, 214, 40, 255), barrelOff = pal_RGBA(60, 50, 20, 255);

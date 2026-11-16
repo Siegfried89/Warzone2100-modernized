@@ -26,7 +26,7 @@ namespace modammo
 {
 namespace
 {
-constexpr int SEGMENTS = 5;
+constexpr int SEGMENTS = 10;   // (16.11. 19:28) Abschnitte halb so lang (wie alle Balken)
 constexpr unsigned TICK_MS = 500;
 constexpr int SUPPLY_RADIUS = 5 * TILE_UNITS;
 constexpr int DEPOT_RADIUS = 6 * TILE_UNITS;

@@ -46,7 +46,15 @@ bool isBusy(uint32_t droidId);
 void onStructureDestroyed(const STRUCTURE *psDel);
 void onFeatureDestroyed(const FEATURE *psDel);
 void onDroidDestroyed(const DROID *psDel);
-/// Faesser-Anzeige (Anzeigemodus 4), nach dem 3D-Bild aufrufen
+/// (16.11.) Tankstelle (Reparatureinrichtung): Vorrat in Promille-Faessern (1000 = 1 Fass, hoechstens stationCapMilli()).
+/// Lkw bringen Oelfaesser aus der Oelproduktion hin. Spieler ohne Oel-Wirtschaft (KI): immer voll.
+int stationCapMilli();
+int stationMilli(const STRUCTURE *psStation);
+/// Treibstoff entnehmen; gibt die entnommene Menge (milli) zurueck
+int stationTake(const STRUCTURE *psStation, int milli);
+/// ganze/angebrochene Faesser an der Tankstelle (Anzeige)
+int stationBarrels(const STRUCTURE *psStation);
+/// Faesser-Anzeige (Anzeigemodus 4) und Fass-Fenster der gewaehlten Tankstelle, nach dem 3D-Bild aufrufen
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
 /// beim Spielende / Ladevorgang
 void reset();

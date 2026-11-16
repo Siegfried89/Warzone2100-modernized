@@ -215,15 +215,17 @@ void tick(GameWorld &world)
 	s_lastSec = sec;
 	s_sec++;
 
+	// (16.11. 19:28) "Lass die Lava komplett draussen. Das passt nicht zu WZ." -> keine Lavafelder mehr (Solar/Energiebank bleiben)
+	constexpr bool LAVA_ENABLED = false;
 	// einmal am Anfang (nach 3 s, damit Karte und Gebaeude stehen) Lavafelder verteilen
-	if (!s_placed && gameTime >= 3000)
+	if (LAVA_ENABLED && !s_placed && gameTime >= 3000)
 	{
 		s_placed = true;
 		placeFields(world);   // unabhaengig vom eigenen Spieler (alle Rechner muessen gleich rechnen)
 	}
 
 	// Untergrund-Lavafelder: beim ersten fertigen Schacht
-	if (!s_placedUnder && s_placed)
+	if (LAVA_ENABLED && !s_placedUnder && s_placed)
 	{
 		bool shaft = false;
 		for (int p = 0; p < MAX_PLAYERS && !shaft; p++)

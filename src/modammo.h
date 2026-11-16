@@ -17,7 +17,7 @@ namespace modammo
 {
 /// braucht die Einheit Munition? (Spieler, Feuerwaffe mit Munitionsart)
 bool usesAmmo(const DROID *psDroid);
-/// angezeigte Abschnitte 0..5; -1, wenn die Einheit keine Munition braucht
+/// angezeigte Abschnitte 0..10; -1, wenn die Einheit keine Munition braucht
 int segments(const DROID *psDroid);
 /// 1 normal, 10 wenn leer: Faktor auf die Feuerpause
 unsigned firePauseFactor(const DROID *psDroid);
