@@ -44,6 +44,7 @@
 
 #include "loop.h"
 #include "modai.h"
+#include "modoutpost.h"
 #include "gamestate_serialize.h"
 #include "gamestate_harness.h"
 #include "movebench.h"
@@ -606,6 +607,7 @@ static void gameStateUpdate()
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)
+	modoutpost::tick(gameWorld); // MOD: Aussenposten-Teleport (MF)
 	modinvade::tick(gameWorld);   // MOD: Invade (Bohrfahrzeug uebernimmt Gebaeude)
 	modlava::tick(gameWorld);   // MOD: Lavafelder, Solarpaneele, Energiebank
 	modgroundfire::tick(gameWorld);   // MOD: Bodenziel-Punkte, die kein Befehl mehr braucht, entfernen

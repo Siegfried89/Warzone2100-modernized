@@ -42,6 +42,7 @@
 #include "modbuild.h"
 #include "modlayerdig.h"
 #include "modinvade.h"
+#include "modoutpost.h"
 #include "feature.h"
 #include "ordersource.h"
 #include "action.h"
@@ -3130,6 +3131,14 @@ void orderSelectedObjAdd(UDWORD player, BASE_OBJECT *psObj, bool add)
 					orderDroidLocAdd(psCurr, DORDER_MOVE, static_cast<UDWORD>(invadePos.x), static_cast<UDWORD>(invadePos.y), add);
 					continue;
 				}
+			}
+
+			// MOD: Aussenposten-Teleport - Bodeneinheit auf eigenen MF-Aussenposten schicken (modoutpost versetzt sie beim Ankommen)
+			if (psObj->type == OBJ_STRUCTURE && psObj->player == psCurr->player && modoutpost::isOutpost(static_cast<const STRUCTURE *>(psObj))
+			    && !psCurr->isVtol() && !psCurr->isTransporter() && !psCurr->isConstructionDroid())
+			{
+				orderDroidLocAdd(psCurr, DORDER_MOVE, static_cast<UDWORD>(psObj->pos.x), static_cast<UDWORD>(psObj->pos.y), add);
+				continue;
 			}
 
 			DroidOrder order = chooseOrderObj(psCurr, psObj, specialOrderKeyDown());
