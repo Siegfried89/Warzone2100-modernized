@@ -165,7 +165,8 @@ bool process3DBuilding()
 
 	/* Need to update the building locations if we're building */
 	int border = 5*TILE_UNITS/2;
-	if (buildRotateDrag && !mouseDown(MOUSE_LMB)) { buildRotateDrag = false; }
+	// MOD 16.11.: der Anker gilt bis einschliesslich des Loslassens (dort wird gebaut) - erst danach folgt die Vorschau wieder der Maus
+	if (buildRotateDrag && !mouseDown(MOUSE_LMB) && !mouseReleased(MOUSE_LMB) && buildState != BUILD3D_FINISHED) { buildRotateDrag = false; }
 	const Vector2i placePos = buildRotateDrag ? Vector2i(buildRotateAnchorX, buildRotateAnchorY) : Vector2i(mousePos.x, mousePos.y);
 	Vector2i bv = {clip(placePos.x, border, gameWorld.map.width*TILE_UNITS - border), clip(placePos.y, border, gameWorld.map.height*TILE_UNITS - border)};
 	Vector2i size = getStatsSize(sBuildDetails.psStats, getBuildingDirection());

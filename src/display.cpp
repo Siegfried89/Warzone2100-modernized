@@ -649,12 +649,14 @@ static void CheckStartWallDrag()
 				wallDrag.status = DRAG_PLACING;
 				debug(LOG_NEVER, "Start Wall Drag\n");
 			}
-		}
-		else if ((buildState == BUILD3D_POS || buildState == BUILD3D_VALID) && sBuildDetails.psStats->hasType(STAT_STRUCTURE))
-		{
-			// MOD: normales Gebaeude - Position beim Klick merken, Ziehen dreht es
-			buildRotateAnchorX = mousePos.x;
-			buildRotateAnchorY = mousePos.y;
+			else
+			{
+				// MOD: normales Gebaeude - Position beim Klick merken, Ziehen dreht es
+				// (16.11. 18:16: stand vorher in einem else-Zweig, der nie erreicht wurde -> Anker blieb 0/0, Drehen ging nicht)
+				buildRotateDrag = false;
+				buildRotateAnchorX = mousePos.x;
+				buildRotateAnchorY = mousePos.y;
+			}
 		}
 		else if (intBuildSelectMode())//if we were in build select mode
 		{
