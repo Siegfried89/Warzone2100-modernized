@@ -174,10 +174,6 @@ vec4 main_medium() {
 	float visibility = getShadowVisibility(posModelSpace, posViewSpace, diffuseFactor, 0.001f);
 
 	vec4 lightmap_vec4 = texture(lightmap_tex, uvLightmap, 0.f);
-#ifdef NEWGL
-
-	if (tile > MODV_TILE) { lightmap_vec4.a = 1.0; }   // MOD: Orbit-Inseln - lightmap.a ist dort das Abstandsfeld, Helligkeit voll
-#endif
 	float tileBrightness = lightmap_vec4.a; // tile brightness / ambient occlusion
 	vec3 albedo = (1.f - decal.a) * ground + decal.a * decal.rgb;
 	if (linearLighting != 0)
