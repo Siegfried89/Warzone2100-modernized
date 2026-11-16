@@ -94,6 +94,7 @@
 #include "ssr.h"
 #include "range_rings.h"
 #include "modgrid.h"
+#include "modpaint.h"
 #include "modoil.h"
 #include "modwreck.h"
 #include "modgroundfire.h"
@@ -3939,6 +3940,7 @@ static void drawDroidAndStructureSelections()
 
 	const char *modLabel = modgroundfire::activeLabel();
 	if (modLabel == nullptr) { modLabel = modbuild::activeLabel(); }
+	if (modLabel == nullptr) { modLabel = modpaint::activeLabel(); }   // MOD: Schlachtplan
 	if (modLabel != nullptr)
 	{
 		modTxtCmdLabel.setText(modLabel, font_regular);
@@ -5087,6 +5089,7 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 
 	modoil::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Faesser-Anzeige
 	modgrid::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Stromkabel / Stromnetz-Anzeige
+	modpaint::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: Schlachtplan-Zeichnungen
 	drawDroidAndStructureSelections();
 
 	pie_SetFogStatus(false);

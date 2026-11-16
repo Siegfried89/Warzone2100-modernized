@@ -90,6 +90,7 @@
 #include "modoil.h"
 #include "modwreck.h"
 #include "modparts.h"
+#include "modpaint.h"
 #include "modmorale.h"
 #include "modgroundfire.h"
 #include "modradio.h"
@@ -725,6 +726,7 @@ void interfaceShutDown()
 {
 	moddesigner::shutdown(); // MOD
 	modpanel::shutdown();    // MOD
+	modpaint::shutdown();    // MOD
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
@@ -1180,6 +1182,7 @@ INT_RETVAL intRunWidgets()
 
 	modpanel::tick();      // MOD: Combot-Auswahlfeld
 	modlayer::tick();      // MOD: Ebenen-Knoepfe
+	modpaint::tick();      // MOD: Schlachtplan (Frei malen)
 	moddesigner::tick();   // MOD: Combot-Designer
 
 	if (quitToMainMenuRequested)
