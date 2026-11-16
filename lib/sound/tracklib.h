@@ -64,6 +64,8 @@ void	sound_SetObject(SDWORD iSample, void *pObj);
 void	sound_SetCallback(SDWORD iSample, AUDIO_CALLBACK pCallBack);
 
 void	sound_Update();
+/// MOD: Umgebungshall fuer neue 3D-Geraeusche: 0 = keiner, 1 = Stadt, 2 = Untergrund
+void	sound_SetEnvironment(int env);
 unsigned int sound_GetActiveSamplesCount();
 
 UDWORD	sound_GetGameTime();

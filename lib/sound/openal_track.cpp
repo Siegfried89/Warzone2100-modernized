@@ -114,6 +114,145 @@ ALCint HRTFModeToALCint(HRTFMode mode)
 // =======================================================================================================================
 // =======================================================================================================================
 //
+
+// ---------------------------------------------------------------------------------------------------------------------
+// MOD (Wunsch 14.11. Punkt 3): Umgebungs-Hall ueber OpenAL-EFX. 1 = Stadt (Hall zwischen Haeuserwaenden),
+// 2 = Untergrund (Hoehlenhall + gedaempfte Hoehen). Gilt fuer neu startende 3D-Geraeusche (nicht Musik/Oberflaeche).
+// Ohne EFX-Unterstuetzung (ALC_EXT_EFX) passiert nichts. Konstanten wie in AL/efx.h (eigene Namen, falls efx.h fehlt).
+// ---------------------------------------------------------------------------------------------------------------------
+namespace
+{
+constexpr ALenum WZE_EFFECT_TYPE = 0x8001;
+constexpr ALint WZE_EFFECT_REVERB = 0x0001;
+constexpr ALenum WZE_EFFECTSLOT_EFFECT = 0x0001;
+constexpr ALenum WZE_EFFECTSLOT_GAIN = 0x0002;
+constexpr ALenum WZE_FILTER_TYPE = 0x8001;
+constexpr ALint WZE_FILTER_LOWPASS = 0x0001;
+constexpr ALint WZE_FILTER_NULL = 0x0000;
+constexpr ALenum WZE_LOWPASS_GAIN = 0x0001;
+constexpr ALenum WZE_LOWPASS_GAINHF = 0x0002;
+constexpr ALenum WZE_DIRECT_FILTER = 0x20005;
+constexpr ALenum WZE_AUXILIARY_SEND_FILTER = 0x20006;
+constexpr ALenum WZE_REVERB_DENSITY = 0x0001, WZE_REVERB_DIFFUSION = 0x0002, WZE_REVERB_GAIN = 0x0003, WZE_REVERB_GAINHF = 0x0004,
+                 WZE_REVERB_DECAY_TIME = 0x0005, WZE_REVERB_DECAY_HFRATIO = 0x0006, WZE_REVERB_REFLECTIONS_GAIN = 0x0007,
+                 WZE_REVERB_REFLECTIONS_DELAY = 0x0008, WZE_REVERB_LATE_REVERB_GAIN = 0x0009, WZE_REVERB_LATE_REVERB_DELAY = 0x000A;
+
+typedef void (AL_APIENTRY *WZE_GenFn)(ALsizei, ALuint *);
+typedef void (AL_APIENTRY *WZE_DelFn)(ALsizei, const ALuint *);
+typedef void (AL_APIENTRY *WZE_SetiFn)(ALuint, ALenum, ALint);
+typedef void (AL_APIENTRY *WZE_SetfFn)(ALuint, ALenum, ALfloat);
+
+WZE_GenFn wze_alGenEffects = nullptr, wze_alGenAuxiliaryEffectSlots = nullptr, wze_alGenFilters = nullptr;
+WZE_DelFn wze_alDeleteEffects = nullptr, wze_alDeleteAuxiliaryEffectSlots = nullptr, wze_alDeleteFilters = nullptr;
+WZE_SetiFn wze_alEffecti = nullptr, wze_alAuxiliaryEffectSloti = nullptr, wze_alFilteri = nullptr;
+WZE_SetfFn wze_alEffectf = nullptr, wze_alAuxiliaryEffectSlotf = nullptr, wze_alFilterf = nullptr;
+
+bool s_efxTried = false;
+bool s_efxOk = false;
+ALuint s_envEffect = 0, s_envSlot = 0, s_envLowpass = 0;
+int s_env = 0;
+
+bool efxInit()
+{
+	if (s_efxTried) { return s_efxOk; }
+	s_efxTried = true;
+	if (device == nullptr || context == nullptr || alcIsExtensionPresent(device, "ALC_EXT_EFX") != ALC_TRUE) { return false; }
+	wze_alGenEffects = (WZE_GenFn)alGetProcAddress("alGenEffects");
+	wze_alDeleteEffects = (WZE_DelFn)alGetProcAddress("alDeleteEffects");
+	wze_alEffecti = (WZE_SetiFn)alGetProcAddress("alEffecti");
+	wze_alEffectf = (WZE_SetfFn)alGetProcAddress("alEffectf");
+	wze_alGenAuxiliaryEffectSlots = (WZE_GenFn)alGetProcAddress("alGenAuxiliaryEffectSlots");
+	wze_alDeleteAuxiliaryEffectSlots = (WZE_DelFn)alGetProcAddress("alDeleteAuxiliaryEffectSlots");
+	wze_alAuxiliaryEffectSloti = (WZE_SetiFn)alGetProcAddress("alAuxiliaryEffectSloti");
+	wze_alAuxiliaryEffectSlotf = (WZE_SetfFn)alGetProcAddress("alAuxiliaryEffectSlotf");
+	wze_alGenFilters = (WZE_GenFn)alGetProcAddress("alGenFilters");
+	wze_alDeleteFilters = (WZE_DelFn)alGetProcAddress("alDeleteFilters");
+	wze_alFilteri = (WZE_SetiFn)alGetProcAddress("alFilteri");
+	wze_alFilterf = (WZE_SetfFn)alGetProcAddress("alFilterf");
+	if (!wze_alGenEffects || !wze_alDeleteEffects || !wze_alEffecti || !wze_alEffectf || !wze_alGenAuxiliaryEffectSlots || !wze_alDeleteAuxiliaryEffectSlots
+	    || !wze_alAuxiliaryEffectSloti || !wze_alAuxiliaryEffectSlotf || !wze_alGenFilters || !wze_alDeleteFilters || !wze_alFilteri || !wze_alFilterf)
+	{
+		return false;
+	}
+	alGetError();
+	wze_alGenEffects(1, &s_envEffect);
+	wze_alGenAuxiliaryEffectSlots(1, &s_envSlot);
+	wze_alGenFilters(1, &s_envLowpass);
+	if (alGetError() != AL_NO_ERROR) { return false; }
+	wze_alEffecti(s_envEffect, WZE_EFFECT_TYPE, WZE_EFFECT_REVERB);
+	wze_alFilteri(s_envLowpass, WZE_FILTER_TYPE, WZE_FILTER_LOWPASS);
+	s_efxOk = (alGetError() == AL_NO_ERROR);
+	debug(LOG_SOUND, "MOD: EFX-Umgebungshall %s", s_efxOk ? "aktiv" : "nicht verfuegbar");
+	return s_efxOk;
+}
+
+void efxShutdown()
+{
+	if (s_efxOk)
+	{
+		wze_alDeleteAuxiliaryEffectSlots(1, &s_envSlot);
+		wze_alDeleteEffects(1, &s_envEffect);
+		wze_alDeleteFilters(1, &s_envLowpass);
+	}
+	s_efxTried = false;
+	s_efxOk = false;
+	s_envEffect = s_envSlot = s_envLowpass = 0;
+	s_env = 0;
+}
+
+void efxApply(ALuint src)
+{
+	if (!s_efxOk || s_env == 0) { return; }
+	alSource3i(src, WZE_AUXILIARY_SEND_FILTER, static_cast<ALint>(s_envSlot), 0, WZE_FILTER_NULL);
+	if (s_env == 2) { alSourcei(src, WZE_DIRECT_FILTER, static_cast<ALint>(s_envLowpass)); }
+	alGetError();   // fehlende Sende-Kanaele sind kein Fehler fuer den Klang selbst
+}
+}
+
+void sound_SetEnvironment(int env)
+{
+	if (env == s_env) { return; }
+	if (env != 0 && !efxInit()) { s_env = env; return; }
+	s_env = env;
+	if (!s_efxOk) { return; }
+	if (env == 1)
+	{
+		// Stadt: kurze, deutliche Reflexionen zwischen den Haeusern
+		wze_alEffectf(s_envEffect, WZE_REVERB_DENSITY, 0.6f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_DIFFUSION, 0.5f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_GAIN, 0.32f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_GAINHF, 0.80f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_DECAY_TIME, 1.6f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_DECAY_HFRATIO, 0.70f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_REFLECTIONS_GAIN, 0.45f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_REFLECTIONS_DELAY, 0.015f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_LATE_REVERB_GAIN, 1.1f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_LATE_REVERB_DELAY, 0.022f);
+	}
+	else if (env == 2)
+	{
+		// Untergrund: langer Hoehlenhall, dumpfe Hoehen
+		wze_alEffectf(s_envEffect, WZE_REVERB_DENSITY, 1.0f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_DIFFUSION, 1.0f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_GAIN, 0.45f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_GAINHF, 0.35f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_DECAY_TIME, 2.9f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_DECAY_HFRATIO, 0.40f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_REFLECTIONS_GAIN, 0.60f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_REFLECTIONS_DELAY, 0.020f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_LATE_REVERB_GAIN, 1.4f);
+		wze_alEffectf(s_envEffect, WZE_REVERB_LATE_REVERB_DELAY, 0.030f);
+		wze_alFilterf(s_envLowpass, WZE_LOWPASS_GAIN, 0.85f);
+		wze_alFilterf(s_envLowpass, WZE_LOWPASS_GAINHF, 0.35f);
+	}
+	if (env != 0)
+	{
+		wze_alAuxiliaryEffectSloti(s_envSlot, WZE_EFFECTSLOT_EFFECT, static_cast<ALint>(s_envEffect));
+		wze_alAuxiliaryEffectSlotf(s_envSlot, WZE_EFFECTSLOT_GAIN, 1.0f);
+	}
+	alGetError();
+}
+
 bool sound_InitLibrary(HRTFMode hrtf)
 {
 	int err;
@@ -369,6 +508,7 @@ void sound_ShutdownLibrary(void)
 		return;
 	}
 	debug(LOG_SOUND, "starting shutdown");
+	efxShutdown();   // MOD: Umgebungshall vor dem Kontext abbauen
 
 	// Stop all streams, sound_UpdateStreams() will deallocate all stopped streams
 	for (AUDIO_STREAM* stream : active_streams)
@@ -843,6 +983,7 @@ bool sound_Play3DSample(TRACK *psTrack, AUDIO_SAMPLE *psSample)
 	alSourcefv(psSample->iSample, AL_VELOCITY, zero);
 	alSourcei(psSample->iSample, AL_BUFFER, psTrack->iBufferName);
 	alSourcei(psSample->iSample, AL_LOOPING, (sound_SetupChannel(psSample)) ? AL_TRUE : AL_FALSE);
+	efxApply(psSample->iSample);   // MOD: Umgebungshall (Stadt / Untergrund)
 
 	// NOTE: this is only useful for debugging.
 #ifdef DEBUG

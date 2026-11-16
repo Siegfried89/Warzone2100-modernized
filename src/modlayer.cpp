@@ -2,6 +2,7 @@
 // MOD: Drei Ebenen-Knoepfe (Orbit / Oberflaeche / Untergrund) mit weicher Ueberblendung, siehe modlayer.h
 
 #include "modlayer.h"
+#include "lib/sound/tracklib.h"
 #include "modlayermap.h"
 #include "modui.h"
 #include "modcombot.h"
@@ -328,6 +329,8 @@ void tick()
 	if (!modcombot::ready()) { return; }   // nur wenn die Combot-Mod geladen ist
 	update();                              // vor dem Zeichnen: Ebene am Ueberblend-Mittelpunkt umschalten
 	modlayermap::tick();                   // aufgeschobenes Neuaufbauen des Gelaendes (nach Grabungen)
+	// MOD (Punkt 3): Umgebungshall - Untergrund = Hoehle, Stadt-Karten (Urban) an der Oberflaeche = Hall zwischen den Haeusern
+	sound_SetEnvironment(s_current == UNDERGROUND ? 2 : ((s_current == SURFACE && currentMapTileset == MAP_TILESET::URBAN) ? 1 : 0));
 	const bool want = !s_suppressed;
 	if (!want && !s_screen) { return; }
 	ensureScreen();
