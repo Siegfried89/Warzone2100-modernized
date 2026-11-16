@@ -2667,8 +2667,20 @@ DROID_ORDER chooseOrderLoc(DROID *psDroid, UDWORD x, UDWORD y, bool altOrder)
 		order = DORDER_MOVE;
 	}
 
+	// MOD (Wunsch 14.11. Punkt 12, Schlachtfeld-Autonomie): Kampfeinheiten am Boden ruecken standardmaessig vor - sie greifen alles an,
+	// was unterwegs in Sicht und Schussweite kommt (WZ-"Scout"), und fahren danach weiter. Mit gehaltener Alt-Taste gibt es die reine
+	// Fahrt ohne Anhalten (z. B. fuer einen Rueckzug). Schacht-Felder bleiben eine normale Fahrt (Ebenenwechsel).
+	const bool modAutoAdvance = !psDroid->isVtol() && !psDroid->isTransporter()
+	                            && (psDroid->droidType == DROID_WEAPON || psDroid->droidType == DROID_CYBORG || psDroid->droidType == DROID_CYBORG_SUPER || psDroid->droidType == DROID_PERSON)
+	                            && psDroid->numWeaps > 0 && psDroid->asWeaps[0].nStat > 0
+	                            && !modlayer::isPortalTile(psDroid->player, map_coord(x), map_coord(y));
+
 	// scout if alt was pressed
-	if (altOrder)
+	if (altOrder && modAutoAdvance)
+	{
+		// MOD: Alt = reine Fahrt (order bleibt DORDER_MOVE)
+	}
+	else if (altOrder)
 	{
 		order = DORDER_SCOUT;
 		if (psDroid->isVtol())
@@ -2676,6 +2688,10 @@ DROID_ORDER chooseOrderLoc(DROID *psDroid, UDWORD x, UDWORD y, bool altOrder)
 			// Patrol if in a VTOL
 			order = DORDER_PATROL;
 		}
+	}
+	else if (order == DORDER_MOVE && modAutoAdvance)
+	{
+		order = DORDER_SCOUT;   // MOD: Vorruecken als Standard
 	}
 
 	// and now we want Transporters to fly! - in multiPlayer!!
