@@ -45,6 +45,7 @@
 #include "map.h"
 #include "order.h"
 #include "modincoming.h"
+#include "modpointdef.h"
 #include "projectile.h"
 #include "visibility.h"
 #include "group.h"
@@ -1549,6 +1550,12 @@ PROJECTILE* PROJECTILE::update()
 	switch (psObj->state)
 	{
 	case PROJ_INFLIGHT:
+		if (modpointdef::tryIntercept(psObj))   // MOD: von einer MF-Punktverteidigung abgeschossen
+		{
+			setProjectileDestination(psObj, nullptr);
+			psObj->state = PROJ_INACTIVE;
+			break;
+		}
 		spawnedProjectile = proj_InFlightFunc(psObj);
 		if (psObj->state != PROJ_IMPACT)
 		{
@@ -1593,6 +1600,7 @@ void proj_UpdateAll()
 	// which will be returned from `PROJECTILE::update()`.
 	// These need to be added separately to `psProjectileList` later.
 	// Not a range-based for: projectiles may be added during the loop (for example, by script event handlers).
+	modpointdef::beginTick();   // MOD: Punktverteidigungen dieses Spieltakts
 	const size_t projectileCount = psProjectileList.size();
 	for (size_t i = 0; i < projectileCount; ++i)
 	{

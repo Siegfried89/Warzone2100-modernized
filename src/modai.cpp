@@ -20,6 +20,7 @@
 #include "random.h"
 #include "stats.h"
 #include "structure.h"
+#include "template.h"
 
 #include <algorithm>
 #include <string>
@@ -183,6 +184,60 @@ bool tryOutpost(GameWorld &w, unsigned p, const Vector2i &base)
 	return false;
 }
 
+// ---------------------------------------------------------------- Stufe 2 (16.11.): Konzern-Einheiten
+// Jede KI gehoert einem MF-Konzern (Spieler-Nr. reihum Rimtech, Mil-Agro, Neuropa) und baut zwischendurch dessen Combot,
+// Kampfpanzer und Artillerie (aus templates.json: MFP_<Konzern>, MFTank_<Konzern>, MFArty_<Konzern>). Nur in einer gerade
+// untaetigen Fabrik (die Skript-KI fuellt sie sonst selbst), hoechstens ein Auftrag je Runde und KI, hoechstens 14 solche Einheiten.
+constexpr unsigned MF_UNITS_MAX = 14;
+unsigned s_nextMF[MAX_PLAYERS] = {};
+
+DROID_TEMPLATE *findTemplate(unsigned p, const char *id)
+{
+	const WzString wid = WzString::fromUtf8(id);
+	DROID_TEMPLATE *found = nullptr;
+	enumerateTemplates(static_cast<int>(p), [&](DROID_TEMPLATE *t) {
+		if (t->id == wid) { found = t; return false; }
+		return true;
+	});
+	return found;
+}
+
+bool tryCorpUnits(GameWorld &w, unsigned p)
+{
+	if (gameTime < s_nextMF[p] || gameTime < 3 * 60000) { return false; }
+	static const char *corp[3] = {"Rimtech", "MilAgro", "Neuropa"};
+	const std::string c = corp[p % 3];
+	const std::string ids[3] = {"MFP_" + c, "MFTank_" + c, "MFArty_" + c};
+	unsigned have = 0;
+	for (const DROID *d : w.objects.droids[p])
+	{
+		if (d->died || d->getBodyStats() == nullptr) { continue; }
+		const std::string b = d->getBodyStats()->id.toUtf8();
+		if (b.rfind("B3MFTank", 0) == 0 || b.rfind("B3MFArty", 0) == 0 || b.rfind("MFT_", 0) == 0) { have++; }
+	}
+	if (have >= MF_UNITS_MAX) { return false; }
+	// Mischung: 3 Combots : 2 Panzer : 1 Artillerie
+	static const int pick[6] = {0, 1, 0, 2, 1, 0};
+	const int want = pick[(gameTime / CYCLE_MS + p) % 6];
+	for (int k = 0; k < 3; k++)
+	{
+		DROID_TEMPLATE *t = findTemplate(p, ids[(want + k) % 3].c_str());
+		if (t == nullptr || !researchedTemplate(t, static_cast<int>(p), true)) { continue; }
+		if (getPower(p) < static_cast<int>(calcTemplatePower(t))) { return false; }
+		for (STRUCTURE *s : w.objects.structures[p])
+		{
+			if (s->died || s->status != SS_BUILT || !s->isFactory() || !s->isIdle() || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+			if (!validTemplateForFactory(t, s, false)) { continue; }
+			if (structSetManufacture(s, t, ModeImmediate))
+			{
+				s_nextMF[p] = gameTime + 50000;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 void orbitStrike(GameWorld &w, unsigned p)
 {
 	if (gameTime < s_nextOrbit[p]) { return; }
@@ -234,11 +289,12 @@ void tick(GameWorld &world)
 			if (!tryFortify(world, p, base)) { tryOutpost(world, p, base); }
 		}
 		orbitStrike(world, p);
+		tryCorpUnits(world, p);
 	}
 }
 
 void reset()
 {
-	for (unsigned p = 0; p < MAX_PLAYERS; p++) { s_next[p] = s_nextFortify[p] = s_nextOrbit[p] = 0; }
+	for (unsigned p = 0; p < MAX_PLAYERS; p++) { s_next[p] = s_nextFortify[p] = s_nextOrbit[p] = s_nextMF[p] = 0; }
 }
 }
