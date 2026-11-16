@@ -51,5 +51,9 @@ static const VoiceCat kVoiceCats[] = {
 	{"arty_inf", 10, 5},
 	{"arty_tnk", 8, 4},
 	{"arty_trn", 4, 3},
+	{"inf_incoming", 7, 5},
+	{"inf_spread", 6, 5},
+	{"tnk_spread", 4, 4},
+	{"inf_dig", 4, 5},
 	{"help_call", 2, 4},
 };

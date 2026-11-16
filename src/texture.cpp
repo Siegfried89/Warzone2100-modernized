@@ -177,6 +177,7 @@ bool texLoad(const char *fileName)
 					radarColour(256 + e, r, g, b);
 				}
 				if (e == cnt0) { modExtTileCount = cnt0; }
+				debug(LOG_INFO, "MOD: Inselkacheln geladen: %d von %d", e, cnt0);
 			}
 			free(xbuf);
 		}

@@ -27,6 +27,7 @@
 #include "modlayer.h"
 #include "modui.h"
 #include "multiplay.h"
+#include "modincoming.h"
 #include "order.h"
 #include "ordersource.h"
 #include "stats.h"
@@ -44,7 +45,7 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_COUNT
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_COUNT   // M_SPREAD = Sofort-Befehl (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -65,6 +66,7 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Artillery", "Artillery: bombard this area", "Artillery: drag the target area (right click cancels)", 240, 200, 90, true },
 	{ "Aircraft", "Aircraft: patrol over this area", "Aircraft: drag the patrol area (right click cancels)", 255, 235, 50, true },
 	{ "Combots", "Combot area: combots patrol and fight in this area on their own", "Combots: drag the combot area (right click cancels)", 190, 90, 255, true },
+	{ "Spread out", "Spread out: the selected units spread out evenly (against artillery and bombs)", "", 150, 200, 200, false },
 };
 
 constexpr int BTN_W = 66;
@@ -72,7 +74,7 @@ constexpr int BTN_H = 20;
 constexpr int GAP = 3;
 constexpr int PAD = 4;
 constexpr int COLS = 2;
-constexpr int ROWS = 4;
+constexpr int ROWS = 5;
 constexpr int TOTAL_W = COLS * BTN_W + (COLS - 1) * GAP + 2 * PAD;
 constexpr int TOTAL_H = ROWS * BTN_H + (ROWS - 1) * GAP + 2 * PAD + 12;   // + Titelzeile
 constexpr unsigned SHOW_MS = 25000;   // so lange bleibt eine Zeichnung sichtbar
@@ -146,6 +148,20 @@ void ensureScreen()
 		b->UserData = static_cast<UDWORD>(m);
 		b->setTip(kModes[m].tip);
 		b->addOnClickHandler([m](W_BUTTON &) { widgScheduleTask([m]() {
+			if (m == M_SPREAD)
+			{
+				// MOD (16.11. Punkt 2): Sofort-Befehl "Spread out" fuer die Auswahl
+				std::vector<DROID *> sel;
+				if (selectedPlayer < MAX_PLAYERS)
+				{
+					for (DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d->selected) { sel.push_back(d); } }
+				}
+				modincoming::spreadUnits(sel);
+				s_mode = -1;
+				s_drawing = false;
+				s_cur.clear();
+				return;
+			}
 			s_mode = (s_mode == m) ? -1 : m;
 			s_drawing = false;
 			s_cur.clear();

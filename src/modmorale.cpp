@@ -12,6 +12,7 @@
 #include "multiplay.h"
 #include "modlayer.h"
 #include "modoil.h"
+#include "modterrain.h"
 #include "objmem.h"
 #include "order.h"
 #include "projectile.h"
@@ -70,7 +71,7 @@ void onHit(DROID *psDroid, int hpLost, const PROJECTILE *psProj)
 {
 	if (!infantry(psDroid) || psDroid->died || hpLost <= 0 || !heavyWeapon(psProj)) { return; }
 	if (modlayer::layerOf(psDroid) != modlayer::SURFACE) { return; }
-	if (modoil::droidInTrench(psDroid)) { return; }   // im Graben bleibt man in Deckung
+	if (modoil::droidInTrench(psDroid) || modterrain::droidInCover(psDroid)) { return; }   // im Graben / in der eigenen Mulde bleibt man in Deckung
 	Entry &e = s_state[psDroid->id];
 	if (e.pending || gameTime < e.cooldownUntil || !interruptible(psDroid)) { return; }
 

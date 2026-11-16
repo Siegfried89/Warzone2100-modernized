@@ -9,6 +9,8 @@
 #include <unordered_map>
 
 #include "modterrain.h"
+
+#include <vector>
 #include "modgroundfire.h"
 #include "modlayer.h"
 #include "modlayermap.h"
@@ -142,15 +144,24 @@ void dust(int wx, int wy, int size)
 		return;
 	}
 	Vector3i pos(wx, map_Height(gameWorld.map, wx, wy) + 12, wy);
-	const int n = 2 + size * 2;
+	// MOD (16.11. Punkt 11): grosse Staubwolke - verdeckt das Einsinken des Kraters (der Krater entsteht erst kurz danach, siehe tick())
+	const int n = 4 + size * 4;
 	for (int i = 0; i < n; i++)
 	{
 		Vector3i p = pos;
-		p.x += ((i * 53) % 61 - 30) * size;
-		p.z += ((i * 37) % 59 - 29) * size;
-		addEffect(&p, EFFECT_SMOKE, (i % 2) ? SMOKE_TYPE_BILLOW : SMOKE_TYPE_DRIFTING, false, nullptr, 0, gameTime);
+		p.x += ((i * 53) % 61 - 30) * size * 3 / 2;
+		p.z += ((i * 37) % 59 - 29) * size * 3 / 2;
+		p.y += (i % 3) * 10 * size;
+		addEffect(&p, EFFECT_SMOKE, (i % 3 != 2) ? SMOKE_TYPE_BILLOW : SMOKE_TYPE_DRIFTING, false, nullptr, 0, gameTime);
 	}
 }
+
+struct PendingCrater
+{
+	int x, y, size;
+	unsigned at;
+};
+std::vector<PendingCrater> s_pending;   // Reihenfolge = Einschlagsreihenfolge (auf allen Rechnern gleich)
 
 struct CraterShape
 {
@@ -271,7 +282,28 @@ void onProjectileImpact(const PROJECTILE *psProj)
 			return;
 		}
 	}
-	addCrater(psProj->pos.x, psProj->pos.y, size);
+	// MOD (16.11. Punkt 11): erst die Staubwolke, der Krater sinkt 0,35 s spaeter darunter ein (kein sichtbares "Aufploppen")
+	dust(psProj->pos.x, psProj->pos.y, size);
+	s_pending.push_back({ psProj->pos.x, psProj->pos.y, size, gameTime + 350 });
+}
+
+void tick()
+{
+	if (s_pending.empty()) { return; }
+	size_t keep = 0;
+	for (size_t i = 0; i < s_pending.size(); ++i)
+	{
+		const PendingCrater pc = s_pending[i];
+		if (gameTime >= pc.at)
+		{
+			addCrater(pc.x, pc.y, pc.size);
+		}
+		else
+		{
+			s_pending[keep++] = pc;
+		}
+	}
+	s_pending.resize(keep);
 }
 
 int depthAtTile(int tileX, int tileY)
@@ -411,5 +443,6 @@ bool dig(int tileX, int tileY, int depth, int bermHeight, unsigned dirAngle)
 void reset()
 {
 	s_table.clear();
+	s_pending.clear();
 }
 } // namespace modterrain

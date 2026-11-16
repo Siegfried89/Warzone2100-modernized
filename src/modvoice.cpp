@@ -273,6 +273,26 @@ void onHelpCall(const DROID *psDroid)
 	st.helpPending = true;
 }
 
+bool shout(const DROID *psDroid, const char *cat)
+{
+	if (psDroid == nullptr || cat == nullptr || psDroid->died || isSilent(psDroid)) { return false; }
+	static unsigned s_nextShout = 0;
+	if (realTime < s_nextShout) { return false; }
+	const Vector2i cam = getPlayerPos();
+	if (!nearAndVisible(psDroid->pos.x, psDroid->pos.y, cam)) { return false; }
+	if (!say(cat, psDroid)) { return false; }
+	s_nextShout = realTime + 1600;
+	State &st = s_state[psDroid->id];
+	st.lastTouch = gameTime;
+	st.nextSpeak = gameTime + 3000;
+	return true;
+}
+
+const char *classPrefix(const DROID *psDroid)
+{
+	return psDroid ? clsPrefix(classOf(psDroid)) : "inf";
+}
+
 void onPlayerOrder(const DROID *psDroid, int order)
 {
 	if (psDroid == nullptr || psDroid->player != selectedPlayer || psDroid->isVtol() || isSilent(psDroid)) { return; }

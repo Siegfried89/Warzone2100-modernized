@@ -119,6 +119,8 @@
 #include "modwreck.h"
 #include "modparts.h"
 #include "modmorale.h"
+#include "modincoming.h"
+#include "modterrain.h"
 #include "modferry.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
@@ -591,7 +593,9 @@ static void gameStateUpdate()
 	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
 	modammo::tick(gameWorld);    // MOD: Munition (Nachschub)
 	modparts::tick(gameWorld);   // MOD: Teile-Schaden (Turm / Laufwerk)
-	modmorale::tick();           // MOD: Infanterie kehrt nach kurzem Rueckzug zurueck
+	modmorale::tick();
+	modincoming::tick();         // MOD: Granate im Anflug - Verteilen und Eingraben
+	modterrain::tick();          // MOD: Krater sinken unter der Staubwolke ein
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modinvade::tick(gameWorld);   // MOD: Invade (Bohrfahrzeug uebernimmt Gebaeude)

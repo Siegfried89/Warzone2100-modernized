@@ -350,7 +350,15 @@ bool genOrbitGridMF(Grid &g, Rng &r)
 
 void genOrbitGrid(Grid &g, Rng &r)
 {
-	if (!genOrbitGridMF(g, r)) { genOrbitGridRandom(g, r); }
+	if (!genOrbitGridMF(g, r))
+	{
+		debug(LOG_INFO, "modlayermap: MF-Inseln NICHT verwendet (Bibliothek %d Formen, Zusatzkacheln %d) - Notloesung mit Tileset-Kacheln", static_cast<int>(islandLibrary().size()), modExtTileCount);
+		genOrbitGridRandom(g, r);
+	}
+	else
+	{
+		debug(LOG_INFO, "modlayermap: MF-Inseln verwendet (Bibliothek %d Formen, Zusatzkacheln %d)", static_cast<int>(islandLibrary().size()), modExtTileCount);
+	}
 }
 
 // Notloesung ohne Bibliothek: Zufallswachstum ab einem Mittelpunkt (nur Ganzzahlen)

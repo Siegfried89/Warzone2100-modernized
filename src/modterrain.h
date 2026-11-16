@@ -41,6 +41,9 @@ bool findDent(const Vector2i &worldCenter, int radiusTiles, int minDepth, Vector
 /// des Grabens). Wird vom Befestigungsbau fuer reine Erdgraeben verwendet.
 bool dig(int tileX, int tileY, int depth, int bermHeight, unsigned dirAngle);
 
+/// jeden Spielschritt: verzoegerte Krater anlegen (unter der Staubwolke)
+void tick();
+
 /// bei neuem Spiel
 void reset();
 }

@@ -44,6 +44,7 @@
 #include "effects.h"
 #include "map.h"
 #include "order.h"
+#include "modincoming.h"
 #include "projectile.h"
 #include "visibility.h"
 #include "group.h"
@@ -901,6 +902,8 @@ static PROJECTILE* proj_InFlightFunc(PROJECTILE *psProj)
 			psProj->pos = psProj->src + delta * currentDistance / targetDistance;
 			psProj->pos.z = psProj->src.z + delta.z;  // Use raw z value.
 			psProj->rot.pitch = iAtan2(psProj->vZ - (timeSoFar * ACC_GRAVITY / GAME_TICKS_PER_SEC), psProj->vXY);
+			// MOD: Granate im Anflug - Pfeifen, Warnrufe, Verteilen (Flugzeit = Strecke / Horizontalgeschwindigkeit)
+			modincoming::onIndirectFlight(psProj, timeSoFar, static_cast<int>(static_cast<int64_t>(targetDistance) * GAME_TICKS_PER_SEC / std::max<int32_t>(1, psProj->vXY)));
 			break;
 		}
 	case MM_HOMINGDIRECT:     // Fly towards target, even if target moves.

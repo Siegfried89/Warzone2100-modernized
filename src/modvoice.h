@@ -20,6 +20,11 @@ void onPartShot(const DROID *psShooter);
 void onPlayerOrder(const DROID *psDroid, int order);
 /// Einheit ruft um Hilfe ("Requesting support")
 void onHelpCall(const DROID *psDroid);
+/// MOD (16.11.): sofortiger Ruf einer Kategorie (z. B. "inf_incoming", "inf_spread", "tnk_spread", "inf_dig") - nur wenn die Einheit nah an der
+/// Kamera und sichtbar ist, mit eigener kurzer Sperre gegen Ueberlagerung. Reine Tonausgabe, aendert nichts am Spiel.
+bool shout(const DROID *psDroid, const char *cat);
+/// Klasse der Einheit als Vorsilbe ("inf", "tnk", "trn", "pil")
+const char *classPrefix(const DROID *psDroid);
 /// jeden Spielschritt aus der Spielschleife (rechnet selbst nur alle 250 ms)
 void tick(GameWorld &world);
 /// bei neuem Spiel / Laden
