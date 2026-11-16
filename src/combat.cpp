@@ -277,6 +277,12 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 		modammo::onShot(static_cast<const DROID *>(psAttacker));   // MOD: Munition
 		modrecoil::onShot(static_cast<const DROID *>(psAttacker), psStats, static_cast<const DROID *>(psAttacker)->asWeaps[weapon_slot].rot.direction);   // MOD: Rueckstoss-Wackeln (Anzeige)
 	}
+	// MOD (Wunsch 16.11. 20:50): Artillerie (Haubitzen, indirekt feuernde Kanonen) wirft goldene Messinghuelsen aus - nur Anzeige
+	if ((psStats->weaponSubClass == WSC_HOWITZERS || (psStats->weaponSubClass == WSC_CANNON && psStats->movementModel == MM_INDIRECT))
+	    && psAttacker->visibleForLocalDisplay() && !modlayer::hiddenInView(psAttacker))
+	{
+		modEjectCasings(psAttacker->pos, calcDirection(psAttacker->pos.x, psAttacker->pos.y, psTarget->pos.x, psTarget->pos.y), 1);   // je Schuss eine Huelse
+	}
 
 	/* reduce ammo if salvo */
 	if (psStats->upgrade[psAttacker->player].reloadTime)

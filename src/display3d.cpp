@@ -2414,6 +2414,48 @@ void displayBlueprints(const glm::mat4 &viewMatrix, const glm::mat4 &perspective
 		blueprint.renderBlueprint(viewMatrix, perspectiveViewMatrix);
 	}
 
+	// MOD (Wunsch 16.11. 21:01): Wegpunktmarker der ausgewaehlten Einheiten erscheinen wieder, solange Shift (oder Strg) gehalten
+	// wird - auch nach dem Ab- und wieder Anwaehlen (vorher nur einmal beim Setzen des Wegpunkts). Nur Anzeige.
+	if (selectedPlayer < MAX_PLAYERS && pProximityMsgIMD != nullptr && pProximityMsgIMD->displayModel() != nullptr
+	    && (keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT) || keyDown(KEY_LCTRL) || keyDown(KEY_RCTRL)))
+	{
+		std::vector<Vector3i> marks;
+		auto addMark = [&](const DroidOrder &o) {
+			if (o.type == DORDER_NONE || o.type == DORDER_BUILD || o.type == DORDER_LINEBUILD) { return; }
+			Vector3i p(0, 0, 0);
+			if (o.psObj != nullptr && !o.psObj->died)
+			{
+				p = o.psObj->pos.xzy();
+			}
+			else if (o.pos.x > 0 || o.pos.y > 0)
+			{
+				p.x = o.pos.x;
+				p.z = o.pos.y;
+			}
+			else
+			{
+				return;
+			}
+			if (!worldOnMap(gameWorld.map, p.x, p.z)) { return; }
+			p.y = map_Height(gameWorld.map, p.x, p.z) + 32;
+			if (o.psObj != nullptr && !o.psObj->died && o.psObj->sDisplay.imd != nullptr) { p.y += o.psObj->sDisplay.imd->max.y; }
+			for (const Vector3i &m : marks) { if (std::abs(m.x - p.x) < 24 && std::abs(m.z - p.z) < 24) { return; } }
+			marks.push_back(p);
+		};
+		for (const DROID *psDroid : gameWorld.objects.droids[selectedPlayer])
+		{
+			if (!psDroid->selected || psDroid->died) { continue; }
+			addMark(psDroid->order);
+			for (unsigned n = psDroid->listPendingBegin; n < psDroid->asOrderList.size(); ++n) { addMark(psDroid->asOrderList[n]); }
+			if (marks.size() > 200) { break; }
+		}
+		for (const Vector3i &m : marks)
+		{
+			const glm::mat4 modelMatrix = glm::translate(glm::vec3(m.x, m.y, -m.z));
+			pie_Draw3DShape(pProximityMsgIMD->displayModel(), 0, 0, WZCOL_WHITE, 0, 0, modelMatrix, viewMatrix);
+		}
+	}
+
 	renderDeliveryRepos(viewMatrix, perspectiveViewMatrix);
 }
 

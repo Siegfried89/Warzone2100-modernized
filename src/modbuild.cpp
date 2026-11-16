@@ -204,17 +204,18 @@ struct RingSpec
 };
 
 // innen -> aussen. k = Abstand vom Gebaeuderechteck.
+// MOD (Wunsch 16.11. 20:54): deutlich kleiner; Mauer dicht an der Basis, Kanonentuerme als Ecktuerme (siehe Mauer), davor Igel und
+// Hoecker in versetzten Reihen in die Tiefe gestaffelt (Schachbrett, step 2 = jedes zweite Feld nach x+y, Nachbarreihe versetzt).
 const RingSpec kRings[] = {
 	{1, Role::Mortar,    4, 1, false, 2},
-	{2, Role::Mortar,    7, 3, false, 1},
-	{3, Role::Wall,      1, 0, true,  1},
-	{4, Role::Bunker,    5, 0, true,  1},
-	{4, Role::Flame,     5, 2, true,  2},
-	{4, Role::GunTower,  5, 3, true,  1},
-	{6, Role::Hedgehog,  3, 0, true,  3},
-	{8, Role::Hedgehog,  2, 1, true,  2},
-	{11, Role::Dragon,   2, 0, true,  3},
-	{9, Role::Dragon,    2, 0, true,  2},
+	{2, Role::Wall,      1, 0, true,  1},
+	{3, Role::Bunker,    6, 0, true,  1},
+	{3, Role::Flame,     6, 3, true,  2},
+	{4, Role::Hedgehog,  2, 0, true,  1},
+	{5, Role::Hedgehog,  2, 1, true,  2},
+	{6, Role::Dragon,    2, 0, true,  2},
+	{7, Role::Dragon,    2, 1, true,  3},
+	{8, Role::Hedgehog,  2, 0, true,  3},
 };
 
 struct Cell
@@ -371,9 +372,9 @@ int radiusOfTier(int tier)
 {
 	switch (std::clamp(tier, 1, 3))
 	{
-	case 1: return 5;    // Plan-Kacheln (Original-Kacheln)
-	case 2: return 8;
-	default: return 12;
+	case 1: return 4;    // Plan-Kacheln (Original-Kacheln)
+	case 2: return 6;
+	default: return 9;
 	}
 }
 
@@ -390,12 +391,14 @@ static void placeDeco(unsigned player, const Vector2i &worldCenter, int tier)
 	                                        "WreckedSuzukiJeep", "WreckedVertCampVan", "barrier", "Boulder2", "Wreck1"};
 	constexpr int NDECO = static_cast<int>(sizeof(decoNames) / sizeof(decoNames[0]));
 	const Rect b = baseRect(player, worldCenter, radiusOfTier(tier));
-	const int rings[3] = {5, 7, 10};
+	// (16.11. 20:54) Deko nur noch vor dem aeussersten Hindernisguertel (der Plan ist kleiner geworden)
+	const int rings[3] = {6, 8, 10};
 	for (int ri = 0; ri < 3; ++ri)
 	{
 		const int k = rings[ri];
-		if (tier == 1 && k > 5) { continue; }
-		if (tier == 2 && k > 7) { continue; }
+		if (tier == 1 && k != 6) { continue; }
+		if (tier == 2 && k != 8) { continue; }
+		if (tier == 3 && k != 10) { continue; }
 		for (const Cell &c : perimeter(b, k))
 		{
 			const uint32_t h = static_cast<uint32_t>(c.x) * 73856093u ^ static_cast<uint32_t>(c.y) * 19349663u ^ static_cast<uint32_t>(k) * 83492791u;
@@ -430,7 +433,7 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 		if (tier < rs.minTier) { continue; }
 		// kleine Anlage: die aeusseren Ringe rutschen nach innen (Ring 4 -> 3 usw. ist hier nicht noetig, Groesse 1 baut nur bis Ring 4)
 		if (tier == 1 && rs.k > 4) { continue; }
-		if (tier == 2 && rs.k > 9) { continue; }
+		if (tier == 2 && rs.k > 6) { continue; }
 		STRUCTURE_STATS *st = pick(player, rs.role);
 		if (st == nullptr) { continue; }
 		const std::vector<Cell> ring = perimeter(b, rs.k);
@@ -443,6 +446,24 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 				const int d = ringDist(t);
 				return d >= std::max(1, k - 2) && d <= k + 2 && (freeFor(player, st, t, 0, used) || (used.count(keyOf(t)) == 0 && ownStructAt(player, t) != nullptr));
 			};
+			// MOD (Wunsch 16.11. 20:54): Kanonentuerme als Ecktuerme - an den vier Ecken des Mauerrings, die Mauer endet daneben
+			TileSet towerCells;
+			if (STRUCTURE_STATS *tw = pick(player, Role::GunTower))
+			{
+				const Vector2i corners[4] = { Vector2i(b.x0 - k, b.y0 - k), Vector2i(b.x1 + k, b.y0 - k), Vector2i(b.x1 + k, b.y1 + k), Vector2i(b.x0 - k, b.y1 + k) };
+				const unsigned cornerDir[4] = { 0xE000u, 0x2000u, 0x6000u, 0xA000u };   // schraeg nach aussen
+				for (int ci = 0; ci < 4; ++ci)
+				{
+					const Vector2i &t = corners[ci];
+					if (ownStructAt(player, t) != nullptr) { towerCells.insert(keyOf(t)); continue; }   // steht schon (erneuter Befehl)
+					if (!freeFor(player, tw, t, cornerDir[ci], used)) { continue; }   // blockiert: die Mauer laeuft dort durch
+					used.insert(keyOf(t));
+					towerCells.insert(keyOf(t));
+					Placement p;
+					p.stats = tw; p.tile = t; p.tile2 = t; p.direction = cornerDir[ci];
+					out.push_back(p);
+				}
+			}
 			std::vector<std::vector<Vector2i>> pieces;   // zusammenhaengende Mauerstuecke (zwischen den Toren)
 			std::vector<Vector2i> cur;
 			auto flush = [&]() { if (!cur.empty()) { pieces.push_back(cur); cur.clear(); } };
@@ -452,12 +473,14 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 				const Cell &c = ring[i];
 				const Vector2i t(c.x, c.y);
 				if (inGate(b, k, c)) { flush(); ++i; continue; }
+				if (towerCells.count(keyOf(t)) != 0) { flush(); ++i; continue; }   // Eckturm
 				// frei - oder schon ein eigenes Bauwerk dort (Linienbau ueberspringt es, die Mauer bleibt durchgehend)
 				if (freeFor(player, st, t, 0, used) || (used.count(keyOf(t)) == 0 && ownStructAt(player, t) != nullptr)) { cur.push_back(t); used.insert(keyOf(t)); ++i; continue; }
 				// blockiert: naechstes freies Feld dieses Laufs suchen (nicht ueber ein Tor hinweg)
 				size_t j = i + 1;
-				while (j < ring.size() && !inGate(b, k, ring[j]) && !wallPassable(Vector2i(ring[j].x, ring[j].y))) { ++j; }
-				const bool haveNext = j < ring.size() && !inGate(b, k, ring[j]);
+				auto stopAt = [&](size_t jj) { return inGate(b, k, ring[jj]) || towerCells.count(TileKey(ring[jj].x, ring[jj].y)) != 0; };
+				while (j < ring.size() && !stopAt(j) && !wallPassable(Vector2i(ring[j].x, ring[j].y))) { ++j; }
+				const bool haveNext = j < ring.size() && !stopAt(j);
 				std::vector<Vector2i> detour;
 				if (!cur.empty() && haveNext)
 				{
@@ -489,8 +512,13 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 		}
 		for (size_t i = 0; i < ring.size(); i++)
 		{
-			if (static_cast<int>((i + rs.offset) % rs.step) != 0) { continue; }
 			const Cell &c = ring[i];
+			if (rs.step == 2)
+			{
+				// Schachbrett nach Feldkoordinaten: die Nachbarreihe (anderer offset) liegt genau versetzt dazwischen
+				if ((((c.x + c.y + rs.offset) % 2) + 2) % 2 != 0) { continue; }
+			}
+			else if (static_cast<int>((i + rs.offset) % rs.step) != 0) { continue; }
 			if (rs.gates && inGate(b, rs.k, c)) { continue; }
 			const unsigned dir = outwardDir(c.side);
 			// MOD 16.11.: blockiert? auf das naechste freie Feld ausweichen - erst entlang des Rings, dann nach aussen/innen

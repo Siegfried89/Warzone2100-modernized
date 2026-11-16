@@ -86,6 +86,7 @@ enum EFFECT_TYPE
 	GRAVITON_TYPE_EMITTING_ST,
 	GRAVITON_TYPE_GIBLET,
 	GRAVITON_TYPE_TURRET,   // MOD: abgeschossener Panzerturm (fliegt hoch, dreht sich, Rauchspur, Explosion beim Aufprall)
+	GRAVITON_TYPE_CASING,   // MOD: Messinghuelse (Artillerie) - springt heraus, huepft und bleibt eine Weile liegen
 
 	SMOKE_TYPE_DRIFTING,
 	SMOKE_TYPE_DRIFTING_HIGH,
@@ -159,6 +160,8 @@ void	initEffectsSystem();
 void	shutdownEffectsSystem();
 void	processEffects(const glm::mat4 &perspectiveViewMatrix, struct LightingData& lightData);
 void 	addEffect(const Vector3i *pos, EFFECT_GROUP group, EFFECT_TYPE type, bool specified, const iIMDShape *imd, int lit);
+/// MOD (16.11. 20:50): Artillerie wirft beim Schuss Messinghuelsen aus (nur Anzeige)
+void modEjectCasings(const Vector3i &worldPos, uint16_t weaponDir, int count);
 void    addEffect(const Vector3i *pos, EFFECT_GROUP group, EFFECT_TYPE type, bool specified, const iIMDShape *imd, int lit, unsigned effectTime, Vector3i *rot = nullptr, Vector3f *velocity = nullptr);
 void    addMultiEffect(const Vector3i *basePos, Vector3i *scatter, EFFECT_GROUP group, EFFECT_TYPE type, bool specified, const iIMDShape *imd, unsigned int number, bool lit, unsigned int size, unsigned effectTime);
 
