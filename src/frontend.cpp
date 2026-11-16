@@ -57,6 +57,7 @@
 #include "droid.h"
 #include "faction.h"
 #include "frend.h"
+#include "modfaction.h"
 #include "frontend.h"
 #include "group.h"
 #include "hci.h"
@@ -216,17 +217,25 @@ struct FactionMenuButton : public W_BUTTON
 	AtlasImage imHi;
 	bool chosen = false;
 
+	int faction = 0;
+	unsigned hoverStart = 0;
+	bool wasHover = false;
+
 	void display(int xOffset, int yOffset) override
 	{
 		const int x0 = xOffset + x();
 		const int y0 = yOffset + y();
-		const bool lit = chosen || (getState() & WBUT_HIGHLIGHT) != 0;
-		if (chosen)
+		const bool hover = (getState() & WBUT_HIGHLIGHT) != 0;
+		const bool lit = chosen || hover;
+		if (hover && !wasHover) { hoverStart = realTime; }
+		wasHover = hover;
+		// MOD (16.11. Punkt 8): kein gelbes Quadrat mehr - die gewaehlte Fraktion ist hell und bewegt sich (Animation aus den Videos),
+		// beim Ueberfahren mit der Maus spielt die Animation von vorn; die anderen stehen gedimmt still.
+		const unsigned t = hover ? (realTime - hoverStart) : realTime;
+		if (!modfaction::draw(faction, modfaction::SIZE_S, x0, y0, width(), height(), t, lit, lit ? 255 : 150))
 		{
-			pie_UniTransBoxFill(x0 - 3, y0 - 3, x0 + width() + 3, y0 + height() + 3, pal_RGBA(255, 220, 120, 60));
-			iV_Box(x0 - 3, y0 - 3, x0 + width() + 3, y0 + height() + 3, pal_RGBA(255, 220, 120, 230));
+			iV_DrawImageImage(lit ? imHi : imNormal, x0, y0, lit ? 255 : 170);
 		}
-		iV_DrawImageImage(lit ? imHi : imNormal, x0, y0, lit ? 255 : 170);
 	}
 };
 }
@@ -278,6 +287,7 @@ static void addFactionChoice()
 		button->setGeometry(x0 + f * (iconSize + gap), stripY, iconSize, iconSize);
 		button->imNormal = AtlasImage(FrontImages, menuImg[f]);
 		button->imHi = AtlasImage(FrontImages, menuImgHi[f]);
+		button->faction = f;
 		// TRANSLATORS: tooltip of a faction button in the main menu; %s is the faction name
 		button->setTip(astringf(_("Play as %s (valid for every game mode)"), to_localized_string(static_cast<FactionID>(f))));
 	}
@@ -400,6 +410,7 @@ bool runTitleMenu()
 	case FRONTEND_FACTION_2:
 	case FRONTEND_FACTION_3:
 		war_setPlayerFaction(static_cast<int>(id - FRONTEND_FACTION_0));
+		modfaction::splash(static_cast<int>(id - FRONTEND_FACTION_0));   // MOD: grosses Symbol + Fraktions-Klang
 		refreshFactionChoice();
 		break;
 
@@ -413,6 +424,7 @@ bool runTitleMenu()
 void displayTitleMenu()
 {
 	widgDisplayScreen(psWScreen); // show the widgets currently running
+	modfaction::drawSplash();     // MOD: grosses Fraktionssymbol nach dem Anklicken (ueber allem)
 }
 
 

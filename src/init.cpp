@@ -47,6 +47,7 @@
 #include "lib/sound/cdaudio.h"
 #include "lib/sound/mixer.h"
 
+#include "modfaction.h"
 #include "init.h"
 
 #include "input/manager.h"
@@ -1374,6 +1375,7 @@ bool frontendShutdown()
 	interfaceShutDown();
 	shutdownGameGuide();
 
+	modfaction::shutdown();   // MOD: animierte Fraktionssymbole freigeben (sonst Textur-Leck -> Absturzmeldung beim Beenden)
 	//do this before shutting down the iV library
 	resReleaseAllData();
 	FrontImages = nullptr;

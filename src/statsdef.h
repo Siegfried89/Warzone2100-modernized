@@ -480,6 +480,7 @@ struct WEAPON_STATS : public COMPONENT_STATS
 	/* Audio */
 	int iAudioFireID = 0;
 	int iAudioImpactID = 0;
+	std::vector<int> modAudioFireAlt;   ///< MOD: zusaetzliche Schussgeraeusche ("weaponWavAlt"), zufaellig im Wechsel mit iAudioFireID
 };
 
 struct CONSTRUCT_STATS : public COMPONENT_STATS

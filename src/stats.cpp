@@ -659,6 +659,26 @@ bool loadWeaponStats(WzConfig &ini)
 		ASSERT_OR_RETURN(false, result, "Explosion sound %s not found for %s", szExplosionWav.toUtf8().c_str(), getStatsName(psStats));
 		psStats->iAudioFireID = weaponSoundID;
 		psStats->iAudioImpactID = explosionSoundID;
+		// MOD (16.11. Punkt 9): alternative Schussgeraeusche (Komma-Liste) - fehlende Dateien werden still uebergangen
+		psStats->modAudioFireAlt.clear();
+		{
+			const std::string altList = ini.value("weaponWavAlt", "").toWzString().toStdString();
+			size_t start = 0;
+			while (start < altList.size())
+			{
+				size_t end = altList.find(',', start);
+				if (end == std::string::npos) { end = altList.size(); }
+				const std::string one = altList.substr(start, end - start);
+				start = end + 1;
+				if (one.empty() || one == "-1") { continue; }
+				int altID = audio_GetIDFromStr(one.c_str());   // leise Suche (statsGetAudioIDFromString meldet Fehlendes als fatal)
+				if (altID == NO_SOUND) { altID = sound_GetTrackIDByName(one.c_str()); }
+				if (altID != NO_SOUND && altID > 0)
+				{
+					psStats->modAudioFireAlt.push_back(altID);
+				}
+			}
+		}
 
 		ini.endGroup();
 	}

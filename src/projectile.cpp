@@ -660,13 +660,20 @@ static PROJECTILE* proj_SendProjectileAngledInternal(WEAPON* psWeap, SIMPLE_OBJE
 		// note that the projectile is visible
 		stableProj.bVisible = true;
 
-		if (psStats->iAudioFireID != NO_SOUND)
+		// MOD (16.11. Punkt 9): bei jedem Schuss zufaellig das WZ-Original oder eine der MF-/Mayday-Alternativen (nur Ton, Anzeige-Zufall)
+		int modFireID = psStats->iAudioFireID;
+		if (!psStats->modAudioFireAlt.empty())
+		{
+			const size_t pick = static_cast<size_t>(rand()) % (psStats->modAudioFireAlt.size() + 1);
+			if (pick > 0) { modFireID = psStats->modAudioFireAlt[pick - 1]; }
+		}
+		if (modFireID != NO_SOUND)
 		{
 
 			if (stableProj.psSource)
 			{
 				/* firing sound emitted from source */
-				audio_PlayObjDynamicTrack(stableProj.psSource, psStats->iAudioFireID, nullptr);
+				audio_PlayObjDynamicTrack(stableProj.psSource, modFireID, nullptr);
 				/* GJ HACK: move howitzer sound with shell */
 				if (psStats->weaponSubClass == WSC_HOWITZERS)
 				{
@@ -676,7 +683,7 @@ static PROJECTILE* proj_SendProjectileAngledInternal(WEAPON* psWeap, SIMPLE_OBJE
 			//don't play the sound for a LasSat in multiPlayer
 			else if (!(bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT))
 			{
-				audio_PlayObjStaticTrack(&stableProj, psStats->iAudioFireID);
+				audio_PlayObjStaticTrack(&stableProj, modFireID);
 			}
 		}
 	}
