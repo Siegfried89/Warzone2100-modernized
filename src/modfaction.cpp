@@ -123,15 +123,12 @@ void splash(int faction)
 	if (faction < 0 || faction >= NUM) { return; }
 	s_splashFaction = faction;
 	s_splashStart = realTime;
-	if (s_track[faction] == -2)
+	// im Hauptmenue sind die Spiel-Klaenge (audio.wrf) noch nicht geladen: die Datei direkt als Stream abspielen
+	char fn[48];
+	snprintf(fn, sizeof(fn), "audio/mf/faction_%d.ogg", faction);
+	if (PHYSFS_exists(fn))
 	{
-		char fn[32];
-		snprintf(fn, sizeof(fn), "faction_%d.ogg", faction);
-		s_track[faction] = audio_GetTrackID(fn);
-	}
-	if (s_track[faction] >= 0)
-	{
-		audio_PlayTrack(s_track[faction]);
+		audio_PlayStream(fn, 0.9f, {}, nullptr);
 	}
 }
 
