@@ -152,6 +152,13 @@ bool loadAll()
 			if (e.contains("pos") && e["pos"].is_array() && e["pos"].size() == 3) { p.eyePos = glm::vec3(e["pos"][0].get<float>(), e["pos"][1].get<float>(), e["pos"][2].get<float>()); }
 			p.eyeGlow = e.value("glow", "");
 		}
+		if (d.contains("fx") && d["fx"].is_object())
+		{
+			const auto &e = d["fx"];
+			p.fxPiece = e.value("piece", -1);
+			if (e.contains("pos") && e["pos"].is_array() && e["pos"].size() == 3) { p.fxPos = glm::vec3(e["pos"][0].get<float>(), e["pos"][1].get<float>(), e["pos"][2].get<float>()); }
+			p.fxModel = e.value("model", "");
+		}
 		if (d.contains("chain"))
 		{
 			for (const auto &c : d["chain"]) { p.chain.emplace_back(c[0].get<float>(), c[1].get<float>(), c[2].get<float>()); }
@@ -880,6 +887,8 @@ unsigned walkPhaseMs(const DROID *d)
 
 // MOD (Wunsch 16.11. 21:41): leuchtendes Auge - nur beim Zeichnen lebender Combots im Spiel (nicht Designer/Leichen) mitgeben
 static bool s_emitGlow = false;
+static const Part s_fxBillboard;   // Kennung fuer den Zeichner: Lichthof zur Kamera gedreht
+static const Part s_fxAttached;    // Kennung: leuchtender Anbau, mit dem Knochen bewegt
 
 static const iIMDShape *glowShape(const std::string &name)
 {
@@ -943,7 +952,7 @@ void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVa
 			if (g != nullptr)
 			{
 				const glm::mat4 bm = lo.torso->eyePiece == 1 ? boneMatrix(T.R[8], T.p[8]) : boneMatrix(T.R[7], T.p[7]);
-				em(g, bm * glm::translate(glm::mat4(1.f), lo.torso->eyePos), nullptr);   // nullptr = Lichthof (siehe draw)
+				em(g, bm * glm::translate(glm::mat4(1.f), lo.torso->eyePos), &s_fxBillboard);   // Lichthof (siehe draw)
 			}
 		}
 	}
@@ -956,6 +965,12 @@ void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVa
 		emitBone(A, range(0, 1, n), boneMatrix(T.R[b[0]], T.p[b[0]]), em);
 		emitBone(A, range(1, 2, n), boneMatrix(T.R[b[1]], T.p[b[1]]), em);
 		emitBone(A, range(2, n, n), boneMatrix(T.R[b[2]], T.p[b[2]]), em);
+		if (s_emitGlow && A->fxPiece >= 0 && kind != ANIM_DIE)
+		{
+			const iIMDShape *g = glowShape(A->fxModel);
+			const int bi = b[std::min(2, A->fxPiece)];
+			if (g != nullptr) { em(g, boneMatrix(T.R[bi], T.p[bi]) * glm::translate(glm::mat4(1.f), A->fxPos), &s_fxAttached); }
+		}
 	}
 }
 
@@ -987,7 +1002,15 @@ bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view,
 	}
 	s_emitGlow = !bButton && !(pieFlag & pie_TRANSLUCENT);
 	drawLoadout(lo, kind, elapsed, static_cast<int>(d->id), model, [&](const iIMDShape *s, const glm::mat4 &m, const Part *p) {
-		if (p == nullptr)
+		if (p == &s_fxAttached)
+		{
+			// leuchtender Anbau (Energieschild): bewegt sich mit dem Arm, pulsiert leicht, additiv
+			const float t = static_cast<float>(graphicsTime % 600000u) * 0.001f;
+			const int alpha = std::clamp(static_cast<int>(135.f + 30.f * std::sin(t * 3.7f + static_cast<float>(d->id % 53u))), 0, 255);
+			pie_Draw3DShape(s, 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, m, view, 0.f, true);
+			return;
+		}
+		if (p == &s_fxBillboard)
 		{
 			// Lichthof des Auges: zur Kamera gedreht, langsam drehende kurze Strahlen, leichtes Flackern, additiv - nicht zu hell
 			const float t = static_cast<float>(graphicsTime % 600000u) * 0.001f;
