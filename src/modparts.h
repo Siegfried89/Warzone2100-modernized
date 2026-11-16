@@ -11,6 +11,7 @@
 #pragma once
 
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
+#include <glm/mat4x4.hpp>
 
 struct DROID;
 struct GameWorld;

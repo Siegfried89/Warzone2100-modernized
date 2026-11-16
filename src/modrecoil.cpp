@@ -10,7 +10,11 @@
 #include "lib/framework/vector.h"
 #include "droid.h"
 #include "stats.h"
+#ifndef GLM_ENABLE_EXPERIMENTAL
+	#define GLM_ENABLE_EXPERIMENTAL
+#endif
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/transform.hpp>   // glm::rotate/translate/scale ohne Matrix-Argument
 
 namespace modrecoil
 {

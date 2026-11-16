@@ -26,6 +26,11 @@
 #include <cstdlib>
 #include <unordered_map>
 
+#ifndef GLM_ENABLE_EXPERIMENTAL
+	#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/transform.hpp>   // glm::rotate/translate ohne Matrix-Argument
+
 namespace modparts
 {
 namespace
