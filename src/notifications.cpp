@@ -1294,6 +1294,11 @@ void finishedProcessingNotificationRequest(WZ_Queued_Notification* request, bool
 
 void addNotification(const WZ_Notification& notification, const WZ_Notification_Trigger& trigger)
 {
+	// MOD (Nutzerwunsch 16.11.): keine Einblendungen vom oberen Bildschirmrand - weder im Hauptmenue noch im Spiel
+	// (fehlende Kampagnenvideos, Anzeigemassstab, Tipps, Hinweise usw.). Die Meldung wird nur ins Log geschrieben.
+	debug(LOG_INFO, "Hinweis unterdrueckt: %s", notification.contentTitle.c_str());
+	(void)trigger;
+	return;
 	// Verify notification properties
 	if (notification.contentTitle.empty())
 	{

@@ -258,6 +258,7 @@ void ensureScreen()
 {
 	if (s_screen) { return; }
 	auto screen = W_SCREEN::make();
+	screen->psForm->hide();   // MOD-FIX: verborgene Wurzel = durchlaessig fuer Mausklicks (sonst schluckt sie JEDEN Klick im Spiel, siehe notifications.cpp)
 	auto root = std::make_shared<W_CLICKFORM>();
 	screen->psForm->attach(root);
 	root->displayFunction = drawPanel;

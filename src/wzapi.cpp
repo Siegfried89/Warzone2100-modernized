@@ -2703,11 +2703,14 @@ bool wzapi::addGuideTopic(WZAPI_PARAMS(std::string guideTopicID, optional<int> s
 	if (excludedTopicIDs.has_value())
 	{
 		std::unordered_set<std::string> excludedTopicIDsSet(excludedTopicIDs.value().strings.begin(), excludedTopicIDs.value().strings.end());
-		::addGuideTopic(guideTopicID, static_cast<ShowTopicFlags>(showFlags.value_or(0)), excludedTopicIDsSet);
+		// MOD (Nutzerwunsch 16.11.): Themen kommen in den Guide, der Guide oeffnet sich aber nie von selbst
+		(void)showFlags;
+		::addGuideTopic(guideTopicID, static_cast<ShowTopicFlags>(0), excludedTopicIDsSet);
 	}
 	else
 	{
-		::addGuideTopic(guideTopicID, static_cast<ShowTopicFlags>(showFlags.value_or(0)));
+		(void)showFlags;
+		::addGuideTopic(guideTopicID, static_cast<ShowTopicFlags>(0));
 	}
 	return true;
 }

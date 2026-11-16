@@ -882,6 +882,7 @@ void scrollBy(int rows)
 void buildScreen()
 {
 	auto screen = W_SCREEN::make();
+	screen->psForm->hide();   // MOD-FIX: verborgene Wurzel = durchlaessig fuer Mausklicks (sonst schluckt sie JEDEN Klick im Spiel, siehe notifications.cpp)
 	auto root = W_FULLSCREENOVERLAY_CLICKFORM::make();
 	root->backgroundColor = pal_RGBA(0, 0, 0, 0);
 	root->displayFunction = drawScreen;
