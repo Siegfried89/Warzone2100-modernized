@@ -971,7 +971,13 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 	MAPTILE	*psTile;
 	LIGHT	light;
 
-	if (psEffect->type != GRAVITON_TYPE_GIBLET)
+	// MOD: liegende Messinghuelse - bleibt eine Weile am Boden, dann weg
+	if (psEffect->type == GRAVITON_TYPE_CASING && psEffect->specific >= 100)
+	{
+		return graphicsTime < psEffect->birthTime + 30000;
+	}
+
+	if (psEffect->type != GRAVITON_TYPE_GIBLET && psEffect->type != GRAVITON_TYPE_CASING)
 	{
 		light.position = psEffect->position;
 		light.range = 128;
@@ -1066,6 +1072,17 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 		else if ((int)psEffect->velocity.y < 0) // Are we falling - rather than rising?
 		{
 			/* Has it sufficient energy to keep bouncing? */
+			if (psEffect->type == GRAVITON_TYPE_CASING && !(abs(psEffect->velocity.y) > 40 && psEffect->specific <= 3))
+			{
+				// MOD: Huelse kommt zur Ruhe - flach hinlegen (Laengsachse waagrecht), bleibt liegen
+				psEffect->position.y = static_cast<float>(groundHeight + 3);
+				psEffect->velocity = Vector3f(0.f, 0.f, 0.f);
+				psEffect->rotation.x = DEG(90);
+				psEffect->rotation.z = 0;
+				psEffect->spin = Vector3i(0, 0, 0);
+				psEffect->specific = 100;
+				return true;
+			}
 			if (abs(psEffect->velocity.y) > 16 && psEffect->specific <= 2)
 			{
 				psEffect->specific++;
@@ -1936,6 +1953,9 @@ void	effectSetupGraviton(EFFECT& effect)
 		// MOD: Turm fliegt hoch (ca. 3-5 Kacheln), Seitengeschwindigkeit kommt vom Aufrufer
 		effect.velocity.y = static_cast<float>(780 + rand() % 320);
 		break;
+	case GRAVITON_TYPE_CASING:
+		// MOD: Geschwindigkeit (seitlich + nach oben) kommt vom Aufrufer
+		break;
 	default:
 		ASSERT(false, "Weirdy type of graviton");
 		break;
@@ -1949,6 +1969,13 @@ void	effectSetupGraviton(EFFECT& effect)
 	effect.spin.x = rand() % DEG(100) + DEG(20);
 	effect.spin.z = rand() % DEG(100) + DEG(20);
 	effect.spin.y = rand() % DEG(100) + DEG(20);
+	if (effect.type == GRAVITON_TYPE_CASING)
+	{
+		// Huelse wirbelt um die Querachse
+		effect.spin.x = rand() % DEG(500) + DEG(300);
+		effect.spin.z = rand() % DEG(120);
+		effect.spin.y = rand() % DEG(200);
+	}
 	if (effect.type == GRAVITON_TYPE_TURRET)
 	{
 		// schwerer Brocken: langsamer Drall
@@ -2679,4 +2706,34 @@ bool readFXData(const char *fileName, WorldMapState& mapState)
 
 	/* Hopefully everything's just fine by now */
 	return true;
+}
+
+
+// MOD (Wunsch 16.11. 20:50): Artillerie wirft beim Schuss goldene Messinghuelsen aus (wie auf dem Ladebild) - sie springen seitlich
+// heraus, huepfen ein paar Mal und bleiben ~30 s liegen. Nur Anzeige (keine Spielzustaende, Zufall ausserhalb der Spiellogik).
+void modEjectCasings(const Vector3i &worldPos, uint16_t weaponDir, int count)
+{
+	static iIMDBaseShape *casing = nullptr;
+	static bool tried = false;
+	if (!tried) { tried = true; casing = modelGet("brasscasing.pie"); }
+	if (casing == nullptr || casing->displayModel() == nullptr) { return; }
+	int alive = 0;
+	for (const EFFECT &e : gActiveEffects)
+	{
+		if (e.group == EFFECT_GRAVITON && e.type == GRAVITON_TYPE_CASING) { ++alive; }
+	}
+	if (alive > 400) { return; }   // nicht unbegrenzt viele liegen lassen
+	const float a = static_cast<float>(weaponDir) * (2.f * 3.14159265f / 65536.f);
+	const float fx = std::sin(a), fz = std::cos(a);       // Schussrichtung (Welt x/y)
+	for (int i = 0; i < std::clamp(count, 1, 4); ++i)
+	{
+		// Auswurf nach hinten-seitlich aus dem Verschluss
+		const float side = (rand() % 2 == 0) ? 1.f : -1.f;
+		const float back = 0.5f + static_cast<float>(rand() % 50) / 100.f;
+		const float sx = fz * side, sz = -fx * side;
+		Vector3i p(worldPos.x + static_cast<int>(-fx * 18.f), worldPos.z + 26, worldPos.y + static_cast<int>(-fz * 18.f));
+		const float speed = static_cast<float>(160 + rand() % 120);
+		Vector3f vel((sx - fx * back) * speed, static_cast<float>(260 + rand() % 160), (sz - fz * back) * speed);
+		addEffect(&p, EFFECT_GRAVITON, GRAVITON_TYPE_CASING, true, casing->displayModel(), 0, graphicsTime, nullptr, &vel);
+	}
 }

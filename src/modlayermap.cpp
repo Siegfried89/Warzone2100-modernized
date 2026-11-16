@@ -251,6 +251,7 @@ struct IslandShape
 	int w = 0;
 	int h = 0;
 	std::vector<int16_t> t;   // w*h, -1 = Leere
+	bool preferred = true;    // (16.11. 21:00) graue/blaue MF-Plattform, kompakt, ohne Loecher (mf/islandpref.txt)
 };
 
 const std::vector<IslandShape> &islandLibrary()
@@ -294,6 +295,18 @@ const std::vector<IslandShape> &islandLibrary()
 		}
 	}
 	free(buf);
+	// MOD (Wunsch 16.11. 20:56, MF-Bilder): bevorzugt die Inseln, die wie in MF aussehen (graue/blaue Plattformen statt Erdbrocken)
+	char *pbuf = nullptr;
+	UDWORD psize = 0;
+	if (!lib.empty() && loadFile("mf/islandpref.txt", &pbuf, &psize, false) && pbuf != nullptr)
+	{
+		size_t k = 0;
+		for (UDWORD i = 0; i < psize && k < lib.size(); ++i)
+		{
+			if (pbuf[i] == '0' || pbuf[i] == '1') { lib[k++].preferred = (pbuf[i] == '1'); }
+		}
+		free(pbuf);
+	}
 	return lib;
 }
 
@@ -308,9 +321,14 @@ bool genOrbitGridMF(Grid &g, Rng &r)
 	const int maxW = W - 2 * MARGIN - 2, maxH = H - 2 * MARGIN - 2;
 	const long mapArea = static_cast<long>(W) * H;
 	std::vector<int> fit;
-	for (size_t i = 0; i < lib.size(); ++i)
+	for (int pass = 0; pass < 2 && fit.size() < 4; ++pass)
 	{
-		if (lib[i].w <= maxW && lib[i].h <= maxH && static_cast<long>(lib[i].w) * lib[i].h * 4 <= mapArea * 3) { fit.push_back(static_cast<int>(i)); }
+		fit.clear();
+		for (size_t i = 0; i < lib.size(); ++i)
+		{
+			if (pass == 0 && !lib[i].preferred) { continue; }   // erst nur die MF-Plattformen; reicht das nicht, alle
+			if (lib[i].w <= maxW && lib[i].h <= maxH && static_cast<long>(lib[i].w) * lib[i].h * 4 <= mapArea * 3) { fit.push_back(static_cast<int>(i)); }
+		}
 	}
 	if (fit.empty()) { return false; }
 	g.tid.assign(static_cast<size_t>(W) * static_cast<size_t>(H), -1);

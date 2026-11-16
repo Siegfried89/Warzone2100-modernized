@@ -34,17 +34,22 @@ layout(location = 0) out vec4 FragColor;
 #include "shadow_mapping.glsl"
 #include "light.glsl"
 
-// MOD: Orbit wie in Metal Fatigue (Ueberarbeitung 16.11. 18:06): die Inseln sind schwebende Felsbrocken ueber einem Wolkenmeer.
+// MOD: Orbit wie in Metal Fatigue (Ueberarbeitung 16.11. 21:00 nach den MF-Bildern des Nutzers): flache Inseln auf einem dicken,
+// unten rund eingezogenen Felssockel; tief darunter verschwommen der Planetenboden (Kachel 256, je Tileset: Wueste/Stadt/Gebirge).
 //  - lightmap.a traegt im Orbit ein Abstandsfeld: 0 = Leere, Inselkacheln = Abstand zum Rand in Feldern (1..6, kodiert 1 + d*42),
-//    gesetzt in src/terrain.cpp updateLightMap / modlayermap::islandLevel. Bilinear gelesen ergibt es eine weiche Umrisslinie
-//    (Ecken schraeg abgeschnitten wie in MF) und den Felskoerper, der sich nach unten verjuengt.
-//  - Unter der Leere: Strahl nach unten -> erst der Felskoerper der Inseln (Gesteinstextur Kachel 257, Licht aus der Sonnenrichtung),
-//    sonst tief unten die Wolken (Kachel 256) mit den Inselschatten.
+//    gesetzt in src/terrain.cpp updateLightMap / modlayermap::islandLevel. Bilinear gelesen ergibt es eine weiche Umrisslinie.
+//  - Unter der Leere: Strahl nach unten -> erst der Felssockel einer Insel (Gestein Kachel 257, Licht aus der Sonnenrichtung),
+//    sonst tief unten der Boden mit den Inselschatten. Die Schrittweite richtet sich nach dem Blickwinkel (keine Zacken/Treppen bei
+//    flacher Kamera), Ferne geht in Dunst ueber, Texturen mit passender Mip-Stufe (kein Flimmern beim Drehen/Neigen der Kamera).
 const int MODV_TILE = 256;
 const float MODV_TILE_SIZE = 128.0;
-const float MODV_THICK = 1150.0;    // Hoehe des Felskoerpers unter der Inseloberflaeche
-const float MODV_TAPER = 3.4;       // so viele Felder schrumpft der Koerper bis ganz unten
-const float MODV_DEPTH = 4600.0;    // so tief liegen die Wolken unter den Inseln
+const float MODV_THICK = 760.0;          // Dicke des Felssockels unter der Inseloberflaeche
+const float MODV_TAPER = 5.8;            // so viele Felder zieht der Sockel bis ganz unten ein (unten geschlossen)
+const float MODV_DEPTH = 4600.0;         // so tief liegt der Boden unter den Inseln
+const float MODV_REACH = 7000.0;         // so weit (waagrecht) wird nach Inselsockeln gesucht
+const float MODV_FLOOR_REPEAT = 1024.0;  // Wiederholung der Bodentextur (Welteinheiten)
+const float MODV_ROCK_REPEAT = 300.0;    // Wiederholung der Gesteinstextur (Welteinheiten)
+const int MODV_MAX_STEPS = 72;
 
 float modvDistAt(ivec2 t, ivec2 sz)
 {
@@ -86,12 +91,12 @@ float modvNoise(vec2 p)
 	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-// Schwelle des Felskoerpers in der Tiefe d (oben 0.5 = Umrisslinie, nach unten steigend = schmaler), unregelmaessig wie Fels
+// Schwelle des Sockels in der Tiefe d (oben 0.5 = Umrisslinie): oben fast senkrecht, unten rund eingezogen (wie in MF), unregelmaessig
 float modvThreshold(vec2 xz, float d)
 {
 	float k = clamp(d / MODV_THICK, 0.0, 1.0);
-	float rough = (modvNoise(xz / 95.0 + vec2(d / 70.0, 0.0)) - 0.5) * 0.55 + (modvNoise(xz / 31.0 - vec2(0.0, d / 33.0)) - 0.5) * 0.22;
-	return 0.5 + MODV_TAPER * pow(k, 0.85) + rough * smoothstep(0.0, 90.0, d);
+	float rough = (modvNoise(xz / 110.0 + vec2(d / 90.0, 0.0)) - 0.5) * 0.5 + (modvNoise(xz / 37.0 - vec2(0.0, d / 41.0)) - 0.5) * 0.2;
+	return 0.5 + 0.45 * k + MODV_TAPER * k * k * k + rough * smoothstep(0.0, 50.0, d);
 }
 
 vec3 modvLight()
@@ -99,24 +104,58 @@ vec3 modvLight()
 	return clamp(ambientLight.rgb * 0.55 + diffuseLight.rgb * 0.55, vec3(0.3), vec3(1.2));
 }
 
+// Mip-Stufe fuer eine Textur, die sich alle 'repeat' Einheiten wiederholt, in Entfernung 'dist' unter dem Blickwinkel cosI
+float modvLod(float dist, float cosI, float repeatUnits)
+{
+	float pix = 1.2 / float(max(viewportHeight, 1));                  // Blickwinkel je Bildpunkt (Bogenmass, ungefaehr)
+	float foot = dist * pix / sqrt(max(cosI, 0.02));                   // Flaeche eines Bildpunkts auf der Oberflaeche (Einheiten)
+	float texels = foot * float(textureSize(decalTex, 0).x) / repeatUnits;
+	return max(log2(max(texels, 0.0001)), 0.0);
+}
+
+// Dunst in der Ferne: Mittelwert des Bodens (kleinste Mip-Stufe) mit etwas Himmelsgrau
+vec3 modvHaze(vec3 lightC)
+{
+	vec3 avg = textureLod(decalTex, vec3(0.5, 0.5, float(MODV_TILE)), 14.0).rgb;
+	return mix(avg, vec3(0.70, 0.72, 0.76), 0.45) * lightC;
+}
+
+vec3 modvRockTex(vec3 q, vec3 n, float lod)
+{
+	vec3 w = abs(n);
+	w = w * w * w * w;
+	w /= max(w.x + w.y + w.z, 0.0001);
+	vec3 a = textureLod(decalTex, vec3(fract(vec2(q.z, q.y) / MODV_ROCK_REPEAT), float(MODV_TILE + 1)), lod).rgb;
+	vec3 b = textureLod(decalTex, vec3(fract(vec2(q.x, q.z) / MODV_ROCK_REPEAT), float(MODV_TILE + 1)), lod).rgb;
+	vec3 c = textureLod(decalTex, vec3(fract(vec2(q.x, q.y) / MODV_ROCK_REPEAT), float(MODV_TILE + 1)), lod).rgb;
+	return a * w.x + b * w.y + c * w.z;
+}
+
 vec3 modvColor(vec3 P)
 {
 	vec3 V = P - cameraPos.xyz;
-	float down = max(-V.y, 0.05 * length(V));
-	vec3 dir = V / down;   // Weg je Einheit Abstieg
+	float lenV = max(length(V), 1.0);
+	float down = max(-V.y, 0.02 * lenV);
+	vec3 dir = V / down;                 // Weg je Einheit Abstieg
+	float hor = length(dir.xz);          // waagrechter Weg je Einheit Abstieg
+	float cosI = down / lenV;            // Steilheit des Blicks (1 = senkrecht)
 	vec3 lightC = modvLight();
+	vec3 haze = modvHaze(lightC);
 	vec3 sd = normalize(sunPos.xyz);
-	// 1. Felskoerper einer Insel (Strahl nach unten, dann eine Verfeinerung)
-	const int STEPS = 30;
+	// 1. Felssockel einer Insel: Strahl nach unten, waagrecht hoechstens ~40 Einheiten je Schritt, dann Feinsuche
+	float dMax = min(MODV_THICK, MODV_REACH / max(hor, 0.001));
+	int n = int(clamp(ceil(dMax * max(hor, 0.3) / 40.0), 10.0, float(MODV_MAX_STEPS)));
+	float stepD = dMax / float(n);
 	float prevD = 0.0;
-	for (int i = 1; i <= STEPS; ++i)
+	for (int i = 1; i <= MODV_MAX_STEPS; ++i)
 	{
-		float d = MODV_THICK * float(i) / float(STEPS);
+		if (i > n) { break; }
+		float d = stepD * float(i);
 		vec3 q = P + dir * d;
 		if (modvField(q.xz) > modvThreshold(q.xz, d))
 		{
 			float lo = prevD, hi = d;
-			for (int r = 0; r < 4; ++r)
+			for (int r = 0; r < 5; ++r)
 			{
 				float m = 0.5 * (lo + hi);
 				vec3 qm = P + dir * m;
@@ -124,38 +163,40 @@ vec3 modvColor(vec3 P)
 			}
 			d = hi;
 			q = P + dir * d;
-			// Flaechennormale aus dem Feldgefaelle (aussen + unten)
+			// Flaechennormale: Feldgefaelle waagrecht, Einzug der Schwelle nach unten
 			float e = 24.0;
 			float fx = (modvField(q.xz + vec2(e, 0.0)) - modvField(q.xz - vec2(e, 0.0))) / (2.0 * e);
 			float fz = (modvField(q.xz + vec2(0.0, e)) - modvField(q.xz - vec2(0.0, e))) / (2.0 * e);
-			vec3 n = normalize(vec3(-fx, -MODV_TAPER / MODV_THICK * 0.9, -fz));
-			float lam = max(dot(n, sd), 0.0);
-			vec2 uv = vec2((q.x - q.z) / 220.0, d / 220.0);
-			vec3 rock = textureLod(decalTex, vec3(fract(uv), float(MODV_TILE + 1)), 1.0).rgb;
-			float depthShade = mix(1.0, 0.45, smoothstep(0.0, MODV_THICK, d));
-			vec3 col = rock * (0.38 + 0.85 * lam) * depthShade;
-			// obere Kante etwas heller (Sonnenlicht auf dem Grat)
-			col *= 1.0 + 0.25 * (1.0 - smoothstep(0.0, 70.0, d));
-			return col * lightC;
+			float k = clamp(d / MODV_THICK, 0.0, 1.0);
+			float dThr = (0.45 + 3.0 * MODV_TAPER * k * k) / MODV_THICK;
+			vec3 nrm = normalize(vec3(-fx, -dThr, -fz));
+			float lam = max(dot(nrm, sd), 0.0);
+			float dist = length(q - cameraPos.xyz);
+			vec3 rock = modvRockTex(q, nrm, modvLod(dist, max(abs(dot(nrm, -normalize(V))), 0.05), MODV_ROCK_REPEAT));
+			vec3 col = rock * (0.40 + 0.85 * lam) * mix(1.0, 0.55, k);
+			col *= 1.0 + 0.22 * (1.0 - smoothstep(0.0, 45.0, d));   // obere Kante heller (Sonnenlicht auf dem Grat)
+			return mix(col * lightC, haze, smoothstep(4500.0, 18000.0, dist));
 		}
 		prevD = d;
 	}
-	// 2. Wolkenmeer tief unten, mit den Schatten der Inseln
+	// 2. Planetenboden tief unten (verschwommen wie in MF), mit den Schatten der Inseln
 	vec3 g = P + dir * MODV_DEPTH;
-	vec2 uvg = vec2(g.x, -g.z) / (MODV_TILE_SIZE * 4.0);
-	vec3 col = textureLod(decalTex, vec3(fract(uvg), float(MODV_TILE)), 1.5).rgb;
+	float distG = lenV + length(dir) * MODV_DEPTH;
+	vec2 uvg = vec2(g.x, -g.z) / MODV_FLOOR_REPEAT;
+	vec3 col = textureLod(decalTex, vec3(fract(uvg), float(MODV_TILE)), modvLod(distG, cosI, MODV_FLOOR_REPEAT) + 1.5).rgb;
 	if (sd.y > 0.15)
 	{
 		float sh = 0.0;
 		for (int s = 0; s < 4; ++s)
 		{
-			float up = MODV_DEPTH - MODV_THICK * (0.1 + 0.25 * float(s));
+			float kk = 0.1 + 0.25 * float(s);
+			float up = MODV_DEPTH - MODV_THICK * kk;
 			vec3 r = g + sd * (up / sd.y);
-			if (modvField(r.xz) > 0.5 + MODV_TAPER * (0.1 + 0.25 * float(s))) { sh += 0.25; }
+			if (modvField(r.xz) > 0.5 + 0.45 * kk + MODV_TAPER * kk * kk * kk) { sh += 0.25; }
 		}
 		col *= 1.0 - 0.35 * sh;
 	}
-	return mix(col, vec3(0.62, 0.66, 0.72), 0.22) * lightC;
+	return mix(col * lightC, haze, 0.15 + 0.85 * smoothstep(9000.0, 32000.0, distG));
 }
 #include "pointlights.glsl"
 
