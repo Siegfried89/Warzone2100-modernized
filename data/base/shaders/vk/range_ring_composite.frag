@@ -40,16 +40,23 @@ float overlayAaLimit(vec2 worldXZ, float band)
 }
 
 // Pixel-width smoothing of the SDF isocontour (sdf = 0).
-float channelOverlay(float field, float band, float maxW)
+// MOD (Wunsch 16.11. 21:42): Leuchtringe wie in Supreme Commander - duenner, heller Kern (fast weiss) plus weicher Lichthof zu beiden
+// Seiten (SupCom zeichnet die Reichweiten als duenne Linie und laesst sie im Glow-Durchgang leuchten). Farben bleiben (Sensor blau,
+// Waffe rot, Mindestreichweite gold). x = Kern (deckend), y = Lichthof (wird aufaddiert), z = Fuellung (deckend, Ringfarbe).
+vec3 channelOverlay(float field, float band, float maxW)
 {
 	float sd = (field * 2.0 - 1.0) * band; // decode [0, 1] -> [-band, +band]
 	float uncovered = step(0.999, field);  // generate-pass clear = outside all rings
 	float covered = 1.0 - uncovered;
 	// fwidth(sd) ~ how much signed distance changes across this pixel.
 	float w = min(max(fwidth(min(sd, band)), 1e-4), maxW);
-	float ring = (1.0 - smoothstep(0.0, RING_HALF_PX, abs(sd) / w)) * covered;
+	float px = abs(sd) / w;                // Abstand zur Ringlinie in Bildpunkten
+	float ring = (1.0 - smoothstep(0.0, RING_HALF_PX * 0.8, px)) * covered;
 	float fill = (1.0 - smoothstep(0.0, RING_HALF_PX, max(sd, 0.0) / w)) * fillAlpha * covered;
-	return max(ring, fill);
+	// Lichthof: Gauss ueber ~9 Bildpunkte, laeuft vor dem Ende des SDF-Bands aus (sonst leuchtet die ganze Flaeche)
+	float bandFade = 1.0 - smoothstep(0.55 * band, 0.95 * band, abs(sd));
+	float glow = exp(-(px * px) / (2.0 * 9.0 * 9.0)) * 0.55 * bandFade * covered;
+	return vec3(ring, glow, fill);
 }
 
 void main()
@@ -70,11 +77,16 @@ void main()
 			vec3 field = texture(rangeRingSdf, sdfUv).rgb;
 			float band = max(sdfBand, 1e-3);
 			float maxW = overlayAaLimit(worldPos.xz, band);
-			float sensor = channelOverlay(field.r, band, maxW);
-			float weapon = channelOverlay(field.g, band, maxW);
-			float minRange = channelOverlay(field.b, band, maxW);
-			vec3 overlay = sensorColor.rgb * sensor + weaponColor.rgb * weapon + minRangeColor.rgb * minRange;
-			float a = clamp(max(max(sensor, weapon), minRange), 0.0, 1.0);
+			vec3 sensor = channelOverlay(field.r, band, maxW);
+			vec3 weapon = channelOverlay(field.g, band, maxW);
+			vec3 minRange = channelOverlay(field.b, band, maxW);
+			// Kern heller (Richtung Weiss) wie eine leuchtende Linie, Hof in der Ringfarbe
+			vec3 sC = mix(sensorColor.rgb, vec3(1.0), 0.35), wC = mix(weaponColor.rgb, vec3(1.0), 0.35), mC = mix(minRangeColor.rgb, vec3(1.0), 0.35);
+			vec3 overlay = sC * sensor.x + wC * weapon.x + mC * minRange.x
+			             + sensorColor.rgb * sensor.z * (1.0 - sensor.x) + weaponColor.rgb * weapon.z * (1.0 - weapon.x) + minRangeColor.rgb * minRange.z * (1.0 - minRange.x);
+			vec3 glowAdd = sensorColor.rgb * sensor.y + weaponColor.rgb * weapon.y + minRangeColor.rgb * minRange.y;
+			float a = clamp(max(max(max(sensor.x, sensor.z), max(weapon.x, weapon.z)), max(minRange.x, minRange.z)), 0.0, 1.0);
+			overlay += glowAdd * (1.0 - a);
 			if (linearLighting > 0.5)
 			{
 				// The ring colors were tuned for display values, so they are composed in display space
