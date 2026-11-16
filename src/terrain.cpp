@@ -1845,16 +1845,11 @@ static void updateLightMap(WorldMapState& mapState, const LightMap& lightmap)
 				colour.byte.r = MAX(m, 255 - m);
 				level = std::max<UBYTE>(level, colour.byte.r / 2);
 			}
-			// MOD: Inselmaske fuer den Orbit-Leere-Effekt der Terrain-Shader (schwebende MF-Inseln): Leere-Kachel = Helligkeit 0,
-			// jede andere Kachel mindestens 1 (1/255 - unsichtbar)
-			// MOD (16.11. 18:06): im Orbit traegt lightmap.a das Abstandsfeld der Inseln (weiche Umrisse, Felskoerper); die Shader
-			// setzen die Helligkeit der Inselkacheln dann auf voll.
-			uint8_t modIslandLevel = 0;
-			if (orbitView && modlayermap::islandLevel(i, j, modIslandLevel))
-			{
-				level = modIslandLevel;
-			}
-			else if (TileNumber_tile(psTile->texture) == MOD_TILE_VOID)
+			// MOD: Orbit-Leere-Kachel = Helligkeit 0, jede andere Kachel mindestens 1 (1/255 - unsichtbar).
+			// (17.11.: das Inselabstandsfeld in lightmap.a ist mit dem Shader-Fels entfallen - die Inselkacheln liegen unter den
+			// MF-Asteroiden-Modellen. Die Shader setzten dafuer alle Zusatzkacheln auf volle Helligkeit; das liess den Beton unter
+			// Gegner-Gebaeuden durch den Nebel des Krieges leuchten.)
+			if (TileNumber_tile(psTile->texture) == MOD_TILE_VOID)
 			{
 				level = 0;
 			}
