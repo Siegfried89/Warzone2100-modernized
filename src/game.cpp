@@ -115,6 +115,7 @@
 #include "wzphysfszipioprovider.h"
 #include "modlayer.h"
 #include "modlayermap.h"
+#include "modsave.h"
 #include <wzmaplib/map_package.h>
 
 #if defined(__clang__)
@@ -3944,6 +3945,7 @@ bool saveGame(const char *aFileName, GAME_TYPE saveType, bool isAutoSave)
 legacyFilesDone:
 	// strip the last filename
 	CurrentFileName[fileExtension - 1] = '\0';
+	modsave::write(CurrentFileName);   // MOD: Krater, Tankfuellungen, Oelfaesser (16.11., Q95)
 
 	// Coexistence: always write the self-contained GameState blob (gamestate.wz) into this same
 	// folder, alongside the legacy files. The load path prefers the blob when present; the legacy files

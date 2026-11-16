@@ -7,6 +7,9 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
+
+#include <cstdint>
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
 
@@ -58,4 +61,7 @@ int stationBarrels(const STRUCTURE *psStation);
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
 /// beim Spielende / Ladevorgang
 void reset();
+/// Spielstand: Faesser an Oeltuermen, Lagern, Raffinerien, Kraftwerken und Tankstellen (Tripel Art, id, Wert)
+void saveState(std::vector<int64_t> &out);
+void loadState(const std::vector<int64_t> &in);
 }

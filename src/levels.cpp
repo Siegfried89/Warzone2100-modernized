@@ -41,6 +41,7 @@
 #include "objects.h"
 #include "hci.h"
 #include "levels.h"
+#include "modsave.h"
 #include "movebench.h"
 #include "map.h"
 #include "mission.h"
@@ -1203,6 +1204,7 @@ static LoadingTask<> levLoadMissionBranchesBeforeMainLoop(ResourceLoadingControl
 			}
 
 			debug(LOG_NEVER, "Loading savegame: %s", ctx.pSaveName);
+			{ std::string f(ctx.pSaveName); if (f.size() > 4) { f.resize(f.size() - 4); } modsave::setPending(f); }   // MOD
 			if (!(co_await loadGame(controller, GameLoadDetails::makeUserSaveGameLoad(ctx.pSaveName), false, true)))
 			{
 				debug(LOG_ERROR, "Failed loadGame(%s)!", ctx.pSaveName);
@@ -1289,6 +1291,7 @@ static LoadingTask<> levLoadMissionDataLoop(ResourceLoadingController& controlle
 				}
 
 				debug(LOG_NEVER, "Loading save game %s", ctx.pSaveName);
+				{ std::string f(ctx.pSaveName); if (f.size() > 4) { f.resize(f.size() - 4); } modsave::setPending(f); }   // MOD
 				if (!(co_await loadGame(controller, GameLoadDetails::makeUserSaveGameLoad(ctx.pSaveName), false, true)))
 				{
 					debug(LOG_ERROR, "Failed loadGame(%s)!", ctx.pSaveName);

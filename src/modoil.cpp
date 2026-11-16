@@ -373,6 +373,51 @@ void reset()
 	s_have = false;
 }
 
+namespace
+{
+template<typename M> void saveMap(std::vector<int64_t> &out, int tag, const M &m)
+{
+	for (const auto &kv : m) { out.push_back(tag); out.push_back(static_cast<int64_t>(kv.first)); out.push_back(static_cast<int64_t>(kv.second)); }
+}
+}
+
+void saveState(std::vector<int64_t> &out)
+{
+	out.clear();
+	saveMap(out, 1, s_barrels);
+	saveMap(out, 2, s_progress);
+	saveMap(out, 3, s_fuel);
+	saveMap(out, 4, s_store);
+	saveMap(out, 5, s_storeR);
+	saveMap(out, 6, s_refIn);
+	saveMap(out, 7, s_refOut);
+	saveMap(out, 8, s_refT);
+	saveMap(out, 9, s_station);
+}
+
+void loadState(const std::vector<int64_t> &in)
+{
+	for (size_t i = 0; i + 3 <= in.size(); i += 3)
+	{
+		const uint32_t id = static_cast<uint32_t>(in[i + 1]);
+		const int64_t v = in[i + 2];
+		const int iv = static_cast<int>(std::clamp<int64_t>(v, 0, 1000000000));
+		switch (static_cast<int>(in[i]))
+		{
+		case 1: s_barrels[id] = iv; break;
+		case 2: s_progress[id] = std::max<int64_t>(0, v); break;
+		case 3: s_fuel[id] = iv; break;
+		case 4: s_store[id] = iv; break;
+		case 5: s_storeR[id] = iv; break;
+		case 6: s_refIn[id] = iv; break;
+		case 7: s_refOut[id] = iv; break;
+		case 8: s_refT[id] = iv; break;
+		case 9: s_station[id] = iv; break;
+		default: break;
+		}
+	}
+}
+
 void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne)
 {
 	const int64_t full = static_cast<int64_t>(BARREL_ENERGY) * fpOne;

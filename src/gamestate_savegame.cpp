@@ -23,6 +23,7 @@
 
 #include "gamestate_savegame.h"
 #include "gamestate_serialize.h" // gamestate::StateError
+#include "modsave.h"                // MOD
 
 #include "lib/framework/frame.h"      // selectedPlayer, MAX_PLAYERS
 #include "lib/framework/string_ext.h" // sstrcpy
@@ -1888,6 +1889,7 @@ LoadingTask<> coldLoadGameInit(ResourceLoadingController &controller, const std:
 		debug(LOG_ERROR, "Failed to read savegame blob in '%s'", folderPath.c_str());
 		co_return load_fail();
 	}
+	modsave::setPending(folderPath);   // MOD: Mod-Zustand nach dem Laden einsetzen
 
 	// Remount the save's mods (warn-and-continue), rescan the level list, resolve the dataset.
 	if (!coldLoadRemountModsAndResolveLevel(header))

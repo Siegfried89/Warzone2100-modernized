@@ -49,6 +49,7 @@
 
 #include "modfaction.h"
 #include "init.h"
+#include "modsave.h"
 
 #include "input/manager.h"
 #include "input/gamepadcursor.h"
@@ -1998,6 +1999,11 @@ static bool stageThreeInitialiseSync()
 	}
 	// Test harness (--gamestate-test-continue-levels): log the replaced textures
 	gamestate::harness::noteLevelStarted();
+
+	if (fromSave)
+	{
+		modsave::applyPending();   // MOD: Krater, Tankfuellungen, Oelfaesser aus dem Spielstand
+	}
 
 	return true;
 }

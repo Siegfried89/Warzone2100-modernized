@@ -11,6 +11,8 @@
 
 #include "lib/framework/vector.h"
 
+#include <vector>
+
 struct BASE_OBJECT;
 struct DROID;
 struct PROJECTILE;
@@ -55,4 +57,9 @@ void tick();
 
 /// bei neuem Spiel
 void reset();
+
+/// (16.11. 19:34, Q95) Spielstand: Krater/Schuetzenloecher der Oberflaeche als flache Zahlenliste (je 6 Werte:
+/// x, y, Tiefe, Originaltextur, Textur getauscht, Original-Decal) - und wieder einlesen nach dem Laden.
+void saveState(std::vector<int> &out);
+void loadState(const std::vector<int> &in);
 }

@@ -8,6 +8,8 @@
 // 1 Fass = 2 volle Tanks). KI ohne Tankstelle tankt an Fabrik/HQ. Alles im Spielschritt, deterministisch.
 #pragma once
 
+#include <vector>
+
 struct DROID;
 struct GameWorld;
 struct STRUCTURE;
@@ -25,4 +27,7 @@ bool isStation(const STRUCTURE *psStructure);
 /// Verbrauch, Tanken, Selbstversorgung (alle 500 ms)
 void tick(GameWorld &world);
 void reset();
+/// Spielstand: Tankfuellung je Einheit (Paare id, Fahrweg)
+void saveState(std::vector<int> &out);
+void loadState(const std::vector<int> &in);
 }

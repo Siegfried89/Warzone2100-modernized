@@ -258,4 +258,23 @@ void reset()
 	s_state.clear();
 	s_nextTick = 0;
 }
+
+void saveState(std::vector<int> &out)
+{
+	out.clear();
+	std::vector<std::pair<uint32_t, int>> list;
+	for (const auto &kv : s_state) { if (kv.second.fuel < FUEL_RANGE) { list.emplace_back(kv.first, kv.second.fuel); } }
+	std::sort(list.begin(), list.end());
+	for (const auto &e : list) { out.push_back(static_cast<int>(e.first)); out.push_back(e.second); }
+}
+
+void loadState(const std::vector<int> &in)
+{
+	for (size_t i = 0; i + 2 <= in.size(); i += 2)
+	{
+		State &st = s_state[static_cast<uint32_t>(in[i])];
+		st.fuel = std::clamp(in[i + 1], 0, FUEL_RANGE);
+		st.havePos = false;
+	}
+}
 }

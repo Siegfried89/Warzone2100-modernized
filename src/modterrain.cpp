@@ -449,4 +449,42 @@ void reset()
 	s_cells.clear();
 	s_pending.clear();
 }
+
+void saveState(std::vector<int> &out)
+{
+	out.clear();
+	const int surface = static_cast<int>(modlayer::SURFACE);
+	std::vector<std::pair<uint64_t, Cell>> list;
+	for (const auto &kv : s_cells)
+	{
+		if (static_cast<int>(kv.first >> 48) != surface || kv.second.dyn <= 0) { continue; }
+		list.emplace_back(kv.first, kv.second);
+	}
+	std::sort(list.begin(), list.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+	for (const auto &e : list)
+	{
+		out.push_back(static_cast<int>((e.first >> 24) & 0xffffff));
+		out.push_back(static_cast<int>(e.first & 0xffffff));
+		out.push_back(e.second.dyn);
+		out.push_back(e.second.origTexture);
+		out.push_back(e.second.texSwapped ? 1 : 0);
+		out.push_back(e.second.origDecal ? 1 : 0);
+	}
+}
+
+void loadState(const std::vector<int> &in)
+{
+	const int surface = static_cast<int>(modlayer::SURFACE);
+	for (size_t i = 0; i + 6 <= in.size(); i += 6)
+	{
+		const int x = in[i], y = in[i + 1];
+		if (!tileOnMap(gameWorld.map, x, y)) { continue; }
+		Cell &c = s_cells[keyOf(surface, x, y)];
+		c.dyn = static_cast<int16_t>(std::clamp(in[i + 2], 0, static_cast<int>(MAX_CRATER_SINK)));
+		c.origTexture = static_cast<uint16_t>(in[i + 3]);
+		c.texSwapped = in[i + 4] != 0;
+		c.origDecal = in[i + 5] != 0;
+		dirtyAround(x, y);
+	}
+}
 } // namespace modterrain
