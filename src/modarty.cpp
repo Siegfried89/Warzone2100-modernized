@@ -31,7 +31,10 @@ void ensureTables()
 	{
 		const WzString &id = asWeaponStats[i].id;
 		if (id.isEmpty() || id.endsWith("_ARTY")) { continue; }
-		const int a = getCompFromID(COMP_WEAPON, id + "_ARTY");
+		// leise Suche (getCompFromID wuerde fuer jede Waffe ohne Artillerie-Fassung einen Fehler melden)
+		const COMPONENT_STATS *c = getCompStatsFromName(id + "_ARTY");
+		if (c == nullptr || c->compType != COMP_WEAPON) { continue; }
+		const int a = static_cast<int>(c->index);
 		if (a > 0 && static_cast<size_t>(a) < asWeaponStats.size())
 		{
 			s_toArty[i] = a;
