@@ -4,6 +4,7 @@
 // nicht gezeichnet, die Animation laeuft fuer alle uebrigen Teile unveraendert weiter.
 
 #include <nlohmann/json.hpp> // vor den WZ-Headern
+#include "lib/framework/modtime.h"
 
 #include "modcombot.h"
 
@@ -108,6 +109,7 @@ glm::vec3 jv(const nlohmann::json &j, const char *key)
 
 bool loadAll()
 {
+	ModLoadTimer modTimer("Combot-Teile", 50);   // MOD 16.11.
 	std::vector<char> buf;
 	if (!loadFileToBufferVector("mfmodular/parts.json", buf, false, false) || buf.empty()) { return false; }
 	nlohmann::json pj = nlohmann::json::parse(buf.begin(), buf.end(), nullptr, false);

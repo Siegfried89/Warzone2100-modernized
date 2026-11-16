@@ -37,6 +37,7 @@
 #include "lib/ivis_opengl/piemode.h"
 #include "lib/framework/fixedpoint.h"
 #include "lib/ivis_opengl/piefunc.h"
+#include "lib/framework/physfs_ext.h"
 #include "lib/ivis_opengl/screen.h"
 #include "lib/ivis_opengl/smaa_luts.h"
 #include "lib/ivis_opengl/imd.h"
@@ -103,6 +104,8 @@
 #include "modbuild.h"
 #include "modammo.h"
 #include "modweather.h"
+#include "modlayer.h"
+#include "modlayermap.h"
 #include "scene_effect_surfaces.h"
 #include "multistat.h"
 #include "animation.h"
@@ -4342,8 +4345,52 @@ static void renderSurroundings(const glm::mat4& projectionMatrix, const glm::mat
 		wind = std::remainder(wind + graphicsTimeAdjustedIncrement(windSpeed), 360.0f);
 	}
 
+	// MOD (16.11.): Orbit - Himmel mit Dunst und tiefer Planetenboden rundum (keine schwarzen Raender, weicher Uebergang)
+	if (modlayermap::viewLayer() == modlayer::ORBIT)
+	{
+		const glm::vec4 amb = pie_GetSceneLighting0(LIGHT_AMBIENT);
+		const glm::vec4 dif = pie_GetSceneLighting0(LIGHT_DIFFUSE);
+		const glm::vec3 lightC = glm::clamp(glm::vec3(amb) * 0.55f + glm::vec3(dif) * 0.55f, glm::vec3(0.3f), glm::vec3(1.2f));
+		const glm::vec3 hazeTint(0.62f, 0.66f, 0.72f);   // wie MODV-Dunst im Gelaende-Shader
+		glm::vec3 haze = glm::min(hazeTint * lightC, glm::vec3(1.f));
+		if (gfx_api::context::get().linearLightingEnabled())
+		{
+			haze = glm::pow(haze, glm::vec3(1.f / 2.2f));
+		}
+		const glm::vec4 hazeColour(haze, 1.f);
+		pie_DrawSkyboxHaze(skybox_scale, projectionMatrix, skyboxViewMatrix * glm::translate(glm::vec3(0.f, -500, 0.f)) * glm::rotate(RADIANS(wind), glm::vec3(0.f, 1.f, 0.f)), hazeColour);
+
+		const int W = gameWorld.map.width, H = gameWorld.map.height;
+		if (W > 0 && H > 0)
+		{
+			const char *variant = (currentMapTileset == MAP_TILESET::URBAN) ? "urban" : ((currentMapTileset == MAP_TILESET::ROCKIES) ? "rockies" : nullptr);
+			std::string tex = "texpages/modisland-128/tile-256.png";
+			if (variant != nullptr)
+			{
+				const std::string alt = astringf("texpages/modisland-128/tile-256-%s.png", variant);
+				if (PHYSFS_exists(alt.c_str())) { tex = alt; }
+			}
+			const float cx = static_cast<float>(world_coord(W)) * 0.5f;
+			const float cz = -static_cast<float>(world_coord(H)) * 0.5f;
+			const float halfDiag = std::hypot(cx, cz);
+			const float islandY = static_cast<float>(map_Height(gameWorld.map, world_coord(W) / 2, world_coord(H) / 2));
+			constexpr float MODV_DEPTH = 4600.f;   // wie im Gelaende-Shader
+			const glm::mat4 worldView = skyboxViewMatrix * glm::translate(glm::vec3(-playerPos.p.x, 0, playerPos.p.z));
+			pie_DrawOrbitGround(tex.c_str(), hazeTint, 0.22f, cx, cz, halfDiag + 2.f * TILE_UNITS, halfDiag + 42000.f, islandY - MODV_DEPTH,
+			                    static_cast<float>(TILE_UNITS) * 4.f, projectionMatrix, worldView, glm::vec4(lightC, 1.f), hazeColour);
+		}
+		return;
+	}
+
 	// TODO: skybox needs to be just below lowest point on map (because we have a bottom cap now). Hardcoding for now.
 	pie_DrawSkybox(skybox_scale, projectionMatrix, skyboxViewMatrix * glm::translate(glm::vec3(0.f, -500, 0.f)) * glm::rotate(RADIANS(wind), glm::vec3(0.f, 1.f, 0.f)));
+}
+
+/// MOD (16.11.): In der Orbit-Ansicht wird der Hintergrund (Himmel + Planetenboden) VOR dem Gelaende gezeichnet (Maler-Reihenfolge),
+/// damit der weite Boden ausserhalb der Karte nie Inseln oder Leere ueberdeckt.
+bool display3d_surroundingsFirst()
+{
+	return modlayermap::viewLayer() == modlayer::ORBIT;
 }
 
 /// Camera height for a given averaged terrain height

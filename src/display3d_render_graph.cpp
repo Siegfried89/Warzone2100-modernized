@@ -116,14 +116,25 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 	const Vector3f sunPos = toVector3f(-getTheSun());
 	gfx_api::abstract_texture* shadowMap = shadowMapFromCascadeReads(passCtx);
 
+	const bool surroundingsFirst = display3d_surroundingsFirst();   // MOD: Orbit-Ansicht
+	if (surroundingsFirst)
+	{
+		wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
+		display3d_renderSurroundings(pie_SkyboxPerspectiveGet(), fc.baseViewMatrix);
+		wzPerfEnd(PERF_SKYBOX);
+	}
+
 	wzPerfBegin(PERF_TERRAIN, "3D scene - terrain");
 	pie_SetFogStatus(true);
 	drawTerrain(fc.perspectiveViewMatrix, fc.viewMatrix, cameraPos, sunPos, fc.shadowCascadesInfo, shadowMap, fc.pointLights);
 	wzPerfEnd(PERF_TERRAIN);
 
-	wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
-	display3d_renderSurroundings(pie_SkyboxPerspectiveGet(), fc.baseViewMatrix);
-	wzPerfEnd(PERF_SKYBOX);
+	if (!surroundingsFirst)
+	{
+		wzPerfBegin(PERF_SKYBOX, "3D scene - skybox");
+		display3d_renderSurroundings(pie_SkyboxPerspectiveGet(), fc.baseViewMatrix);
+		wzPerfEnd(PERF_SKYBOX);
+	}
 
 	wzPerfBegin(PERF_WATER, "3D scene - water");
 	pie_SetFogStatus(true);

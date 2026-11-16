@@ -26,6 +26,7 @@
  */
 
 #include "lib/framework/frame.h"
+#include "lib/framework/modtime.h"
 
 #include <string.h>
 #include <physfs.h>
@@ -93,6 +94,7 @@ static bool tilesetTexturesLoaded = false;
 
 bool texLoad(const char *fileName)
 {
+	ModLoadTimer modTimer(std::string("Gelaendekacheln ") + (fileName ? fileName : ""), 0);   // MOD 16.11.
 	char fullPath[PATH_MAX], partialPath[PATH_MAX], *buffer;
 	unsigned int i, j, k, size;
 	iV_Image textureAtlas;

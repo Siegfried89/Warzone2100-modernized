@@ -30,6 +30,7 @@
 #include <glm/vec4.hpp>
 
 void display3d_renderSurroundings(const glm::mat4& projectionMatrix, const glm::mat4& skyboxViewMatrix);
+bool display3d_surroundingsFirst();   // MOD: Orbit - Hintergrund vor dem Gelaende zeichnen
 void display3d_doConstructionLines(const glm::mat4& viewMatrix);
 void display3d_locateMouse();
 void display3d_drawWorldToScreenBlit(gfx_api::abstract_texture* sourceTexture);

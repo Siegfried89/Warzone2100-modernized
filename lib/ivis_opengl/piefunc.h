@@ -46,6 +46,13 @@ void pie_DrawViewingWindow(const glm::mat4 &modelViewProjectionMatrix);
 void pie_ViewingWindow_Shutdown();
 
 void pie_DrawSkybox(float scale, const glm::mat4& projectionMatrix, const glm::mat4 &viewMatrix);
+// MOD (16.11.): Orbit-Ansicht - Himmel mit Dunst statt schwarzer Raender und tief unten der Planetenboden ueber die Karte hinaus
+void pie_DrawSkyboxHaze(float scale, const glm::mat4& projectionMatrix, const glm::mat4 &viewMatrix, const glm::vec4 &hazeColour);
+/// texFile: Bodenbild (wie Orbit-Leere), hazeMix wie im Gelaende-Shader eingebacken; Mittelpunkt/Radien in Modellkoordinaten (x, z)
+void pie_DrawOrbitGround(const char *texFile, const glm::vec3 &hazeTint, float hazeMix, float centerX, float centerZ, float rClear, float rFull,
+                         float groundY, float uvScale, const glm::mat4 &projectionMatrix, const glm::mat4 &worldViewMatrix,
+                         const glm::vec4 &colourMul, const glm::vec4 &hazeColour);
+void pie_OrbitGround_Shutdown();
 void pie_Skybox_Init();
 void pie_Skybox_Shutdown();
 void pie_Skybox_Texture(const char *filename);

@@ -18,9 +18,11 @@
 	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 */
 #include "lib/framework/frame.h"
+#include "lib/framework/modtime.h"
 
 #include "lib/framework/frameresource.h"
 #include "lib/framework/file.h"
+#include "lib/framework/wzparallel.h"
 
 #include "bitimage.h"
 #include "tex.h"
@@ -162,6 +164,7 @@ inline void ImageMerge::arrange()
 
 IMAGEFILE *iV_LoadImageFile(const char *fileName)
 {
+	ModLoadTimer modTimer(std::string("Bildliste ") + (fileName ? fileName : ""), 100);   // MOD 16.11.
 	// Find the directory of images.
 	std::string imageDir = fileName;
 	if (imageDir.find_last_of('.') != std::string::npos)
@@ -196,6 +199,8 @@ IMAGEFILE *iV_LoadImageFile(const char *fileName)
 	imageFile->imageNamesMap.reserve(numImages);
 	ImageMerge pageLayout;
 	pageLayout.images.resize(numImages);
+	std::vector<std::string> spriteNames;   // MOD (16.11.): erst alle Namen sammeln, dann parallel entpacken
+	spriteNames.reserve(numImages);
 	ptr = pFileData;
 	numImages = 0;
 	while (ptr < pFileData + pFileSize)
@@ -213,24 +218,36 @@ IMAGEFILE *iV_LoadImageFile(const char *fileName)
 			return nullptr;
 		}
 		imageFile->imageNamesMap.insert(std::make_pair(WzString::fromUtf8(tmpName), AtlasImageDef));
-		std::string spriteName = imageDir + tmpName;
+		spriteNames.push_back(imageDir + tmpName);
 
 		ImageMergeRectangle *imageRect = &pageLayout.images[numImages];
 		imageRect->index = numImages;
 		imageRect->data = new iV_Image;
-		if (!iV_loadImage_PNG2(spriteName.c_str(), *imageRect->data, true))
-		{
-			debug(LOG_ERROR, "Failed to find image \"%s\" listed in \"%s\".", spriteName.c_str(), fileName);
-			delete imageFile;
-			free(pFileData);
-			return nullptr;
-		}
-		imageRect->siz = Vector2i(imageRect->data->width(), imageRect->data->height());
 		numImages++;
 		ptr += temp;
 		while (ptr < pFileData + pFileSize && *ptr++ != '\n') {} // skip rest of line
 	}
 	free(pFileData);
+
+	// MOD (16.11.): PNG-Dateien auf mehreren Faeden entpacken (reine Rechenarbeit), Ergebnis wie vorher
+	{
+		std::vector<char> loaded(static_cast<size_t>(numImages), 0);
+		wzparallel::forRange(0, static_cast<size_t>(numImages), [&](size_t i) {
+			loaded[i] = iV_loadImage_PNG2(spriteNames[i].c_str(), *pageLayout.images[i].data, true) ? 1 : 0;
+		});
+		for (int i = 0; i < numImages; ++i)
+		{
+			if (!loaded[static_cast<size_t>(i)])
+			{
+				debug(LOG_ERROR, "Failed to find image \"%s\" listed in \"%s\".", spriteNames[static_cast<size_t>(i)].c_str(), fileName);
+				for (int k = 0; k < numImages; ++k) { delete pageLayout.images[static_cast<size_t>(k)].data; pageLayout.images[static_cast<size_t>(k)].data = nullptr; }
+				delete imageFile;
+				return nullptr;
+			}
+			ImageMergeRectangle *imageRect = &pageLayout.images[static_cast<size_t>(i)];
+			imageRect->siz = Vector2i(imageRect->data->width(), imageRect->data->height());
+		}
+	}
 	imageFile->imageDefs.resize(numImages);
 	pageLayout.images.resize(numImages);
 

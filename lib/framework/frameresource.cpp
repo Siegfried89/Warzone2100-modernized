@@ -38,6 +38,9 @@
 
 #include <list>
 #include <algorithm>
+#include <chrono>
+#include <map>
+#include <string>
 
 // Local prototypes
 static std::list<RES_TYPE *> psResTypes;
@@ -333,8 +336,45 @@ size_t resGetLoadPlanEntriesPerStep()
 } // anonymous namespace
 
 /* Parse the res file */
+// MOD (16.11.): Ladezeit je Datentyp messen (fuer die Suche nach langsamen Ladeschritten; Ausgabe im Log "MOD-Ladezeit")
+namespace
+{
+std::map<std::string, std::pair<double, int>> s_modResTypeTime;
+struct ModResFileTimer
+{
+	const char *type;
+	std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+	explicit ModResFileTimer(const char *t) : type(t) {}
+	~ModResFileTimer()
+	{
+		const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+		auto &e = s_modResTypeTime[type ? type : "?"];
+		e.first += ms;
+		e.second += 1;
+	}
+};
+void modResReportTimes(const char *resFile, std::chrono::steady_clock::time_point t0)
+{
+	const double total = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+	if (total >= 200.0)
+	{
+		std::string parts;
+		for (const auto &e : s_modResTypeTime)
+		{
+			if (e.second.first < 50.0) { continue; }
+			parts += astringf(" %s=%d ms/%d", e.first.c_str(), static_cast<int>(e.second.first), e.second.second);
+		}
+		debug(LOG_INFO, "MOD-Ladezeit: %s: %d ms (darin%s)", resFile ? resFile : "?", static_cast<int>(total), parts.c_str());
+	}
+	s_modResTypeTime.clear();
+}
+}
+
 LoadingTask<> resLoad(ResourceLoadingController& controller, const char *pResFile, SDWORD blockID)
 {
+	const auto modResT0 = std::chrono::steady_clock::now();
+	const std::string modResName = pResFile ? pResFile : "";
+	s_modResTypeTime.clear();
 	ResLoadPlan plan;
 	if (!resPrepareLoadPlan(pResFile, blockID, plan))
 	{
@@ -352,6 +392,7 @@ LoadingTask<> resLoad(ResourceLoadingController& controller, const char *pResFil
 		co_await controller.yieldFrame();
 	}
 
+	modResReportTimes(modResName.c_str(), modResT0);
 	co_return load_ok();
 }
 
@@ -599,6 +640,7 @@ static void makeLocaleFile(char *fileName, size_t maxlen)  // given string must 
  */
 bool resLoadFile(const char *pType, const char *pFile)
 {
+	ModResFileTimer modTimer(pType);   // MOD: Ladezeit je Typ
 	void		*pData = nullptr;
 	char		aFileName[PATH_MAX];
 	UDWORD HashedName, HashedType = HashString(pType);

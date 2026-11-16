@@ -30,9 +30,11 @@
 #include "lib/framework/loading_task.h"
 #include "lib/framework/resource_loading_controller.h"
 #include "lib/framework/wzapp.h"
+#include "lib/framework/wzparallel.h"
 #include "lib/sound/audio.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace
 {
@@ -104,6 +106,7 @@ struct TextureArrayLoadContext
 	gfx_api::pixel_format desiredImageExtractionFormat = gfx_api::pixel_format::invalid;
 	bool uncompressedExtractionFormat = false;
 	std::vector<std::unique_ptr<iV_BaseImage>> defaultTextureMips = {};
+	std::vector<std::unique_ptr<iV_BaseImage>> defaultTextureMipsCompressed = {};   // MOD: Ersatzbild nur einmal komprimieren
 
 	std::unique_ptr<gfx_api::texture_array> texture_array = nullptr;
 	unsigned int width = 0;
@@ -139,28 +142,34 @@ std::vector<std::unique_ptr<iV_BaseImage>>* getDefaultTextureMipsP(TextureArrayL
 	return &ctx.defaultTextureMips;
 }
 
-bool loadTextureArrayLayer(TextureArrayLoadContext& ctx, size_t layer)
+// MOD (16.11.): Laden in zwei Schritten - "prepare" (Datei lesen, entpacken, Mipmaps, Echtzeit-Kompression) ist reine Rechenarbeit
+// und laeuft auf mehreren Faeden; "upload" (Grafikkarte) bleibt im Hauptfaden und in fester Reihenfolge. Ergebnis wie vorher.
+struct PreparedTextureArrayLayer
+{
+	std::vector<std::unique_ptr<iV_BaseImage>> images;   // bereits im Hochlade-Format
+	bool useDefault = false;
+	bool failed = false;
+	unsigned int width = 0;
+	unsigned int height = 0;
+	size_t mipLevels = 0;
+};
+
+void prepareTextureArrayLayer(const TextureArrayLoadContext& ctx, size_t layer, PreparedTextureArrayLayer& out)
 {
 	const WzString& imageLoadFilename = ctx.imageLoadFilenames[layer];
-
-	std::vector<std::unique_ptr<iV_BaseImage>> loadedImagesForLayer;
-	std::vector<std::unique_ptr<iV_BaseImage>>* pImagesForLayer = nullptr;
 	if (imageLoadFilename.isEmpty())
 	{
-		pImagesForLayer = getDefaultTextureMipsP(ctx, layer, ctx.width, ctx.height, ctx.mipmap_levels, ctx.desiredImageExtractionFormat);
-		ASSERT_OR_RETURN(false, pImagesForLayer != nullptr, "Failed to generate matching default texture");
+		out.useDefault = true;
+		return;
 	}
-	else if (ctx.uncompressedExtractionFormat || imageLoadFilename.endsWith(".png"))
+	if (ctx.uncompressedExtractionFormat || imageLoadFilename.endsWith(".png"))
 	{
-		loadedImagesForLayer = loadUncompressedImageWithMips(imageLoadFilename.toUtf8(), ctx.textureType, ctx.maxWidth, ctx.maxHeight, ctx.desiredImageExtractionFormat == gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8);
-		if (!loadedImagesForLayer.empty())
-		{
-			pImagesForLayer = &loadedImagesForLayer;
-		}
-		else
+		out.images = loadUncompressedImageWithMips(imageLoadFilename.toUtf8(), ctx.textureType, ctx.maxWidth, ctx.maxHeight, ctx.desiredImageExtractionFormat == gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8);
+		if (out.images.empty())
 		{
 			debug(LOG_INFO, "Using default texture generator for failed image: %s", imageLoadFilename.toUtf8().c_str());
-			pImagesForLayer = getDefaultTextureMipsP(ctx, layer, ctx.width, ctx.height, ctx.mipmap_levels, ctx.desiredImageExtractionFormat);
+			out.useDefault = true;
+			return;
 		}
 	}
 	else
@@ -168,55 +177,142 @@ bool loadTextureArrayLayer(TextureArrayLoadContext& ctx, size_t layer)
 #if defined(BASIS_ENABLED)
 		if (imageLoadFilename.endsWith(".ktx2"))
 		{
-			loadedImagesForLayer = gfx_api::loadiVImagesFromFile_Basis(imageLoadFilename.toUtf8(), ctx.textureType, gfx_api::pixel_format_target::texture_2d_array, ctx.desiredImageExtractionFormat, std::max(0, ctx.maxWidth), std::max(0, ctx.maxHeight));
-			pImagesForLayer = &loadedImagesForLayer;
+			out.images = gfx_api::loadiVImagesFromFile_Basis(imageLoadFilename.toUtf8(), ctx.textureType, gfx_api::pixel_format_target::texture_2d_array, ctx.desiredImageExtractionFormat, std::max(0, ctx.maxWidth), std::max(0, ctx.maxHeight));
 		}
 		else
 #endif
 		{
 			debug(LOG_ERROR, "Unable to load image file: %s", imageLoadFilename.toUtf8().c_str());
-			return false;
+			out.failed = true;
+			return;
 		}
+	}
+	if (out.images.empty() || !out.images.front())
+	{
+		debug(LOG_ERROR, "Unable to load images: %s", imageLoadFilename.toUtf8().c_str());
+		out.failed = true;
+		return;
+	}
+	out.width = out.images.front()->width();
+	out.height = out.images.front()->height();
+	out.mipLevels = out.images.size();
+	if (ctx.uploadFormat != ctx.desiredImageExtractionFormat)
+	{
+		if (!ctx.uncompressedExtractionFormat)
+		{
+			debug(LOG_ERROR, "Expected uncompressed extraction format, but received: %s", gfx_api::format_to_str(ctx.desiredImageExtractionFormat));
+			out.failed = true;
+			return;
+		}
+		for (size_t level = 0; level < out.images.size(); ++level)
+		{
+			const iV_Image* image = dynamic_cast<iV_Image*>(out.images[level].get());
+			if (image == nullptr)
+			{
+				debug(LOG_ERROR, "Image wasn't an iV_Image?: %s", imageLoadFilename.toUtf8().c_str());
+				out.failed = true;
+				return;
+			}
+			auto compressedImage = gfx_api::compressImage(*image, ctx.uploadFormat);
+			if (!compressedImage)
+			{
+				debug(LOG_ERROR, "Failed to compress image to format: %zu", static_cast<size_t>(ctx.uploadFormat));
+				out.failed = true;
+				return;
+			}
+			out.images[level] = std::move(compressedImage);
+		}
+	}
+}
+
+bool uploadTextureArrayLayer(TextureArrayLoadContext& ctx, size_t layer, PreparedTextureArrayLayer& prepared)
+{
+	const WzString& imageLoadFilename = ctx.imageLoadFilenames[layer];
+	if (prepared.failed)
+	{
+		return false;
+	}
+	std::vector<std::unique_ptr<iV_BaseImage>>* pImagesForLayer = nullptr;
+	unsigned int w = prepared.width, h = prepared.height;
+	size_t mips = prepared.mipLevels;
+	if (prepared.useDefault)
+	{
+		pImagesForLayer = getDefaultTextureMipsP(ctx, layer, ctx.width, ctx.height, ctx.mipmap_levels, ctx.desiredImageExtractionFormat);
+		ASSERT_OR_RETURN(false, pImagesForLayer != nullptr && !pImagesForLayer->empty(), "Failed to generate matching default texture");
+		w = pImagesForLayer->front()->width();
+		h = pImagesForLayer->front()->height();
+		mips = pImagesForLayer->size();
+		if (ctx.uploadFormat != ctx.desiredImageExtractionFormat)
+		{
+			ASSERT_OR_RETURN(false, ctx.uncompressedExtractionFormat, "Expected uncompressed extraction format, but received: %s", gfx_api::format_to_str(ctx.desiredImageExtractionFormat));
+			if (ctx.defaultTextureMipsCompressed.empty())
+			{
+				for (size_t level = 0; level < pImagesForLayer->size(); ++level)
+				{
+					const iV_Image* image = dynamic_cast<iV_Image*>(pImagesForLayer->at(level).get());
+					ASSERT_OR_RETURN(false, image != nullptr, "Image wasn't an iV_Image?");
+					auto compressedImage = gfx_api::compressImage(*image, ctx.uploadFormat);
+					ASSERT_OR_RETURN(false, compressedImage != nullptr, "Failed to compress image to format: %zu", static_cast<size_t>(ctx.uploadFormat));
+					ctx.defaultTextureMipsCompressed.push_back(std::move(compressedImage));
+				}
+			}
+			pImagesForLayer = &ctx.defaultTextureMipsCompressed;
+		}
+	}
+	else
+	{
+		pImagesForLayer = &prepared.images;
 	}
 
 	ASSERT_OR_RETURN(false, pImagesForLayer && !pImagesForLayer->empty(), "Unable to load images: %s", imageLoadFilename.toUtf8().c_str());
 
 	if (layer == 0)
 	{
-		ctx.width = pImagesForLayer->front()->width();
-		ctx.height = pImagesForLayer->front()->height();
-		ctx.mipmap_levels = pImagesForLayer->size();
+		ctx.width = w;
+		ctx.height = h;
+		ctx.mipmap_levels = mips;
 
 		ctx.texture_array = std::unique_ptr<gfx_api::texture_array>(gfx_api::context::get().create_texture_array(ctx.mipmap_levels, ctx.imageLoadFilenames.size(), ctx.width, ctx.height, ctx.uploadFormat, ctx.debugName));
 		ASSERT_OR_RETURN(false, ctx.texture_array.get() != nullptr, "Failed to create texture array (miplevels: %zu, layers: %zu, width: %u, height: %u): %s", ctx.mipmap_levels, ctx.imageLoadFilenames.size(), ctx.width, ctx.height, imageLoadFilename.toUtf8().c_str());
 	}
 	else
 	{
-		ASSERT_OR_RETURN(false, ctx.width == pImagesForLayer->front()->width() && ctx.height == pImagesForLayer->front()->height(), "Unexpected image dimensions (%u x %u) does not match the first image dimensions (%u x %u): %s", pImagesForLayer->front()->width(), pImagesForLayer->front()->height(), ctx.width, ctx.height, imageLoadFilename.toUtf8().c_str());
-		ASSERT_OR_RETURN(false, pImagesForLayer->size() == ctx.mipmap_levels, "Unexpected number of mip levels (%zu; expected: %zu): %s", pImagesForLayer->size(), ctx.mipmap_levels, imageLoadFilename.toUtf8().c_str());
+		ASSERT_OR_RETURN(false, ctx.width == w && ctx.height == h, "Unexpected image dimensions (%u x %u) does not match the first image dimensions (%u x %u): %s", w, h, ctx.width, ctx.height, imageLoadFilename.toUtf8().c_str());
+		ASSERT_OR_RETURN(false, mips == ctx.mipmap_levels, "Unexpected number of mip levels (%zu; expected: %zu): %s", mips, ctx.mipmap_levels, imageLoadFilename.toUtf8().c_str());
 	}
 
-	if (ctx.uploadFormat == ctx.desiredImageExtractionFormat)
-	{
-		bool uploadSuccess = gfx_api::context::get().loadTextureArrayLayerFromBaseImages(*ctx.texture_array, layer, *pImagesForLayer, imageLoadFilename.toUtf8(), ctx.width, ctx.height);
-		ASSERT_OR_RETURN(false, uploadSuccess, "Failed to loadTextureArrayLayerFromBaseImages");
-	}
-	else
-	{
-		ASSERT_OR_RETURN(false, ctx.uncompressedExtractionFormat, "Expected uncompressed extraction format, but received: %s", gfx_api::format_to_str(ctx.desiredImageExtractionFormat));
+	bool uploadSuccess = gfx_api::context::get().loadTextureArrayLayerFromBaseImages(*ctx.texture_array, layer, *pImagesForLayer, imageLoadFilename.toUtf8(), ctx.width, ctx.height);
+	ASSERT_OR_RETURN(false, uploadSuccess, "Failed to loadTextureArrayLayerFromBaseImages");
+	prepared.images.clear();   // Speicher sofort freigeben
+	return true;
+}
 
-		for (size_t level = 0; level < pImagesForLayer->size(); ++level)
+constexpr size_t kTextureArrayBatch = 96;   // so viele Ebenen werden je Durchgang parallel vorbereitet (begrenzt den Speicher)
+
+// Ebene 0 einzeln (legt Groesse und Mipmap-Stufen fest), dann Stapel parallel vorbereiten und der Reihe nach hochladen
+bool loadTextureArrayBatch(TextureArrayLoadContext& ctx, size_t begin, size_t end)
+{
+	std::vector<PreparedTextureArrayLayer> prepared(end - begin);
+	wzparallel::forRange(begin, end, [&](size_t layer) {
+		prepareTextureArrayLayer(ctx, layer, prepared[layer - begin]);
+	});
+	for (size_t layer = begin; layer < end; ++layer)
+	{
+		if (!uploadTextureArrayLayer(ctx, layer, prepared[layer - begin]))
 		{
-			const iV_Image* image = dynamic_cast<iV_Image*>(pImagesForLayer->at(level).get());
-			ASSERT_OR_RETURN(false, image != nullptr, "Image wasn't an iV_Image?");
-			auto compressedImage = gfx_api::compressImage(*image, ctx.uploadFormat);
-			ASSERT_OR_RETURN(false, compressedImage != nullptr, "Failed to compress image to format: %zu", static_cast<size_t>(ctx.uploadFormat));
-			bool uploadResult = ctx.texture_array->upload_layer(layer, level, *compressedImage);
-			ASSERT_OR_RETURN(false, uploadResult, "Failed to upload buffer to image");
+			return false;
 		}
 	}
-
 	return true;
+}
+
+void logTextureArrayLoadTime(const TextureArrayLoadContext& ctx, std::chrono::steady_clock::time_point t0)
+{
+	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+	if (ms >= 100)
+	{
+		debug(LOG_INFO, "MOD-Ladezeit: Texturfeld %s: %zu Ebenen in %d ms (%u Faeden)", ctx.debugName.c_str(), ctx.imageLoadFilenames.size(), static_cast<int>(ms), wzparallel::workerCount());
+	}
 }
 
 bool prepareTextureArrayLoadContext(TextureArrayLoadContext& ctx)
@@ -321,13 +417,18 @@ gfx_api::texture_array* loadTextureArrayFromFilesNoYield(
 		return nullptr;
 	}
 
-	for (size_t layer = 0; layer < imageLoadFilenames.size(); ++layer)
+	const auto t0 = std::chrono::steady_clock::now();
+	const size_t n = imageLoadFilenames.size();
+	for (size_t begin = 0; begin < n; )
 	{
-		if (!loadTextureArrayLayer(ctx, layer))
+		const size_t end = (begin == 0) ? 1 : std::min(n, begin + kTextureArrayBatch);
+		if (!loadTextureArrayBatch(ctx, begin, end))
 		{
 			return nullptr;
 		}
+		begin = end;
 	}
+	logTextureArrayLoadTime(ctx, t0);
 
 	return finishTextureArrayLoad(ctx);
 }
@@ -359,14 +460,19 @@ LoadingTask<gfx_api::texture_array*> gfx_api::context::loadTextureArrayFromFiles
 		co_return load_fail();
 	}
 
-	for (size_t layer = 0; layer < imageLoadFilenames.size(); ++layer)
+	const auto t0 = std::chrono::steady_clock::now();
+	const size_t n = imageLoadFilenames.size();
+	for (size_t begin = 0; begin < n; )
 	{
-		if (!loadTextureArrayLayer(ctx, layer))
+		const size_t end = (begin == 0) ? 1 : std::min(n, begin + kTextureArrayBatch);
+		if (!loadTextureArrayBatch(ctx, begin, end))
 		{
 			co_return load_fail();
 		}
+		begin = end;
 		co_await controller.yieldFrame();
 	}
+	logTextureArrayLoadTime(ctx, t0);
 
 	co_return load_ok(finishTextureArrayLoad(ctx));
 }

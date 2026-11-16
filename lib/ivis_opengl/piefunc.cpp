@@ -32,6 +32,7 @@
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/pieclip.h"
 #include "lib/ivis_opengl/pielight_convert.h"
+#include "lib/ivis_opengl/png_util.h"
 #include <glm/gtc/type_ptr.hpp>
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
@@ -318,6 +319,114 @@ void pie_Skybox_Shutdown()
 {
 	delete skyboxGfx;
 	skyboxGfx = nullptr;
+	pie_OrbitGround_Shutdown();   // MOD
+}
+
+// MOD (16.11.): Orbit - Himmel mit erzwungenem Dunst (unabhaengig von der Nebel-Einstellung): unterhalb der Mitte Dunstfarbe,
+// nach oben weich in die Himmelstextur. So gibt es keine schwarzen Flaechen mehr unter dem Horizont.
+void pie_DrawSkyboxHaze(float scale, const glm::mat4& projectionMatrix, const glm::mat4 &viewMatrix, const glm::vec4 &hazeColour)
+{
+	if (skyboxGfx == nullptr) { return; }
+	const auto& modelViewProjectionMatrix = projectionMatrix * viewMatrix * glm::scale(glm::vec3(scale, scale / 2.f, scale));
+	gfx_api::SkyboxPSO::get().bind();
+	gfx_api::SkyboxPSO::get().bind_constants({ modelViewProjectionMatrix, glm::vec4(1.f), hazeColour, 1, gfx_api::context::get().linearLightingEnabled() ? 1 : 0 });
+	skyboxGfx->draw<gfx_api::SkyboxPSO>(modelViewProjectionMatrix);
+}
+
+namespace
+{
+GFX *orbitGroundGfx = nullptr;
+std::string orbitGroundTex;
+glm::vec4 orbitGroundKey(0.f);   // Mittelpunkt + Radien, bei Aenderung neu aufbauen
+float orbitGroundUvScale = 0.f;
+bool orbitGroundTexOk = false;
+}
+
+void pie_OrbitGround_Shutdown()
+{
+	delete orbitGroundGfx;
+	orbitGroundGfx = nullptr;
+	orbitGroundTex.clear();
+	orbitGroundKey = glm::vec4(0.f);
+	orbitGroundTexOk = false;
+}
+
+// Flache Scheibe tief unter den Inseln: innen klar (Modell-y = 1 -> kein Dunst), zum Rand hin weich in den Dunst (Modell-y = 0).
+// Die Hoehe kommt aus der Modellmatrix (y-Skalierung 0). UV = Weltkoordinaten / uvScale, genau wie die Orbit-Leere im Gelaende-Shader.
+void pie_DrawOrbitGround(const char *texFile, const glm::vec3 &hazeTint, float hazeMix, float centerX, float centerZ, float rClear, float rFull,
+                         float groundY, float uvScale, const glm::mat4 &projectionMatrix, const glm::mat4 &worldViewMatrix,
+                         const glm::vec4 &colourMul, const glm::vec4 &hazeColour)
+{
+	if (texFile == nullptr || uvScale <= 0.f || rFull <= rClear) { return; }
+	const glm::vec4 key(centerX, centerZ, rClear, rFull);
+	if (orbitGroundGfx == nullptr)
+	{
+		orbitGroundGfx = new GFX(GFX_TEXTURE, 3);
+	}
+	if (orbitGroundTex != texFile)
+	{
+		orbitGroundTex = texFile;
+		orbitGroundTexOk = false;
+		iV_Image img;
+		if (iV_loadImage_PNG2(texFile, img, true, true) && img.width() > 0 && img.height() > 0)
+		{
+			// Dunst wie im Gelaende-Shader einbacken: mix(Boden, Dunst, hazeMix)
+			unsigned char *px = img.bmp_w();
+			const size_t n = static_cast<size_t>(img.width()) * img.height();
+			const int ch = static_cast<int>(img.channels());
+			for (size_t i = 0; i < n; ++i)
+			{
+				for (int c = 0; c < 3 && c < ch; ++c)
+				{
+					const float v = px[i * ch + c] / 255.f;
+					const float m = v * (1.f - hazeMix) + hazeTint[c] * hazeMix;
+					px[i * ch + c] = static_cast<unsigned char>(std::min(255.f, std::max(0.f, m * 255.f + 0.5f)));
+				}
+			}
+			orbitGroundGfx->loadTexture(std::move(img), gfx_api::texture_type::game_texture, std::string("orbitground:") + texFile);
+			orbitGroundTexOk = true;
+		}
+		else
+		{
+			debug(LOG_INFO, "Orbit-Boden: Bild fehlt (%s)", texFile);
+		}
+	}
+	if (!orbitGroundTexOk) { return; }
+	if (key != orbitGroundKey || uvScale != orbitGroundUvScale)
+	{
+		orbitGroundKey = key;
+		orbitGroundUvScale = uvScale;
+		constexpr int SEG = 72;
+		const float radii[3] = { 0.f, rClear, rFull };
+		const float flag[3] = { 1.f, 1.f, 0.f };   // 1 = klar, 0 = voller Dunst
+		std::vector<Vector3f> v;
+		std::vector<Vector2f> t;
+		v.reserve(SEG * 3 * 2 * 2);
+		t.reserve(SEG * 3 * 2 * 2);
+		auto P = [&](int ring, int seg) -> std::pair<Vector3f, Vector2f> {
+			const float a = static_cast<float>(seg % SEG) * 6.2831853f / SEG;
+			const float x = centerX + std::cos(a) * radii[ring];
+			const float z = centerZ + std::sin(a) * radii[ring];
+			return { Vector3f(x, flag[ring], z), Vector2f(x / uvScale, -z / uvScale) };
+		};
+		auto tri = [&](const std::pair<Vector3f, Vector2f> &a, const std::pair<Vector3f, Vector2f> &b, const std::pair<Vector3f, Vector2f> &c) {
+			// beidseitig (Reihenfolge der Ecken egal fuer das Wegschneiden der Rueckseiten)
+			v.push_back(a.first); t.push_back(a.second); v.push_back(b.first); t.push_back(b.second); v.push_back(c.first); t.push_back(c.second);
+			v.push_back(a.first); t.push_back(a.second); v.push_back(c.first); t.push_back(c.second); v.push_back(b.first); t.push_back(b.second);
+		};
+		for (int s = 0; s < SEG; ++s)
+		{
+			tri(P(0, s), P(1, s), P(1, s + 1));
+			tri(P(1, s), P(2, s), P(2, s + 1));
+			tri(P(1, s), P(2, s + 1), P(1, s + 1));
+		}
+		orbitGroundGfx->buffers(static_cast<int>(v.size()), v.data(), t.data());
+	}
+	const glm::mat4 model = glm::translate(glm::vec3(0.f, groundY, 0.f)) * glm::scale(glm::vec3(1.f, 0.f, 1.f));
+	const glm::mat4 mvp = projectionMatrix * worldViewMatrix * model;
+	gfx_api::SkyboxPSO::get().bind();
+	gfx_api::SkyboxPSO::get().bind_constants({ mvp, colourMul, hazeColour, 1, gfx_api::context::get().linearLightingEnabled() ? 1 : 0 });
+	orbitGroundGfx->draw<gfx_api::SkyboxPSO>(mvp);
 }
 
 void pie_DrawSkybox(float scale, const glm::mat4& projectionMatrix, const glm::mat4 &viewMatrix)

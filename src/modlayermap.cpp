@@ -2,6 +2,7 @@
 // MOD: Eigene Karte je Ebene, siehe modlayermap.h
 
 #include "modlayermap.h"
+#include "lib/framework/modtime.h"
 #include "modcombot.h"
 
 #include "lib/framework/frame.h"
@@ -528,6 +529,7 @@ void placeHomes();
 
 bool ensureWorlds()
 {
+	ModLoadTimer modTimer("Ebenen-Karten (Untergrund/Orbit)", 50);   // MOD 16.11.
 	if (s_built)
 	{
 		if (!s_homesDone) { placeHomes(); }

@@ -381,15 +381,25 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
 			orderDroidAdd(psDroid, &o);
 		}
 	};
-	// Schuetzengraben links und rechts (je 2 Felder), Stellungen an den Enden, Munitionskiste und Verbindungsgraben dahinter
+	// Schuetzengraben links und rechts (je 2 Felder), Stellungen an den Enden.
+	// Wunsch 16.11. 17:14: dazu ein Verbindungsgraben nach hinten (3 Felder) mit einer 90-Grad-Abzweigung, die nach hinten versetzt
+	// zur Seite laeuft und in einer weiteren Stellung endet; die Munitionskiste liegt am Verbindungsgraben. Alles haengt per Graben zusammen.
+	//
+	//      [A]==[=][=]( K )[=][=]==[B]      vorne (Front)
+	//                  [=]
+	//            [M]   [=]
+	//                  [=][=][=][A]         hinten, versetzt
 	const Vector2i l1 = tileAt(-1, 0), l2 = tileAt(-2, 0), r1 = tileAt(1, 0), r2 = tileAt(2, 0);
 	add(trench, l1, &l2);
 	add(trench, r1, &r2);
 	add(pitA, tileAt(-3, 0), nullptr);
 	add(pitB, tileAt(3, 0), nullptr);
-	const Vector2i b1 = tileAt(0, -1);
-	add(trench, b1, &b1);
-	add(box, tileAt(1, -2), nullptr);
+	const Vector2i b1 = tileAt(0, -1), b3 = tileAt(0, -3);
+	add(trench, b1, &b3);                       // Verbindungsgraben nach hinten
+	const Vector2i a1 = tileAt(1, -3), a2 = tileAt(2, -3);
+	add(trench, a1, &a2);                       // 90-Grad-Abzweigung, nach hinten versetzt
+	add(pitA, tileAt(3, -3), nullptr);          // Stellung am Ende der Abzweigung
+	add(box, tileAt(-1, -2), nullptr);          // Munitionskiste direkt am Verbindungsgraben
 }
 
 bool canFortify(const DROID *psDroid)
