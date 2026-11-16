@@ -563,8 +563,54 @@ fallback:
 }
 
 // Parse the file to set up the ground type
+// MOD (16.11.): Mods ergaenzen Kacheln jetzt ZUSAETZLICH ("<datei>-extra.txt") statt die Tileset-Dateien zu ersetzen -
+// so behalten Klassik- und HQ-Grafik ihre eigenen Decal-/Untergrund-Listen (vorher: Klassik schwarz, HQ falsche Decals)
+static std::string modExtraTilesetPath(const char *filename)
+{
+	std::string p(filename);
+	const size_t dot = p.rfind(".txt");
+	if (dot == std::string::npos) { return std::string(); }
+	return p.substr(0, dot) + "-extra.txt";
+}
+
+static std::vector<std::string> modReadExtraLines(const char *filename)
+{
+	std::vector<std::string> lines;
+	const std::string extra = modExtraTilesetPath(filename);
+	if (extra.empty() || !PHYSFS_exists(extra.c_str())) { return lines; }
+	char *buf = nullptr;
+	UDWORD size = 0;
+	if (!loadFile(extra.c_str(), &buf, &size, false) || buf == nullptr) { return lines; }
+	std::string cur;
+	for (UDWORD i = 0; i < size; ++i)
+	{
+		const char c = buf[i];
+		if (c == '\r') { continue; }
+		if (c == '\n') { if (!cur.empty()) { lines.push_back(cur); } cur.clear(); continue; }
+		cur.push_back(c);
+	}
+	if (!cur.empty()) { lines.push_back(cur); }
+	free(buf);
+	return lines;
+}
+
 static bool SetGroundForTile(const char *filename, const char *nametype)
 {
+	// MOD: Zusatzkacheln (Kopfzeile "<name>,<anzahl>,<erste kachel>", dann je Kachel 4 Untergruende)
+	const std::vector<std::string> extraLines = modReadExtraLines(filename);
+	int extraFirst = -1, extraCount = 0;
+	if (!extraLines.empty())
+	{
+		char ename[MAX_STR_LENGTH] = {'\0'};
+		if (sscanf(extraLines[0].c_str(), "%255[^,],%d,%d", ename, &extraCount, &extraFirst) != 3 || extraFirst < 0 || extraCount <= 0
+			|| extraFirst + extraCount > MAX_TERRAIN_TILES || static_cast<int>(extraLines.size()) < extraCount + 1)
+		{
+			debug(LOG_ERROR, "MOD: %s ist ungueltig - ignoriert", modExtraTilesetPath(filename).c_str());
+			extraFirst = -1;
+			extraCount = 0;
+		}
+	}
+
 	char	*pFileData = nullptr;
 	char	tilename[MAX_STR_LENGTH] = {'\0'};
 	char	val1[MAX_STR_LENGTH] = {'\0'}, val2[MAX_STR_LENGTH] = {'\0'}, val3[MAX_STR_LENGTH] = {'\0'}, val4[MAX_STR_LENGTH] = {'\0'};
@@ -598,7 +644,7 @@ static bool SetGroundForTile(const char *filename, const char *nametype)
 	pFileData = tilesetNextLine(pFileData);
 
 	// MOD: Platz fuer die Zusatzkacheln (MF-Inseln, ab 256); sie bekommen den Untergrund der letzten Kachel der Datei
-	const int numAlloc = std::max(numlines, static_cast<int>(MOD_TILE_MAX));
+	const int numAlloc = std::max({numlines, static_cast<int>(MOD_TILE_MAX), extraFirst + extraCount});
 	numTile_types = numAlloc;
 	map = std::unique_ptr<int[]> (new int[numAlloc * 2 * 2]());
 
@@ -624,9 +670,22 @@ static bool SetGroundForTile(const char *filename, const char *nametype)
 			map[i * 2 * 2 + k] = ground[k];
 		}
 	}
-	for (int e = std::max(numlines, static_cast<int>(MOD_TILE_VOID)); e < numAlloc; ++e)
+	// MOD: Luecken (zwischen Datei-Ende und den Zusatz-/Inselkacheln) bekommen den Untergrund der letzten Kachel der Datei
+	for (int e = numlines; e < numAlloc; ++e)
 	{
 		for (int k = 0; k < 4; ++k) { map[e * 2 * 2 + k] = map[(numlines - 1) * 2 * 2 + k]; }
+	}
+	for (int x = 0; x < extraCount; ++x)
+	{
+		char v1[MAX_STR_LENGTH] = {'\0'}, v2[MAX_STR_LENGTH] = {'\0'}, v3[MAX_STR_LENGTH] = {'\0'}, v4[MAX_STR_LENGTH] = {'\0'};
+		if (sscanf(extraLines[static_cast<size_t>(x) + 1].c_str(), "%255[^,],%255[^,],%255[^,],%255[^,]", v1, v2, v3, v4) != 4) { continue; }
+		const int ground[4] = {getGroundTypeIndex(v4), getGroundTypeIndex(v2), getGroundTypeIndex(v3), getGroundTypeIndex(v1)};
+		if (ground[0] < 0 || ground[1] < 0 || ground[2] < 0 || ground[3] < 0) { continue; }
+		for (int k = 0; k < 4; ++k) { map[(extraFirst + x) * 2 * 2 + k] = ground[k]; }
+	}
+	if (extraCount > 0)
+	{
+		debug(LOG_INFO, "MOD: %d Zusatzkacheln ab %d (Untergrund) aus %s", extraCount, extraFirst, modExtraTilesetPath(filename).c_str());
 	}
 	return true;
 }
@@ -845,6 +904,17 @@ static bool SetDecals(const char *filename, const char *decal_type)
 		mapDecals[tiledecal] = true;
 	}
 	for (int e = MOD_TILE_VOID; e < MOD_TILE_MAX; ++e) { mapDecals[e] = true; }   // MOD: Inselkacheln sind Decals
+	// MOD (16.11.): Zusatz-Decals eines Mods (Kopfzeile "<name>,<anzahl>", dann je Zeile eine Kachelnummer)
+	{
+		const std::vector<std::string> extraLines = modReadExtraLines(filename);
+		int added = 0;
+		for (size_t l = 1; l < extraLines.size(); ++l)
+		{
+			int t = -1;
+			if (sscanf(extraLines[l].c_str(), "%d", &t) == 1 && t >= 0 && t < MAX_TERRAIN_TILES) { mapDecals[t] = true; ++added; }
+		}
+		if (added > 0) { debug(LOG_INFO, "MOD: %d Zusatz-Decals aus %s", added, modExtraTilesetPath(filename).c_str()); }
+	}
 	return true;
 }
 // hasDecals()

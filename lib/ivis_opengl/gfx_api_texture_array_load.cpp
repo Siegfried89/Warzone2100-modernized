@@ -193,6 +193,33 @@ void prepareTextureArrayLayer(const TextureArrayLoadContext& ctx, size_t layer, 
 		out.failed = true;
 		return;
 	}
+	// MOD (16.11.): Ebene in anderer Groesse als Ebene 0 (z.B. Zusatz-/Inselkacheln 128 bei HQ-Grafik 256) - auf die Groesse
+	// der Ebene 0 skalieren und Mipmaps neu erzeugen, statt das ganze Feld (und damit das Spiel) scheitern zu lassen
+	if (layer > 0 && ctx.width > 0 && ctx.height > 0
+		&& (out.images.front()->width() != ctx.width || out.images.front()->height() != ctx.height))
+	{
+		iV_Image* pBase = dynamic_cast<iV_Image*>(out.images.front().get());
+		if (pBase != nullptr && pBase->resize(static_cast<int>(ctx.width), static_cast<int>(ctx.height)))
+		{
+			std::unique_ptr<iV_BaseImage> keep = std::move(out.images.front());
+			out.images.clear();
+			const size_t lv = calcMipmapLevelsForUncompressedImage(*pBase, ctx.textureType);
+			auto mips = generateMipMapsFromUncompressedImage(*pBase, lv, ctx.textureType);
+			out.images.push_back(std::move(keep));
+			out.images.insert(out.images.end(), std::make_move_iterator(mips.begin()), std::make_move_iterator(mips.end()));
+		}
+		else
+		{
+			debug(LOG_INFO, "Using default texture for image with unexpected size: %s", imageLoadFilename.toUtf8().c_str());
+			out.images.clear();
+			out.useDefault = true;
+			return;
+		}
+	}
+	if (layer > 0 && ctx.mipmap_levels > 0 && out.images.size() > ctx.mipmap_levels)
+	{
+		out.images.resize(ctx.mipmap_levels);   // MOD: Mip-Stufen an Ebene 0 angleichen
+	}
 	out.width = out.images.front()->width();
 	out.height = out.images.front()->height();
 	out.mipLevels = out.images.size();

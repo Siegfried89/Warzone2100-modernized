@@ -30,6 +30,8 @@
 
 #include <string.h>
 #include <physfs.h>
+#include <map>
+#include <string>
 
 #include "lib/framework/file.h"
 #include "lib/framework/string_ext.h"
@@ -218,6 +220,24 @@ bool texLoad(const char *fileName)
 			return true;
 		});
 		has_auxillary_texture_info = has_nm | has_sm | has_hm;
+
+		// MOD (16.11.): Kacheln, die es nur in einer ANDEREN Groesse gibt (z.B. Zusatzkacheln eines Mods nur in -128, waehrend die
+		// HQ-Grafik -256 nutzt) - werden von dort geladen und beim Laden auf die Kachelgroesse skaliert (vorher: Absturz/fehlende Kacheln)
+		std::map<int, std::string> modOtherSizeTiles;
+		for (int s = MIPMAP_MAX; s >= 16; s /= 2)
+		{
+			if (s == maxTileTexSize) { continue; }
+			const std::string dir = astringf("%s-%d", fileName, s);
+			WZ_PHYSFS_enumerateFiles(dir.c_str(), [&](const char *fn) -> bool {
+				int tile = -1;
+				if (sscanf(fn, "tile-%d", &tile) != 1 || tile < 0 || tile >= 256) { return true; }
+				const std::string expectPng = astringf("tile-%02d.png", tile), expectKtx = astringf("tile-%02d.ktx2", tile);
+				if (expectPng != fn && expectKtx != fn) { return true; }
+				if (modOtherSizeTiles.count(tile) == 0) { modOtherSizeTiles[tile] = dir + "/" + expectPng; }
+				maxTileNo = std::max(maxTileNo, tile);
+				return true;
+			});
+		}
 		debug(LOG_TEXTURE, "texLoad: Found %d tiles", maxTileNo);
 		delete decalTexArr; decalTexArr = nullptr;
 		delete decalNormalArr; decalNormalArr = nullptr;
@@ -237,6 +257,15 @@ bool texLoad(const char *fileName)
 		for (k = 0; k <= maxTileNo; ++k)
 		{
 			auto fullPath_base = gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(astringf("%s/tile-%02d.png", partialPath, k)));
+			if (!PHYSFS_exists(fullPath_base) && modOtherSizeTiles.count(k) != 0)
+			{
+				// MOD: nur in anderer Groesse vorhanden - ohne Zusatzkarten (Normal/Glanz/Hoehe = Standard)
+				tile_base_filepaths.push_back(gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(modOtherSizeTiles[k])));
+				if (has_nm) { tile_nm_filepaths.push_back(WzString()); }
+				if (has_sm) { tile_sm_filepaths.push_back(WzString()); }
+				if (has_hm) { tile_hm_filepaths.push_back(WzString()); }
+				continue;
+			}
 			tile_base_filepaths.push_back(fullPath_base);
 			usedFilenames_tmp.push_back(fullPath_base);
 
@@ -301,7 +330,7 @@ bool texLoad(const char *fileName)
 			for (k = maxTileNo + 1; k < 256; ++k)
 			{
 				// MOD: Luecke mit der letzten vorhandenen Kachel fuellen (nie gezeichnet) - sonst je Kachel eine Fehlermeldung im Log
-				tile_base_filepaths.push_back(gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(astringf("%s/tile-%02d.png", partialPath, maxTileNo))));
+				tile_base_filepaths.push_back(WzString());   // nie gezeichnet - leere Ebene (Standardbild, wird nur einmal erzeugt)
 				if (has_nm && has_auxillary_texture_info) { tile_nm_filepaths.push_back(WzString()); }
 				if (has_sm && has_auxillary_texture_info) { tile_sm_filepaths.push_back(WzString()); }
 				if (has_hm && has_auxillary_texture_info) { tile_hm_filepaths.push_back(WzString()); }

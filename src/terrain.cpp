@@ -514,7 +514,9 @@ static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
 	if (terrainShaderQuality == TerrainShaderQuality::CLASSIC)
 	{
 		// in Classic mode, skip drawing any that are the "water only" decal (water is handled separately as a prior pass)
-		skipDecalDraw = skipDecalDraw || (isOnlyWater(mapState, i, j) && info.decalNo == 17); // Magic number hack, but decal # 17 is always the *water only* tile in the legacy terrain tilesets we ship // TODO: Figure out a better way of determining this from the tileset data?
+		// MOD (16.11.): Klassik hat keinen Boden-Untergrund - JEDE Kachel ist dort ein Decal (sonst schwarzer Boden, sobald ein Mod
+		// eine eigene Decal-Liste mitbringt, die die "alles ist Decal"-Liste der Klassik-Grafik verdeckt)
+		skipDecalDraw = (isOnlyWater(mapState, i, j) && info.decalNo == 17); // Magic number hack, but decal # 17 is always the *water only* tile in the legacy terrain tilesets we ship // TODO: Figure out a better way of determining this from the tileset data?
 	}
 	if (skipDecalDraw)
 	{
