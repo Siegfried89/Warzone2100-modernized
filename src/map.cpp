@@ -1399,7 +1399,7 @@ static bool afterMapLoad(WorldMapState& mapState)
 		for (int x = 0; x < mapState.width; ++x)
 		{
 			// FIXME: magic number
-			mapTile(mapState, x, y)->waterLevel = mapTile(mapState, x, y)->height - world_coord(1) / 3;
+			mapTile(mapState, x, y)->waterLevel = mapTile(mapState, x, y)->height - (1 * DIST_TILE) / 3;
 		}
 	}
 	generateRiverbed(mapState);
@@ -1548,7 +1548,7 @@ bool mapSetupLayerWorld(WorldMapState& mapState)
 		for (int x = 0; x < mapState.width; ++x)
 		{
 			MAPTILE *psTile = mapTile(mapState, x, y);
-			psTile->waterLevel = psTile->height - world_coord(1) / 3;   // wie afterMapLoad()
+			psTile->waterLevel = psTile->height - (1 * DIST_TILE) / 3;   // wie afterMapLoad()
 		}
 	}
 	mapState.scroll.minX = mapState.scroll.minY = 0;
@@ -1641,7 +1641,7 @@ bool mapSaveToWzMapData(WzMap::MapData& output, const WorldMapState& mapState)
 		int32_t height;
 		if (terrainType(&mapState.tiles[i]) == TER_WATER)
 		{
-			height = (mapState.tiles[i].waterLevel + world_coord(1) / 3); // this magic number stuff should match afterMapLoad()'s handling of water tiles (??)
+			height = (mapState.tiles[i].waterLevel + (1 * DIST_TILE) / 3); // this magic number stuff should match afterMapLoad()'s handling of water tiles (??)
 		}
 		else
 		{

@@ -1586,7 +1586,7 @@ INT_RETVAL intRunWidgets()
 							STRUCTURE *psStructure = &tmp;
 							tmp.state = SAS_NORMAL;
 							tmp.pStructureType = (STRUCTURE_STATS *)psPositionStats;
-							tmp.pos = {pos.x, pos.y, map_Height(gameWorld.map, pos.x, pos.y) + world_coord(1) / 10};
+							tmp.pos = {pos.x, pos.y, map_Height(gameWorld.map, pos.x, pos.y) + (1 * DIST_TILE) / 10};
 
 							// In multiplayer games be sure to send a message to the
 							// other players, telling them a new structure has been

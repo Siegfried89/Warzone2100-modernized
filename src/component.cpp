@@ -586,7 +586,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	if (!bButton && psPropStats->propulsionType == PROPULSION_TYPE_PROPELLOR)
 	{
 		// FIXME: change when adding submarines to the game
-		modifiedModelMatrix *= glm::translate(glm::vec3(0.f, -world_coord(1) / 2.3f, 0.f));
+		modifiedModelMatrix *= glm::translate(glm::vec3(0.f, -(1 * DIST_TILE) / 2.3f, 0.f));
 	}
 
 	// MOD: modulare Combots (Torso/Beine/Arme) werden Teil fuer Teil mit den Original-MF-Animationen zusammengesetzt

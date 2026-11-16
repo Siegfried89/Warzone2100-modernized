@@ -498,8 +498,8 @@ bool multiplayerWinSequence(bool firstCall)
 	if (rand() % 3 == 0)
 	{
 		Position pos2 = pos;
-		pos2.x += (rand() % world_coord(8)) - world_coord(4);
-		pos2.z += (rand() % world_coord(8)) - world_coord(4);
+		pos2.x += (rand() % (8 * DIST_TILE)) - (4 * DIST_TILE);
+		pos2.z += (rand() % (8 * DIST_TILE)) - (4 * DIST_TILE);
 
 		if (pos2.x < 0)
 		{

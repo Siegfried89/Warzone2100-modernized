@@ -2063,7 +2063,7 @@ static void drawTerrainCombinedmpl(const glm::mat4 &ModelViewProjection, const g
 	gfx_api::context::get().bind_index_buffer(*terrainDecalIndexVBO, gfx_api::index_type::u32);
 	glm::mat4 groundScale = glm::mat4(0);
 	for (int i = 0; i < std::min<size_t>(getNumGroundTypes(), MAX_GROUND_TYPES); i++) {
-		groundScale[i/4][i%4] = 1.0f / (getGroundType(i).textureSize * world_coord(1));
+		groundScale[i/4][i%4] = 1.0f / (getGroundType(i).textureSize * (1 * DIST_TILE));
 	}
 
 	auto dimension = gfx_api::context::get().getSceneRenderTargetDimensions();
@@ -2115,7 +2115,7 @@ static void drawTerrainCombinedTessImpl(const glm::mat4 &ModelViewProjection, co
 	gfx_api::context::get().bind_index_buffer(*terrainPatchIndexVBO, gfx_api::index_type::u32);
 	glm::mat4 groundScale = glm::mat4(0);
 	for (int i = 0; i < std::min<size_t>(getNumGroundTypes(), MAX_GROUND_TYPES); i++) {
-		groundScale[i/4][i%4] = 1.0f / (getGroundType(i).textureSize * world_coord(1));
+		groundScale[i/4][i%4] = 1.0f / (getGroundType(i).textureSize * (1 * DIST_TILE));
 	}
 
 	auto dimension = gfx_api::context::get().getSceneRenderTargetDimensions();
@@ -2439,10 +2439,10 @@ void drawWaterNormalImpl(const glm::mat4 &ModelViewProjection, const Vector3f &c
 		return; // no water
 	}
 
-	const glm::vec4 paramsX(0, 0, -1.0f / world_coord(4), 0);
-	const glm::vec4 paramsY(1.0f / world_coord(4), 0, 0, 0);
-	const glm::vec4 paramsX2(0, 0, -1.0f / world_coord(5), 0);
-	const glm::vec4 paramsY2(1.0f / world_coord(5), 0, 0, 0);
+	const glm::vec4 paramsX(0, 0, -1.0f / (4 * DIST_TILE), 0);
+	const glm::vec4 paramsY(1.0f / (4 * DIST_TILE), 0, 0, 0);
+	const glm::vec4 paramsX2(0, 0, -1.0f / (5 * DIST_TILE), 0);
+	const glm::vec4 paramsY2(1.0f / (5 * DIST_TILE), 0, 0, 0);
 	const auto ModelUV1 = glm::translate(glm::vec3(waterOffset, 0.f, 0.f)) * glm::transpose(glm::mat4(paramsX, paramsY, glm::vec4(0,0,1,0), glm::vec4(0,0,0,1)));
 	const auto ModelUV2 = glm::transpose(glm::mat4(paramsX2, paramsY2, glm::vec4(0,0,1,0), glm::vec4(0,0,0,1)));
 
@@ -2494,10 +2494,10 @@ void drawWaterHighImpl(const glm::mat4 &ModelViewProjection, const glm::mat4& vi
 		return; // no water
 	}
 
-	const glm::vec4 paramsX(0, 0, -1.0f / world_coord(4), 0);
-	const glm::vec4 paramsY(1.0f / world_coord(4), 0, 0, 0);
-	const glm::vec4 paramsX2(0, 0, -1.0f / world_coord(5), 0);
-	const glm::vec4 paramsY2(1.0f / world_coord(5), 0, 0, 0);
+	const glm::vec4 paramsX(0, 0, -1.0f / (4 * DIST_TILE), 0);
+	const glm::vec4 paramsY(1.0f / (4 * DIST_TILE), 0, 0, 0);
+	const glm::vec4 paramsX2(0, 0, -1.0f / (5 * DIST_TILE), 0);
+	const glm::vec4 paramsY2(1.0f / (5 * DIST_TILE), 0, 0, 0);
 
 	ASSERT_OR_RETURN(, waterTexturesHigh.tex, "Failed to load water textures");
 	PSO::get().bind();
@@ -2556,10 +2556,10 @@ void drawWaterClassic(const glm::mat4 &ModelViewProjection, const glm::mat4 &Mod
 		return; // no water
 	}
 
-	const glm::vec4 paramsX(0, 0, -1.0f / world_coord(4), 0);
-	const glm::vec4 paramsY(1.0f / world_coord(4), 0, 0, 0);
-	const glm::vec4 paramsX2(0, 0, -1.0f / world_coord(5), 0);
-	const glm::vec4 paramsY2(1.0f / world_coord(5), 0, 0, 0);
+	const glm::vec4 paramsX(0, 0, -1.0f / (4 * DIST_TILE), 0);
+	const glm::vec4 paramsY(1.0f / (4 * DIST_TILE), 0, 0, 0);
+	const glm::vec4 paramsX2(0, 0, -1.0f / (5 * DIST_TILE), 0);
+	const glm::vec4 paramsY2(1.0f / (5 * DIST_TILE), 0, 0, 0);
 	const auto ModelUV1 = glm::translate(glm::vec3(waterOffset, 0.f, 0.f)) * glm::transpose(glm::mat4(paramsX, paramsY, glm::vec4(0,0,1,0), glm::vec4(0,0,0,1)));
 	const auto ModelUV2 = glm::transpose(glm::mat4(paramsX2, paramsY2, glm::vec4(0,0,1,0), glm::vec4(0,0,0,1)));
 

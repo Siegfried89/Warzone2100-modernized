@@ -292,7 +292,7 @@ std::vector<DROID *> pickUnits(Mode m, const std::vector<Vector2i> &pts)
 		if (modlayer::layerOf(d) != view || !fits(m, d)) { continue; }
 		if (d->selected) { sel.push_back(d); continue; }
 		// ohne Auswahl: Einheiten in der Naehe der Zeichnung
-		const int64_t r2 = static_cast<int64_t>(world_coord(NEAR_TILES)) * world_coord(NEAR_TILES);
+		const int64_t r2 = static_cast<int64_t>((NEAR_TILES * DIST_TILE)) * (NEAR_TILES * DIST_TILE);
 		for (const Vector2i &p : pts)
 		{
 			if (dist2(d->pos.xy(), p) <= r2) { nearby.push_back(d); break; }
