@@ -620,7 +620,7 @@ namespace
 {
 std::unordered_map<uint32_t, unsigned> s_fieldReady;   // Kraftfeld: ab wann wieder bereit (gameTime)
 constexpr unsigned FIELD_RECHARGE_MS = 8000;
-constexpr int SONAR_RADIUS = 9;                        // Kacheln
+constexpr int SONAR_RADIUS = 9 * TILE_SPLIT;           // 9 Original-Kacheln (in Feinfeldern)
 
 bool partHas(const DROID *d, const char *a)
 {

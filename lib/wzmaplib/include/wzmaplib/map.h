@@ -39,9 +39,9 @@ using nonstd::nullopt;
 
 // MARK: - Various defines needed by both maplib and the game's map-handling code
 
-#define MAP_MAXWIDTH	256
-#define MAP_MAXHEIGHT	256
-#define MAP_MAXAREA		(256*256)
+#define MAP_MAXWIDTH	512   // MOD: geviertelte Karten (256 Original-Kacheln = 512 Feinfelder)
+#define MAP_MAXHEIGHT	512
+#define MAP_MAXAREA		(512*512)
 
 // Multiplier for the tile height - used for older map formats (which stored tile height as a byte)
 #define ELEVATION_SCALE	2
@@ -76,11 +76,20 @@ static WZMAPLIB_FORCE_INLINE unsigned short TileNumber_texture(unsigned short ti
  * world_coordinate = (tile_coordinate * TILE_UNITS) = (tile_coordinate << TILE_SHIFT)
  */
 
+/* MOD (Kachel-Viertelung, Zweig viertel): das Spiel (WZ_MOD_FINE_GRID) rechnet auf einem Raster halber Kantenlaenge (64 Welteinheiten);
+ * die Kartendateien und die Kartenbibliothek bleiben bei 128 (Original-Kacheln). Das Spiel viertelt jede Karte beim Laden (map.cpp). */
+#if defined(WZ_MOD_FINE_GRID)
+/* The shift on a world coordinate to get the tile coordinate */
+#define TILE_SHIFT 6
+/* The mask to get internal tile coords from a full coordinate */
+#define TILE_MASK 0x3f
+#else
 /* The shift on a world coordinate to get the tile coordinate */
 #define TILE_SHIFT 7
 
 /* The mask to get internal tile coords from a full coordinate */
 #define TILE_MASK 0x7f
+#endif
 
 /* The number of units across a tile */
 #define TILE_UNITS (1<<TILE_SHIFT)
@@ -91,6 +100,8 @@ static WZMAPLIB_FORCE_INLINE unsigned short TileNumber_texture(unsigned short ti
 #ifndef DIST_TILE
 #define DIST_TILE 128
 #endif
+/* MOD: Feinfelder je Original-Kachel (Kantenlaenge): 1 bei Original-Raster, 2 bei geviertelten Karten */
+#define TILE_SPLIT (DIST_TILE / TILE_UNITS)
 
 static WZMAPLIB_FORCE_INLINE int32_t world_coord(int32_t mapCoord)
 {

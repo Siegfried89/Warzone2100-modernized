@@ -510,6 +510,21 @@ static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
 	TileDecalInfo info;
 	MAPTILE *tile = mapTile(mapState, i, j);
 	info.centerUv = getTileTexArrCoords(*info.uv, tile->texture);
+#if defined(WZ_MOD_FINE_GRID)
+	// MOD (Kachel-Viertelung): jede Original-Kachel ist jetzt 2x2 Feinfelder - jedes zeigt sein Viertel der (gedrehten/gespiegelten)
+	// Kacheltextur, damit der Boden genau so aussieht wie vorher
+	{
+		Vector2f *uv = *info.uv;
+		const Vector2f TL = uv[0], TR = uv[2], BR = uv[3], BL = uv[1];
+		auto at = [&](float a, float b) { return TL * ((1.f - a) * (1.f - b)) + TR * (a * (1.f - b)) + BR * (a * b) + BL * ((1.f - a) * b); };
+		const float a0 = static_cast<float>(i & 1) * 0.5f, b0 = static_cast<float>(j & 1) * 0.5f;
+		uv[0] = at(a0, b0);
+		uv[2] = at(a0 + 0.5f, b0);
+		uv[3] = at(a0 + 0.5f, b0 + 0.5f);
+		uv[1] = at(a0, b0 + 0.5f);
+		info.centerUv = at(a0 + 0.25f, b0 + 0.25f);
+	}
+#endif
 	info.decalNo = static_cast<int>(TileNumber_tile(tile->texture));
 	bool skipDecalDraw = !TILE_HAS_DECAL(tile);
 	if (terrainShaderQuality == TerrainShaderQuality::CLASSIC)
@@ -916,6 +931,8 @@ static int effectiveTerrainMeshSubdivision()
 	int factor = (terrainSubdivisionSetting > 0) ? terrainSubdivisionSetting : 1;
 	// MOD (16.11.): Klassik ist jetzt die Standardgrafik und braucht das unterteilte Netz fuer die harten Kanten der Krater/Graeben
 	// (vorher fest 1 = "low-poly")
+	// MOD (Kachel-Viertelung): die Felder sind schon halb so breit - halbe Unterteilung ergibt dasselbe Netz wie vorher
+	factor = std::max(1, factor / TILE_SPLIT);
 	return factor;
 }
 

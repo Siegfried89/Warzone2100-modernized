@@ -386,6 +386,8 @@ LoadingTask<> mapLoad(ResourceLoadingController& controller, char const *filenam
 struct ScriptMapData;
 bool loadTerrainTypeMap(const std::shared_ptr<WzMap::TerrainTypeData>& ttypeData);
 LoadingTask<> mapLoadFromWzMapData(ResourceLoadingController& controller, std::shared_ptr<WzMap::MapData> mapData, WorldMapState& mapState);
+/// MOD (Kachel-Viertelung): die naechste geladene Karte ist schon fein (Spielstand) - nicht noch einmal vierteln
+void mapSetSourceIsFine(bool fine);
 
 // used to reload decal + ground types types when switching terrain overrides
 bool mapReloadGroundTypes();

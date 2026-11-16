@@ -89,7 +89,7 @@ void onHit(DROID *psDroid, int hpLost, const PROJECTILE *psProj)
 	for (const auto &s : SIDE)
 	{
 		const uint16_t dir = static_cast<uint16_t>(baseDir + s[0] * DEG(20));
-		const int dist = world_coord(static_cast<int>(RETREAT_TILES));
+		const int dist = static_cast<int>(RETREAT_TILES) * DIST_TILE;
 		Vector2i to(psDroid->pos.x + iSinR(dir, dist), psDroid->pos.y + iCosR(dir, dist));
 		const int tx = map_coord(to.x), ty = map_coord(to.y);
 		if (tx < 1 || ty < 1 || tx >= gameWorld.map.width - 1 || ty >= gameWorld.map.height - 1) { continue; }

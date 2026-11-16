@@ -32,7 +32,7 @@ namespace modlayerdig
 namespace
 {
 constexpr unsigned DIG_MS = 2000;      // Bohrzeit je Feld
-constexpr int REVEAL_RAD = 4;
+constexpr int REVEAL_RAD = 4 * TILE_SPLIT;   // Original-Kacheln -> Raster
 constexpr int PLUNGE_DEPTH = 3;        // ab so vielen Klippenfeldern am Stueck bohrt sich das Fahrzeug in den Untergrund
 
 struct Goal

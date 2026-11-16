@@ -689,6 +689,11 @@ bool loadStructureStats(WzConfig &ini)
 			psStats->baseBreadth = 99;
 		}
 
+#if defined(WZ_MOD_FINE_GRID)
+		// MOD (Kachel-Viertelung): Grundflaeche steht in Original-Kacheln -> Feinfelder (gleiche Flaeche in der Welt)
+		psStats->baseWidth *= DIST_TILE / TILE_UNITS;
+		psStats->baseBreadth *= DIST_TILE / TILE_UNITS;
+#endif
 		psStats->height = ini.value("height").toUInt();
 		psStats->powerToBuild = ini.value("buildPower").toUInt();
 		psStats->buildPoints = ini.value("buildPoints").toUInt();
@@ -1349,12 +1354,15 @@ bool isBuildableOnWalls(STRUCTURE_TYPE type)
 	return type == REF_DEFENSE || type == REF_GATE;
 }
 
+// MOD (Kachel-Viertelung): eine Mauer belegt eine Original-Kachel = WALL_STEP x WALL_STEP Feinfelder; Nachbarmauern liegen WALL_STEP weiter
+static constexpr int WALL_STEP = DIST_TILE / TILE_UNITS;
+
 static void structFindWalls(WorldMapState& mapState, unsigned player, Vector2i map, bool aWallPresent[5][5], STRUCTURE *apsStructs[5][5])
 {
 	for (int y = -2; y <= 2; ++y)
 		for (int x = -2; x <= 2; ++x)
 		{
-			STRUCTURE *psStruct = castStructure(mapTile(mapState, map.x + x, map.y + y)->psObject);
+			STRUCTURE *psStruct = castStructure(mapTile(mapState, map.x + x * WALL_STEP, map.y + y * WALL_STEP)->psObject);
 			if (psStruct != nullptr && isWallCombiningStructureType(psStruct->pStructureType) && player < MAX_PLAYERS && aiCheckAlliances(player, psStruct->player))
 			{
 				aWallPresent[x + 2][y + 2] = true;
@@ -1370,7 +1378,7 @@ static void structFindWallBlueprints(Vector2i map, bool aWallPresent[5][5])
 	for (int y = -2; y <= 2; ++y)
 		for (int x = -2; x <= 2; ++x)
 		{
-			STRUCTURE_STATS const *stats = getTileBlueprintStats(map.x + x, map.y + y);
+			STRUCTURE_STATS const *stats = getTileBlueprintStats(map.x + x * WALL_STEP, map.y + y * WALL_STEP);
 			if (stats != nullptr && isWallCombiningStructureType(stats))
 			{
 				aWallPresent[x + 2][y + 2] = true;
@@ -1391,10 +1399,10 @@ static WallOrientation structWallScanTerrain(WorldMapState& mapState, bool aWall
 	if (orientation == WallConnectNone)
 	{
 		// If neutral, try choosing horizontal or vertical based on terrain, but don't change to corner type.
-		aWallPresent[2][1] = wallBlockingTerrainJoin(mapState, map + Vector2i(0, -1));
-		aWallPresent[2][3] = wallBlockingTerrainJoin(mapState, map + Vector2i(0,  1));
-		aWallPresent[1][2] = wallBlockingTerrainJoin(mapState, map + Vector2i(-1,  0));
-		aWallPresent[3][2] = wallBlockingTerrainJoin(mapState, map + Vector2i(1,  0));
+		aWallPresent[2][1] = wallBlockingTerrainJoin(mapState, map + Vector2i(0, -1) * WALL_STEP);
+		aWallPresent[2][3] = wallBlockingTerrainJoin(mapState, map + Vector2i(0,  1) * WALL_STEP);
+		aWallPresent[1][2] = wallBlockingTerrainJoin(mapState, map + Vector2i(-1,  0) * WALL_STEP);
+		aWallPresent[3][2] = wallBlockingTerrainJoin(mapState, map + Vector2i(1,  0) * WALL_STEP);
 		orientation = structWallScan(aWallPresent, 2, 2);
 		if ((orientation & (WallConnectLeft | WallConnectRight)) != 0 && (orientation & (WallConnectUp | WallConnectDown)) != 0)
 		{

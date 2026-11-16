@@ -351,9 +351,9 @@ int radiusOfTier(int tier)
 {
 	switch (std::clamp(tier, 1, 3))
 	{
-	case 1: return 5;
-	case 2: return 8;
-	default: return 12;
+	case 1: return 5 * TILE_SPLIT;    // (Kachel-Viertelung: Radien in Feinfeldern, gleiche Groesse in der Welt)
+	case 2: return 8 * TILE_SPLIT;
+	default: return 12 * TILE_SPLIT;
 	}
 }
 

@@ -107,7 +107,9 @@ void swapTexture(Cell &c, int x, int y, bool crater)
 		c.origDecal = TILE_HAS_DECAL(t) != 0;
 		c.texSwapped = true;
 		// Drehung/Spiegelung aus der Lage ableiten (deterministisch) - nicht jeder Krater sieht gleich aus
-		const unsigned rot = static_cast<unsigned>(x * 7 + y * 13) & 3u;
+		// (Kachel-Viertelung: gleiche Drehung fuer alle Feinfelder einer Original-Kachel, sonst passen die Viertel nicht zusammen)
+		const int cx = x / (DIST_TILE / TILE_UNITS), cy = y / (DIST_TILE / TILE_UNITS);
+		const unsigned rot = static_cast<unsigned>(cx * 7 + cy * 13) & 3u;
 		t->texture = static_cast<uint16_t>((RUBBLE_TILE & TILE_NUMMASK) | (rot << TILE_ROTSHIFT));
 		SET_TILE_DECAL(t);
 	}
@@ -256,22 +258,35 @@ bool addCrater(int worldX, int worldY, int size)
 		return false;
 	}
 	const int tx = map_coord(worldX), ty = map_coord(worldY);
-	if (!tileOk(m, tx, ty))
+#if defined(WZ_MOD_FINE_GRID)
+	// MOD (Kachel-Viertelung): leichte Treffer = ein Feinfeld (Viertel-Kachel), mittlere/schwere = 2x2 Feinfelder (eine Original-Kachel,
+	// am Raster der Original-Kacheln ausgerichtet, damit die Kratertextur ganz zu sehen ist)
+	const int n = size >= 2 ? DIST_TILE / TILE_UNITS : 1;
+	const int x0 = n > 1 ? tx - (tx % n) : tx, y0 = n > 1 ? ty - (ty % n) : ty;
+#else
+	const int n = 1;
+	const int x0 = tx, y0 = ty;
+#endif
+	bool changed = false;
+	for (int yy = y0; yy < y0 + n; yy++)
 	{
-		return false;
+		for (int xx = x0; xx < x0 + n; xx++)
+		{
+			if (!tileOk(m, xx, yy)) { continue; }
+			const uint64_t k = keyOf(layerTag(), xx, yy);
+			Cell &c = s_cells[k];
+			const int before = c.dyn;
+			const int add = c.dyn > 0 ? craterDepth(size) / 2 : craterDepth(size);   // weitere Treffer vertiefen nur noch halb so viel
+			c.dyn = static_cast<int16_t>(std::min(MAX_CRATER_SINK, std::max<int>(c.dyn, 0) + add));
+			swapTexture(c, xx, yy, true);
+			if (c.dyn != before)
+			{
+				dirtyAround(xx, yy);
+				changed = true;
+			}
+		}
 	}
-	const uint64_t k = keyOf(layerTag(), tx, ty);
-	Cell &c = s_cells[k];
-	const int before = c.dyn;
-	const int add = c.dyn > 0 ? craterDepth(size) / 2 : craterDepth(size);   // weitere Treffer vertiefen nur noch halb so viel
-	c.dyn = static_cast<int16_t>(std::min(MAX_CRATER_SINK, std::max<int>(c.dyn, 0) + add));
-	swapTexture(c, tx, ty, true);
-	if (c.dyn == before)
-	{
-		return false;
-	}
-	dirtyAround(tx, ty);
-	return true;
+	return changed;
 }
 
 void onProjectileImpact(const PROJECTILE *psProj)

@@ -3101,6 +3101,7 @@ LoadingTask<> loadGame(ResourceLoadingController& controller, const GameLoadDeta
 		gwShutDown(mission.gameWorld.map);
 		mission.gameWorld.map = {};
 		mission.gameWorld.corridorFlow = {};
+		mapSetSourceIsFine(true);   // MOD (Kachel-Viertelung): die Missionskarte im Spielstand ist schon fein
 		if (!(co_await mapLoad(controller, aFileName.c_str(), mission.gameWorld.map)))
 		{
 			debug(LOG_ERROR, "Failed with: %s", aFileName.c_str());
@@ -3231,6 +3232,7 @@ LoadingTask<> loadGame(ResourceLoadingController& controller, const GameLoadDeta
 
 		co_await controller.yieldFrame();
 
+		mapSetSourceIsFine(UserSaveGame);   // MOD (Kachel-Viertelung): Karten aus Spielstaenden sind schon fein
 		if (!(co_await mapLoadFromWzMapData(controller, mapData, gameWorld.map)))
 		{
 			debug(LOG_ERROR, "Failed to process map data from path: %s", aFileName.c_str());

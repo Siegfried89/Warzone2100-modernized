@@ -53,7 +53,7 @@ int64_t d2(const Vector2i &a, const Vector2i &b)
 	const int64_t dx = a.x - b.x, dy = a.y - b.y;
 	return dx * dx + dy * dy;
 }
-int64_t r2(int tiles) { const int64_t r = world_coord(tiles); return r * r; }
+int64_t r2(int tiles) { const int64_t r = static_cast<int64_t>(tiles) * DIST_TILE; return r * r; }   // Original-Kacheln (Abstand)
 
 bool waitingUnit(const DROID *d, const Vector2i &home)
 {

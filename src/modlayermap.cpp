@@ -491,13 +491,40 @@ bool buildLayer(Layer layer, const Palette &pal, uint32_t seed)
 {
 	const int W = s_w, H = s_h;
 	Rng r(seed ^ (layer == modlayer::UNDERGROUND ? 0xA5A5A5A5u : 0x5A5A5A5Au));
-	Grid g(W, H);
+	// MOD (Kachel-Viertelung): Gaenge, Kammern und Inseln werden in Original-Kacheln erzeugt und dann auf das Feinraster vergroessert,
+	// damit sie in der Welt so gross bleiben wie vorher
+	constexpr int S = TILE_SPLIT;
+	const int CW = (W + S - 1) / S, CH = (H + S - 1) / S;
+	Grid g(CW, CH);
 	if (layer == modlayer::UNDERGROUND) { genUndergroundGrid(g, r); } else { genOrbitGrid(g, r); computeIslandLevels(g); }
 
 	WorldMapState tmp;
 	tmp.width = W;
 	tmp.height = H;
 	tmp.tiles = makeTiles(layer, g, pal, seed ^ (static_cast<uint32_t>(layer) * 977u));
+	if (S > 1)
+	{
+		std::unique_ptr<MAPTILE[]> coarse = std::move(tmp.tiles);
+		tmp.tiles = std::make_unique<MAPTILE[]>(static_cast<size_t>(W) * static_cast<size_t>(H));
+		auto ch = [&](int cx, int cy) -> int32_t {
+			cx = std::min(cx, CW - 1); cy = std::min(cy, CH - 1);
+			return coarse[static_cast<size_t>(cx) + static_cast<size_t>(cy) * CW].height;
+		};
+		for (int fy = 0; fy < H; ++fy)
+		{
+			for (int fx = 0; fx < W; ++fx)
+			{
+				const int cx = fx / S, cy = fy / S;
+				MAPTILE &t = tmp.tiles[static_cast<size_t>(fx) + static_cast<size_t>(fy) * W];
+				t = coarse[static_cast<size_t>(cx) + static_cast<size_t>(cy) * CW];
+				// Eckhoehe zwischen den Original-Ecken (linear), damit die Felswaende genauso verlaufen
+				const int ax = fx % S, ay = fy % S;
+				const int32_t h0 = ch(cx, cy) * (S - ax) + ch(cx + 1, cy) * ax;
+				const int32_t h1 = ch(cx, cy + 1) * (S - ax) + ch(cx + 1, cy + 1) * ax;
+				t.height = (h0 * (S - ay) + h1 * ay) / (S * S);
+			}
+		}
+	}
 	if (!mapSetupLayerWorld(tmp))
 	{
 		return false;
@@ -824,6 +851,8 @@ bool drillTile(int tileX, int tileY, int player, int revealRad)
 bool islandLevel(int x, int y, uint8_t &level)
 {
 	if (resident() != modlayer::ORBIT || s_islandLevel.empty()) { return false; }
+	x /= TILE_SPLIT;   // MOD (Kachel-Viertelung): Inselfeld in Original-Kacheln
+	y /= TILE_SPLIT;
 	if (x < 0 || y < 0 || x >= s_islandW || y >= s_islandH) { level = 0; return true; }
 	level = s_islandLevel[static_cast<size_t>(x) + static_cast<size_t>(y) * s_islandW];
 	return true;

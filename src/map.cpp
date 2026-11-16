@@ -1298,6 +1298,47 @@ bool loadTerrainTypeMap(const std::shared_ptr<WzMap::TerrainTypeData>& ttypeData
 }
 
 ///* Initialise the map structure */
+#if defined(WZ_MOD_FINE_GRID)
+// MOD (Kachel-Viertelung): Karten werden beim Laden geviertelt. Spielstaende enthalten schon die feine Karte (nicht noch einmal vierteln).
+static bool s_modMapSourceIsFine = false;
+void mapSetSourceIsFine(bool fine) { s_modMapSourceIsFine = fine; }
+
+/// Hoehe der Original-Karte (Kacheln zu 128 Welteinheiten) an einem Weltpunkt - dieselbe Flaeche wie map_Height (je Kachel 4 Dreiecke um die Mitte)
+static int32_t coarseSurfaceHeight(const WzMap::MapData &m, int32_t x, int32_t y)
+{
+	constexpr int32_t T = DIST_TILE;
+	const int32_t W = static_cast<int32_t>(m.width), H = static_cast<int32_t>(m.height);
+	x = std::clamp(x, 0, W * T - 1);
+	y = std::clamp(y, 0, H * T - 1);
+	const int32_t tileX = x / T, tileY = y / T;
+	const int32_t onTileX = x - tileX * T, onTileY = y - tileY * T;
+	auto hAt = [&](int32_t tx, int32_t ty) -> int32_t {
+		tx = std::min(tx, W - 1); ty = std::min(ty, H - 1);   // wie map_TileHeight am Rand
+		return static_cast<int32_t>(m.mMapTiles[static_cast<size_t>(tx) + static_cast<size_t>(ty) * W].height);
+	};
+	int32_t height[2][2], center = 0;
+	for (int i = 0; i < 2; i++) { for (int j = 0; j < 2; j++) { height[i][j] = hAt(tileX + i, tileY + j); center += height[i][j]; } }
+	center /= 4;
+	int32_t left, right, towardsCenter, towardsRight;
+	if (onTileY > onTileX)
+	{
+		if (onTileY < T - onTileX) { right = height[0][0]; left = height[0][1]; towardsCenter = onTileX; towardsRight = T - onTileY; }
+		else { right = height[0][1]; left = height[1][1]; towardsCenter = T - onTileY; towardsRight = T - onTileX; }
+	}
+	else
+	{
+		if (onTileX > T - onTileY) { right = height[1][1]; left = height[1][0]; towardsCenter = T - onTileX; towardsRight = onTileY; }
+		else { right = height[1][0]; left = height[0][0]; towardsCenter = onTileY; towardsRight = onTileX; }
+	}
+	const int32_t middle = (left + right) / 2;
+	const int32_t onBottom = left * (T - towardsRight) + right * towardsRight;
+	const int32_t result = onBottom + (center - middle) * towardsCenter * 2;
+	return (result + T / 2) / T;
+}
+#else
+void mapSetSourceIsFine(bool) {}
+#endif
+
 LoadingTask<> mapLoadFromWzMapData(ResourceLoadingController& controller, std::shared_ptr<WzMap::MapData> loadedMap, WorldMapState& mapState)
 {
 	uint32_t		width, height;
@@ -1305,6 +1346,16 @@ LoadingTask<> mapLoadFromWzMapData(ResourceLoadingController& controller, std::s
 
 	width = loadedMap->width;
 	height = loadedMap->height;
+#if defined(WZ_MOD_FINE_GRID)
+	constexpr uint32_t SPLIT = DIST_TILE / TILE_UNITS;   // 2: jede Original-Kachel wird zu 2x2 Feinfeldern
+	const bool upsample = !s_modMapSourceIsFine;
+	s_modMapSourceIsFine = false;
+	if (upsample)
+	{
+		width *= SPLIT;
+		height *= SPLIT;
+	}
+#endif
 
 	/* See if this is the first time a map has been loaded */
 	ASSERT(mapState.tiles == nullptr, "Map has not been cleared before calling mapLoad()!");
@@ -1339,14 +1390,23 @@ LoadingTask<> mapLoadFromWzMapData(ResourceLoadingController& controller, std::s
 	/* Load in the map data */
 	for (int i = 0; i < mapState.width * mapState.height; ++i)
 	{
-		ASSERT(loadedMap->mMapTiles[i].height <= TILE_MAX_HEIGHT, "Tile height (%" PRIu16 ") exceeds TILE_MAX_HEIGHT (%zu)", loadedMap->mMapTiles[i].height, static_cast<size_t>(TILE_MAX_HEIGHT));
-		if (TileNumber_tile(loadedMap->mMapTiles[i].texture) >= MAX_TILE_TEXTURES)
+		int src = i;
+#if defined(WZ_MOD_FINE_GRID)
+		const int fx = i % mapState.width, fy = i / mapState.width;
+		if (upsample) { src = static_cast<int>(fx / SPLIT + (fy / SPLIT) * loadedMap->width); }
+#endif
+		ASSERT(loadedMap->mMapTiles[src].height <= TILE_MAX_HEIGHT, "Tile height (%" PRIu16 ") exceeds TILE_MAX_HEIGHT (%zu)", loadedMap->mMapTiles[src].height, static_cast<size_t>(TILE_MAX_HEIGHT));
+		if (TileNumber_tile(loadedMap->mMapTiles[src].texture) >= MAX_TILE_TEXTURES)
 		{
-			debug(LOG_ERROR, "Tile %d has texture number %u, which exceeds the maximum (%d)", i, (unsigned)TileNumber_tile(loadedMap->mMapTiles[i].texture), MAX_TILE_TEXTURES - 1);
+			debug(LOG_ERROR, "Tile %d has texture number %u, which exceeds the maximum (%d)", src, (unsigned)TileNumber_tile(loadedMap->mMapTiles[src].texture), MAX_TILE_TEXTURES - 1);
 			co_return mapLoadFail(mapState);
 		}
-		mapState.tiles[i].texture = loadedMap->mMapTiles[i].texture;
-		mapState.tiles[i].height = loadedMap->mMapTiles[i].height;
+		mapState.tiles[i].texture = loadedMap->mMapTiles[src].texture;
+		mapState.tiles[i].height = loadedMap->mMapTiles[src].height;
+#if defined(WZ_MOD_FINE_GRID)
+		// Hoehe am Feinfeld-Eckpunkt genau auf der Flaeche der Original-Kachel -> Form der Karte bleibt gleich
+		if (upsample) { mapState.tiles[i].height = coarseSurfaceHeight(*loadedMap, fx * TILE_UNITS, fy * TILE_UNITS); }
+#endif
 
 		// Visibility stuff
 		memset(mapState.tiles[i].watchers, 0, sizeof(mapState.tiles[i].watchers));
@@ -1369,6 +1429,22 @@ LoadingTask<> mapLoadFromWzMapData(ResourceLoadingController& controller, std::s
 	size_t gwIdx = 0;
 	for (const auto gateway : loadedMap->mGateways)
 	{
+#if defined(WZ_MOD_FINE_GRID)
+		if (upsample)
+		{
+			// Durchgang in Original-Kacheln -> Feinfelder (Endkachel bis zu ihrem letzten Feinfeld)
+			// ein Durchgang ist eine Linie: auf der Achse der Linie bis ans Ende der Endkachel, quer dazu eine Feinfeld-Reihe
+			const int gx1 = gateway.x1 * SPLIT, gy1 = gateway.y1 * SPLIT;
+			const int gx2 = gateway.x1 == gateway.x2 ? gx1 : gateway.x2 * SPLIT + SPLIT - 1;
+			const int gy2 = gateway.y1 == gateway.y2 ? gy1 : gateway.y2 * SPLIT + SPLIT - 1;
+			if (!gwNewGateway(mapState, gx1, gy1, gx2, gy2))
+			{
+				debug(LOG_ERROR, "Unable to add gateway %zu - dropping it", gwIdx);
+			}
+			gwIdx++;
+			continue;
+		}
+#endif
 		if (!gwNewGateway(mapState, gateway.x1, gateway.y1, gateway.x2, gateway.y2))
 		{
 			debug(LOG_ERROR, "Unable to add gateway %zu - dropping it", gwIdx);

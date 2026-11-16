@@ -127,6 +127,11 @@ bool loadFeatureStats(WzConfig &ini)
 		p.psImd = modelGet(ini.value("model").toWzString());
 		p.baseWidth = ini.value("width", 1).toInt();
 		p.baseBreadth = ini.value("breadth", 1).toInt();
+#if defined(WZ_MOD_FINE_GRID)
+		// MOD (Kachel-Viertelung): Original-Kacheln -> Feinfelder
+		p.baseWidth *= DIST_TILE / TILE_UNITS;
+		p.baseBreadth *= DIST_TILE / TILE_UNITS;
+#endif
 		p.tileDraw = ini.value("tileDraw", 1).toInt();
 		p.allowLOS = ini.value("lineOfSight", 1).toInt();
 		p.visibleAtStart = ini.value("startVisible", 1).toInt();
