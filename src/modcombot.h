@@ -102,6 +102,11 @@ std::string weaponLabel(const DROID *d, PartSlot arm);
 /// Schildwerte (Block-Bonus in Prozent) aller vorhandenen Arme/Torso
 int blockBonus(const DROID *d);
 bool hasAbility(const DROID *d, const char *ability);
+/// (16.11. 19:34) Combot mit Sprungduesen-Beinen oder Jetpack-Torso: fliegt (ueber Hindernisse, zwischen Oberflaeche und Orbit,
+/// zwischen Asteroiden). Wegfindung wie ein Flieger.
+bool canFly(const DROID *d);
+/// Anzeige: Flughoehe (Weltmasseinheiten) - hebt beim Fahren ueber weitere Strecken ab und schwebt ueber der Orbit-Leere
+float flightOffset(const DROID *d);
 /// einmal pro Spielschritt: Selbstreparatur usw.
 void updateAbilities(DROID *d);
 

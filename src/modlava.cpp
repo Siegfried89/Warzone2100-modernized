@@ -149,6 +149,73 @@ void placeUnderground(GameWorld &world)
 	for (FEATURE *f : made) { modlayer::assignLayer(f, modlayer::UNDERGROUND); }
 }
 
+// (16.11. 19:37) Landfill-Kulissen (Mauerring mit Schrotthaufen und Autowracks, Mod-Features Landfill4/6/9) auf jeder Karte:
+// gab es bisher nur auf der Stadtkarte. Beim Start (nicht in der Kampagne, nicht wenn die Karte schon welche hat) werden ein paar
+// auf freien, ebenen Flaechen abseits von Basen und Oelquellen verteilt. Deterministisch (gameRand), alle Rechner gleich.
+bool s_landfill = false;
+
+bool flatFree(const WorldMapState &m, int tx, int ty, int sw, int sh)
+{
+	int lo = INT32_MAX, hi = INT32_MIN;
+	for (int y = ty - 1; y <= ty + sh; y++)
+	{
+		for (int x = tx - 1; x <= tx + sw; x++)
+		{
+			if (!tileOnMap(m, x, y)) { return false; }
+			const MAPTILE *t = mapTile(m, x, y);
+			if (t == nullptr || TileIsOccupied(t)) { return false; }
+			const unsigned char tt = terrainType(t);
+			if (tt == TER_CLIFFFACE || tt == TER_WATER) { return false; }
+			lo = std::min(lo, static_cast<int>(t->height));
+			hi = std::max(hi, static_cast<int>(t->height));
+		}
+	}
+	return hi - lo <= 48;
+}
+
+void placeLandfills(GameWorld &world)
+{
+	std::vector<FEATURE_STATS *> kinds;
+	for (FEATURE_STATS &fs : asFeatureStats)
+	{
+		if (fs.id.startsWith("Landfill")) { kinds.push_back(&fs); }
+	}
+	if (kinds.empty()) { return; }
+	for (const FEATURE *f : world.objects.features[0])
+	{
+		if (f->psStats != nullptr && f->psStats->id.startsWith("Landfill")) { return; }   // Karte (oder Spielstand) hat schon welche
+	}
+	const int w = world.map.width, h = world.map.height;
+	if (w < 32 || h < 32) { return; }
+	const int wanted = std::clamp(w * h / 3000, 2, 10);
+	std::vector<Vector2i> done;
+	int placed = 0;
+	for (int attempt = 0; attempt < wanted * 80 && placed < wanted; attempt++)
+	{
+		FEATURE_STATS *fs = kinds[gameRand(static_cast<uint32_t>(kinds.size()))];
+		const int sw = std::max<int>(1, fs->baseWidth), sh = std::max<int>(1, fs->baseBreadth);
+		const int tx = 4 + static_cast<int>(gameRand(static_cast<uint32_t>(w - 8 - sw)));
+		const int ty = 4 + static_cast<int>(gameRand(static_cast<uint32_t>(h - 8 - sh)));
+		if (!flatFree(world.map, tx, ty, sw, sh)) { continue; }
+		const int wx = world_coord(tx) + world_coord(sw) / 2, wy = world_coord(ty) + world_coord(sh) / 2;
+		if (nearAnyStructure(world, wx, wy)) { continue; }
+		bool clash = false;
+		for (const FEATURE *f : world.objects.features[0])
+		{
+			if (f->psStats == nullptr || f->psStats->subType != FEAT_OIL_RESOURCE) { continue; }
+			if (iHypot(f->pos.x - wx, f->pos.y - wy) < 6 * TILE_UNITS) { clash = true; break; }
+		}
+		for (const Vector2i &o : done) { if (!clash && iHypot(o.x - wx, o.y - wy) < 14 * TILE_UNITS) { clash = true; } }
+		if (clash) { continue; }
+		if (buildFeature(world, fs, static_cast<UDWORD>(wx), static_cast<UDWORD>(wy), false) != nullptr)
+		{
+			done.push_back(Vector2i(wx, wy));
+			placed++;
+		}
+	}
+	debug(LOG_INFO, "MOD: %d Landfill-Kulissen verteilt", placed);
+}
+
 FEATURE *nearestLava(GameWorld &world, const DROID *d)
 {
 	FEATURE *best = nullptr;
@@ -222,6 +289,12 @@ void tick(GameWorld &world)
 	{
 		s_placed = true;
 		placeFields(world);   // unabhaengig vom eigenen Spieler (alle Rechner muessen gleich rechnen)
+	}
+
+	if (!s_landfill && gameTime >= 3000)
+	{
+		s_landfill = true;
+		if (game.type != LEVEL_TYPE::CAMPAIGN) { placeLandfills(world); }
 	}
 
 	// Untergrund-Lavafelder: beim ersten fertigen Schacht
@@ -306,6 +379,7 @@ void reset()
 	s_sec = 0;
 	s_placed = false;
 	s_placedUnder = false;
+	s_landfill = false;
 	for (int &c : s_cap) { c = 0; }
 }
 }

@@ -45,6 +45,7 @@
 #include "mission.h"
 #include "faction.h"
 #include "modcombot.h"
+#include "modlayer.h"
 #include "modbuild.h"
 #include "modduel.h"
 #include "modrecoil.h"
@@ -1070,6 +1071,8 @@ void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix, const g
 	{
 		position.y += bobTransporterHeight();
 	}
+	// MOD: fliessender Ebenenwechsel (Orbit) und Flughoehe der Sprungduesen-Combots - nur Anzeige
+	position.y += static_cast<int>(modlayer::transitionOffset(psDroid, graphicsTime) + modcombot::flightOffset(psDroid));
 
 	/* Get all the pitch,roll,yaw info */
 	rotation.y = -st.rot.direction;

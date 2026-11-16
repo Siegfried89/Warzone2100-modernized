@@ -125,6 +125,15 @@ Layer layerOfId(uint32_t id)
 
 std::unordered_map<uint32_t, Layer> s_flyReq;   // Flieger -> Ebene, in die sie auf Knopfdruck wechseln sollen (wird im Spielschritt abgearbeitet)
 
+// MOD (16.11. 19:34): fliessender Ebenenwechsel wie in MF. Phase A (in der alten Ebene): der Flieger steigt steil auf (Orbit) bzw. sinkt
+// in die verschwommene Tiefe unter den Inseln (Oberflaeche). Danach wechselt er die Ebene; Phase B (in der neuen Ebene): er taucht aus der
+// verschwommenen Untertextur auf und steigt auf Flughoehe (Orbit) bzw. kommt von hoch oben herab (Oberflaeche). Spielzustand: nur der
+// Zeitpunkt des Wechsels (gameTime, deterministisch); Hoehe nur Anzeige.
+constexpr UDWORD TRANS_A_MS = 900;
+constexpr UDWORD TRANS_B_MS = 1600;
+struct Transition { Layer to; UDWORD start; };
+std::unordered_map<uint32_t, Transition> s_trans;
+
 // beim Umschalten der Anzeige: ausgewaehlte Einheiten, die in der neuen Ebene nicht sichtbar sind, abwaehlen
 void deselectOtherLayers(Layer shown)
 {
@@ -134,6 +143,8 @@ void deselectOtherLayers(Layer shown)
 		if (!d->selected || layerOfId(d->id) == shown) { continue; }
 		const auto rq = s_flyReq.find(d->id);
 		if (rq != s_flyReq.end() && rq->second == shown) { continue; }   // Flieger, die gerade in die gezeigte Ebene steigen, bleiben ausgewaehlt
+		const auto tr = s_trans.find(d->id);
+		if (tr != s_trans.end() && tr->second.to == shown) { continue; }
 		DeSelectDroid(d);
 	}
 }
@@ -167,22 +178,36 @@ void flierTick()
 			{
 				const auto rq = s_flyReq.find(d->id);
 				if (rq == s_flyReq.end() || d->died != 0) { continue; }
-				if (layerOfId(d->id) == UNDERGROUND) { continue; }
-				const Layer from = layerOfId(d->id);
-				applyLayer(d, rq->second);
-				if (layerOfId(d->id) != from)
+				if (layerOfId(d->id) == UNDERGROUND || layerOfId(d->id) == rq->second || s_trans.count(d->id)) { continue; }
+				s_trans[d->id] = Transition{rq->second, gameTime};
+				orderDroid(d, DORDER_STOP, ModeImmediate);
+				const unsigned it = gameTime - deltaGameTime / 2 + 1;
+				for (int i = 0; i < 3; i++)
 				{
-					orderDroid(d, DORDER_STOP, ModeImmediate);
-					const unsigned it = gameTime - deltaGameTime / 2 + 1;
-					for (int i = 0; i < 3; i++)
-					{
-						Vector3i sp(d->pos.x + (i - 1) * 20, d->pos.z + 30 + i * 22, d->pos.y + (1 - i) * 14);
-						addEffect(&sp, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_HIGH, false, nullptr, 0, it);
-					}
+					Vector3i sp(d->pos.x + (i - 1) * 20, d->pos.z + 10 + i * 12, d->pos.y + (1 - i) * 14);
+					addEffect(&sp, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_HIGH, false, nullptr, 0, it);
 				}
 			}
 		}
 		s_flyReq.clear();
+	}
+	// laufende Wechsel: nach Phase A die Ebene wechseln, nach Phase B fertig
+	for (auto it = s_trans.begin(); it != s_trans.end();)
+	{
+		DROID *d = nullptr;
+		for (int p = 0; p < MAX_PLAYERS && d == nullptr; p++)
+		{
+			for (DROID *c : gameWorld.objects.droids[p]) { if (c->id == it->first) { d = c; break; } }
+		}
+		if (d == nullptr || d->died != 0) { it = s_trans.erase(it); continue; }
+		const UDWORD age = gameTime - it->second.start;
+		if (layerOfId(d->id) != it->second.to && age >= TRANS_A_MS)
+		{
+			applyLayer(d, it->second.to);
+			orderDroid(d, DORDER_STOP, ModeImmediate);
+		}
+		if (age >= TRANS_A_MS + TRANS_B_MS) { it = s_trans.erase(it); continue; }
+		++it;
 	}
 	if (s_layerOf.empty()) { return; }
 	for (int p = 0; p < MAX_PLAYERS; p++)
@@ -391,6 +416,11 @@ PROPULSION_TYPE effectivePropulsion(const DROID *psDroid, PROPULSION_TYPE realTy
 	// Jede Ebene hat jetzt ihre eigene Karte: Einheiten bewegen sich dort mit ihrem echten Antrieb (Fels blockiert wirklich).
 	// Kampfroboter (Combots) haben auch "Beine", duerfen aber nicht durch Haeuser/Graeben laufen: sie bewegen sich wie Radfahrzeuge
 	// (gleiche Sperrbits, andere Pfad-Domaene), nur echte Infanterie behaelt Legged
+	// (16.11. 19:34) Combots mit Sprungduesen / Jetpack fliegen ueber Hindernisse und die Orbit-Leere hinweg
+	if (psDroid != nullptr && realType == PROPULSION_TYPE_LEGGED && modcombot::canFly(psDroid))
+	{
+		return PROPULSION_TYPE_LIFT;
+	}
 	if (realType == PROPULSION_TYPE_LEGGED && psDroid != nullptr && !modoil::isInfantry(psDroid))
 	{
 		return PROPULSION_TYPE_WHEELED;
@@ -481,7 +511,31 @@ void moveToLayer(DROID *d, Layer next)
 
 bool isFlier(const DROID *psDroid)
 {
-	return psDroid != nullptr && (psDroid->getPropulsionStats()->alwaysFlying || psDroid->isVtol());
+	return psDroid != nullptr && (psDroid->getPropulsionStats()->alwaysFlying || psDroid->isVtol() || modcombot::canFly(psDroid));
+}
+
+float transitionOffset(const DROID *d, UDWORD time)
+{
+	if (d == nullptr || s_trans.empty()) { return 0.f; }
+	const auto it = s_trans.find(d->id);
+	if (it == s_trans.end()) { return 0.f; }
+	const bool up = it->second.to == ORBIT;
+	const int age = static_cast<int>(time - it->second.start);
+	constexpr float HIGH = 2200.f;   // so hoch steigt er aus dem Bild (bzw. kommt von dort)
+	constexpr float DEEP = 700.f;    // so tief liegt die verschwommene Untertextur unter den Inseln
+	if (layerOfId(d->id) != it->second.to)
+	{
+		const float t = std::clamp(static_cast<float>(age) / TRANS_A_MS, 0.f, 1.f);
+		return up ? HIGH * t * t : -DEEP * t * t;
+	}
+	const float t = std::clamp(static_cast<float>(age - static_cast<int>(TRANS_A_MS)) / TRANS_B_MS, 0.f, 1.f);
+	const float r = (1.f - t) * (1.f - t);
+	return up ? -DEEP * r : HIGH * r;
+}
+
+bool inTransition(const DROID *d)
+{
+	return d != nullptr && !s_trans.empty() && s_trans.count(d->id) != 0;
 }
 
 void sendSelectedFliers(Layer target)
@@ -504,6 +558,7 @@ void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder)
 
 void forget(uint32_t id)
 {
+	s_trans.erase(id);
 	if (s_layerOf.empty() && s_cool.empty()) { return; }
 	s_layerOf.erase(id);
 	s_cool.erase(id);
@@ -530,6 +585,7 @@ void resetState()
 	s_layerOf.clear();
 	s_cool.clear();
 	s_flyReq.clear();
+	s_trans.clear();
 	s_openedShafts.clear();
 	modlayermap::reset();
 	s_current = s_target = SURFACE;

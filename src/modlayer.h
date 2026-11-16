@@ -66,8 +66,12 @@ void gameTick();
 /// Ebenen-Knopf gedrueckt: die ausgewaehlten Flieger (Hoverjets, Drohnen, VTOLs) steigen in den Orbit bzw. kehren zur Oberflaeche zurueck
 /// (der Wechsel selbst geschieht im naechsten Spielschritt; in den Untergrund koennen Flieger nicht)
 void sendSelectedFliers(Layer target);
-/// Flieger? (schwebende Antriebe wie Balldrohne/Hoverjet und VTOLs)
+/// Flieger? (Hoverjets, VTOLs und Combots mit Sprungduesen/Jetpack)
 bool isFlier(const DROID *psDroid);
+/// Anzeige: Hoehenversatz beim fliessenden Ebenenwechsel (steigt aus dem Bild / taucht aus der verschwommenen Tiefe auf), 0 sonst
+float transitionOffset(const DROID *psDroid, UDWORD time);
+/// wechselt die Einheit gerade die Ebene?
+bool inTransition(const DROID *psDroid);
 /// beim Baubeginn: das Bauwerk entsteht auf der Ebene des Baumeisters
 void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder);
 /// eigenes Objekt in einer nicht angezeigten Ebene wurde getroffen: Meldung "Under attack: Orbit/Underground/Surface" (nur Anzeige, nicht synchronisiert)

@@ -20,6 +20,7 @@
 
 #include "baseobject.h"
 #include "droid.h"
+#include "effects.h"
 #include "feature.h"
 #include "game_world.h"
 #include "map.h"
@@ -553,6 +554,66 @@ bool hasAbility(const DROID *d, const char *ability)
 	       || (lo.armR && lo.armR->hasAbility(ability)) || (lo.armL && lo.armL->hasAbility(ability));
 }
 
+bool canFly(const DROID *d)
+{
+	if (d == nullptr) { return false; }
+	const Part *t = partOfBody(d->getBodyStats());
+	if (t == nullptr) { return false; }
+	const Part *l = partOfPropulsion(d->getPropulsionStats());
+	return t->hasAbility("fly") || t->hasAbility("jump") || (l != nullptr && (l->hasAbility("jump") || l->hasAbility("fly")));
+}
+
+namespace
+{
+struct Air { float cur = 0.f; unsigned last = 0; unsigned nextPuff = 0; };
+std::unordered_map<uint32_t, Air> s_air;
+constexpr float FLY_HEIGHT = 170.f;      // Flughoehe ueber dem Boden
+constexpr float FLY_RISE_MS = 700.f;     // so lange dauert Abheben / Landen
+
+bool overVoid(const DROID *d)
+{
+	if (!tileOnMap(gameWorld.map, map_coord(d->pos.x), map_coord(d->pos.y))) { return false; }
+	const MAPTILE *t = mapTile(gameWorld.map, map_coord(d->pos.x), map_coord(d->pos.y));
+	return TileNumber_tile(t->texture) == MOD_TILE_VOID;
+}
+}
+
+float flightOffset(const DROID *d)
+{
+	if (d == nullptr || d->died || !canFly(d)) { return 0.f; }
+	bool want = overVoid(d);
+	if (!want && d->sMove.Status != MOVEINACTIVE && d->sMove.Status != MOVEHOVER)
+	{
+		const int dist = iHypot(d->sMove.destination - d->pos.xy());
+		want = dist > TILE_UNITS * 5 / 2;   // weitere Strecke: abheben (kurze Wege werden gelaufen)
+	}
+	Air &a = s_air[d->id];
+	const unsigned now = graphicsTime;
+	const float dt = a.last == 0 || now < a.last ? 0.f : static_cast<float>(std::min(now - a.last, 200u));
+	a.last = now;
+	const float step = dt / FLY_RISE_MS;
+	a.cur = want ? std::min(1.f, a.cur + step) : std::max(0.f, a.cur - step);
+	if (a.cur > 0.05f && now >= a.nextPuff)
+	{
+		// Duesenstrahl unter den Fuessen (nur Anzeige)
+		a.nextPuff = now + 110;
+		const float h = a.cur * a.cur * (3.f - 2.f * a.cur) * FLY_HEIGHT;
+		Vector3i p(d->pos.x + (rand() % 21 - 10), d->pos.z + static_cast<int>(h) - 6, d->pos.y + (rand() % 21 - 10));
+		addEffect(&p, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING, false, nullptr, 0);
+	}
+	if (s_air.size() > 512)
+	{
+		for (auto it = s_air.begin(); it != s_air.end();) { it = (now - it->second.last > 10000) ? s_air.erase(it) : std::next(it); }
+	}
+	return a.cur * a.cur * (3.f - 2.f * a.cur) * FLY_HEIGHT;
+}
+
+static bool airborne(const DROID *d)
+{
+	const auto it = s_air.find(d->id);
+	return it != s_air.end() && it->second.cur > 0.4f;
+}
+
 void updateAbilities(DROID *d)
 {
 	if (d == nullptr || d->died || !isModular(d)) { return; }
@@ -816,6 +877,7 @@ bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view,
 		}
 	}
 	unsigned elapsed = bButton ? graphicsTime : (graphicsTime > d->timeAnimationStarted ? graphicsTime - d->timeAnimationStarted : 0u);
+	if (!bButton && kind == ANIM_WALK && s_air.count(d->id) && airborne(d)) { kind = ANIM_IDLE; }   // fliegt: Beine laufen nicht
 	if (!bButton && kind == ANIM_WALK) { elapsed = walkPhaseMs(d); }   // MOD: Schrittfolge passend zur Geschwindigkeit
 	bool drew = false;
 	const float stretch = -(static_cast<float>(d->heightAboveMap));
