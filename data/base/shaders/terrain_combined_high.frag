@@ -302,6 +302,14 @@ void main()
 {
 #ifdef NEWGL
 	vec4 fragColor = (tile == MODV_TILE) ? vec4(modvColor(posModelSpace), 1.0) : modGrade(main_bumpMapping());   // MOD: Orbit-Leere
+	// MOD (16.11.): schwarze Raender der MF-Inselkacheln (dort war in MF der Weltraum) zeigen weich die Leere darunter
+	if (tile > MODV_TILE)
+	{
+		vec3 modIc = texture2DArray(decalTex, vec3(uvDecal, float(tile)), WZ_MIP_LOAD_BIAS).rgb;
+		if (linearLighting != 0) { modIc = wzLinearToSrgb(modIc); }
+		float modK = 1.0 - smoothstep(0.035, 0.11, max(modIc.r, max(modIc.g, modIc.b)));
+		if (modK > 0.0) { fragColor = mix(fragColor, vec4(modvColor(posModelSpace), 1.0), modK); }
+	}
 #else
 	vec4 fragColor = modGrade(main_bumpMapping());
 #endif

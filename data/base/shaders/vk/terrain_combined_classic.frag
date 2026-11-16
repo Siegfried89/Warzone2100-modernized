@@ -146,6 +146,14 @@ vec4 modGrade(vec4 c)
 void main()
 {
 	vec4 fragColor = (fragf.tileNo == MODV_TILE) ? vec4(modvColor(frag.posModelSpace), 1.0) : modGrade(main_classic());   // MOD: Orbit-Leere
+	// MOD (16.11.): schwarze Raender der MF-Inselkacheln (dort war in MF der Weltraum) zeigen weich die Leere darunter
+	if (fragf.tileNo > MODV_TILE)
+	{
+		vec3 modIc = texture(decalTex, vec3(frag.uvDecal, fragf.tileNo), WZ_MIP_LOAD_BIAS).rgb;
+		if (linearLighting != 0) { modIc = wzLinearToSrgb(modIc); }
+		float modK = 1.0 - smoothstep(0.035, 0.11, max(modIc.r, max(modIc.g, modIc.b)));
+		if (modK > 0.0) { fragColor = mix(fragColor, vec4(modvColor(frag.posModelSpace), 1.0), modK); }
+	}
 
 	FragColor = fragColor;
 }
