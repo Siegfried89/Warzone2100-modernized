@@ -1039,7 +1039,8 @@ void structureBuild(GameWorld& world, STRUCTURE *psStruct, DROID *psDroid, int b
 	if (psStruct->currentBuildPts > 0 && newBuildPoints <= 0)
 	{
 		// Demolished structure, return some power.
-		addPower(psStruct->player, structureTotalReturn(psStruct));
+		// MOD (Raze wie in MF, Entscheidung 13.11.): Abriss im Vorbau (noch nicht fertig gebaut) gibt die vollen Kosten zurueck, sonst 50 %
+		addPower(psStruct->player, psStruct->status == SS_BEING_BUILT ? 2 * structureTotalReturn(psStruct) : structureTotalReturn(psStruct));
 	}
 
 	int deltaBody = quantiseFraction(9 * psStruct->structureBody(), 10 * structureBuildPointsToCompletion(*psStruct), newBuildPoints, psStruct->currentBuildPts);
