@@ -375,7 +375,9 @@ int fillTile(int tileX, int tileY, int amount)
 		return depthAtTile(tileX, tileY);
 	}
 	// Zuschuetten geht schneller als das Graben dauerte: je Aufruf mindestens 2 Einheiten
-	it->second.dyn = static_cast<int16_t>(std::max(0, it->second.dyn - std::max(2, amount * 2)));
+	int left = it->second.dyn - std::max(2, amount * 2);
+	if (left <= 6) { left = 0; }   // Rest sofort eben (die Bagger suchen erst ab 6 Tiefe) -> Originalzustand
+	it->second.dyn = static_cast<int16_t>(left);
 	dirtyAround(tileX, tileY);
 	tidy(k, tileX, tileY);   // ganz zu -> Originaltextur zurueck
 	return depthAtTile(tileX, tileY);
