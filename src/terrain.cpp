@@ -2494,11 +2494,6 @@ void drawWaterHighImpl(const glm::mat4 &ModelViewProjection, const glm::mat4& vi
 		return; // no water
 	}
 
-	const glm::vec4 paramsX(0, 0, -1.0f / (4 * DIST_TILE), 0);
-	const glm::vec4 paramsY(1.0f / (4 * DIST_TILE), 0, 0, 0);
-	const glm::vec4 paramsX2(0, 0, -1.0f / (5 * DIST_TILE), 0);
-	const glm::vec4 paramsY2(1.0f / (5 * DIST_TILE), 0, 0, 0);
-
 	ASSERT_OR_RETURN(, waterTexturesHigh.tex, "Failed to load water textures");
 	PSO::get().bind();
 
