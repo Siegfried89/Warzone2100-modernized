@@ -54,6 +54,7 @@
 #include "modbuild.h"
 #include "modwreck.h"
 #include "modparts.h"
+#include "modmorale.h"
 #include "modvariant.h"
 #include "hci.h"
 #include "power.h"
@@ -343,6 +344,7 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 	if (relativeDamage > 0 && psDroid->body < modBodyBefore)
 	{
 		modparts::onHit(psDroid, static_cast<int>(modBodyBefore - psDroid->body), psProjectile);   // MOD: Treffer auf Turm / Laufwerk
+		modmorale::onHit(psDroid, static_cast<int>(modBodyBefore - psDroid->body), psProjectile);  // MOD: Infanterie weicht schwerem Beschuss aus
 	}
 
 	if (relativeDamage != 0)
