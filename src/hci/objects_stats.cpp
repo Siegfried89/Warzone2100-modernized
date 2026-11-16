@@ -350,7 +350,7 @@ void StatsForm::initialize()
 {
 	id = IDSTAT_FORM;
 	setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
-		psWidget->setGeometry(STAT_X, STAT_Y, STAT_WIDTH, STAT_HEIGHT);
+		psWidget->setGeometry(STATF_X, STATF_Y, STATF_WIDTH, STATF_HEIGHT);   // MOD: groesser
 	}));
 
 	addCloseButton();
@@ -360,7 +360,7 @@ void StatsForm::initialize()
 void StatsForm::addCloseButton()
 {
 	W_BUTINIT init;
-	init.x = STAT_WIDTH - CLOSE_WIDTH;
+	init.x = STATF_WIDTH - CLOSE_WIDTH;
 	init.y = 0;
 	init.width = CLOSE_WIDTH;
 	init.height = CLOSE_HEIGHT;
@@ -383,8 +383,8 @@ void StatsForm::addTabList()
 	optionList->id = IDSTAT_TABFORM;
 	optionList->setChildSize(STAT_BUTWIDTH, STAT_BUTHEIGHT);
 	optionList->setChildSpacing(STAT_GAP, STAT_GAP);
-	int statListWidth = STAT_BUTWIDTH * 2 + STAT_GAP;
-	optionList->setGeometry((STAT_WIDTH - statListWidth) / 2, STAT_TABFORMY, statListWidth, STAT_HEIGHT - STAT_TABFORMY);
+	int statListWidth = STAT_BUTWIDTH * STATF_COLUMNS + STAT_GAP * (STATF_COLUMNS - 1);   // MOD: 4 Spalten
+	optionList->setGeometry((STATF_WIDTH - statListWidth) / 2, STAT_TABFORMY, statListWidth, STATF_HEIGHT - STAT_TABFORMY);
 }
 
 void StatsForm::display(int xOffset, int yOffset)

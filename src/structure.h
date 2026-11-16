@@ -133,6 +133,9 @@ bool removeStruct(STRUCTURE *psDel, bool bDestroy, GameWorld& world);
 
 //fills the list with Structures that can be built
 std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objState, UDWORD selectedPlayer, UDWORD limit, bool showFavorites);
+/// MOD (16.11. 19:54): Baumenue-Gruppe eines Bauwerks: -1 Abriss, 0 Wirtschaft (Kraftwerk, Oeltuerme, Raffinerie, Pipeline, Masten),
+/// 1 Fabriken/Forschung, 2 Versorgung (Tankstelle, Munition, Aussenposten, Sensoren), 3 Mauern/Hindernisse/Graeben, 4 Verteidigung
+int modBuildCategory(const STRUCTURE_STATS *psStats);
 
 /// Checks if the two structures would be too close to build together.
 bool isBlueprintTooClose(STRUCTURE_STATS const *stats1, Vector2i pos1, uint16_t dir1, STRUCTURE_STATS const *stats2, Vector2i pos2, uint16_t dir2);

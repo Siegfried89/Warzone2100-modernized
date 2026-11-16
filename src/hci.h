@@ -24,6 +24,7 @@
 #ifndef __INCLUDED_SRC_HCI_H__
 #define __INCLUDED_SRC_HCI_H__
 
+#include <algorithm>
 #include <list>
 
 #include <functional>
@@ -165,6 +166,14 @@ enum  				  // Reticule button indecies.
 #define STAT_TABWIDTH		15
 #define STAT_TABFORMX		0	// Offset of the tab form within the main form.
 #define STAT_TABFORMY		18	// Offset of the tab form within the main form.
+
+// MOD (16.11. 19:54): Bau-/Forschungs-/Produktionsfenster doppelt so gross - doppelt so breit (4 Spalten) und nach oben bis zu doppelt so hoch
+#define STATF_EXTRA_H		(std::min(322, std::max(0, static_cast<int>(E_H) - 48)))
+#define STATF_X			STAT_X
+#define STATF_Y			(E_H - STATF_EXTRA_H)
+#define STATF_WIDTH		(2 * RET_FORMWIDTH)
+#define STATF_HEIGHT		(STAT_HEIGHT + STATF_EXTRA_H)
+#define STATF_COLUMNS		4
 
 
 // 2 16 bit values packed into a DWORD.

@@ -68,6 +68,12 @@ struct Job
 std::unordered_map<uint32_t, Job> s_jobs;
 int s_tier = 2;
 bool s_ringOn = false;
+// (16.11. 19:54) gruene Bauplan-Vorschau schon beim Drueberfahren (vor dem Klick)
+std::vector<Placement> s_preview;
+Vector2i s_previewTile{-1, -1};
+int s_previewTier = 0;
+unsigned s_previewAt = 0;
+bool s_previewOn = false;
 
 enum class Role
 {
@@ -707,12 +713,54 @@ void updatePreview(bool wanted, const Vector2i &worldPos)
 		if (mousePressed(MOUSE_WDN)) { s_tier = std::max(1, s_tier - 1); }
 		range_rings::setDebugRange(static_cast<float>(worldPos.x), static_cast<float>(worldPos.y), static_cast<float>(radiusOfTier(s_tier) * TILE_UNITS));
 		s_ringOn = true;
+		// Vorschau des Bauplans (nur Anzeige; planFor veraendert nichts und wuerfelt nicht)
+		const Vector2i tile = map_coord(worldPos);
+		if (tile != s_previewTile || s_tier != s_previewTier || realTime - s_previewAt > 1500)
+		{
+			s_previewTile = tile;
+			s_previewTier = s_tier;
+			s_previewAt = realTime;
+			s_preview = (modlayermap::viewLayer() == modlayer::SURFACE && worldOnMap(gameWorld.map, worldPos.x, worldPos.y))
+			            ? planFor(selectedPlayer, worldPos, s_tier) : std::vector<Placement>();
+		}
+		s_previewOn = true;
 	}
 	else if (s_ringOn)
 	{
 		range_rings::setDebugRange(0.f, 0.f, 0.f);
 		s_ringOn = false;
+		s_previewOn = false;
+		s_preview.clear();
+		s_previewTile = Vector2i(-1, -1);
 	}
+}
+
+bool gateFromWall(unsigned player, const STRUCTURE *w, bool add)
+{
+	if (w == nullptr || player >= MAX_PLAYERS || w->player != static_cast<int>(player) || w->status != SS_BUILT) { return false; }
+	if (w->pStructureType == nullptr || w->pStructureType->type != REF_WALL || w->pFunctionality == nullptr) { return false; }
+	const std::string id = w->pStructureType->id.toUtf8();
+	if (id.find("Pipeline") != std::string::npos) { return false; }
+	if (w->pFunctionality->wall.type != 0) { return false; }   // nur gerade Stuecke (keine Ecken, T-Stuecke, Kreuzungen)
+	const bool scav = id.find("BaBa") != std::string::npos || id.find("Baba") != std::string::npos;
+	STRUCTURE_STATS *gate = nullptr;
+	for (unsigned i = 0; i < numStructureStats; i++)
+	{
+		STRUCTURE_STATS *st = &asStructureStats[i];
+		if (st->type != REF_GATE) { continue; }
+		const std::string gid = st->id.toUtf8();
+		const bool scavGate = gid.find("BaBa") != std::string::npos || gid.find("Baba") != std::string::npos;
+		if (scavGate == scav) { gate = st; break; }
+		if (gate == nullptr) { gate = st; }
+	}
+	if (gate == nullptr) { return false; }
+	orderSelectedStatsLocDir(player, DORDER_BUILD, gate, w->pos.x, w->pos.y, w->rot.direction, add);
+	return true;
+}
+
+const std::vector<Placement> *previewPlan()
+{
+	return (s_previewOn && !s_preview.empty()) ? &s_preview : nullptr;
 }
 
 const char *activeLabel()
@@ -854,6 +902,9 @@ unsigned craneBoost(const DROID *psDroid, unsigned points)
 
 void reset()
 {
+	s_preview.clear();
+	s_previewOn = false;
+	s_previewTile = Vector2i(-1, -1);
 	s_jobs.clear();
 	s_tier = 2;
 	if (s_ringOn)

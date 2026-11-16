@@ -2373,6 +2373,13 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 		FeedbackOrderGiven();
 		return;
 	}
+	// MOD (16.11. 19:55): Baufahrzeuge + Klick auf einen eigenen, heilen, geraden Mauerabschnitt = dort ein Tor bauen
+	if (ownStruct && selection == SC_DROID_CONSTRUCT && psStructure->body >= psStructure->structureBody()
+	    && modbuild::gateFromWall(selectedPlayer, psStructure, ctrlShiftDown()))
+	{
+		FeedbackOrderGiven();
+		return;
+	}
 	bSensorAssigned = false;
 	orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psStructure, ctrlShiftDown());
 	FeedbackOrderGiven();

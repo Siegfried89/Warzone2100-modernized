@@ -4249,6 +4249,33 @@ fills the list with Structure that can be built. There is a limit on how many ca
 be built at any one time. Pass back the number available.
 There is now a limit of how many of each type of structure are allowed per mission
 */
+int modBuildCategory(const STRUCTURE_STATS *st)
+{
+	if (st == nullptr) { return 4; }
+	const std::string id = st->id.toUtf8();
+	auto has = [&id](const char *k) { return id.find(k) != std::string::npos; };
+	switch (st->type)
+	{
+	case REF_DEMOLISH: return -1;
+	case REF_HQ: case REF_POWER_GEN: case REF_POWER_MODULE: case REF_RESOURCE_EXTRACTOR: return 0;
+	case REF_FACTORY: case REF_FACTORY_MODULE: case REF_CYBORG_FACTORY: case REF_VTOL_FACTORY: case REF_RESEARCH: case REF_RESEARCH_MODULE: return 1;
+	case REF_REPAIR_FACILITY: case REF_REARM_PAD: case REF_COMMAND_CONTROL: case REF_SAT_UPLINK: case REF_LASSAT: return 2;
+	case REF_WALL: case REF_WALLCORNER: case REF_GATE: return has("Pipeline") ? 0 : 3;
+	default: break;
+	}
+	if (has("Refinery") || has("Pipeline") || has("PowerPole") || has("EnergyBank") || has("Solar") || has("OilStore") || has("Storage") || has("WaterTower")) { return 0; }
+	if (has("Cryo") || has("Crane") || has("LayerShaft") || has("Gantry") || has("Assembly") || has("Factory") || has("Research")) { return 1; }
+	if (has("Ammo") || has("Container") || has("Outpost") || has("ATC") || has("Beacon") || has("Relay") || has("Radar") || has("Uplink")) { return 2; }
+	if (has("Trench") || has("Sandbag") || has("Hedgehog") || has("TankTrap") || has("DragonTeeth") || has("Wall")) { return 3; }
+	if (st->type == REF_DEFENSE && st->numWeaps == 0)
+	{
+		// Sensortuerme zur Versorgung, leere Gruben/Stellungen zu den Hindernissen (pSensor hat jedes Bauwerk - Standardsensor)
+		return (has("Sensor") || has("Radar") || has("WideSpec") || has("CB") || has("VTOL") || has("Tower")) ? 2 : 3;
+	}
+	if (st->type == REF_DEFENSE || st->numWeaps > 0) { return 4; }
+	return 2;
+}
+
 std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objState, UDWORD _selectedPlayer, UDWORD limit, bool showFavorites)
 {
 	std::vector<STRUCTURE_STATS *> structureList;
@@ -4449,6 +4476,16 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 		}
 		structureList.swap(unique);
 	}
+	// MOD (16.11. 19:54): Baumenue geordnet - Wirtschaft zuerst (Kraftwerke, Oeltuerme, Raffinerie ...), dann Fabriken/Forschung,
+	// Versorgung, Mauern/Hindernisse, Verteidigung; in jeder Gruppe die Scavenger-Bauwerke vorn
+	std::stable_sort(structureList.begin(), structureList.end(), [](const STRUCTURE_STATS *a, const STRUCTURE_STATS *b) {
+		auto rank = [](const STRUCTURE_STATS *st) {
+			const std::string id = st->id.toUtf8();
+			const bool scav = id.find("BaBa") != std::string::npos || id.find("Baba") != std::string::npos;
+			return modBuildCategory(st) * 2 + (scav ? 0 : 1);
+		};
+		return rank(a) < rank(b);
+	});
 	// MOD: Protokoll der angebotenen Gebaeude (einmal pro Aenderung), damit man in der Logdatei sieht, was im Baumenue steht
 	{
 		static std::string s_lastMenu;

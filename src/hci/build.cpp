@@ -30,6 +30,11 @@
 #include "../map.h"
 #include "../game_world.h"
 #include "../modbuild.h"
+#include "../structure.h"
+#include "../hci.h"
+#include "lib/ivis_opengl/textdraw.h"
+#include "lib/ivis_opengl/piepalette.h"
+#include "lib/ivis_opengl/pieblitfunc.h"
 #include <algorithm>
 
 DROID *BuildController::highlightedBuilder = nullptr;
@@ -40,6 +45,7 @@ void BuildController::visitUiObjectRefs(const UiObjectRefVisitor &visit)
 }
 
 bool BuildController::showFavorites = false;
+int BuildController::category = -2;   // MOD: alle Gruppen
 
 void BuildController::updateData()
 {
@@ -77,6 +83,13 @@ void BuildController::updateBuildOptionsList()
 			newBuildOptions.erase(std::remove_if(newBuildOptions.begin(), newBuildOptions.end(),
 				[hb](const STRUCTURE_STATS *st) { return !modbuild::mayBuild(hb, st); }), newBuildOptions.end());
 		}
+	}
+
+	// MOD (16.11. 19:54): nur die gewaehlte Gruppe (Abriss steht immer dabei)
+	if (category >= 0)
+	{
+		newBuildOptions.erase(std::remove_if(newBuildOptions.begin(), newBuildOptions.end(),
+			[](const STRUCTURE_STATS *st) { const int c = modBuildCategory(st); return c >= 0 && c != category; }), newBuildOptions.end());
 	}
 
 	stats = std::vector<STRUCTURE_STATS *>(newBuildOptions.begin(), newBuildOptions.end());
@@ -611,6 +624,67 @@ private:
 		BaseWidget::initialize();
 		addObsoleteButton();
 		addFavoriteButton();
+		addCategoryButtons();
+	}
+
+	/// MOD (16.11. 19:54): Gruppen-Reiter ueber den Bauknoepfen (Alle / Wirtschaft / Fabriken / Versorgung / Mauern / Verteidigung)
+	class CategoryButton: public W_BUTTON
+	{
+	public:
+		int cat = -2;
+		void display(int xOffset, int yOffset) override
+		{
+			const int x0 = xOffset + x(), y0 = yOffset + y(), x1 = x0 + width(), y1 = y0 + height();
+			const bool active = BuildController::getCategory() == cat;
+			const bool hover = (getState() & WBUT_HIGHLIGHT) != 0;
+			pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x1), static_cast<float>(y1),
+			                    active ? pal_RGBA(70, 110, 200, 230) : (hover ? pal_RGBA(40, 60, 120, 220) : pal_RGBA(16, 22, 60, 200)));
+			iV_Box(x0, y0, x1 - 1, y1 - 1, active ? WZCOL_WHITE : WZCOL_FORM_LIGHT);
+			label.setText(getString(), font_small);
+			const int tw = label.width();
+			label.render(x0 + (width() - tw) / 2, y0 + (height() + label.aboveBase()) / 2 - 1, active ? WZCOL_WHITE : WZCOL_FORM_TEXT);
+		}
+	private:
+		WzText label;
+	};
+
+	void addCategoryButtons()
+	{
+		static const struct { int cat; const char *name; const char *tip; } CATS[] = {
+			{ -2, "All", "All buildings" },
+			{ 0, "Eco", "Economy: power, oil derricks, refinery, pipelines, power poles" },
+			{ 1, "Prod", "Factories, research, crew and combot buildings" },
+			{ 2, "Supply", "Supply: fuel station (repair facility), ammo, outposts, sensors" },
+			{ 3, "Walls", "Walls, gates, tank traps, trenches, pits" },
+			{ 4, "Def", "Defenses: towers, bunkers, nests, emplacements" },
+		};
+		constexpr int ROW_Y = STAT_TABFORMY;
+		constexpr int ROW_H = 16;
+		const int n = static_cast<int>(sizeof(CATS) / sizeof(CATS[0]));
+		const int w = (STATF_WIDTH - 8) / n;
+		auto weakController = std::weak_ptr<BuildController>(controller);
+		for (int i = 0; i < n; i++)
+		{
+			auto b = std::make_shared<CategoryButton>();
+			b->cat = CATS[i].cat;
+			b->setString(WzString::fromUtf8(CATS[i].name));
+			b->setTip(CATS[i].tip);
+			b->setGeometry(4 + i * w, ROW_Y, w - 2, ROW_H);
+			const int cat = CATS[i].cat;
+			b->addOnClickHandler([weakController, cat](W_BUTTON &) {
+				if (auto buildController = weakController.lock())
+				{
+					buildController->setCategory(cat);
+				}
+			});
+			attach(b);
+		}
+		// Bauknoepfe eine Zeile tiefer
+		if (optionList)
+		{
+			optionList->setCalcLayout(nullptr);
+			optionList->setGeometry(optionList->x(), STAT_TABFORMY + ROW_H + 4, optionList->width(), STATF_HEIGHT - STAT_TABFORMY - ROW_H - 4);
+		}
 	}
 
 	void addObsoleteButton()

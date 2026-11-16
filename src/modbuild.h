@@ -17,6 +17,7 @@ struct DroidOrder;
 struct DROID;
 struct GameWorld;
 struct STRUCTURE_STATS;
+struct STRUCTURE;
 
 namespace modbuild
 {
@@ -49,6 +50,8 @@ void updatePreview(bool wanted, const Vector2i &worldPos);
 const char *activeLabel();
 /// aktuell gewaehlte Groesse (1..3)
 int currentTier();
+/// Anzeige (16.11. 19:54): Bauplan-Vorschau am Mauszeiger, solange der Kreis zu sehen ist (gruen gezeichnet), sonst nullptr
+const std::vector<Placement> *previewPlan();
 
 /// Baukran-Bonus: Baupunkte pro Sekunde eines Baufahrzeugs, das im Umkreis (9 Kacheln) eines fertigen eigenen/verbuendeten Krans (A0BaBaCrane) arbeitet, +25 %
 unsigned craneBoost(const DROID *psDroid, unsigned points);
@@ -65,6 +68,9 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued);
 bool mayBuild(const DROID *psDroid, const STRUCTURE_STATS *psStats);
 /// Abrissfaktor des Fahrzeugs (Abrissbirne reisst 4x so schnell ab, sonst 1)
 int demolishFactor(const DROID *psDroid);
+/// (16.11. 19:55) Baufahrzeuge gewaehlt + Klick auf einen eigenen geraden Mauerabschnitt: dort ein Tor bauen (die Mauer wird ersetzt).
+/// Scav-Mauern bekommen das Scav-Tor (A0BaBaGate), andere Mauern das Beton-Tor. true, wenn der Befehl erteilt wurde.
+bool gateFromWall(unsigned player, const STRUCTURE *psWall, bool add);
 
 /// jeden Spielschritt
 void tick(GameWorld &world);

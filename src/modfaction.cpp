@@ -132,29 +132,48 @@ void splash(int faction)
 	}
 }
 
+/// (16.11. 19:54) das grosse Symbol spielt die Animation bis zum Schluss: Dauer = ein ganzer Durchlauf + kurz stehen lassen
+static unsigned splashMs(int faction)
+{
+	if (faction < 0 || faction >= NUM) { return SPLASH_MS; }
+	const Anim &a = s_anim[faction];
+	if (a.frames <= 1) { return SPLASH_MS; }
+	const unsigned run = static_cast<unsigned>(a.frames) * static_cast<unsigned>(a.ms);
+	return std::clamp(run + 1100u, SPLASH_MS, 12000u);
+}
+
 void drawSplash()
 {
 	if (s_splashFaction < 0) { return; }
 	const unsigned t = realTime - s_splashStart;
-	if (t >= SPLASH_MS || !load())
+	const unsigned total = splashMs(s_splashFaction);
+	if (t >= total || !load())
 	{
 		s_splashFaction = -1;
 		return;
 	}
-	// einblenden 0,25 s, ausblenden die letzten 0,7 s
+	// einblenden 0,25 s, ausblenden die letzten 0,7 s (das Endbild steht dabei)
 	float al = 1.0f;
 	if (t < 250) { al = static_cast<float>(t) / 250.0f; }
-	else if (t > SPLASH_MS - 700) { al = static_cast<float>(SPLASH_MS - t) / 700.0f; }
+	else if (t > total - 700) { al = static_cast<float>(total - t) / 700.0f; }
 	const int sz = std::min(static_cast<int>(screenHeight) * 2 / 5, 320);
 	const int x = (static_cast<int>(screenWidth) - sz) / 2;
 	const int y = (static_cast<int>(screenHeight) - sz) / 2;
 	// MOD (16.11. 18:00): kein grauer Kasten mehr - das Menue wird waehrend des Symbols ausgeblendet (frontend.cpp), das Symbol steht frei
-	draw(s_splashFaction, SIZE_X, x, y, sz, sz, t, true, static_cast<uint8_t>(255.0f * al));
+	// ein Durchlauf (vor/zurueck-Animationen nur vorwaerts), danach steht das letzte Bild
+	const Anim &an = s_anim[s_splashFaction];
+	const unsigned tt = std::min(t, static_cast<unsigned>(std::max(0, an.frames - 1)) * static_cast<unsigned>(an.ms));
+	const int k = std::min(an.frames - 1, static_cast<int>(tt / static_cast<unsigned>(std::max(1, an.ms))));
+	const int id = an.base[SIZE_X] + k / 2;
+	if (an.frames > 0 && id >= 0 && id < static_cast<int>(s_img->imageDefs.size()))
+	{
+		iV_DrawImageFileAnisotropic(s_img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(sz), static_cast<float>(sz)), defaultProjectionMatrix(), static_cast<uint8_t>(255.0f * al));
+	}
 }
 
 bool splashActive()
 {
-	return s_splashFaction >= 0 && (realTime - s_splashStart) < SPLASH_MS;
+	return s_splashFaction >= 0 && (realTime - s_splashStart) < splashMs(s_splashFaction);
 }
 
 void endSplash()

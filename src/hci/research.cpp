@@ -828,7 +828,7 @@ private:
 		auto button = WzResearchHeaderButton::make(WzString::fromUtf8(_("View Tree")),
 		                                           _("Open the research tree"));
 		attach(button);
-		const int right = STAT_WIDTH - CLOSE_WIDTH - RESEARCH_HEADER_PAD;
+		const int right = STATF_WIDTH - CLOSE_WIDTH - RESEARCH_HEADER_PAD;
 		button->setGeometry(RESEARCH_HEADER_PAD, (STAT_TABFORMY - RESEARCH_HEADER_BUTTON_HEIGHT) / 2,
 		                    std::max(10, right - RESEARCH_HEADER_PAD), RESEARCH_HEADER_BUTTON_HEIGHT);
 		button->addOnClickHandler([](W_BUTTON&) {

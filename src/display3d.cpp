@@ -2359,6 +2359,29 @@ void displayBlueprints(const glm::mat4 &viewMatrix, const glm::mat4 &perspective
 		playerBlueprintDirection->stopTracking();
 	}
 
+	// MOD (16.11. 19:54): Befestigungsbau - der ganze Bauplan erscheint gruen schon beim Drueberfahren (vor dem Klick)
+	if (const std::vector<modbuild::Placement> *plan = modbuild::previewPlan())
+	{
+		for (const modbuild::Placement &p : *plan)
+		{
+			if (p.stats == nullptr) { continue; }
+			const Vector2i w1(world_coord(p.tile.x) + TILE_UNITS / 2, world_coord(p.tile.y) + TILE_UNITS / 2);
+			const Vector2i w2(world_coord(p.tile2.x) + TILE_UNITS / 2, world_coord(p.tile2.y) + TILE_UNITS / 2);
+			if (p.line)
+			{
+				drawLineBuild(selectedPlayer, p.stats, w1, w2, static_cast<uint16_t>(p.direction), SS_BLUEPRINT_VALID);
+				continue;
+			}
+			StructureBounds b = getStructureBounds(p.stats, w1, static_cast<uint16_t>(p.direction));
+			int z = 0;
+			for (int j = 0; j <= b.size.y; ++j)
+			{
+				for (int i = 0; i <= b.size.x; ++i) { z = std::max(z, map_TileHeight(gameWorld.map, b.map.x + i, b.map.y + j)); }
+			}
+			blueprints.push_back(Blueprint(p.stats, Vector3i(w1, z), snapDirection(static_cast<uint16_t>(p.direction)), 0, SS_BLUEPRINT_VALID, selectedPlayer));
+		}
+	}
+
 	// now we draw the blueprints for all ordered buildings
 	for (unsigned player = 0; player < MAX_PLAYERS; ++player)
 	{

@@ -62,6 +62,18 @@ public:
 		updateBuildOptionsList();
 	}
 
+	/// MOD (16.11. 19:54): Baumenue nach Gruppen (-2 = alle, 0 Wirtschaft, 1 Fabriken/Forschung, 2 Versorgung, 3 Mauern, 4 Verteidigung)
+	static int getCategory()
+	{
+		return BuildController::category;
+	}
+
+	void setCategory(int value)
+	{
+		BuildController::category = value;
+		updateBuildOptionsList();
+	}
+
 	size_t objectsSize() const override
 	{
 		return builders.size();
@@ -117,6 +129,7 @@ private:
 	bool queuedJumpToHighlightedStatsObject = true;
 
 	static bool showFavorites;
+	static int category;
 	static DROID *highlightedBuilder;
 };
 
