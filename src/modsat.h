@@ -3,10 +3,9 @@
 // Parts (WZ-Intro / Menuebild als Anlehnung, grau mit roter Aufschrift NASDA). Erst wenn die Satelliten fertig gebaut sind, kann man mit der
 // Satellitenkommunikationszentrale (die die Scavs jetzt auch bauen koennen) diese Faehigkeit einsetzen." Bauweg: Raketensilo UND Orbit-Insel.
 //
-// Bauwerk "A0LaserSatellite" (NASDA-Satellit in der Montagewiege, Forschung R-Sys-LaserSatellite):
-//  - an der Oberflaeche gebaut: ein eigenes Raketensilo mit bereitstehender Rakete (hoechstens 8 Felder entfernt) laedt ihn ein und startet;
-//    nach dem Flug ist der Satellit in der Umlaufbahn,
-//  - auf einer Orbit-Insel gebaut (Cyborg-Pioniere): startet nach 6 s von selbst in die Umlaufbahn.
+// (22:13) "Nicht auf dem Erdboden. Nur im Orbit, oder er wird mit der Rakete hochgeschossen - als Modul an die Rakete angehaengt."
+//  - Bauwerk "A0LaserSatellite" (NASDA-Satellit in der Montagewiege) nur auf einer Orbit-Insel (Cyborg-Pioniere): startet nach 6 s von selbst,
+//  - "A0SatelliteModule": Modul auf dem Raketensilo (Forschung R-Sys-LaserSatellite); die naechste fertige Rakete nimmt den Satelliten mit.
 // Hoechstens 3 Satelliten je Spieler. Die Uplink-Zentrale (A0Sat-linkCentre, Waffe LasSatUplink) feuert den Laser wie die
 // Lasersatelliten-Kommandozentrale (Zentrale waehlen, Ziel anklicken), aber nur mit mindestens einem Satelliten in der Umlaufbahn.
 // Nachladezeit: 1 Satellit 300 s, 2 Satelliten 200 s, 3 Satelliten 150 s. Spiellogik nur aus Spielzeit und Spielzustand (mehrspielersicher).
@@ -29,8 +28,10 @@ int satellites(int player);
 bool canFire(const STRUCTURE *psStruct);
 /// Schuss abgelehnt: Hinweis fuer den eigenen Spieler (kein Satellit / laedt noch)
 void denied(const STRUCTURE *psStruct);
-/// Raketensilo mit bereitstehender Rakete: einen fertigen Satelliten in der Naehe einladen (true = geladen, Silo startet)
-bool loadOnto(const STRUCTURE *psSilo);
+/// (22:13) Satelliten-Modul "A0SatelliteModule" (wie ein Fabrikmodul auf das Raketensilo gesetzt; die naechste Rakete nimmt den Satelliten mit)
+bool isModule(const STRUCTURE_STATS *psStats);
+/// Index des Satelliten-Moduls in asStructureStats (-1 = nicht geladen)
+int moduleStatIndex();
 /// die Rakete mit dem Satelliten ist oben angekommen
 void addSatellite(int player);
 /// (21:55) der Laser wurde abgefeuert: die Satelliten des Spielers gluehen am Orbit-Himmel (Linsenring)

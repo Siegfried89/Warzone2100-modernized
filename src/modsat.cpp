@@ -38,7 +38,6 @@ namespace modsat
 {
 namespace
 {
-constexpr int LOAD_R = TILE_UNITS * 8;          // Satellit bis 8 Felder vom Silo entfernt wird eingeladen
 constexpr unsigned SELF_LAUNCH_MS = 6000;       // Start von der Orbit-Insel nach 6 s
 constexpr unsigned SHOW_RISE_MS = 4000;         // so lange sieht man ihn aufsteigen
 
@@ -101,21 +100,22 @@ void denied(const STRUCTURE *psStruct)
 	addConsoleMessage(buf, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 }
 
-bool loadOnto(const STRUCTURE *psSilo)
+bool isModule(const STRUCTURE_STATS *psStats)
 {
-	if (psSilo == nullptr || psSilo->player >= MAX_PLAYERS) { return false; }
-	const unsigned p = psSilo->player;
-	if (s_sats[p] >= MAX_SATELLITES) { return false; }
-	for (const STRUCTURE *s : gameWorld.objects.structures[p])
+	return psStats != nullptr && psStats->id.compare("A0SatelliteModule") == 0;
+}
+
+int moduleStatIndex()
+{
+	static const STRUCTURE_STATS *s_base = nullptr;
+	static int s_idx = -1;
+	if (s_base != asStructureStats || s_idx < 0 || static_cast<unsigned>(s_idx) >= numStructureStats || !isModule(&asStructureStats[s_idx]))
 	{
-		if (s->died || s->status != SS_BUILT || !isSatellite(s->pStructureType) || s_remove.count(s->id) != 0) { continue; }
-		if (modlayer::layerOf(s) != modlayer::layerOf(psSilo)) { continue; }
-		if (iHypot(s->pos.xy() - psSilo->pos.xy()) > LOAD_R) { continue; }
-		s_remove.insert(s->id);
-		say(p, _("Rocket silo: NASDA satellite loaded - countdown"));
-		return true;
+		s_base = asStructureStats;
+		s_idx = -1;
+		for (unsigned i = 0; i < numStructureStats; ++i) { if (isModule(&asStructureStats[i])) { s_idx = static_cast<int>(i); break; } }
 	}
-	return false;
+	return s_idx;
 }
 
 void addSatellite(int player)
@@ -144,7 +144,6 @@ void tick()
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->died || s->status != SS_BUILT || !isSatellite(s->pStructureType) || s_remove.count(s->id) != 0) { continue; }
-			if (modlayer::layerOf(s) == modlayer::ORBIT)
 			{
 				// auf der Orbit-Insel gebaut: startet von selbst
 				auto it = s_launchAt.find(s->id);
@@ -164,11 +163,6 @@ void tick()
 				s_rise.push_back({s->pos.x, s->pos.y, s->pos.z, graphicsTime, s->rot.direction, static_cast<int>(p)});
 				addSatellite(static_cast<int>(p));
 				continue;
-			}
-			// an der Oberflaeche / im Untergrund: wartet auf ein Raketensilo (modrocket laedt ihn ein)
-			if (s_told.insert(s->id).second)
-			{
-				say(p, _("Laser satellite ready: a rocket silo with a ready rocket (within 8 tiles) launches it - or build it on an orbit island"));
 			}
 		}
 	}

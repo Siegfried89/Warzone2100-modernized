@@ -21,6 +21,8 @@
 #include "lib/framework/file.h"
 #include "lib/framework/physfs_ext.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
+#include "lib/ivis_opengl/bitimage.h"
+#include "lib/gamelib/gtime.h"
 #include "lib/ivis_opengl/screen.h"
 #include "lib/widget/button.h"
 #include "lib/widget/editbox.h"
@@ -165,13 +167,69 @@ std::vector<int> fleetOrder()
 constexpr int PANEL_X = 12, PANEL_Y = 8, PANEL_W = 616, PANEL_H = 464;
 unsigned s_selectedButton = 0;     // hervorgehobene Zeile (gewaehlte Flotte)
 
+// (Wunsch 22:13) "generell verschoenern - wunderschoene Icons und leuchtende UIs, es soll Bombe aussehen":
+// Verlaufs-Tafel mit leuchtendem Rahmen und Eck-Akzenten, Neon-Icons (images/modfleets.img), Leuchtbalken beim Ueberfahren,
+// pulsierender Editor-Knopf.
+enum FleetIcon { IC_INFANTRY = 0, IC_CYBORG, IC_TANK, IC_ARTY, IC_AIR, IC_SYSTEMS, IC_DESIGNER, IC_FLEET, IC_STAR };
+IMAGEFILE *icons()
+{
+	static IMAGEFILE *s_icons = nullptr;
+	static bool s_tried = false;
+	if (!s_tried)
+	{
+		s_tried = true;
+		if (PHYSFS_exists("images/modfleets.img")) { s_icons = iV_LoadImageFile("images/modfleets.img"); }
+	}
+	return s_icons;
+}
+void drawIcon(int id, int x, int y, int size, uint8_t alpha = 255)
+{
+	IMAGEFILE *img = icons();
+	if (img == nullptr) { return; }
+	iV_DrawImageFileAnisotropic(img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(size), static_cast<float>(size)), defaultProjectionMatrix(), alpha);
+}
+struct IconSpot { int id; int x, y, size; };
+std::vector<IconSpot> s_iconSpots;     // Icons auf der Tafel (relativ zur Tafel), beim Aufbau gesammelt
+
+float pulse(unsigned periodMs)
+{
+	return 0.5f + 0.5f * std::sin(static_cast<float>(realTime % periodMs) / static_cast<float>(periodMs) * 6.2831853f);
+}
+void gradientBox(int x0, int y0, int x1, int y1, PIELIGHT top, PIELIGHT bottom, int steps = 12)
+{
+	const int h = std::max(1, y1 - y0);
+	for (int i = 0; i < steps; ++i)
+	{
+		const float t = (static_cast<float>(i) + 0.5f) / static_cast<float>(steps);
+		PIELIGHT c;
+		c.byte.r = static_cast<uint8_t>(top.byte.r + (bottom.byte.r - top.byte.r) * t);
+		c.byte.g = static_cast<uint8_t>(top.byte.g + (bottom.byte.g - top.byte.g) * t);
+		c.byte.b = static_cast<uint8_t>(top.byte.b + (bottom.byte.b - top.byte.b) * t);
+		c.byte.a = static_cast<uint8_t>(top.byte.a + (bottom.byte.a - top.byte.a) * t);
+		const int ya = y0 + h * i / steps, yb = y0 + h * (i + 1) / steps;
+		pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(ya), static_cast<float>(x1), static_cast<float>(yb), c);
+	}
+}
+/// leuchtender Rahmen: helle Linie + nach aussen schwaecher werdender Lichthof
+void glowFrame(int x0, int y0, int x1, int y1, PIELIGHT col, int glow, float strength)
+{
+	for (int g = glow; g >= 1; --g)
+	{
+		PIELIGHT c = col;
+		c.byte.a = static_cast<uint8_t>(std::clamp(strength * 110.f * (1.f - static_cast<float>(g - 1) / static_cast<float>(glow)), 0.f, 255.f));
+		iV_Box(x0 - g, y0 - g, x1 + g, y1 + g, c);
+	}
+	PIELIGHT c = col; c.byte.a = 255;
+	iV_Box(x0, y0, x1, y1, c);
+}
+
 class FleetDim : public WIDGET
 {
 public:
 	void display(int xOffset, int yOffset) override
 	{
 		const int x0 = xOffset + x(), y0 = yOffset + y();
-		pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x0 + width()), static_cast<float>(y0 + height()), pal_RGBA(0, 0, 0, 170));
+		gradientBox(x0, y0, x0 + width(), y0 + height(), pal_RGBA(0, 4, 14, 200), pal_RGBA(0, 0, 0, 225), 8);
 	}
 };
 
@@ -181,32 +239,61 @@ public:
 	void display(int xOffset, int yOffset) override
 	{
 		const int x0 = xOffset + x(), y0 = yOffset + y(), x1 = x0 + width(), y1 = y0 + height();
-		pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x1), static_cast<float>(y1), pal_RGBA(14, 18, 30, 240));
-		iV_Box(x0, y0, x1, y1, pal_RGBA(90, 110, 160, 255));
-		pie_UniTransBoxFill(static_cast<float>(x0 + 228), static_cast<float>(y0 + 58), static_cast<float>(x0 + 229), static_cast<float>(y1 - 40), pal_RGBA(90, 110, 160, 160));   // Spaltentrenner
-		pie_UniTransBoxFill(static_cast<float>(x0 + 8), static_cast<float>(y1 - 38), static_cast<float>(x1 - 8), static_cast<float>(y1 - 37), pal_RGBA(90, 110, 160, 160));    // Linie ueber der Fusszeile
+		gradientBox(x0, y0, x1, y1, pal_RGBA(20, 30, 54, 246), pal_RGBA(8, 10, 20, 250), 16);
+		glowFrame(x0, y0, x1, y1, pal_RGBA(90, 190, 255, 255), 6, 0.55f + 0.25f * pulse(4200));
+		// Eck-Akzenten (helle L-Winkel)
+		const PIELIGHT acc = pal_RGBA(170, 235, 255, 255);
+		for (int cx : {x0, x1})
+		{
+			for (int cy : {y0, y1})
+			{
+				const int dx = cx == x0 ? 1 : -1, dy = cy == y0 ? 1 : -1;
+				pie_UniTransBoxFill(static_cast<float>(std::min(cx, cx + dx * 26)), static_cast<float>(std::min(cy, cy + dy * 3)), static_cast<float>(std::max(cx, cx + dx * 26)), static_cast<float>(std::max(cy, cy + dy * 3)), acc);
+				pie_UniTransBoxFill(static_cast<float>(std::min(cx, cx + dx * 3)), static_cast<float>(std::min(cy, cy + dy * 26)), static_cast<float>(std::max(cx, cx + dx * 3)), static_cast<float>(std::max(cy, cy + dy * 26)), acc);
+			}
+		}
+		// Leuchtlinie unter dem Titel, Spaltentrenner, Linie ueber der Fusszeile
+		gradientBox(x0 + 16, y0 + 56, x1 - 16, y0 + 58, pal_RGBA(120, 220, 255, 230), pal_RGBA(40, 120, 200, 90), 2);
+		pie_UniTransBoxFill(static_cast<float>(x0 + 230), static_cast<float>(y0 + 68), static_cast<float>(x0 + 231), static_cast<float>(y1 - 44), pal_RGBA(90, 170, 240, 120));
+		pie_UniTransBoxFill(static_cast<float>(x0 + 12), static_cast<float>(y1 - 40), static_cast<float>(x1 - 12), static_cast<float>(y1 - 39), pal_RGBA(90, 170, 240, 140));
+		for (const IconSpot &ic : s_iconSpots) { drawIcon(ic.id, x0 + ic.x, y0 + ic.y, ic.size); }
 	}
 };
 
-/// Zeile/Knopf: gewaehlte Zeile mit hellem Balken dahinter
+/// Zeile: Leuchtbalken beim Ueberfahren, gewaehlte Zeile mit hellem Balken und Akzentstreifen links
 void displayFleetLine(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
-	if (psWidget->id == s_selectedButton)
+	const int x0 = static_cast<int>(xOffset) + psWidget->x() - 6, y0 = static_cast<int>(yOffset) + psWidget->y();
+	const int x1 = x0 + psWidget->width() + 6, y1 = y0 + psWidget->height();
+	const bool sel = psWidget->id == s_selectedButton;
+	const bool hover = static_cast<W_BUTTON *>(psWidget)->isMouseOverWidget();
+	if (sel || hover)
 	{
-		const int x0 = static_cast<int>(xOffset) + psWidget->x() - 4, y0 = static_cast<int>(yOffset) + psWidget->y();
-		pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x0 + psWidget->width() + 4), static_cast<float>(y0 + psWidget->height()), pal_RGBA(60, 90, 160, 150));
+		gradientBox(x0, y0, x1, y1, sel ? pal_RGBA(50, 120, 200, 170) : pal_RGBA(40, 80, 140, 110), sel ? pal_RGBA(30, 70, 140, 140) : pal_RGBA(20, 40, 80, 70), 4);
+		pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x0 + 3), static_cast<float>(y1), sel ? pal_RGBA(140, 230, 255, 255) : pal_RGBA(90, 170, 240, 200));
 	}
 	displayTextOption(psWidget, xOffset, yOffset);
 }
 
-/// Knopf mit Rahmen (Aktionen)
+/// Knopf mit Verlauf und leuchtendem Rahmen; der Editor-Knopf pulsiert golden und zeigt sein Icon
 void displayFleetButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
 	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
+	const int x1 = x0 + psWidget->width(), y1 = y0 + psWidget->height();
 	const bool big = psWidget->id == ID_DESIGNER;
-	pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x0 + psWidget->width()), static_cast<float>(y0 + psWidget->height()),
-	                    big ? pal_RGBA(40, 80, 150, 230) : pal_RGBA(30, 38, 60, 230));
-	iV_Box(x0, y0, x0 + psWidget->width(), y0 + psWidget->height(), big ? pal_RGBA(150, 190, 255, 255) : pal_RGBA(80, 100, 150, 255));
+	const bool hover = static_cast<W_BUTTON *>(psWidget)->isMouseOverWidget();
+	if (big)
+	{
+		const float pl = pulse(1800);
+		gradientBox(x0, y0, x1, y1, pal_RGBA(120, 86, 20, 235), pal_RGBA(60, 36, 8, 235), 8);
+		glowFrame(x0, y0, x1, y1, pal_RGBA(255, 205, 90, 255), 7, (hover ? 1.f : 0.55f) + 0.35f * pl);
+		drawIcon(IC_DESIGNER, x0 + 4, y0 + (psWidget->height() - 28) / 2, 28);
+	}
+	else
+	{
+		gradientBox(x0, y0, x1, y1, hover ? pal_RGBA(50, 90, 150, 235) : pal_RGBA(34, 46, 76, 235), hover ? pal_RGBA(26, 50, 96, 235) : pal_RGBA(18, 24, 42, 235), 6);
+		glowFrame(x0, y0, x1, y1, hover ? pal_RGBA(140, 220, 255, 255) : pal_RGBA(80, 120, 180, 255), hover ? 4 : 1, hover ? 0.9f : 0.3f);
+	}
 	displayTextOption(psWidget, xOffset, yOffset);
 }
 
@@ -309,16 +396,19 @@ void WzFleetTitleUI::build()
 	panel->setGeometry(PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
 	WIDGET *form = panel.get();
 	const int W = PANEL_W;
+	s_iconSpots.clear();
 
 	// ---- Kopf: Titel, eine Zeile Erklaerung, grosser Knopf zum Einheiteneditor
-	headLabel(form, ID_HEAD + 20, 16, 10, 300, _("FLEETS"), WZCOL_TEXT_BRIGHT, font_large, 30);
-	headLabel(form, ID_HEAD + 21, 16, 36, 360, _("Your unit designs - for every game mode"), WZCOL_TEXT_MEDIUM, font_regular, 18);
+	s_iconSpots.push_back({IC_FLEET, 14, 10, 40});
+	headLabel(form, ID_HEAD + 20, 60, 8, 300, _("FLEETS"), pal_RGBA(200, 240, 255, 255), font_large, 30);
+	headLabel(form, ID_HEAD + 21, 60, 34, 330, _("Your unit designs - for every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
 	lineButton(form, ID_DESIGNER, W - 226, 12, 210, _("Unit designer"), font_regular_bold, 34, true, true);
 	widgSetTip(psWScreen, ID_DESIGNER, _("Design units with all parts; save them with the star. Closing the designer brings you back here."));
 
 	// ---- links: Flotten
 	const std::string active = s_doc.value("active", std::string());
-	headLabel(form, ID_HEAD, 16, 62, 200, _("Your fleets"), WZCOL_YELLOW);
+	s_iconSpots.push_back({IC_FLEET, 14, 63, 20});
+	headLabel(form, ID_HEAD, 38, 62, 180, _("Your fleets"), pal_RGBA(255, 214, 110, 255));
 	const std::vector<int> order = fleetOrder();
 	if (selected >= static_cast<int>(fleets().size())) { selected = std::max(0, static_cast<int>(fleets().size()) - 1); }
 	s_selectedButton = fleets().empty() ? 0 : ID_FLEET + static_cast<unsigned>(selected);
@@ -327,9 +417,10 @@ void WzFleetTitleUI::build()
 	{
 		const int i = order[k];
 		const nlohmann::json &f = fleets()[i];
-		std::string t = std::string(f.value("fav", false) ? "* " : "") + f.value("name", std::string("?"));
+		std::string t = f.value("name", std::string("?"));
 		if (f.value("name", std::string()) == active) { t += "  (" + std::string(_("in use")) + ")"; }
-		lineButton(form, ID_FLEET + static_cast<unsigned>(i), 20, y, 200, t);
+		if (f.value("fav", false)) { s_iconSpots.push_back({IC_STAR, 18, y + 4, 14}); }
+		lineButton(form, ID_FLEET + static_cast<unsigned>(i), 36, y, 186, t);
 		y += LINE_H;
 	}
 	if (fleets().empty()) { headLabel(form, ID_HEAD + 1, 20, y, 200, _("No fleets yet"), WZCOL_TEXT_MEDIUM, font_regular); }
@@ -369,7 +460,8 @@ void WzFleetTitleUI::build()
 	s_lineToDesign.clear();
 	if (fleets().empty())
 	{
-		headLabel(form, ID_HEAD + 2, X, 62, RW, _("How it works:"), WZCOL_YELLOW);
+		s_iconSpots.push_back({IC_DESIGNER, X, 62, 20});
+		headLabel(form, ID_HEAD + 2, X + 24, 62, RW - 24, _("How it works:"), pal_RGBA(255, 214, 110, 255));
 		headLabel(form, ID_HEAD + 5, X, 90, RW, _("1. Click \"Unit designer\" (top right)."), WZCOL_TEXT_BRIGHT, font_regular);
 		headLabel(form, ID_HEAD + 6, X, 114, RW, _("2. Build units and save each with the star."), WZCOL_TEXT_BRIGHT, font_regular);
 		headLabel(form, ID_HEAD + 7, X, 138, RW, _("3. Close the designer - your fleet appears here."), WZCOL_TEXT_BRIGHT, font_regular);
@@ -389,17 +481,18 @@ void WzFleetTitleUI::build()
 		if (a.fav != b.fav) { return a.fav; }
 		return a.name < b.name;
 	});
-	struct Line { bool head; std::string text; int index; };
+	struct Line { bool head; std::string text; int index; bool fav = false; int cat = 0; };
 	std::vector<Line> lines;
 	int lastCat = -1;
 	for (const Row &r : rows)
 	{
-		if (r.cat != lastCat) { lines.push_back(Line{true, categoryName(r.cat), -1}); lastCat = r.cat; }
-		lines.push_back(Line{false, std::string(r.fav ? "* " : "") + r.name, r.index});
+		if (r.cat != lastCat) { lines.push_back(Line{true, categoryName(r.cat), -1, false, r.cat}); lastCat = r.cat; }
+		lines.push_back(Line{false, r.name, r.index, r.fav, r.cat});
 	}
 	const int pages = std::max(1, (static_cast<int>(lines.size()) + DESIGN_ROWS - 1) / DESIGN_ROWS);
 	page = std::clamp(page, 0, pages - 1);
-	headLabel(form, ID_HEAD + 3, X, 62, RW, astringf(_("%s - %d designs"), fleets()[selected].value("name", std::string()).c_str(), static_cast<int>(rows.size())), WZCOL_YELLOW);
+	s_iconSpots.push_back({IC_STAR, X, 63, 20});
+	headLabel(form, ID_HEAD + 3, X + 24, 62, RW - 24, astringf(_("%s - %d designs"), fleets()[selected].value("name", std::string()).c_str(), static_cast<int>(rows.size())), pal_RGBA(255, 214, 110, 255));
 	y = 62 + LINE_H + 4;
 	if (rows.empty())
 	{
@@ -408,10 +501,15 @@ void WzFleetTitleUI::build()
 	for (int k = page * DESIGN_ROWS; k < static_cast<int>(lines.size()) && k < (page + 1) * DESIGN_ROWS; ++k)
 	{
 		const Line &l = lines[k];
-		if (l.head) { headLabel(form, ID_HEAD + 30 + static_cast<unsigned>(k), X, y, RW, l.text, WZCOL_TEXT_MEDIUM, font_regular_bold); }
+		if (l.head)
+		{
+			s_iconSpots.push_back({l.cat, X, y, 22});
+			headLabel(form, ID_HEAD + 30 + static_cast<unsigned>(k), X + 26, y, RW - 26, l.text, pal_RGBA(120, 210, 255, 255), font_regular_bold);
+		}
 		else
 		{
-			lineButton(form, ID_DESIGN + static_cast<unsigned>(s_lineToDesign.size()), X + 12, y, RW - 12, l.text);
+			if (l.fav) { s_iconSpots.push_back({IC_STAR, X + 30, y + 4, 14}); }
+			lineButton(form, ID_DESIGN + static_cast<unsigned>(s_lineToDesign.size()), X + 48, y, RW - 48, l.text);
 			s_lineToDesign.push_back(l.index);
 		}
 		y += LINE_H;

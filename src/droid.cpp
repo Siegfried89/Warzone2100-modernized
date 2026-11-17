@@ -57,6 +57,8 @@
 #include "modparts.h"
 #include "modmorale.h"
 #include "modvariant.h"
+#include "modrocket.h"
+#include "modsat.h"
 #include "hci.h"
 #include "power.h"
 #include "effects.h"
@@ -3037,6 +3039,14 @@ int nextModuleToBuild(STRUCTURE const *psStruct, int lastOrderedModule)
 
 	int next = psStruct->status == SS_BUILT ? 1 : 0; // If complete, next is one after the current number of modules, otherwise next is the one we're working on.
 	int max;
+	if (modrocket::isSilo(psStruct->pStructureType))
+	{
+		// MOD (17.11. 22:13): ein Satelliten-Modul je Raketensilo
+		const int idx = modsat::moduleStatIndex();
+		max = std::max<int>(psStruct->capacity + next, lastOrderedModule + 1);
+		if (idx >= 0 && max <= 1 && static_cast<unsigned>(idx) < numStructureStats && apStructTypeLists[psStruct->player][idx] == AVAILABLE) { return max; }
+		return 0;
+	}
 	switch (psStruct->pStructureType->type)
 	{
 	case REF_POWER_GEN:

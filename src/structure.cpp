@@ -103,6 +103,7 @@
 #include <unordered_map>
 #include "modgrid.h"
 #include "modsat.h"
+#include "modrocket.h"
 
 //Maximium slope of the terrain for building a structure
 #define MAX_INCLINE		50//80//40
@@ -268,7 +269,8 @@ bool IsStatExpansionModule(const STRUCTURE_STATS *psStats)
 	// If the stat is any of the 3 expansion types ... then return true
 	return psStats->type == REF_POWER_MODULE ||
 	       psStats->type == REF_FACTORY_MODULE  ||
-	       psStats->type == REF_RESEARCH_MODULE;
+	       psStats->type == REF_RESEARCH_MODULE ||
+	       modsat::isModule(psStats);   // MOD (17.11. 22:13): Satelliten-Modul fuer das Raketensilo
 }
 
 static int numStructureModules(STRUCTURE const *psStruct)
@@ -2047,6 +2049,22 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 					//cancel the topic
 					holdResearch(psBuilding, ModeImmediate);
 				}
+			}
+		}
+
+		if (modsat::isModule(pStructureType))
+		{
+			// MOD (Wunsch 17.11. 22:13): NASDA-Satellit "als Modul an die Rakete" - nur auf ein Raketensilo, einer je Silo
+			if (!modrocket::isSilo(psBuilding->pStructureType))
+			{
+				debug(LOG_INFO, "Satellite module %" PRIu32 " trying to upgrade a structure that is no rocket silo - ignoring", id);
+				return nullptr;
+			}
+			if (psBuilding->capacity == 0)
+			{
+				bodyDiff = 65536 - getStructureDamage(psBuilding);
+				psBuilding->capacity++;
+				bUpgraded = true;
 			}
 		}
 
@@ -4678,6 +4696,18 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 
 	STRUCTURE_STATS *psBuilding = castStructureStats(psStats);
 	DROID_TEMPLATE *psTemplate = castDroidTemplate(psStats);
+	if (psBuilding != nullptr && modsat::isModule(psBuilding))
+	{
+		// MOD (Wunsch 17.11. 22:13): Satelliten-Modul nur auf ein eigenes, fertiges Raketensilo ohne Modul
+		if (!TileHasStructure(worldTile(world.map, pos))) { return false; }
+		STRUCTURE const *psSilo = getTileStructure(world.map, map_coord(pos.x), map_coord(pos.y));
+		return psSilo != nullptr && modrocket::isSilo(psSilo->pStructureType) && psSilo->status == SS_BUILT && psSilo->player == player
+		       && nextModuleToBuild(psSilo, -1) > 0;
+	}
+	if (psBuilding != nullptr && modsat::isSatellite(psBuilding) && &world == &gameWorld && modlayermap::resident() != modlayer::ORBIT)
+	{
+		return false;   // MOD (22:13): NASDA-Satelliten nur auf einer Orbit-Insel bauen (oder als Modul ans Raketensilo)
+	}
 	if (psBuilding != nullptr && modupgrade::isUpgrade(psBuilding))
 	{
 		// MOD (Wunsch 17.11. 18:02): ein Ausbau (Betonbunker) darf nur genau auf ein eigenes, fertiges Grundbauwerk (Scav-Bunker) gesetzt werden
@@ -5918,6 +5948,11 @@ STRUCTURE_STATS *getModuleStat(const STRUCTURE *psStruct)
 {
 	ASSERT_OR_RETURN(nullptr, psStruct != nullptr, "Invalid structure pointer");
 
+	if (modrocket::isSilo(psStruct->pStructureType))
+	{
+		const int idx = modsat::moduleStatIndex();   // MOD (22:13): Satelliten-Modul
+		return idx >= 0 ? &asStructureStats[idx] : nullptr;
+	}
 	switch (psStruct->pStructureType->type)
 	{
 	case REF_POWER_GEN:
@@ -7742,6 +7777,10 @@ bool canStructureHaveAModuleAdded(const STRUCTURE* const structure)
 		return false;
 	}
 
+	if (modrocket::isSilo(structure->pStructureType))
+	{
+		return structure->capacity == 0;   // MOD (22:13): Satelliten-Modul
+	}
 	switch (structure->pStructureType->type)
 	{
 		case REF_FACTORY:
