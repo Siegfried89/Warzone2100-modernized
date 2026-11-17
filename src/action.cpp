@@ -752,6 +752,44 @@ void actionSanity(DROID *psDroid)
 }
 
 // Update the action state for a droid
+// MOD (Wunsch 17.11. 15:46 Punkt 9, "Luftkaempfe wie in MF"): MF-Hoverjets bleiben beim Angriff nicht stehen, sondern fliegen Angriffs-
+// Ueberfluege wie in Metal Fatigue: auf das Ziel zu (feuern, solange die Nase zum Ziel zeigt), ueber es hinweg, abdrehen und wieder anfliegen.
+// Zwei Hoverjets, die sich gegenseitig angreifen, kurven so umeinander herum (Luftkampf). Nur Spielschritt-Daten (Lage, id) -> netzwerkgleich.
+static bool modJetDogfighter(const DROID *psDroid)
+{
+	const PROPULSION_STATS *prop = psDroid->getPropulsionStats();
+	return prop != nullptr && prop->alwaysFlying && prop->id == "MFJet";
+}
+
+static void modJetPass(DROID *psDroid, const BASE_OBJECT *psTarget)
+{
+	if (psTarget == nullptr) { return; }
+	const Vector2i here = psDroid->pos.xy();
+	const bool stopped = DROID_STOPPED(psDroid);
+	if (!stopped && iHypot(psDroid->sMove.destination - here) > TILE_UNITS * 3 / 2) { return; }   // noch unterwegs zum Wegpunkt
+	const Vector2i tgt = psTarget->pos.xy();
+	const Vector2i d = tgt - here;
+	const int dist = std::max(1, iHypot(d));
+	const int side = (psDroid->id & 1) ? 1 : -1;
+	Vector2i way;
+	if (dist > TILE_UNITS * 3)
+	{
+		// Anflug: ueber das Ziel hinweg, gut drei Felder dahinter, etwas seitlich versetzt
+		way = tgt + Vector2i(d.x * (TILE_UNITS * 7 / 2) / dist - side * d.y * TILE_UNITS / dist, d.y * (TILE_UNITS * 7 / 2) / dist + side * d.x * TILE_UNITS / dist);
+	}
+	else
+	{
+		// zu nah: abdrehen (60 Grad zur Seite, sechs Felder weit), danach neuer Anflug
+		const uint16_t dir = static_cast<uint16_t>(psDroid->rot.direction + side * DEG(60));
+		way = here + Vector2i(iSinR(dir, TILE_UNITS * 6), iCosR(dir, TILE_UNITS * 6));
+	}
+	way.x = std::clamp(way.x, TILE_UNITS * 2, world_coord(gameWorld.map.width - 3));
+	way.y = std::clamp(way.y, TILE_UNITS * 2, world_coord(gameWorld.map.height - 3));
+	turnOffMultiMsg(true);
+	moveDroidTo(psDroid, way.x, way.y);
+	turnOffMultiMsg(false);
+}
+
 void actionUpdateDroid(DROID *psDroid)
 {
 	bool (*actionUpdateFunc)(DROID * psDroid) = nullptr;
@@ -1216,7 +1254,7 @@ void actionUpdateDroid(DROID *psDroid)
 								setDroidActionTarget(psDroid, nullptr, i);
 							}
 						}
-						else if (psDroid->sMove.Status != MOVESHUFFLE)
+						else if (psDroid->sMove.Status != MOVESHUFFLE && !modJetDogfighter(psDroid))   // MOD: Hoverjets drehen im Flug (Ueberflug)
 						{
 							psDroid->action = DACTION_ROTATETOATTACK;
 							moveTurnDroid(psDroid, psActionTarget->pos.x, psActionTarget->pos.y);
@@ -1248,6 +1286,12 @@ void actionUpdateDroid(DROID *psDroid)
 				// Nope, can't shoot this, try something else next time
 				setDroidActionTarget(psDroid, nullptr, i);
 			}
+		}
+
+		if (bHasTarget && !wallBlocked && psDroid->action == DACTION_ATTACK && modJetDogfighter(psDroid) && !secHoldActive
+		    && secondaryGetState(psDroid, DSO_HALTTYPE) != DSS_HALT_HOLD && order->type != DORDER_HOLD)
+		{
+			modJetPass(psDroid, psDroid->psActionTarget[0]);   // MOD: Angriffs-Ueberflug statt Stehenbleiben
 		}
 
 		if (!bHasTarget || wallBlocked)
