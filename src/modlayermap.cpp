@@ -19,6 +19,10 @@
 #include "multiplay.h"
 #include "radar.h"
 #include "terrain.h"
+#include "structure.h"
+#include "component.h"
+#include "lib/gamelib/gtime.h"
+#include "lib/ivis_opengl/piepalette.h"
 
 #include <algorithm>
 #include <array>
@@ -473,6 +477,8 @@ std::unique_ptr<MAPTILE[]> makeTiles(Layer layer, const Grid &g, const Palette &
 // Je Feld die mittlere Farbe der Oberflaechen-Kachel mit etwas Relief-Schattierung; terrain.cpp schreibt sie im Orbit in die
 // Lichtkarte (rgb), die Terrain-Shader lesen sie unter der Leere am Bodenpunkt weich (bilinear + Weichzeichnung) aus.
 std::vector<uint8_t> s_floorRgb;
+std::vector<uint8_t> s_floorBase;   // (17.11.) nur Gelaende - s_floorRgb = Gelaende + Basis (refreshOrbitBase)
+unsigned s_floorStamp = 0;
 int s_floorW = 0;
 int s_floorH = 0;
 
@@ -499,6 +505,46 @@ void computeOrbitFloor()
 			o[0] = static_cast<uint8_t>(std::clamp(static_cast<float>(c.byte.r) * k, 0.f, 255.f));
 			o[1] = static_cast<uint8_t>(std::clamp(static_cast<float>(c.byte.g) * k, 0.f, 255.f));
 			o[2] = static_cast<uint8_t>(std::clamp(static_cast<float>(c.byte.b) * k, 0.f, 255.f));
+		}
+	}
+	s_floorBase = s_floorRgb;
+	s_floorStamp = 0;
+}
+
+// MOD (Wunsch 17.11. 15:46 Punkt 12: "Orbit: verschwommenes Bild der Basis"): im Planetenboden unter den Orbit-Inseln erscheinen die
+// Gebaeude der Oberflaeche als helle Betonflecken (eigene und verbuendete, und alle, die der Spieler gesehen hat) - mit leichtem Ton der
+// Spielerfarbe, Kraftwerke/Fabriken mit warmem Licht. Die Terrain-Shader zeichnen den Boden ohnehin weich; alle 4 s neu (nur Anzeige).
+void refreshOrbitBase()
+{
+	if (s_floorBase.empty() || s_floorW <= 0) { return; }
+	s_floorRgb = s_floorBase;
+	const int W = s_floorW, H = s_floorH;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		const PIELIGHT pc = pal_GetTeamColour(getPlayerColour(p));
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s->died || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+			const bool known = selectedPlayer < MAX_PLAYERS && (aiCheckAlliances(p, selectedPlayer) || s->visible[selectedPlayer] > 0);
+			if (!known) { continue; }
+			const StructureBounds b = getStructureBounds(s);
+			const bool lit = s->pStructureType->type == REF_POWER_GEN || s->pStructureType->type == REF_FACTORY
+			                 || s->pStructureType->type == REF_CYBORG_FACTORY || s->pStructureType->type == REF_HQ;
+			const bool small = s->pStructureType->type == REF_WALL || s->pStructureType->type == REF_WALLCORNER || s->pStructureType->type == REF_DEFENSE;
+			for (int y = b.map.y; y < b.map.y + b.size.y; ++y)
+			{
+				for (int x = b.map.x; x < b.map.x + b.size.x; ++x)
+				{
+					if (x < 0 || y < 0 || x >= W || y >= H) { continue; }
+					uint8_t *o = &s_floorRgb[(static_cast<size_t>(x) + static_cast<size_t>(y) * W) * 3];
+					const float a = small ? 0.45f : 0.8f;
+					float r = 168.f * 0.8f + pc.byte.r * 0.2f, g = 166.f * 0.8f + pc.byte.g * 0.2f, bl = 158.f * 0.8f + pc.byte.b * 0.2f;
+					if (lit) { r = std::min(255.f, r + 50.f); g = std::min(255.f, g + 30.f); }
+					o[0] = static_cast<uint8_t>(o[0] * (1.f - a) + r * a);
+					o[1] = static_cast<uint8_t>(o[1] * (1.f - a) + g * a);
+					o[2] = static_cast<uint8_t>(o[2] * (1.f - a) + bl * a);
+				}
+			}
 		}
 	}
 }
@@ -706,6 +752,11 @@ void setView(Layer l)
 void tick()
 {
 	if (s_built && s_dirtyView && s_scopeDepth == 0) { rebuildDisplay(); }
+	if (s_built && s_view == modlayer::ORBIT && (s_floorStamp == 0 || realTime - s_floorStamp > 4000))   // (17.11.) Basis im Planetenboden
+	{
+		s_floorStamp = std::max(1u, realTime);
+		refreshOrbitBase();
+	}
 }
 
 int32_t heightAt(Layer l, int worldX, int worldY)
@@ -919,6 +970,8 @@ void reset()
 	}
 	s_drillLog.clear();      // MOD 17.11. (Spielstand)
 	s_floorRgb.clear();      // MOD 17.11.
+	s_floorBase.clear();
+	s_floorStamp = 0;
 	s_islandModels.clear();  // MOD 16.11. 22:58
 	s_floorW = s_floorH = 0;
 	freeSlots();

@@ -568,6 +568,19 @@ static int modTrackFrame(const DROID *psDroid, const iIMDShape *shape, bool bBut
 	return ((f % n) + n) % n;
 }
 
+// MOD (Wunsch 17.11. 15:46 Punkt 13: "Detailstufen / Sprites beim Rauszoomen wie Rome Total War"): weit herausgezoomt wird die
+// 3D-Infanterie (10 animierte Teile je Mann) als flaches Sprite-Modell mit eigener Lauf-/Feuer-Bildfolge gezeichnet - spart bei grossen
+// Schlachten viel Zeichenarbeit, aus der Ferne sieht man den Unterschied kaum. Nur Anzeige.
+static const iIMDBaseShape *modFarInfantry(const DROID *psDroid, bool bButton, const iIMDBaseShape *cur)
+{
+	constexpr float LOD_FAR = 3800.f;   // Kameraabstand (Start 2600, ganz weit 5000)
+	if (bButton || cur == nullptr || psDroid->droidType != DROID_PERSON || getViewDistance() < LOD_FAR) { return cur; }
+	static const iIMDBaseShape *s_sprite = nullptr;
+	static bool s_tried = false;
+	if (!s_tried) { s_tried = true; s_sprite = modelGet(WzString::fromUtf8("exbloke.pie")); }
+	return s_sprite != nullptr ? s_sprite : cur;
+}
+
 static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& modelMatrix2, const glm::mat4 &viewMatrix)
 {
 	iIMDBaseShape *psMoveAnim, *psStillAnim;
@@ -689,7 +702,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	}
 
 	/* Get the body graphic now*/
-	const iIMDBaseShape *psBaseShapeBody = BODY_IMD(psDroid, psDroid->player);
+	const iIMDBaseShape *psBaseShapeBody = modFarInfantry(psDroid, bButton, BODY_IMD(psDroid, psDroid->player));
 	const iIMDShape *psShapeBody = (psBaseShapeBody) ? psBaseShapeBody->displayModel() : nullptr;
 	if (psShapeBody)
 	{
