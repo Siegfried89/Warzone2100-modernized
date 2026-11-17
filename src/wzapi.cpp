@@ -1636,7 +1636,8 @@ bool wzapi::orderDroidLoc(WZAPI_PARAMS(DROID *psDroid, int order_, int x, int y)
 	OrderSourceScope orderScope(scriptOrderSource(context));
 	SCRIPT_ASSERT(false, context, psDroid, "No valid droid provided");
 	DROID_ORDER order = (DROID_ORDER)order_;
-	SCRIPT_ASSERT(false, context, validOrderForLoc(order), "Invalid location based order: %s", getDroidOrderName(order));
+	// MOD: auch "Boden beschiessen" (DORDER_ATTACKGROUND, z. B. die Belagerungs-Artillerie der Stadtkarte)
+	SCRIPT_ASSERT(false, context, validOrderForLoc(order) || order == DORDER_ATTACKGROUND, "Invalid location based order: %s", getDroidOrderName(order));
 	if (bMultiPlayer && (order == DORDER_TRANSPORTOUT || order == DORDER_TRANSPORTIN || order == DORDER_TRANSPORTRETURN))
 	{
 		debug(LOG_ERROR, "%s is not available in multiplayer; use DORDER_DISEMBARK", getDroidOrderName(order));
@@ -4983,6 +4984,7 @@ nlohmann::json wzapi::getUsefulConstants()
 	constants["DORDER_REARM"] = DORDER_REARM;
 	constants["DORDER_RECOVER"] = DORDER_RECOVER;
 	constants["DORDER_HOLD"] = DORDER_HOLD;
+	constants["DORDER_ATTACKGROUND"] = DORDER_ATTACKGROUND;   // MOD: Boden beschiessen (Ortsbefehl)
 	constants["BUILD"] = IDRET_BUILD; // deprecated
 	constants["MANUFACTURE"] = IDRET_MANUFACTURE; // deprecated
 	constants["RESEARCH"] = IDRET_RESEARCH; // deprecated
