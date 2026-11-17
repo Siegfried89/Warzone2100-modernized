@@ -3284,8 +3284,11 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 		return;
 	}
 	// MOD (17.11.): Gruben im Stellungsnetz - Modell mit Gaengen zu den offenen Seiten (ohne Drehung, siehe modfort.h)
+	// (17.11. 16:10) bewaffnete Gruben: die Waffe sitzt am Anschluss des eigenen Modells (gedreht wie das Bauwerk)
+	const iIMDShape *modFortConnImd = nullptr;
 	if (const iIMDShape *fortImd = modfort::displayModel(psStructure))
 	{
+		modFortConnImd = strImd;
 		strImd = getFactionDisplayIMD(faction, fortImd);
 		modelMatrix = glm::translate(glm::vec3(dv.x, modfort::displayHeight(psStructure, dv.y), dv.z));   // tief: auf Originalboden
 	}
@@ -3406,7 +3409,15 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 			stretch = psStructure->pos.z - psStructure->foundationDepth;
 		}
 		drawShape(strImd, psStructure->timeAnimationStarted, colour, buildingBrightness, pieFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
-		if (strImd->connectors.size() > 0 && !modnestcrew::unmanned(psStructure))   // MOD: MG-Stellung ohne Schuetze
+		if (modFortConnImd != nullptr)   // MOD (17.11. 16:10): Netz-Grube mit Waffe
+		{
+			if (modFortConnImd->connectors.size() > 0 && psStructure->numWeaps > 0 && !modnestcrew::unmanned(psStructure))
+			{
+				renderStructureTurrets(psStructure, modFortConnImd, buildingBrightness, pieFlag, pieFlagData, ecmFlag,
+				                       modelMatrix * glm::rotate(UNDEG(-psStructure->rot.direction), glm::vec3(0.f, 1.f, 0.f)), viewMatrix);
+			}
+		}
+		else if (strImd->connectors.size() > 0 && !modnestcrew::unmanned(psStructure))   // MOD: MG-Stellung ohne Schuetze
 		{
 			renderStructureTurrets(psStructure, strImd, buildingBrightness, pieFlag, pieFlagData, ecmFlag, modelMatrix, viewMatrix);
 		}

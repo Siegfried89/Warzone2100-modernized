@@ -149,10 +149,10 @@ bool gwNewGateway(WorldMapState& mapState, SDWORD x1, SDWORD y1, SDWORD x2, SDWO
 bool gwRestoreGateway(WorldMapState& mapState, int x1, int y1, int x2, int y2)
 {
 	GATEWAY *psNew = (GATEWAY *)malloc(sizeof(GATEWAY));
-	psNew->x1 = static_cast<uint8_t>(x1);
-	psNew->y1 = static_cast<uint8_t>(y1);
-	psNew->x2 = static_cast<uint8_t>(x2);
-	psNew->y2 = static_cast<uint8_t>(y2);
+	psNew->x1 = static_cast<uint16_t>(x1);   // MOD: Karten > 256 Felder
+	psNew->y1 = static_cast<uint16_t>(y1);   // MOD: Karten > 256 Felder
+	psNew->x2 = static_cast<uint16_t>(x2);   // MOD: Karten > 256 Felder
+	psNew->y2 = static_cast<uint16_t>(y2);   // MOD: Karten > 256 Felder
 	mapState.gateways.push_back(psNew);
 
 	// Set tile flags only for in-bounds tiles. A stored gateway may carry coordinates outside the map's

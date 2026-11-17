@@ -32,7 +32,7 @@ struct WorldMapState;
 
 struct GATEWAY
 {
-	uint8_t x1, y1, x2, y2;
+	uint16_t x1, y1, x2, y2;   // MOD (Kachel-Viertelung): bis zu 512 Felder
 };
 
 typedef std::list<GATEWAY *> GATEWAY_LIST;

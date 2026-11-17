@@ -3638,10 +3638,10 @@ wzapi::no_return_value wzapi::setNoGoArea(WZAPI_PARAMS(int x1, int y1, int x2, i
 	SCRIPT_ASSERT({}, context, (playerFilter >= 0 && playerFilter < MAX_PLAYERS) || playerFilter == ALL_PLAYERS, "Bad player filter value %d", playerFilter);
 	// MOD (Kachel-Viertelung): Skript-Kacheln -> Raster (Landezonen werden als uint8 gespeichert - bei feinem Raster Grenze beachten)
 	x1 = scrGrid(x1); y1 = scrGrid(y1); x2 = scrGrid(x2); y2 = scrGrid(y2);
-	x1 = std::min<int>(x1, UINT8_MAX);
-	y1 = std::min<int>(y1, UINT8_MAX);
-	x2 = std::min<int>(x2, UINT8_MAX);
-	y2 = std::min<int>(y2, UINT8_MAX);
+	x1 = std::min<int>(x1, UINT16_MAX);
+	y1 = std::min<int>(y1, UINT16_MAX);
+	x2 = std::min<int>(x2, UINT16_MAX);
+	y2 = std::min<int>(y2, UINT16_MAX);
 
 	if (playerFilter == ALL_PLAYERS)
 	{

@@ -480,26 +480,29 @@ static void serializeLandingZoneData_json(nlohmann::json &o, const LANDING_ZONE 
 }
 static bool serializeLandingZoneData(PHYSFS_file *fileHandle, const LANDING_ZONE *serializeLandZone)
 {
-	return (PHYSFS_writeUBE8(fileHandle,    serializeLandZone->x1)
-	        && PHYSFS_writeUBE8(fileHandle, serializeLandZone->y1)
-	        && PHYSFS_writeUBE8(fileHandle, serializeLandZone->x2)
-	        && PHYSFS_writeUBE8(fileHandle, serializeLandZone->y2));
+	// MOD (Kachel-Viertelung): altes Binaerformat hat 8 Bit je Wert (feine Werte > 255 werden begrenzt; geladen wird das JSON)
+	auto b8 = [](uint16_t v) { return static_cast<uint8_t>(std::min<uint16_t>(v, 255)); };
+	return (PHYSFS_writeUBE8(fileHandle,    b8(serializeLandZone->x1))
+	        && PHYSFS_writeUBE8(fileHandle, b8(serializeLandZone->y1))
+	        && PHYSFS_writeUBE8(fileHandle, b8(serializeLandZone->x2))
+	        && PHYSFS_writeUBE8(fileHandle, b8(serializeLandZone->y2)));
 }
 
 static void deserializeLandingZoneData_json(const nlohmann::json &o, LANDING_ZONE *serializeLandZone)
 {
-	serializeLandZone->x1 = o.at("x1").get<uint8_t>();
-	serializeLandZone->y1 = o.at("y1").get<uint8_t>();
-	serializeLandZone->x2 = o.at("x2").get<uint8_t>();
-	serializeLandZone->y2 = o.at("y2").get<uint8_t>();
+	serializeLandZone->x1 = o.at("x1").get<uint16_t>();
+	serializeLandZone->y1 = o.at("y1").get<uint16_t>();
+	serializeLandZone->x2 = o.at("x2").get<uint16_t>();
+	serializeLandZone->y2 = o.at("y2").get<uint16_t>();
 }
 
 static bool deserializeLandingZoneData(PHYSFS_file *fileHandle, LANDING_ZONE *serializeLandZone)
 {
-	return (PHYSFS_readUBE8(fileHandle, &serializeLandZone->x1)
-	        && PHYSFS_readUBE8(fileHandle, &serializeLandZone->y1)
-	        && PHYSFS_readUBE8(fileHandle, &serializeLandZone->x2)
-	        && PHYSFS_readUBE8(fileHandle, &serializeLandZone->y2));
+	uint8_t x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+	const bool ok = PHYSFS_readUBE8(fileHandle, &x1) && PHYSFS_readUBE8(fileHandle, &y1)
+	                && PHYSFS_readUBE8(fileHandle, &x2) && PHYSFS_readUBE8(fileHandle, &y2);
+	serializeLandZone->x1 = x1; serializeLandZone->y1 = y1; serializeLandZone->x2 = x2; serializeLandZone->y2 = y2;
+	return ok;
 }
 static void serializeMultiplayerGame_json(nlohmann::json &o, const MULTIPLAYERGAME *serializeMulti)
 {
@@ -3264,6 +3267,15 @@ LoadingTask<> loadGame(ResourceLoadingController& controller, const GameLoadDeta
 	{
 		for (inc = 0; inc < MAX_NOGO_AREAS; inc++)
 		{
+#if defined(WZ_MOD_FINE_GRID)
+			// MOD (Kachel-Viertelung): Landezonen aus Karten-/Missionsdateien (nicht aus eigenen Spielstaenden) sind in Original-Kacheln
+			LANDING_ZONE &lz = saveGameData.sLandingZone[inc];
+			if (!UserSaveGame && (lz.x1 | lz.y1 | lz.x2 | lz.y2) != 0)
+			{
+				lz.x1 = static_cast<uint16_t>(lz.x1 * TILE_SPLIT); lz.y1 = static_cast<uint16_t>(lz.y1 * TILE_SPLIT);
+				lz.x2 = static_cast<uint16_t>(lz.x2 * TILE_SPLIT + TILE_SPLIT - 1); lz.y2 = static_cast<uint16_t>(lz.y2 * TILE_SPLIT + TILE_SPLIT - 1);
+			}
+#endif
 			setNoGoArea(saveGameData.sLandingZone[inc].x1, saveGameData.sLandingZone[inc].y1,
 			            saveGameData.sLandingZone[inc].x2, saveGameData.sLandingZone[inc].y2, (UBYTE)inc);
 		}

@@ -29,6 +29,8 @@ int bodyFaction(const BODY_STATS *b)
 		{"Body4ABT", FACTION_NEW_PARADIGM}, {"Body8MBT", FACTION_NEW_PARADIGM}, {"Body12SUP", FACTION_NEW_PARADIGM},
 		{"Body2SUP", FACTION_COLLECTIVE}, {"Body6SUPP", FACTION_COLLECTIVE}, {"Body9REC", FACTION_COLLECTIVE},
 		{"Body3MBT", FACTION_NEXUS}, {"Body7ABT", FACTION_NEXUS}, {"Body10MBT", FACTION_NEXUS},
+		// (17.11. 16:10) New-Paradigm-Soldaten (Ex-Soldaten und Soeldner: Helm, Wuestentarn, Weste - npsoldier.py)
+		{"B1NPSoldier01", FACTION_NEW_PARADIGM}, {"B1NPSoldierB01", FACTION_NEW_PARADIGM},
 	};
 	const std::string id = b->id.toUtf8();
 	for (const Entry &e : kBodies)

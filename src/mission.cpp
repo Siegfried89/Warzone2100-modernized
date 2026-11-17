@@ -3040,7 +3040,7 @@ void initNoGoAreas()
 }
 
 //sets the coords for a no go area
-void setNoGoArea(UBYTE x1, UBYTE y1, UBYTE x2, UBYTE y2, UBYTE area)
+void setNoGoArea(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, UBYTE area)
 {
 	// make sure that x2 > x1 and y2 > y1
 	if (x2 < x1)

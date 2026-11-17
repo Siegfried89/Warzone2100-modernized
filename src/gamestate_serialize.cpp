@@ -4404,8 +4404,8 @@ static void readMissionHeader(const nlohmann::ordered_json &j, uint32_t version)
 	for (int i = 0; i < MAX_NOGO_AREAS && static_cast<size_t>(i) < zones.size(); ++i)
 	{
 		const nlohmann::ordered_json &z = reqArray(zones[i], 4);
-		setNoGoArea(z[0].get<uint8_t>(), z[1].get<uint8_t>(),
-		            z[2].get<uint8_t>(), z[3].get<uint8_t>(), static_cast<UBYTE>(i));
+		setNoGoArea(z[0].get<uint16_t>(), z[1].get<uint16_t>(),
+		            z[2].get<uint16_t>(), z[3].get<uint16_t>(), static_cast<UBYTE>(i));
 	}
 
 	// Restore off-world terrain (if any) before the objects, so the map exists for object placement

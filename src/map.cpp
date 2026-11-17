@@ -70,8 +70,8 @@ static WZ_SEMAPHORE *dangerSemaphore = nullptr;
 static WZ_SEMAPHORE *dangerDoneSemaphore = nullptr;
 struct floodtile
 {
-	uint8_t x;
-	uint8_t y;
+	uint16_t x;   // MOD: Karten > 256 Felder
+	uint16_t y;
 };
 static struct floodtile *floodbucket = nullptr;
 static int bucketcounter;
