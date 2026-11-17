@@ -45,9 +45,14 @@ vec3 modvLight()
 }
 
 // Planetenboden am Punkt g (Modellkoordinaten), weichgezeichnet ueber etwa 'spread' Felder
-vec3 modvFloor(vec3 g, float spread)
+// (17.11.) ausserhalb der Karte: gespiegelt fortgesetzt (keine Streifen vom Kartenrand), zunehmend weich; w = wie weit draussen (0..)
+vec3 modvFloor(vec3 g, float spread, out float outside)
 {
 	vec2 uv = (ModelUVLightmapMatrix * vec4(g, 1.0)).xy;
+	vec2 o = max(max(-uv, uv - 1.0), vec2(0.0));
+	outside = max(o.x, o.y);
+	uv = 1.0 - abs(1.0 - mod(uv, 2.0));
+	spread *= 1.0 + outside * 60.0;
 	vec2 px = spread / vec2(textureSize(lightmap_tex, 0));
 	vec3 c = texture(lightmap_tex, uv).rgb * 0.36;
 	c += texture(lightmap_tex, uv + vec2( 0.8,  0.3) * px).rgb * 0.16;
@@ -67,9 +72,11 @@ vec3 modvColor(vec3 P)
 	vec3 lightC = modvLight();
 	vec3 g = P + dir * MODV_DEPTH;
 	float distG = lenV + length(dir) * MODV_DEPTH;
-	vec3 col = modvFloor(g, 1.6);
-	vec3 haze = mix(modvFloor(g, 9.0), vec3(0.70, 0.72, 0.76), 0.45) * lightC;
-	return mix(col * lightC, haze, 0.15 + 0.85 * smoothstep(9000.0, 32000.0, distG));
+	float outside;
+	vec3 col = modvFloor(g, 1.6, outside);
+	vec3 haze = mix(modvFloor(g, 9.0, outside), vec3(0.70, 0.72, 0.76), 0.45) * lightC;
+	// ausserhalb der Karte geht der Boden weich in den Dunst ueber
+	return mix(col * lightC, haze, max(0.15 + 0.85 * smoothstep(9000.0, 32000.0, distG), smoothstep(0.0, 0.35, outside)));
 }
 
 vec3 getGroundUv(int i) {
