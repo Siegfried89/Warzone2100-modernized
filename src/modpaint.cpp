@@ -57,7 +57,7 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -84,6 +84,8 @@ const ModeInfo kModes[M_COUNT] = {
 	// MOD (Wunsch 17.11. 18:12/18:13): Panzersperrenfeld (gruene Pyramiden) und Minenfeld
 	{ "Tank traps", "Tank trap field: drag an area - builders put a staggered field of tank traps into it (vehicles cannot pass)", "Tank traps: drag the area (right click cancels)", 40, 200, 80, true },
 	{ "Minefield", "Minefield: drag an area - builders lay hidden mines in it; they blow up enemy ground units that drive over them", "Minefield: drag the area (right click cancels)", 255, 90, 40, true },
+	// MOD (Wunsch 17.11. 18:37): Offensivlinie (rot) - wie die Verteidigungslinie, aber auf Angriff ausgerichtet
+	{ "Offense", "Offensive line: many combat units mass on the line in two ranks, ready to push forward (they pursue enemies); builders add only a few short trenches and MG posts", "Offense: drag the offensive line (right click cancels)", 240, 45, 45, false },
 };
 
 constexpr int BTN_W = 66;
@@ -360,6 +362,7 @@ bool fits(Mode m, const DROID *d)
 	case M_COMBOT: return modcombot::isModular(d);
 	case M_TRAPS:
 	case M_MINES: return isBuilder(d);
+	case M_OFFENSE: return isCombat(d) || isBuilder(d) || modcombot::isModular(d);
 	default: return false;
 	}
 }
@@ -377,7 +380,8 @@ std::vector<DROID *> pickUnits(Mode m, const std::vector<Vector2i> &pts)
 		if (modlayer::layerOf(d) != view || !fits(m, d)) { continue; }
 		if (d->selected) { sel.push_back(d); continue; }
 		// ohne Auswahl: Einheiten in der Naehe der Zeichnung
-		const int64_t r2 = static_cast<int64_t>((NEAR_TILES * DIST_TILE)) * (NEAR_TILES * DIST_TILE);
+		const int64_t nearR = static_cast<int64_t>(m == M_OFFENSE ? NEAR_TILES * 3 / 2 : NEAR_TILES) * DIST_TILE;   // Offensive: mehr Einheiten
+		const int64_t r2 = nearR * nearR;
 		for (const Vector2i &p : pts)
 		{
 			if (dist2(d->pos.xy(), p) <= r2) { nearby.push_back(d); break; }
@@ -389,7 +393,8 @@ std::vector<DROID *> pickUnits(Mode m, const std::vector<Vector2i> &pts)
 		const int64_t da = dist2(a->pos.xy(), c), db = dist2(b->pos.xy(), c);
 		return da != db ? da < db : a->id < b->id;
 	});
-	if (nearby.size() > MAX_UNITS) { nearby.resize(MAX_UNITS); }
+	const size_t cap = (m == M_OFFENSE) ? MAX_UNITS * 8 / 5 : MAX_UNITS;
+	if (nearby.size() > cap) { nearby.resize(cap); }
 	return nearby;
 }
 
@@ -911,6 +916,78 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		}
 		break;
 	}
+	case M_OFFENSE:
+	{
+		// MOD (Wunsch 17.11. 18:37): "Im Prinzip das Gleiche wie die Verteidigungslinie, aber das Netzwerk ist auf Offensive ausgerichtet:
+		// mehr Einheiten, weniger starre Verteidigung (aber nicht ganz ohne)."
+		//  - Kampfeinheiten (auch Infanterie mit Spaten) sammeln sich in zwei Reihen auf der Linie (Angriffsbewegung: kaempfen unterwegs)
+		//    und verfolgen danach Gegner von selbst;
+		//  - nur Baufahrzeuge bauen (gibt es keine, graben hoechstens 3 Infanteristen): drei kurze Grabenstuecke und zwei MG-Posten
+		//    zur Feindseite.
+		std::vector<DROID *> fighters, builders;
+		for (DROID *d : units) { if (isTruck(d) && !isAir(d)) { builders.push_back(d); } else if (isCombat(d) || modcombot::isModular(d)) { fighters.push_back(d); } }
+		if (builders.empty())
+		{
+			for (DROID *d : units)
+			{
+				if (builders.size() < 3 && modbuild::isInfantryBuilder(d)) { builders.push_back(d); }
+			}
+			fighters.erase(std::remove_if(fighters.begin(), fighters.end(), [&builders](DROID *d) { return std::find(builders.begin(), builders.end(), d) != builders.end(); }), fighters.end());
+		}
+		const int side = defendSide(raw);
+		const std::vector<Vector2i> line = resample(raw, std::max<size_t>(9, raw.size()));
+		// Feindrichtung an einer Stelle der Linie (Normale zur Seite der Querstriche)
+		auto enemyDir = [&line, side](size_t i) {
+			const Vector2i a = line[i > 0 ? i - 1 : 0], b = line[std::min(i + 1, line.size() - 1)];
+			const double tx = b.x - a.x, ty = b.y - a.y, l = std::max(1.0, std::sqrt(tx * tx + ty * ty));
+			return std::make_pair(-ty / l * side, tx / l * side);
+		};
+		const bool twoRanks = fighters.size() > 10;
+		const size_t front = twoRanks ? (fighters.size() + 1) / 2 : fighters.size();
+		const std::vector<Vector2i> spotsA = resample(raw, std::max<size_t>(1, front));
+		const std::vector<Vector2i> spotsB = resample(raw, std::max<size_t>(1, fighters.size() - front));
+		for (size_t i = 0; i < fighters.size(); ++i)
+		{
+			Vector2i p = (i < front) ? spotsA[i] : spotsB[i - front];
+			if (i >= front)
+			{
+				// zweite Reihe gut ein Feld hinter der Linie
+				const size_t li = std::min(line.size() - 1, (i - front) * line.size() / std::max<size_t>(1, fighters.size() - front));
+				const auto e = enemyDir(li);
+				p.x -= static_cast<int>(e.first * DIST_TILE * 1.2);
+				p.y -= static_cast<int>(e.second * DIST_TILE * 1.2);
+			}
+			p.x = std::clamp(p.x, TILE_UNITS, world_coord(gameWorld.map.width - 2));
+			p.y = std::clamp(p.y, TILE_UNITS, world_coord(gameWorld.map.height - 2));
+			send(fighters[i], DroidOrder(DORDER_SCOUT, p), false);
+			rememberPlan(fighters[i], DroidOrder(DORDER_SCOUT, p), p);
+			if (!modcombot::isModular(fighters[i])) { secondarySetState(fighters[i], gameWorld.objects, DSO_HALTTYPE, DSS_HALT_PURSUE); }
+		}
+		if (builders.empty()) { break; }
+		std::vector<DroidOrder> plan;
+		STRUCTURE_STATS *trench = firstAvailable({ "A0BaBaTrench", "A0BaBaTrenchEarth", "A0BaBaSandbagWall" });
+		STRUCTURE_STATS *post = firstAvailable({ "A0BaBaMGNestPost" });
+		const std::vector<Vector2i> seg = resample(raw, 7);
+		if (trench != nullptr)
+		{
+			for (size_t k = 0; k + 1 < seg.size(); k += 2) { plan.emplace_back(DORDER_LINEBUILD, trench, seg[k], seg[k + 1], 0); }
+		}
+		if (post != nullptr)
+		{
+			for (size_t k : { static_cast<size_t>(2), static_cast<size_t>(4) })
+			{
+				const size_t li = std::min(line.size() - 1, k * (line.size() - 1) / 6);
+				const auto e = enemyDir(li);
+				Vector2i p = seg[k];
+				p.x += static_cast<int>(e.first * DIST_TILE * 0.8);
+				p.y += static_cast<int>(e.second * DIST_TILE * 0.8);
+				const uint16_t dir = static_cast<uint16_t>(iAtan2(static_cast<int>(e.first * 4096), static_cast<int>(-e.second * 4096)));
+				plan.emplace_back(DORDER_BUILD, post, p, dir);
+			}
+		}
+		for (size_t k = 0; k < plan.size(); ++k) { send(builders[k % builders.size()], plan[k], k >= builders.size()); }
+		break;
+	}
 	case M_TRAPS:
 	case M_MINES:
 	{
@@ -1211,7 +1288,8 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 	const ModeInfo &mi = kModes[mode];
 	const bool closed = mi.area;
 	const bool field = mode == M_TRAPS || mode == M_MINES;
-	const bool arrow = !closed && mode != M_RALLY && mode != M_DEFEND;   // Rally = Kreis/Spirale, Defend = Linie mit Querstrichen
+	const bool lineWithTicks = mode == M_DEFEND || mode == M_OFFENSE;   // Verteidigungs-/Offensivlinie: Linie mit Querstrichen zum Feind
+	const bool arrow = !closed && mode != M_RALLY && !lineWithTicks;    // Rally = Kreis/Spirale
 	std::vector<glm::vec2> p = screenPath(pts, m, closed);
 	if (p.size() < 2 || alpha <= 0) { return; }
 	const float sc = modui::uiScale();
@@ -1243,7 +1321,7 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 		segs.push_back(Seg{ p[i - 1], p[i], body * taper, outlineA * fade, false });
 	}
 	if (arrow) { triangleSegs(segs, tip - dir * headL, tip, headW * 0.5f, static_cast<float>(alpha)); }
-	if (mode == M_DEFEND) { tickSegs(segs, pts, side, body, static_cast<float>(alpha), m); }
+	if (lineWithTicks) { tickSegs(segs, pts, side, body, static_cast<float>(alpha), m); }
 	std::vector<Seg> extra;
 	if (field && marks != nullptr)
 	{
@@ -1313,7 +1391,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	st.pts = s_cur;
 	st.born = realTime;
 	if (m == M_TRAPS || m == M_MINES) { st.marks = fieldSpots(s_cur, m == M_MINES); }
-	if (m == M_DEFEND) { st.side = defendSide(s_cur); }
+	if (m == M_DEFEND || m == M_OFFENSE) { st.side = defendSide(s_cur); }
 	// MOD (Wunsch 16.11. 21:25): hoechstens ein Marker je Aktion - eine neue Zeichnung ersetzt die alte derselben Art
 	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [m](const Stroke &o) { return o.mode == m; }), s_done.end());
 	s_done.push_back(std::move(st));
@@ -1343,7 +1421,7 @@ void drawOverlay(const glm::mat4 &m)
 		// Vorschau: Querstriche / geplante Panzersperren und Minen schon waehrend des Zeichnens
 		std::vector<Vector2i> marks;
 		if ((s_mode == M_TRAPS || s_mode == M_MINES) && s_cur.size() >= 3) { marks = fieldSpots(s_cur, s_mode == M_MINES); }
-		drawStroke(s_cur, s_mode, 255, m, &marks, s_mode == M_DEFEND ? defendSide(s_cur) : 0);
+		drawStroke(s_cur, s_mode, 255, m, &marks, (s_mode == M_DEFEND || s_mode == M_OFFENSE) ? defendSide(s_cur) : 0);
 	}
 }
 
