@@ -318,6 +318,8 @@ void startTitleMenu()
 	addBottomForm();
 	addFactionChoice();
 
+	addTextButton(FRONTEND_FLEETS, FRONTEND_POS1X, FRONTEND_POS1Y, _("Fleets"), WBUT_TXTCENTRE);   // MOD (17.11.): Flotten-Menue
+	widgSetTip(psWScreen, FRONTEND_FLEETS, _("Save your unit designs as named fleets and take them into every game mode"));
 	addTextButton(FRONTEND_SINGLEPLAYER, FRONTEND_POS2X, FRONTEND_POS2Y, _("Single Player"), WBUT_TXTCENTRE);
 	addTextButton(FRONTEND_MULTIPLAYER, FRONTEND_POS3X, FRONTEND_POS3Y, _("Multi Player"), WBUT_TXTCENTRE);
 	addTextButton(FRONTEND_TUTORIAL, FRONTEND_POS4X, FRONTEND_POS4Y, _("Tutorial"), WBUT_TXTCENTRE);
@@ -419,6 +421,9 @@ bool runTitleMenu()
 	case FRONTEND_CONTINUE:
 		runContinue();
 		changeTitleMode(LOADSAVEGAME);
+		break;
+	case FRONTEND_FLEETS:   // MOD (17.11.)
+		changeTitleUI(std::make_shared<WzFleetTitleUI>());
 		break;
 	case FRONTEND_FACTION_0:
 	case FRONTEND_FACTION_1:
