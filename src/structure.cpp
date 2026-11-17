@@ -47,6 +47,7 @@
 #include "modgroundfire.h"   // MOD
 #include "modsound.h"
 #include "modaidiff.h"
+#include "moddrama.h"
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modcrates.h"
@@ -953,6 +954,7 @@ int32_t structureDamage(GameWorld& world, STRUCTURE *psStructure, PROJECTILE *ps
 	if (relativeDamage != 0)
 	{
 		modlayer::onUnderAttack(psStructure);   // MOD: Warnung, wenn ein eigenes Objekt in einer anderen Ebene getroffen wird
+		moddrama::onHit(psStructure, psProjectile);   // MOD: dramatische Rufe bei Gefechten (nur Ton)
 	}
 
 	// If the shell did sufficient damage to destroy the structure
