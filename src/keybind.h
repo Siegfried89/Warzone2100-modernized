@@ -176,6 +176,9 @@ void kf_MovePause();
 void kf_SpeedUp();
 void kf_SlowDown();
 void kf_NormalSpeed();
+void kf_ModTimeFaster();   // MOD (17.11. 14:39): Zeitfaktor in 10-%-Schritten (0..100 %)
+void kf_ModTimeSlower();
+int modTimeFactorPercent();   // MOD: aktueller Zeitfaktor in Prozent (100 = normal)
 
 void kf_TeachSelected();
 void kf_MakeMeHero();

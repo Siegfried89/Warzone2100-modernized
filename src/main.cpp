@@ -1964,6 +1964,7 @@ static char **utfargv = nullptr;
 
 void mainShutdown()
 {
+	modBreadcrumb("Beenden: Anfang");
 	ActivityManager::instance().preSystemShutdown();
 
 	switch (GetGameMode())
@@ -1981,8 +1982,10 @@ void mainShutdown()
 		default:
 			break;
 	}
+	modBreadcrumb("Beenden: Spiel-/Menueschleife gestoppt");
 	saveConfig();
 	writeFavoriteStructsFile(FavoriteStructuresPath);
+	modBreadcrumb("Beenden: Einstellungen gespeichert");
 #if defined(ENABLE_DISCORD)
 	discordRPCShutdown();
 #endif
@@ -1995,7 +1998,9 @@ void mainShutdown()
 	coreDataCheckShutdown();
 	selfExeDetailsShutdown();
 	// NOTE: urlRequestShutdown is called inside systemShutdown, as it must happen after certain other calls
+	modBreadcrumb("Beenden: Systeme herunterfahren");
 	systemShutdown();
+	modBreadcrumb("Beenden: Systeme heruntergefahren");
 #ifdef WZ_OS_WIN	// clean up the memory allocated for the command line conversion
 	for (int i = 0; i < utfargc; i++)
 	{
@@ -2011,6 +2016,7 @@ int realmain(int argc, char *argv[])
 {
 	utfargc = argc;
 	utfargv = (char **)argv;
+	modBreadcrumb("Start");   // MOD (17.11. 14:40): Ablauf-Protokoll neben der Programmdatei
 
 	osSpecificFirstChanceProcessSetup();
 
@@ -2039,6 +2045,7 @@ int realmain(int argc, char *argv[])
 
 	/*** Initialize PhysicsFS ***/
 	initialize_PhysicsFS(utfargv[0]);
+	modBreadcrumb("Dateisystem bereit");
 
 	/** Initialize crash-handling provider, if configured */
 	/** NOTE: Should come as early as possible in process init, but needs to be after initialize_PhysicsFS because we need the platform pref dir for storing temporary crash files... */
@@ -2056,7 +2063,9 @@ int realmain(int argc, char *argv[])
 
 	/*** Initialize translations ***/
 	/*** NOTE: Should occur before any use of gettext / libintl translation routines. ***/
+	modBreadcrumb("Absturz-Melder bereit");
 	initI18n();
+	modBreadcrumb("Uebersetzungen bereit");
 
 	wzMain(argc, argv);		// init Qt integration first
 
@@ -2106,6 +2115,7 @@ int realmain(int argc, char *argv[])
 	 * directory.
 	 */
 	initialize_ConfigDir();
+	modBreadcrumb("Benutzerordner gesetzt");
 
 	/*** Initialize directory structure ***/
 
@@ -2158,6 +2168,7 @@ int realmain(int argc, char *argv[])
 
 		debug(LOG_WZ, "Using %s debug file", debug_filename.toUtf8().c_str());
 	}
+	modBreadcrumb("Logdatei offen");
 
 	// Initialize random number generators
 	srand((unsigned int)time(NULL));
@@ -2284,6 +2295,7 @@ int realmain(int argc, char *argv[])
 	{
 		gfxbackend = war_getGfxBackend();
 	}
+	modBreadcrumb("Fenster/Grafik wird eingerichtet");
 	if (!wzMainScreenSetup(gfxbackend, war_getAntialiasing(), war_getWindowMode(), war_GetVsync(), war_getLODDistanceBiasPercentage(), war_getShadowMapResolution()))
 	{
 		saveConfig(); // ensure any setting changes are persisted on failure
@@ -2437,11 +2449,14 @@ int realmain(int argc, char *argv[])
 
 	osSpecificPostInit();
 
+	modBreadcrumb("Hauptschleife laeuft");
 	wzMainEventLoop(mainShutdown);
 
 	int exitCode = wzGetQuitExitCode();
+	modBreadcrumb("Beenden: Fenster/Grafik abbauen");
 	wzShutdown();
 	debug(LOG_MAIN, "Completed shutting down Warzone 2100");
+	modBreadcrumb("Ende ohne Fehler");
 	return exitCode;
 }
 

@@ -643,7 +643,9 @@ float drawnHeightAt(const WorldMapState& mapState, float worldX, float worldY, H
 		const Vector2f off = outlineOffsetAt(mapState, u.x, u.y);
 		u = Vector2f(worldX - off.x, worldY - off.y);
 	}
-	return heightAt(mapState, u.x, u.y, mode);
+	// MOD (17.11. 14:14): Einheiten stehen in tiefen Stellungen auf der Sohle des Modells, nicht auf dem tiefer gelegten Netz
+	const float h = heightAtNoSink(mapState, u.x, u.y, mode);
+	return (mode == HeightMode::Water) ? h : h - modterrain::sinkStandF(mapState, u.x, u.y);
 }
 
 void debugLogSurfaceStats(const WorldMapState& mapState)

@@ -37,6 +37,7 @@
 #include "range_rings.h"
 #include "edit3d.h"
 #include "keybind.h"
+#include <algorithm>
 #include "modsalvage.h"
 #include "screens/researchtreescreen.h"
 #include "mechanics.h"
@@ -2532,6 +2533,52 @@ void kf_SlowDown()
 	--newMod;  // Point to lower speed instead of current speed.
 
 	tryChangeSpeed(*newMod, mod);
+}
+
+// MOD (Wunsch 17.11. 14:39): "* und - verschnellert Zeit, verlangsamt Zeit. Mit Zeitfaktor in Prozent 0-100."
+// Numblock * = schneller, Numblock - = langsamer, je 10 Prozentpunkte zwischen 0 % (Zeit steht, Kamera frei) und 100 % (normal).
+// Die Anzeige "Time factor: NN %" steht oben in der Mitte, solange der Faktor nicht 100 % ist. Im Netzwerkspiel gesperrt (Gleichlauf).
+int modTimeFactorPercent()
+{
+	const Rational mod = gameTimeGetMod();
+	if (mod.d == 0) { return 100; }
+	return static_cast<int>((static_cast<int64_t>(mod.n) * 100 + mod.d / 2) / mod.d);
+}
+
+static void modSetTimeFactor(int percent)
+{
+	if (runningMultiplayer() || bInTutorial)
+	{
+		if (!bInTutorial)
+		{
+			addConsoleMessage(_("Sorry, but game speed cannot be changed in multiplayer."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+		return;
+	}
+	percent = std::clamp(percent, 0, 100);
+	gameTimeSetMod(Rational(percent, 100));
+	if (percent == 0)
+	{
+		CONPRINTF("%s", _("Time factor: 0 % (time stands still)"));
+	}
+	else
+	{
+		CONPRINTF(_("Time factor: %d %%"), percent);
+	}
+}
+
+void kf_ModTimeFaster()
+{
+	const int p = modTimeFactorPercent();
+	if (p >= 100) { CONPRINTF("%s", _("Time factor: 100 % (normal)")); return; }
+	modSetTimeFactor(((p / 10) + 1) * 10);
+}
+
+void kf_ModTimeSlower()
+{
+	const int p = modTimeFactorPercent();
+	if (p <= 0) { return; }
+	modSetTimeFactor(((p + 9) / 10 - 1) * 10);
 }
 
 void kf_NormalSpeed()

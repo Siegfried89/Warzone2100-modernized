@@ -507,11 +507,83 @@ void GenerateExceptionReport(HANDLE hReportFile, PEXCEPTION_POINTERS pExceptionI
 #include <fcntl.h>
 #include <io.h>
 
+// MOD (17.11. 14:40): "Beim ersten Starten Absturz, aber dann startet es trotzdem" - der Absturzbericht (.RPT) war danach nicht zu finden.
+// Deshalb ein kleines Ablauf-Protokoll direkt neben der Programmdatei (MOD-Ablauf-<exe>.txt; der vorige Lauf bleibt als ...-vorher.txt):
+// jeder Start-/Beenden-Schritt eine Zeile, bei einem Absturz Ausnahmecode, Adresse und die Aufrufkette als Modul+Versatz.
+static wchar_t s_crumbPath[MAX_PATH] = {0};
+static void crumbInit()
+{
+	if (s_crumbPath[0] != 0) { return; }
+	wchar_t exe[MAX_PATH] = {0};
+	if (GetModuleFileNameW(NULL, exe, MAX_PATH) == 0) { return; }
+	wchar_t dir[MAX_PATH]; wcsncpy_s(dir, MAX_PATH, exe, _TRUNCATE); PathRemoveFileSpecW(dir);
+	const wchar_t *base = PathFindFileNameW(exe);
+	wchar_t stem[MAX_PATH]; wcsncpy_s(stem, MAX_PATH, base, _TRUNCATE); PathRemoveExtensionW(stem);
+	wchar_t prev[MAX_PATH];
+	_snwprintf_s(s_crumbPath, MAX_PATH, _TRUNCATE, L"%s\\MOD-Ablauf-%s.txt", dir, stem);
+	_snwprintf_s(prev, MAX_PATH, _TRUNCATE, L"%s\\MOD-Ablauf-%s-vorher.txt", dir, stem);
+	MoveFileExW(s_crumbPath, prev, MOVEFILE_REPLACE_EXISTING);
+}
+static void crumbWrite(const char *line)
+{
+	crumbInit();
+	if (s_crumbPath[0] == 0) { return; }
+	FILE *f = nullptr;
+	if (_wfopen_s(&f, s_crumbPath, L"a") != 0 || f == nullptr) { return; }
+	SYSTEMTIME t; GetLocalTime(&t);
+	fprintf(f, "%02d:%02d:%02d.%03d [%lu] %s\n", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, (unsigned long)GetCurrentProcessId(), line);
+	fflush(f);
+	fclose(f);
+}
+void ExchndlBreadcrumb(const char *step)
+{
+	crumbWrite(step);
+}
+static void crumbAddr(char *out, size_t n, const void *addr)
+{
+	HMODULE mod = nullptr;
+	char name[MAX_PATH] = "?";
+	if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)addr, &mod) && mod != nullptr)
+	{
+		char full[MAX_PATH] = {0};
+		GetModuleFileNameA(mod, full, MAX_PATH);
+		const char *b = strrchr(full, '\\');
+		strncpy_s(name, sizeof(name), b != nullptr ? b + 1 : full, _TRUNCATE);
+		_snprintf_s(out, n, _TRUNCATE, "%s+0x%llx", name, (unsigned long long)((const char *)addr - (const char *)mod));
+	}
+	else
+	{
+		_snprintf_s(out, n, _TRUNCATE, "?%p", addr);
+	}
+}
+static void crumbCrash(PEXCEPTION_POINTERS pExceptionInfo)
+{
+	char line[512], where[256];
+	const EXCEPTION_RECORD *r = pExceptionInfo != nullptr ? pExceptionInfo->ExceptionRecord : nullptr;
+	crumbAddr(where, sizeof(where), r != nullptr ? r->ExceptionAddress : nullptr);
+	_snprintf_s(line, sizeof(line), _TRUNCATE, "ABSTURZ Ausnahme 0x%08lx bei %s (Thread %lu)", r != nullptr ? (unsigned long)r->ExceptionCode : 0ul, where, (unsigned long)GetCurrentThreadId());
+	crumbWrite(line);
+	if (r != nullptr && r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && r->NumberParameters >= 2)
+	{
+		_snprintf_s(line, sizeof(line), _TRUNCATE, "  Zugriff %s Adresse 0x%llx", r->ExceptionInformation[0] ? "schreibend" : "lesend", (unsigned long long)r->ExceptionInformation[1]);
+		crumbWrite(line);
+	}
+	void *frames[48];
+	const USHORT n = RtlCaptureStackBackTrace(0, 48, frames, nullptr);
+	for (USHORT i = 0; i < n; ++i)
+	{
+		crumbAddr(where, sizeof(where), frames[i]);
+		_snprintf_s(line, sizeof(line), _TRUNCATE, "  #%u %s", (unsigned)i, where);
+		crumbWrite(line);
+	}
+}
+
 // Entry point where control comes on an unhandled exception
 static
 LONG WINAPI TopLevelExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo)
 {
 	static bool bBeenHere = FALSE;
+	crumbCrash(pExceptionInfo);   // MOD: zuerst ins Ablauf-Protokoll (falls der Bericht nicht geschrieben werden kann)
 
 	if (!bBeenHere)
 	{

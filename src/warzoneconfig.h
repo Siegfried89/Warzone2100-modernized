@@ -36,7 +36,7 @@
 #define	CAMERASPEED_MIN		(100)
 #define	CAMERASPEED_DEFAULT	(1800)
 /// MOD: Version der Mod-Standardwerte; steigt sie, werden Kameratempo und Tastenbelegung einmalig auf die Standardwerte gesetzt
-#define MOD_DEFAULTS_REV	(2)
+#define MOD_DEFAULTS_REV	(3)	// 3 (17.11.): Numblock * / - = Zeitfaktor
 #define	CAMERASPEED_STEP	(100)
 
 #define GAMEPAD_CURSOR_SPEED_MIN          (200)

@@ -47,6 +47,8 @@ bool dig(int tileX, int tileY, int depth, int bermHeight, unsigned dirAngle);
 /// Ganzzahlig und deterministisch (fuer map_Height / Spiellogik); sinkAtF ist dasselbe fuer die Anzeige (Gelaendenetz).
 int sinkAt(const WorldMapState &mapState, int worldX, int worldY);
 float sinkAtF(const WorldMapState &mapState, float worldX, float worldY);
+/// (17.11. 14:14) wie sinkAtF, aber tiefe Stellungen nur bis zur Sohle (Standhoehe der Einheiten beim Zeichnen)
+float sinkStandF(const WorldMapState &mapState, float worldX, float worldY);
 /// groesste Absenkung der vier Kacheln an einer Kachelecke (Klassik-Netz ohne Unterteilung)
 int sinkAtCorner(const WorldMapState &mapState, int x, int y);
 /// (17.11.) zusaetzliche Absenkung des Feldmittelpunkts (Klassik-Netz ohne Unterteilung): Krater/Schuetzenloch als Trichter in

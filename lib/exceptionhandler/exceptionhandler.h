@@ -24,4 +24,7 @@ extern void setupExceptionHandler(int argc, const char * const *argv, const char
 
 extern bool OverrideRPTDirectory(const char *newPath);
 
+/// MOD (17.11. 14:40): Schritt ins Ablauf-Protokoll neben der Programmdatei schreiben (nur Windows, sonst ohne Wirkung)
+extern void modBreadcrumb(const char *step);
+
 #endif // __INCLUDED_LIB_EXCEPTIONHANDLER_EXCEPTIONHANDLER_H__

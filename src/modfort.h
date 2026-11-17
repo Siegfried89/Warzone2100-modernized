@@ -41,6 +41,12 @@ bool isFort(const STRUCTURE *psStructure);
 /// Modell mit den offenen Seiten fuer die Anzeige (ohne Drehung zu zeichnen); nullptr = normales Modell
 const iIMDShape *displayModel(const STRUCTURE *psStructure);
 
+/// (17.11. 14:14) tiefe Stellung (Graben/Grube "tief")?
+bool isDeep(const STRUCTURE *psStructure);
+/// Anzeigehoehe des Modells: tiefe Stellungen stehen auf der Original-Bodenhoehe (Mittel der vier Ecken ohne Absenkung) -
+/// die Waelle liegen ueber dem normalen Boden, die Sohle darunter. Sonst fallback (pos.z).
+int displayHeight(const STRUCTURE *psStructure, int fallback);
+
 /// Kettenfahrzeug mit mittlerem oder schwerem Rumpf: darf Stellungen ueberfahren
 bool heavyCrosser(const DROID *psDroid);
 /// steht auf dem Feld eine Stellung (beliebiger Spieler)?
