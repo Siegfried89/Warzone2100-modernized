@@ -52,6 +52,7 @@
 #include "modbuild.h"
 #include "modduel.h"
 #include "modrecoil.h"
+#include "modflail.h"   // MOD (17.11. 20:06): Minenraeumer vor dem Bug
 #include "modparts.h"
 #include "modrecover.h"
 #include "featuredef.h"
@@ -971,6 +972,14 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 				Allegedly - all droids will have a mount graphic so this shouldn't
 				fall on it's arse......*/
 				//sensor and cyborg and ecm uses connectors[0]
+
+				// MOD (17.11. 20:06): Minenraeumer sitzt vor dem Bug jedes Rumpfes (nicht auf dem Turm-Anschluss); Walze dreht beim Minenraeumen
+				if (psDroid->droidType == DROID_ECM
+				    && modflail::draw(psDroid, psShapeBody, psShapeProp ? psShapeProp->displayModel() : nullptr, modifiedModelMatrix, viewMatrix,
+				                      static_cast<int>(colour), brightness, pieFlag, iPieData, psDroid->heightAboveMap, bButton, didDrawSomething))
+				{
+					break;
+				}
 
 				glm::mat4 localModelMatrix = modifiedModelMatrix;
 				float localHeightAboveTerrain = psDroid->heightAboveMap;

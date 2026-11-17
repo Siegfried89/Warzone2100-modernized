@@ -23,6 +23,7 @@
 #include "keybind.h"
 #include "modarty.h"
 #include "modauto.h"
+#include "modmines.h"
 #include "modbuild.h"
 #include "modcover.h"
 #include "moddesigner.h"
@@ -48,7 +49,7 @@ namespace
 {
 // Bilder in images/modrosette.img (Reihenfolge wie rosette.py): 7 Sechsecke (normal, gedrueckt), dann 14 Befehlsknoepfe (normal, gedrueckt)
 enum Hex { H_CENTER = 0, H_PLAN, H_FORMATION, H_FIRE, H_RINGS, H_INFANTRY, H_LAYERS, H_COUNT };
-enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_AUTO, C_COUNT };
+enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_AUTO, C_MINES, C_COUNT };
 int hexImg(int h, bool down) { return h * 2 + (down ? 1 : 0); }
 int cmdImg(int c, bool down) { return H_COUNT * 2 + c * 2 + (down ? 1 : 0); }
 
@@ -230,6 +231,20 @@ std::vector<Item> itemsFor(int hex)
 		};
 		aut.isOn = []() { return allSelected(DSO_FULLAUTO, DSS_FULLAUTO_SET); };
 		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_AUTO, true) + 1)) { v.push_back(aut); }   // aelteres Mod-Paket: ohne Bild kein Knopf
+		// (Wunsch 17.11. 20:06) Minen raeumen bei der Einheit: Minenraeumer-Walze an/aus (faehrt zu bekannten Minen), Infanterie entschaerft
+		Item mines; mines.img = C_MINES; mines.tip = _("Clear mines: selected mine flail tanks switch their flail on/off (the drum spins and beats off mines ahead); selected infantry defuses known mines");
+		mines.action = []() { if (selectedPlayer < MAX_PLAYERS) { modmines::clearMines(selectedPlayer); } };
+		mines.isOn = []() {
+			bool any = false;
+			for (DROID *d : selection())
+			{
+				if (!modmines::isFlail(d)) { continue; }
+				any = true;
+				if (!modmines::flailing(d)) { return false; }
+			}
+			return any;
+		};
+		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_MINES, true) + 1)) { v.push_back(mines); }
 		break;
 	}
 	case H_LAYERS:

@@ -36,6 +36,7 @@
 #include "order.h"
 #include "modarty.h"
 #include "modauto.h"
+#include "modmines.h"   // MOD: Minenraeumer-Walze
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modgroundfire.h"
@@ -3462,6 +3463,10 @@ bool secondarySupported(const DROID *psDroid, SECONDARY_ORDER sec)
 		supported = modauto::supported(psDroid);
 		break;
 
+	case DSO_MINECLEAR:   // MOD: nur Minenraeumer (Systemturm MineFlail)
+		supported = modmines::isFlail(psDroid);
+		break;
+
 	case DSO_REPAIR_LEVEL:
 	case DSO_PATROL:
 	case DSO_HALTTYPE:
@@ -3530,6 +3535,9 @@ SECONDARY_STATE secondaryGetState(const DROID *psDroid, SECONDARY_ORDER sec, QUE
 		break;
 	case DSO_FULLAUTO:   // MOD
 		return (SECONDARY_STATE)(state & DSS_FULLAUTO_MASK);
+		break;
+	case DSO_MINECLEAR:   // MOD
+		return modmines::isFlail(psDroid) ? (SECONDARY_STATE)(state & DSS_MINECLEAR_MASK) : DSS_NONE;
 		break;
 	case DSO_HALTTYPE:
 		if (psDroid->order.type == DORDER_HOLD)
@@ -3954,6 +3962,10 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 		secondaryMask = DSS_FULLAUTO_MASK;
 		secondarySet = State & DSS_FULLAUTO_MASK;
 		break;
+	case DSO_MINECLEAR:   // MOD
+		secondaryMask = DSS_MINECLEAR_MASK;
+		secondarySet = State & DSS_MINECLEAR_MASK;
+		break;
 	case DSO_UNUSED:
 	case DSO_FIRE_DESIGNATOR:
 		// Do nothing.
@@ -4173,6 +4185,12 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 	case DSO_ARTILLERY:   // MOD: Waffen zwischen Kanone und Artillerie-Fassung umschalten
 		CurrState = (CurrState & ~DSS_ARTY_MASK) | (State & DSS_ARTY_MASK);
 		modarty::apply(psDroid, (State & DSS_ARTY_MASK) != 0);
+		break;
+	case DSO_MINECLEAR:   // MOD: Minenraeumer-Walze an/aus (nur Minenraeumer - bei Kommandeuren ist das Bit eine Fabrik-Zuordnung)
+		if (modmines::isFlail(psDroid))
+		{
+			CurrState = (CurrState & ~DSS_MINECLEAR_MASK) | (State & DSS_MINECLEAR_MASK);
+		}
 		break;
 	case DSO_FULLAUTO:   // MOD: voll autonom (modauto); beim Einschalten zieht sich die Einheit bei schwerem Schaden selbst zurueck
 		CurrState = (CurrState & ~DSS_FULLAUTO_MASK) | (State & DSS_FULLAUTO_MASK);

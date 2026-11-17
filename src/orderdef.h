@@ -107,7 +107,8 @@ enum SECONDARY_ORDER
 	DSO_CIRCLE,                     /**< circling target position and engage. */
 	DSO_ACCEPT_RETREP,				/**< Whether droids should retreat to this repair droid. */
 	DSO_ARTILLERY,					/**< MOD: Artillerie-Modus fuer Kanonen-Panzer (modarty). Used with DSS_ARTY_SET. */
-	DSO_FULLAUTO					/**< MOD (17.11.): "Fully autonomous" (modauto). Used with DSS_FULLAUTO_SET. */
+	DSO_FULLAUTO,					/**< MOD (17.11.): "Fully autonomous" (modauto). Used with DSS_FULLAUTO_SET. */
+	DSO_MINECLEAR					/**< MOD (17.11. 20:06): Minenraeumer-Walze dreht (modmines). Used with DSS_MINECLEAR_SET. */
 };
 
 /** All associated secondary states of the secondary orders. */
@@ -139,6 +140,7 @@ enum SECONDARY_STATE
 	DSS_FIREDES_SET     = 0x800000,	/**< state referred to secondary order DSO_FIRE_DESIGNATOR. If set, the droid is set as a fire designator. */
 	DSS_ARTY_SET        = 0x20000000,	/**< MOD: state referred to secondary order DSO_ARTILLERY. If set, the cannons fire as artillery (modarty). */
 	DSS_FULLAUTO_SET    = 0x40000000,	/**< MOD: state referred to secondary order DSO_FULLAUTO. If set, the unit acts fully on its own (modauto). */
+	DSS_MINECLEAR_SET   = 0x10000000,	/**< MOD: state referred to secondary order DSO_MINECLEAR (mine flail spinning). Shares bit 28 with the VTOL-factory assignment, which only command droids use - a mine flail is never a command droid. */
 };
 
 /** masks for the secondary order state. */
@@ -161,6 +163,7 @@ enum SECONDARY_STATE
 #define DSS_ACCREP_MASK             0x000400
 #define DSS_ARTY_MASK               0x20000000   // MOD: Artillerie-Modus (modarty)
 #define DSS_FULLAUTO_MASK           0x40000000   // MOD: voll autonom (modauto)
+#define DSS_MINECLEAR_MASK          0x10000000   // MOD: Minenraeumer-Walze (modmines); nur fuer Minenraeumer, nie fuer Kommandeure
 
 struct STRUCTURE_STATS;
 
