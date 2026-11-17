@@ -27,7 +27,8 @@ constexpr unsigned SPLASH_MS = 3200;
 
 struct Anim
 {
-	int frames = 0;        // Bilder (S und L); X hat (frames + 1) / 2
+	int frames = 0;        // Bilder (S und L); X hat (frames + xstep - 1) / xstep
+	int xstep = 2;         // MOD (17.11.): X jedes xstep-te Bild (6. Wert in factanim.txt, fehlt er: 2 wie bisher)
 	int ms = 80;           // Takt
 	int hold = 0;          // Halten des Endbilds nach dem Ablauf (0 = Schleife)
 	bool pingpong = false; // Schleife vor/zurueck
@@ -59,14 +60,14 @@ bool load()
 		if (e == std::string::npos) { e = txt.size(); }
 		const std::string line = txt.substr(static_cast<size_t>(lineStart), e - static_cast<size_t>(lineStart));
 		lineStart = static_cast<int>(e) + 1;
-		int id = -1, n = 0, ms = 80, hold = 0, pp = 0;
-		if (sscanf(line.c_str(), "%d %d %d %d %d", &id, &n, &ms, &hold, &pp) != 5) { continue; }
+		int id = -1, n = 0, ms = 80, hold = 0, pp = 0, xs = 2;
+		if (sscanf(line.c_str(), "%d %d %d %d %d %d", &id, &n, &ms, &hold, &pp, &xs) < 5) { continue; }
 		if (id < 0 || id >= NUM || n <= 0 || n > 400) { ok = false; break; }
 		Anim &a = s_anim[id];
-		a.frames = n; a.ms = std::max(20, ms); a.hold = std::max(0, hold); a.pingpong = pp != 0;
+		a.frames = n; a.ms = std::max(20, ms); a.hold = std::max(0, hold); a.pingpong = pp != 0; a.xstep = std::clamp(xs, 1, 4);
 		a.base[SIZE_S] = idx; idx += n;
 		a.base[SIZE_L] = idx; idx += n;
-		a.base[SIZE_X] = idx; idx += (n + 1) / 2;
+		a.base[SIZE_X] = idx; idx += (n + a.xstep - 1) / a.xstep;
 	}
 	if (!ok || idx == 0) { return false; }
 	s_img = iV_LoadImageFile("images/factanim.img");
@@ -111,7 +112,7 @@ bool draw(int faction, Size size, int x, int y, int w, int h, unsigned elapsedMs
 	const Anim &a = s_anim[faction];
 	if (a.frames <= 0) { return false; }
 	int k = frameAt(a, elapsedMs, animate);
-	if (size == SIZE_X) { k /= 2; }
+	if (size == SIZE_X) { k /= a.xstep; }
 	const int id = a.base[size] + k;
 	if (id < 0 || id >= static_cast<int>(s_img->imageDefs.size())) { return false; }
 	iV_DrawImageFileAnisotropic(s_img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(w), static_cast<float>(h)), defaultProjectionMatrix(), alpha);
@@ -164,7 +165,7 @@ void drawSplash()
 	const Anim &an = s_anim[s_splashFaction];
 	const unsigned tt = std::min(t, static_cast<unsigned>(std::max(0, an.frames - 1)) * static_cast<unsigned>(an.ms));
 	const int k = std::min(an.frames - 1, static_cast<int>(tt / static_cast<unsigned>(std::max(1, an.ms))));
-	const int id = an.base[SIZE_X] + k / 2;
+	const int id = an.base[SIZE_X] + k / an.xstep;
 	if (an.frames > 0 && id >= 0 && id < static_cast<int>(s_img->imageDefs.size()))
 	{
 		iV_DrawImageFileAnisotropic(s_img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(sz), static_cast<float>(sz)), defaultProjectionMatrix(), static_cast<uint8_t>(255.0f * al));
