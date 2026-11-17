@@ -3283,6 +3283,18 @@ LoadingTask<> loadGame(ResourceLoadingController& controller, const GameLoadDeta
 		}
 	}
 
+#if defined(WZ_MOD_FINE_GRID)
+	// MOD (Kachel-Viertelung, 17.11.): die Scroll-Grenzen aus Karten-/Missionsdateien stehen in Original-Kacheln (wie die Landezonen
+	// oben); ohne Umrechnung blieb die Kamera im linken oberen Viertel haengen und die eigenen Einheiten lagen ausserhalb ("alles
+	// schwarz"). Eigene Spielstaende speichern bereits im feinen Raster.
+	if (!UserSaveGame)
+	{
+		startX *= TILE_SPLIT;
+		startY *= TILE_SPLIT;
+		width *= TILE_SPLIT;
+		height *= TILE_SPLIT;
+	}
+#endif
 	//adjust the scroll range for the new map or the expanded map
 	setMapScroll(gameWorld.map);
 
