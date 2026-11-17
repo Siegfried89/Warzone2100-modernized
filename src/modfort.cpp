@@ -29,6 +29,8 @@
 
 namespace modfort
 {
+bool heavyCrosser(const DROID *psDroid);
+bool isFort(const STRUCTURE *psStructure);
 namespace
 {
 constexpr unsigned REBUILD_MS = 2000;
@@ -271,10 +273,63 @@ void rebuild()
 		}
 	}
 }
+
+// MOD (Wunsch 17.11. 13:58): "... und es auch zerstoeren mit allen Maennern darin (quasi Ueberfahren)". Faehrt ein schwerer
+// Kettenpanzer auf eine gegnerische Stellung, wird sie samt der gegnerischen Infanterie darin zerstoert. Eigene und verbuendete
+// Stellungen ueberfaehrt er nur (sie bleiben stehen). Spiellogik im Spielschritt in fester Reihenfolge (auf allen Rechnern gleich).
+void crushTick()
+{
+	if (s_family.empty() || !surfaceResident()) { return; }
+	std::vector<STRUCTURE *> victims;
+	std::vector<int> crushers;
+	for (int p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (DROID *d : gameWorld.objects.droids[p])
+		{
+			if (d->died || !heavyCrosser(d) || modlayer::layerOf(d) != modlayer::SURFACE) { continue; }
+			const int tx = map_coord(d->pos.x), ty = map_coord(d->pos.y);
+			if (!tileOnMap(gameWorld.map, tx, ty)) { continue; }
+			MAPTILE *t = mapTile(gameWorld.map, tx, ty);
+			if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_STRUCTURE) { continue; }
+			STRUCTURE *st = static_cast<STRUCTURE *>(t->psObject);
+			if (st->died || !isFort(st) || st->player == d->player || aiCheckAlliances(st->player, d->player)) { continue; }
+			if (std::find(victims.begin(), victims.end(), st) != victims.end()) { continue; }
+			victims.push_back(st);
+			crushers.push_back(p);
+		}
+	}
+	for (size_t v = 0; v < victims.size(); ++v)
+	{
+		STRUCTURE *st = victims[v];
+		if (st->died) { continue; }
+		const int crusher = crushers[v];
+		// Infanterie in der Stellung (alle Felder der Grundflaeche), die nicht zum Panzer gehoert
+		const int tx0 = map_coord(st->pos.x - (S * TILE_UNITS) / 2), ty0 = map_coord(st->pos.y - (S * TILE_UNITS) / 2);
+		std::vector<DROID *> men;
+		for (int p = 0; p < MAX_PLAYERS; ++p)
+		{
+			if (p == crusher || aiCheckAlliances(p, crusher)) { continue; }
+			for (DROID *d : gameWorld.objects.droids[p])
+			{
+				if (d->died || d->droidType == DROID_SUPERTRANSPORTER || d->droidType == DROID_TRANSPORTER) { continue; }
+				const PROPULSION_STATS *pr = d->getPropulsionStats();
+				if (pr == nullptr || pr->propulsionType != PROPULSION_TYPE_LEGGED) { continue; }
+				const int x = map_coord(d->pos.x), y = map_coord(d->pos.y);
+				if (x >= tx0 && x < tx0 + S && y >= ty0 && y < ty0 + S) { men.push_back(d); }
+			}
+		}
+		for (DROID *d : men)
+		{
+			if (!d->died) { destroyDroid(d, gameTime, gameWorld); }
+		}
+		destroyStruct(st, gameTime, gameWorld);
+	}
+}
 } // namespace
 
 void tick()
 {
+	crushTick();
 	const unsigned b = gameTime / REBUILD_MS;
 	if (b == s_bucket) { return; }
 	s_bucket = b;
