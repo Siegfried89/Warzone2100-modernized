@@ -99,6 +99,7 @@
 #include "modferry.h"
 #include "modoil.h"
 #include "modrecover.h"
+#include "modnestcrew.h"
 #include "modwreck.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
@@ -3361,7 +3362,7 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 			stretch = psStructure->pos.z - psStructure->foundationDepth;
 		}
 		drawShape(strImd, psStructure->timeAnimationStarted, colour, buildingBrightness, pieFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
-		if (strImd->connectors.size() > 0)
+		if (strImd->connectors.size() > 0 && !modnestcrew::unmanned(psStructure))   // MOD: MG-Stellung ohne Schuetze
 		{
 			renderStructureTurrets(psStructure, strImd, buildingBrightness, pieFlag, pieFlagData, ecmFlag, modelMatrix, viewMatrix);
 		}

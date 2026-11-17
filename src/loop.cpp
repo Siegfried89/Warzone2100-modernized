@@ -122,6 +122,7 @@
 #include "modparts.h"
 #include "modmorale.h"
 #include "modrecover.h"
+#include "modnestcrew.h"
 #include "modcrates.h"
 #include "modincoming.h"
 #include "modterrain.h"
@@ -604,6 +605,7 @@ static void gameStateUpdate()
 	modincoming::tick();         // MOD: Granate im Anflug - Verteilen und Eingraben
 	modterrain::tick();          // MOD: Krater sinken unter der Staubwolke ein
 	modrecover::tick();          // MOD: Turm-Teile bergen, Werkstatt
+	modnestcrew::tick();         // MOD: leere MG-Stellungen neu besetzen
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)

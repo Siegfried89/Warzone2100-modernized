@@ -98,6 +98,7 @@
 #include "modpaint.h"
 #include "modmorale.h"
 #include "modrecover.h"
+#include "modnestcrew.h"
 #include "modcrates.h"
 #include "modcontrol.h"
 #include "modincoming.h"
@@ -744,6 +745,7 @@ void interfaceShutDown()
 	modmorale::reset();
 	modincoming::reset();    // MOD
 	modrecover::reset();     // MOD
+	modnestcrew::reset();    // MOD
 	modcrates::reset();      // MOD
 	modcontrol::reset();     // MOD
 	modferry::reset();       // MOD
