@@ -27,6 +27,7 @@
 #include <algorithm>
 
 #include "lib/framework/frame.h"
+#include "modfactech.h"
 #include "lib/framework/input.h"
 #include "lib/widget/widget.h"
 #include "lib/widget/bar.h"
@@ -2106,6 +2107,12 @@ static bool intAddComponentButtons(ListTabWidget *compList, ComponentIterator co
 		if (numComponent >= maxComponents)
 		{
 			return false;
+		}
+
+		// MOD (17.11. 15:46): Ruempfe anderer Fraktionen nicht anbieten (modfactech)
+		if (currStats.compType == COMP_BODY && !modfactech::bodyAllowed(selectedPlayer, &static_cast<BODY_STATS &>(currStats)))
+		{
+			return true;
 		}
 
 		/*skip indirect weapons if VTOL propulsion or numVTOLattackRuns for the weapon is zero*/

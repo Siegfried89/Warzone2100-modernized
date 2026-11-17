@@ -35,6 +35,7 @@
 
 #include "lib/framework/frameresource.h"
 #include "lib/framework/file.h"
+#include "modfactech.h"   // MOD
 #include "lib/framework/stdio_ext.h"
 #include "lib/framework/physfs_ext.h"
 
@@ -5826,6 +5827,7 @@ void startMultiplayerGame()
 
 		resetDataHash();	// need to reset it, since host's data has changed.
 		createLimitSet();
+		modfactech::prepareStart();   // MOD (17.11. 15:46): KI-Gegner zufaellige Fraktion, Fraktionsfarben
 		debug(LOG_NET, "sending our options to all clients");
 		sendOptions();
 		NEThaltJoining(true);						// stop new players entering.

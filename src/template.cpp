@@ -24,6 +24,7 @@
  *
  */
 #include "lib/framework/frame.h"
+#include "modfactech.h"
 #include "lib/framework/file.h"
 #include "lib/framework/wzconfig.h"
 #include "lib/framework/math_ext.h"
@@ -110,6 +111,11 @@ bool researchedTemplate(const DROID_TEMPLATE *psCurr, int player, bool allowRedu
 	bool resRepair = researchedPart(psCurr, player, COMP_REPAIRUNIT, true, allowRedundant);
 	bool resConstruct = researchedPart(psCurr, player, COMP_CONSTRUCT, true, allowRedundant);
 	bool researchedEverything = resBody && resBrain && resProp && resSensor && resEcm && resRepair && resConstruct;
+	// MOD (17.11. 15:46): jede Fraktion baut nur ihre eigenen Original-Ruempfe (modfactech)
+	if (researchedEverything && !modfactech::bodyAllowed(static_cast<unsigned>(player), psCurr->getBodyStats()))
+	{
+		researchedEverything = false;
+	}
 	if (verbose && !researchedEverything)
 	{
 		debug(LOG_ERROR, "%s : not researched : body=%d brai=%d prop=%d sensor=%d ecm=%d rep=%d con=%d", getStatsName(psCurr),

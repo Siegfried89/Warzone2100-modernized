@@ -83,7 +83,7 @@ enum class Role
 const char *const *namesOf(Role r, int &count)
 {
 	static const char *const dragon[] = {"A0TankTrapHeavy", "A0TankTrap"};
-	static const char *const hedge[] = {"A0BaBaHedgehog", "A0TankTrap", "A0TankTrapHeavy"};   // MOD 16.11.: echte 3D-Igel zuerst
+	static const char *const hedge[] = {"A0TankTrap", "A0BaBaHedgehog", "A0TankTrapHeavy"};   // MOD 17.11. 15:55: wieder die Original-Sprite-Igel zuerst ("sieht immer noch am besten aus"; die 3D-Igel waren zu fett)
 	static const char *const bunker[] = {"A0BaBaBunker", "PillBox1", "PillBox4"};
 	static const char *const flame[] = {"A0BaBaFlameTower", "PillBox5", "Emplacement-Rocket06-IDF"};
 	static const char *const wall[] = {"A0BaBaSandbagWall", "A0HardcreteMk1Wall", "A0BaBaHorizontalWall"};

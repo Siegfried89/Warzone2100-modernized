@@ -58,6 +58,7 @@
 #include "faction.h"
 #include "frend.h"
 #include "modcolour.h"
+#include "modfactech.h"
 #include "modfaction.h"
 #include "frontend.h"
 #include "group.h"
@@ -425,6 +426,7 @@ bool runTitleMenu()
 	case FRONTEND_FACTION_3:
 	case FRONTEND_FACTION_4:
 		war_setPlayerFaction(static_cast<int>(id - FRONTEND_FACTION_0));
+		war_SetSPcolor(static_cast<int8_t>(modfactech::factionColour(static_cast<int>(id - FRONTEND_FACTION_0))));   // MOD (17.11.): Originalfarbe der Fraktion voreinstellen
 		modfaction::splash(static_cast<int>(id - FRONTEND_FACTION_0));   // MOD: grosses Symbol + Fraktions-Klang
 		refreshFactionChoice();
 		break;
