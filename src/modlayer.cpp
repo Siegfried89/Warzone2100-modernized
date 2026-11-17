@@ -25,6 +25,7 @@
 #include "ai.h"
 #include "console.h"
 #include "droid.h"
+#include "featuredef.h"
 #include "effects.h"
 #include "game_world.h"
 #include "hci.h"
@@ -599,6 +600,70 @@ void onUnderAttack(const BASE_OBJECT *victim)
 	audio_QueueTrack(victim->type == OBJ_STRUCTURE ? ID_SOUND_STRUCTURE_UNDER_ATTACK : ID_SOUND_UNIT_UNDER_ATTACK);
 }
 
+namespace
+{
+std::vector<int64_t> s_loadObjs;   // (17.11.) aus dem Spielstand: id, Ebene, id, Ebene, ...
+std::vector<int> s_loadDrills;
+bool s_loadPending = false;
+}
+
+void saveState(std::vector<int64_t> &objs, std::vector<int> &drills)
+{
+	objs.clear();
+	std::vector<std::pair<uint32_t, Layer>> v(s_layerOf.begin(), s_layerOf.end());
+	std::sort(v.begin(), v.end(), [](const std::pair<uint32_t, Layer> &a, const std::pair<uint32_t, Layer> &b) { return a.first < b.first; });
+	for (const auto &e : v) { objs.push_back(e.first); objs.push_back(static_cast<int64_t>(e.second)); }
+	drills = modlayermap::drillLog();
+}
+
+void loadState(const std::vector<int64_t> &objs, const std::vector<int> &drills)
+{
+	s_loadObjs = objs;
+	s_loadDrills = drills;
+	s_loadPending = !objs.empty() || !drills.empty();
+}
+
+void applyLoadedState()
+{
+	if (!s_loadPending || !modlayermap::worldsExist()) { return; }
+	s_loadPending = false;
+	for (size_t i = 0; i + 3 < s_loadDrills.size(); i += 4)
+	{
+		modlayermap::drillTile(s_loadDrills[i], s_loadDrills[i + 1], s_loadDrills[i + 2], s_loadDrills[i + 3]);
+	}
+	size_t moved = 0;
+	for (size_t i = 0; i + 1 < s_loadObjs.size(); i += 2)
+	{
+		const uint32_t id = static_cast<uint32_t>(s_loadObjs[i]);
+		const int l = static_cast<int>(s_loadObjs[i + 1]);
+		if (l != UNDERGROUND && l != ORBIT) { continue; }
+		bool done = false;
+		for (int p = 0; p < MAX_PLAYERS && !done; p++)
+		{
+			for (DROID *d : gameWorld.objects.droids[p])
+			{
+				if (d->id == id && !d->died) { applyLayer(d, static_cast<Layer>(l)); done = true; break; }
+			}
+			if (done) { break; }
+			for (STRUCTURE *s : gameWorld.objects.structures[p])
+			{
+				if (s->id == id && !s->died) { modMoveStructureToLayerMap(s, l); done = true; break; }
+			}
+		}
+		if (!done)
+		{
+			for (FEATURE *f : gameWorld.objects.features[0])
+			{
+				if (f->id == id && !f->died) { assignLayer(f, static_cast<Layer>(l)); done = true; break; }
+			}
+		}
+		moved += done ? 1 : 0;
+	}
+	debug(LOG_INFO, "MOD Ebenen aus dem Spielstand: %zu Objekte, %zu gebohrte Felder", moved, s_loadDrills.size() / 4);
+	s_loadObjs.clear();
+	s_loadDrills.clear();
+}
+
 void resetState()
 {
 	modlayerdig::reset();
@@ -607,6 +672,7 @@ void resetState()
 	s_flyReq.clear();
 	s_trans.clear();
 	s_openedShafts.clear();
+	s_loadObjs.clear(); s_loadDrills.clear(); s_loadPending = false;   // (17.11.) Spielstand
 	modlayermap::reset();
 	s_current = s_target = SURFACE;
 	s_busy = false;

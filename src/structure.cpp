@@ -4894,6 +4894,36 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 }
 
 
+void modMoveStructureToLayerMap(STRUCTURE *psStruct, int layer)
+{
+	if (psStruct == nullptr || psStruct->died || (layer != modlayer::UNDERGROUND && layer != modlayer::ORBIT)) { return; }
+	if (modlayer::layerOf(psStruct) == static_cast<modlayer::Layer>(layer)) { return; }
+	visRemoveVisibility(psStruct, gameWorld.map);
+	removeStructFromMap(psStruct, gameWorld.map);
+	modlayer::assignLayer(psStruct, static_cast<modlayer::Layer>(layer));
+	modlayermap::Scope sc(static_cast<modlayer::Layer>(layer));
+	const StructureBounds b = getStructureBounds(psStruct);
+	for (int tileY = b.map.y; tileY < b.map.y + b.size.y; ++tileY)
+	{
+		for (int tileX = b.map.x; tileX < b.map.x + b.size.x; ++tileX)
+		{
+			if (!tileOnMap(gameWorld.map, tileX, tileY)) { continue; }
+			MAPTILE *psTile = mapTile(gameWorld.map, tileX, tileY);
+			psTile->psObject = psStruct;
+			if (psStruct->sDisplay.imd && psStruct->sDisplay.imd->max.y > TALLOBJECT_YMAX)
+			{
+				auxSetBlocking(gameWorld.map, tileX, tileY, AIR_BLOCKED);
+			}
+		}
+	}
+	if (psStruct->pStructureType->type != REF_REARM_PAD)
+	{
+		auxStructureBlocking(psStruct, gameWorld.map);
+	}
+	alignStructure(psStruct, gameWorld.map);
+	visTilesUpdate(psStruct, gameWorld.map);
+}
+
 //remove a structure from the map
 void removeStructFromMap(STRUCTURE *psStruct, WorldMapState& mapState)
 {

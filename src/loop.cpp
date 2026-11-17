@@ -581,6 +581,7 @@ static void gameStateUpdate()
 	sendQueuedDroidInfo();
 
 	modlayermap::ensureWorlds();   // MOD: Ebenen - Untergrund-/Orbit-Karte aus der Kartenkennung erzeugen (einmal, auf jedem Rechner gleich)
+	modlayer::applyLoadedState();  // MOD (17.11.): Ebenen aus dem Spielstand (Felder nachbohren, Objekte in die Karte ihrer Ebene umtragen)
 
 	sendPlayerGameTime();
 	NETflush();  // Make sure the game time tick message is really sent over the network.

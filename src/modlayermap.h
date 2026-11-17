@@ -69,6 +69,8 @@ void openSite(int tileX, int tileY, int player, int rad, int revealRad);
 /// deckt das Umfeld (Radius revealRad) fuer den Spieler auf. false, wenn das Feld schon offen oder ungueltig ist. Deterministisch.
 bool drillTile(int tileX, int tileY, int player, int revealRad);
 
+/// (17.11.) gebohrte Felder in Reihenfolge, je vier Werte (x, y, Spieler, Aufdeckradius) - fuer den Spielstand; drillTile() spielt sie wieder ein
+const std::vector<int> &drillLog();
 /// alles freigeben (Spielende, neue Karte)
 void reset();
 /// MOD (16.11. 22:58): echte MF-Asteroiden unter den Orbit-Inseln (Weltposition des Modell-Ursprungs = Oberkante der Plattform)

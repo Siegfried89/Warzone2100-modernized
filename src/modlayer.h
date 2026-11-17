@@ -82,4 +82,10 @@ void onUnderAttack(const BASE_OBJECT *victim);
 void forget(uint32_t id);
 /// Spielzustand loeschen (Spielende / Laden)
 void resetState();
+/// (Wunsch 17.11.: Untergrund/Orbit im Spielstand) Ebene je Objekt (id, Ebene ...) und die gebohrten Untergrund-Felder
+void saveState(std::vector<int64_t> &objs, std::vector<int> &drills);
+/// nach dem Laden: Zustand merken; eingesetzt wird er im ersten Spielschritt, sobald die Zusatzkarten stehen (applyLoadedState)
+void loadState(const std::vector<int64_t> &objs, const std::vector<int> &drills);
+/// aus der Spielschleife nach modlayermap::ensureWorlds(): Felder nachbohren, Objekte in die Karte ihrer Ebene umtragen
+void applyLoadedState();
 }

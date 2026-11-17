@@ -787,6 +787,8 @@ void openSite(int tileX, int tileY, int player, int rad, int revealRad)
 	if (s_view == modlayer::UNDERGROUND) { s_dirtyView = true; }
 }
 
+std::vector<int> s_drillLog;   // MOD (17.11.): gebohrte Untergrund-Felder in Reihenfolge (x, y, Spieler, Aufdeckradius) - Spielstand
+
 bool drillTile(int tileX, int tileY, int player, int revealRad)
 {
 	if (!s_built) { return false; }
@@ -834,7 +836,13 @@ bool drillTile(int tileX, int tileY, int player, int revealRad)
 	initLighting(m, static_cast<UDWORD>(std::max(0, tileX - 3)), static_cast<UDWORD>(std::max(0, tileY - 3)),
 	             static_cast<UDWORD>(std::min(W, tileX + 5)), static_cast<UDWORD>(std::min(H, tileY + 5)));
 	if (s_view == modlayer::UNDERGROUND) { s_dirtyView = true; }
+	s_drillLog.insert(s_drillLog.end(), {tileX, tileY, player, revealRad});   // MOD (17.11.): fuer den Spielstand
 	return true;
+}
+
+const std::vector<int> &drillLog()
+{
+	return s_drillLog;
 }
 
 const std::vector<IslandModel> &orbitIslandModels()
@@ -864,6 +872,7 @@ void reset()
 		mapDangerSerializeEnd(true);
 		s_parked = false;
 	}
+	s_drillLog.clear();      // MOD 17.11. (Spielstand)
 	s_floorRgb.clear();      // MOD 17.11.
 	s_islandModels.clear();  // MOD 16.11. 22:58
 	s_floorW = s_floorH = 0;
