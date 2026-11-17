@@ -105,6 +105,7 @@
 #include "modnightlights.h"
 #include "modrocket.h"
 #include "modnuke.h"
+#include "modsat.h"
 #include "modmines.h"
 #include "modtactical.h"
 #include "modbigmap.h"
@@ -1549,6 +1550,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	displayDelivPoints(viewMatrix, perspectiveViewMatrix);
 	modferry::draw3D(viewMatrix);   // MOD (17.11. 18:18): Landezonen-Lichter rot / blau / gruen
 	modnightlights::draw3D(viewMatrix);
+	modsat::draw3D(viewMatrix);      // MOD (17.11. 21:34): Satelliten-Start von der Orbit-Insel, Satelliten am Orbit-Himmel
 	modnuke::draw3D(viewMatrix);     // MOD (17.11. 21:13): Dampf ueber den Kuehltuermen laufender Atomkraftwerke
 	modrocket::draw3D(viewMatrix);   // MOD (17.11. 20:56): Raketen im Silo, Countdown-Dampf, Start   // MOD (17.11. 20:44): warmweisse Nachtlichter an Masten, Kraenen, Tuermen, Gebaeuden
 	display3DProjectiles(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
@@ -1950,7 +1952,7 @@ static bool projectileDrawnAsEffect(const WEAPON_STATS *psStats)
 		|| psStats->weaponSubClass == WSC_COMMAND
 		|| psStats->weaponSubClass == WSC_ELECTRONIC
 		|| psStats->weaponSubClass == WSC_EMP
-		|| (bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT);
+		|| psStats->weaponSubClass == WSC_LAS_SAT;   // MOD (21:34): immer als Effekt (Laser vom Himmel)
 }
 
 static void pushProjectileLight(LightingData &lightData, const Vector3i &lightPosition, const ProjectileLight &projectileLight)
@@ -2007,7 +2009,7 @@ void	renderProjectile(PROJECTILE *psCurr, const glm::mat4 &viewMatrix, const glm
 	    psStats->weaponSubClass == WSC_COMMAND || // || psStats->weaponSubClass == WSC_ENERGY)
 	    psStats->weaponSubClass == WSC_ELECTRONIC ||
 	    psStats->weaponSubClass == WSC_EMP ||
-	    (bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT))
+	    psStats->weaponSubClass == WSC_LAS_SAT)   // MOD (21:34)
 	{
 		/* We don't do projectiles from these guys, cos there's an effect instead */
 		return;

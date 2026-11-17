@@ -29,12 +29,14 @@ namespace
 {
 constexpr int FUEL_SECONDS = 90;        // so lange reicht eine Einheit Uran
 constexpr int FIRST_LOAD = 2;           // Erstbeladung beim Bau (Einheiten)
-constexpr int INCOME_PER_SECOND = 5;    // Energie je Sekunde, Tag und Nacht gleich
+constexpr int INCOME_1 = 3;             // Energie je Sekunde mit 1 Kuehlturm, Tag und Nacht gleich
+constexpr int INCOME_2 = 5;             // mit 2 Kuehltuermen (Ausbau)
+constexpr int GRID_1 = 100, GRID_2 = 150;
 constexpr int MINE_SECONDS = 30;        // ein Bergwerk im Untergrund foerdert eine Einheit je 30 s
 constexpr int STOCK_MAX = 20;           // Uranlager je Spieler
 constexpr unsigned WARN_EVERY_S = 60;   // Hinweis "kein Uran" hoechstens jede Minute
 
-// Kuehlturm-Oberkanten im Modell (nuclear.py: TOWERS (64, +-62), Hoehe 287 * 0,36)
+// Kuehlturm-Oberkanten im Modell (nuclear.py: TOWERS (64, -62) und beim Ausbau (64, +62), Hoehe 287 * 0,36)
 constexpr float TOWER_X = 64.f, TOWER_Z = 62.f, TOWER_TOP = 103.f;
 
 unsigned s_lastSec = 0;
@@ -54,6 +56,16 @@ void say(unsigned player, const char *msg)
 bool isPlant(const STRUCTURE_STATS *psStats)
 {
 	return psStats != nullptr && psStats->id.startsWith("A0NuclearPlant");
+}
+
+static bool twoTowers(const STRUCTURE_STATS *psStats)
+{
+	return psStats != nullptr && psStats->id.compare("A0NuclearPlant2") == 0;
+}
+
+int gridCapacity(const STRUCTURE *psStruct)
+{
+	return running(psStruct) ? (twoTowers(psStruct->pStructureType) ? GRID_2 : GRID_1) : 0;
 }
 
 bool isMine(const STRUCTURE_STATS *psStats)
@@ -104,8 +116,16 @@ void tick()
 			auto it = s_fuel.find(s->id);
 			if (it == s_fuel.end())
 			{
-				it = s_fuel.emplace(s->id, FIRST_LOAD * FUEL_SECONDS).first;   // Erstbeladung
-				say(p, _("Nuclear power plant online - steady power day and night (uranium comes from uranium mines underground)"));
+				if (twoTowers(s->pStructureType))
+				{
+					it = s_fuel.emplace(s->id, FUEL_SECONDS).first;   // Ausbau: der Reaktor ist schon beladen
+					say(p, _("Nuclear power plant: second cooling tower online - more power"));
+				}
+				else
+				{
+					it = s_fuel.emplace(s->id, FIRST_LOAD * FUEL_SECONDS).first;   // Erstbeladung
+					say(p, _("Nuclear power plant online - steady power day and night (uranium comes from uranium mines underground)"));
+				}
 			}
 			if (it->second <= 0 && s_stock[p] > 0)
 			{
@@ -122,7 +142,7 @@ void tick()
 				continue;
 			}
 			it->second--;
-			gain += INCOME_PER_SECOND;
+			gain += twoTowers(s->pStructureType) ? INCOME_2 : INCOME_1;
 		}
 		if (gain > 0)
 		{
@@ -160,7 +180,8 @@ void draw3D(const glm::mat4 &)
 			// Kuehlturm-Oberkanten wie das Bauwerk gedreht (Modell: x rechts, z; Welt: y = -z)
 			const glm::mat4 m = glm::rotate(glm::mat4(1.f), UNDEG(-s->rot.direction), glm::vec3(0.f, 1.f, 0.f));
 			const int ground = map_Height(gameWorld.map, s->pos.x, s->pos.y);
-			for (int k = 0; k < 2; ++k)
+			const int towers = twoTowers(s->pStructureType) ? 2 : 1;
+			for (int k = 0; k < towers; ++k)
 			{
 				const glm::vec4 c = m * glm::vec4(TOWER_X, TOWER_TOP, k == 0 ? -TOWER_Z : TOWER_Z, 1.f);
 				const unsigned j = (graphicsTime / 7u + static_cast<unsigned>(k) * 13u + s->id) % 41u;

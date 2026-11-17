@@ -3,8 +3,10 @@
 // Tier 3 Atom. Atom gibt am meisten und am stetigsten. Das Uran kommt aus dem Bergbau im Untergrund." Die Kuehltuerme dampfen weiss,
 // wenn es laeuft. (21:17) Keine Bau-Bedingung fuer Kuehltuerme: das Atomkraftwerk ist schon komplett (Reaktor, 2 Kuehltuerme, 2 Kuppeln).
 //
-// Atomkraftwerk "A0NuclearPlant" (2 x 2 Felder): verbraucht Uran (1 Einheit je 90 s), liefert solange gleichmaessig Energie (+5 je Sekunde,
-// Tag und Nacht) und speist das Stromnetz als stetige Quelle (150 Leistung - mehr als jedes Oelkraftwerk; Oelkraftwerke gehen in Bereitschaft).
+// (21:35) "Nimm einen Kuehlturm wieder raus. Den zweiten kann man nach Forschung wieder als Modul dazubauen."
+// Atomkraftwerk "A0NuclearPlant" (2 x 2 Felder, auf Beton, 1 Kuehlturm): verbraucht Uran (1 Einheit je 90 s), liefert solange gleichmaessig
+// Energie (+3 je Sekunde, Tag und Nacht) und speist das Stromnetz als stetige Quelle (100 Leistung; Oelkraftwerke gehen in Bereitschaft).
+// Ausbau "A0NuclearPlant2" (zweiter Kuehlturm, Forschung, wird wie ein Modul auf das Kraftwerk gebaut - modupgrade): +5 je Sekunde, 150 Leistung.
 // Erstbeladung beim Bau: 2 Einheiten. Uranbergwerk "A0UraniumMine": foerdert nur im Untergrund (1 Einheit je 30 s, Lager hoechstens 20).
 // Spiellogik nur aus Spielzeit und Spielzustand (mehrspielersicher); der Dampf ist reine Anzeige.
 #pragma once
@@ -17,7 +19,8 @@ struct STRUCTURE_STATS;
 
 namespace modnuke
 {
-constexpr int GRID_CAPACITY = 150;     // Leistung im Stromnetz (Oelkraftwerk 40 + 20 je Modul, Solarpaneel 1)
+/// Leistung im Stromnetz (Oelkraftwerk 40 + 20 je Modul, Solarpaneel 1): 1 Kuehlturm 100, 2 Kuehltuerme 150
+int gridCapacity(const STRUCTURE *psStruct);
 
 bool isPlant(const STRUCTURE_STATS *psStats);
 bool isMine(const STRUCTURE_STATS *psStats);

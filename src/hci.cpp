@@ -90,6 +90,7 @@
 #include "modrocket.h"
 #include "modapc.h"
 #include "modnuke.h"
+#include "modsat.h"
 #include "modmines.h"
 #include "modbigmap.h"
 #include "modfuel.h"
@@ -119,6 +120,7 @@
 #include "modsalvage.h"
 #include "modvoice.h"
 #include "moddesigner.h"
+#include "modfleetdesigner.h"
 #include "qtscript.h"
 #include "chat.h"
 #include "radar.h"
@@ -780,6 +782,7 @@ void interfaceShutDown()
 	modrocket::reset();      // MOD (17.11. 20:56): Raketensilo
 	modapc::reset();         // MOD (17.11. 21:01): Schuetzenpanzer
 	modnuke::reset();        // MOD (17.11. 21:13): Atomkraftwerk
+	modsat::reset();         // MOD (17.11. 21:34): Lasersatelliten
 	modconcrete::reset();    // MOD: Betonboden unter Gebaeuden
 	modweather::reset();     // MOD
 	modinvade::reset();
@@ -1240,6 +1243,7 @@ INT_RETVAL intRunWidgets()
 	modbigmap::tick();     // MOD (17.11.): strategische Karte, Knoepfe an der Minikarte
 	modrosette::tick();    // MOD (17.11.): Mod-Rosette im WZ-Stil
 	moddesigner::tick();   // MOD: Combot-Designer
+	modfleetdesigner::tick();   // MOD (17.11. 21:48): Einheiteneditor aus dem Flotten-Menue
 
 	if (quitToMainMenuRequested)
 	{

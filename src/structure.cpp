@@ -102,6 +102,7 @@
 #include <functional>
 #include <unordered_map>
 #include "modgrid.h"
+#include "modsat.h"
 
 //Maximium slope of the terrain for building a structure
 #define MAX_INCLINE		50//80//40
@@ -3371,7 +3372,8 @@ static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 	/* Check lassat */
 	if (isLasSat(psStructure->pStructureType)
 	    && gameTime - psStructure->asWeaps[0].lastFired > weaponFirePause(*psStructure->getWeaponStats(0), psStructure->player)
-	    && psStructure->asWeaps[0].ammo > 0)
+	    && psStructure->asWeaps[0].ammo > 0
+	    && modsat::canFire(psStructure))   // MOD (21:34): Uplink-Zentrale erst mit Satelliten in der Umlaufbahn
 	{
 		if (psStructure->player == selectedPlayer)
 		{
@@ -4330,7 +4332,7 @@ int modBuildCategory(const STRUCTURE_STATS *st)
 	}
 	if (has("Refinery") || has("Pipeline") || has("PowerPole") || has("Substation") || has("EnergyBank") || has("Solar") || has("OilStore") || has("Storage") || has("WaterTower") || has("NuclearPlant") || has("UraniumMine")) { return 0; }
 	if (has("Cryo") || has("Crane") || has("LayerShaft") || has("Gantry") || has("Assembly") || has("Factory") || has("Research")) { return 1; }
-	if (has("Ammo") || has("Container") || has("Outpost") || has("ATC") || has("Beacon") || has("Relay") || has("Radar") || has("Uplink")) { return 2; }
+	if (has("Ammo") || has("Container") || has("Outpost") || has("ATC") || has("Beacon") || has("Relay") || has("Radar") || has("Uplink") || has("RocketSilo") || has("LaserSatellite")) { return 2; }
 	if (has("Trench") || has("Sandbag") || has("Hedgehog") || has("TankTrap") || has("DragonTeeth") || has("Wall")) { return 3; }
 	if (st->type == REF_DEFENSE && st->numWeaps == 0)
 	{

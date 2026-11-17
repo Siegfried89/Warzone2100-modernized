@@ -87,7 +87,8 @@ bool wants(const STRUCTURE *psStruct)
 		break;
 	}
 	const WzString &id = psStruct->pStructureType->id;
-	return id.compare("A0BaBaATC") == 0 || id.compare("A0BaBaCrane") == 0 || id.compare("A0BaBaRefinery") == 0;
+	return id.compare("A0BaBaATC") == 0 || id.compare("A0BaBaCrane") == 0 || id.compare("A0BaBaRefinery") == 0
+	       || id.startsWith("A0NuclearPlant");   // (Wunsch 17.11. 21:34) Atomkraftwerk auf Beton mit weich auslaufendem Rand
 }
 
 int overrideTexture(WorldMapState &m, int x, int y, bool classic)

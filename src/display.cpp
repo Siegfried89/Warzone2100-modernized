@@ -1251,7 +1251,7 @@ void processMouseClickInput()
 		item = itemUnderMouse(&ObjUnderMouse);
 
 		//exceptions, exceptions...AB 10/06/99
-		if (bMultiPlayer && bLasSatStruct)
+		if (bLasSatStruct)   // MOD (21:34): Lasersatellit auch in der Kampagne (Uplink-Zentrale)
 		{
 			ASSERT(item < POSSIBLE_TARGETS, "Weirdy target!");
 			if (item == MT_ENEMYDROID || item == MT_ENEMYSTR || item == MT_DAMFEATURE)
@@ -2129,7 +2129,7 @@ static void dealWithLMBDroid(DROID *psDroid, SELECTION_TYPE selection)
 		orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psDroid, ctrlShiftDown());
 
 		//lasSat structure can select a target - in multiPlayer only
-		if (bMultiPlayer && bLasSatStruct)
+		if (bLasSatStruct)   // MOD (21:34): Lasersatellit auch in der Kampagne (Uplink-Zentrale)
 		{
 			orderStructureObj(selectedPlayer, (BASE_OBJECT *)psDroid);
 		}
@@ -2297,7 +2297,7 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 		}
 		orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psStructure, ctrlShiftDown());
 		//lasSat structure can select a target - in multiPlayer only
-		if (bMultiPlayer && bLasSatStruct)
+		if (bLasSatStruct)   // MOD (21:34): Lasersatellit auch in der Kampagne (Uplink-Zentrale)
 		{
 			orderStructureObj(selectedPlayer, (BASE_OBJECT *)psStructure);
 		}
@@ -2439,7 +2439,7 @@ static void dealWithLMBFeature(FEATURE *psFeature)
 	{
 		orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psFeature, ctrlShiftDown());
 		//lasSat structure can select a target - in multiPlayer only
-		if (bMultiPlayer && bLasSatStruct)
+		if (bLasSatStruct)   // MOD (21:34): Lasersatellit auch in der Kampagne (Uplink-Zentrale)
 		{
 			orderStructureObj(selectedPlayer, (BASE_OBJECT *)psFeature);
 		}

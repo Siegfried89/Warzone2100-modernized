@@ -1311,14 +1311,18 @@ static bool _imd_load_level_textures(const iIMDShape& s, size_t tilesetIdx, iIMD
 
 	const WzString &filename = s.modelName;
 	optional<size_t> texpage = iV_GetTexture(resolved.diffuseFile.c_str(), gfx_api::texture_type::game_texture);
-	ASSERT_OR_RETURN(false, texpage.has_value(), "%s could not load tex page %s", filename.toUtf8().c_str(), resolved.diffuseFile.c_str());
+	if (!texpage.has_value())   // MOD (17.11. 21:47): fehlerhafte Mod-Textur bricht nicht mehr alles ab
+	{
+		debug(LOG_ERROR, "%s could not load tex page %s - model stays untextured", filename.toUtf8().c_str(), resolved.diffuseFile.c_str());
+		return true;
+	}
 
 	optional<size_t> tcmaskpage;
 	if (resolved.tcmaskFile.has_value())
 	{
 		debug(LOG_TEXTURE, "Loading tcmask %s for %s", resolved.tcmaskFile->c_str(), filename.toUtf8().c_str());
 		tcmaskpage = iV_GetTexture(resolved.tcmaskFile->c_str(), gfx_api::texture_type::alpha_mask);
-		ASSERT_OR_RETURN(false, tcmaskpage.has_value(), "%s could not load tcmask %s", filename.toUtf8().c_str(), resolved.tcmaskFile->c_str());
+		if (!tcmaskpage.has_value()) { debug(LOG_ERROR, "%s could not load tcmask %s - drawn without team colour", filename.toUtf8().c_str(), resolved.tcmaskFile->c_str()); }
 	}
 
 	optional<size_t> normalpage;
@@ -1326,7 +1330,7 @@ static bool _imd_load_level_textures(const iIMDShape& s, size_t tilesetIdx, iIMD
 	{
 		debug(LOG_TEXTURE, "Loading normal map %s for %s", resolved.normalFile->c_str(), filename.toUtf8().c_str());
 		normalpage = iV_GetTexture(resolved.normalFile->c_str(), gfx_api::texture_type::normal_map);
-		ASSERT_OR_RETURN(false, normalpage.has_value(), "%s could not load tex page %s", filename.toUtf8().c_str(), resolved.normalFile->c_str());
+		if (!normalpage.has_value()) { debug(LOG_ERROR, "%s could not load normal map %s - ignored", filename.toUtf8().c_str(), resolved.normalFile->c_str()); }
 	}
 
 	optional<size_t> specpage;
@@ -1334,7 +1338,7 @@ static bool _imd_load_level_textures(const iIMDShape& s, size_t tilesetIdx, iIMD
 	{
 		debug(LOG_TEXTURE, "Loading specular map %s for %s", resolved.specularFile->c_str(), filename.toUtf8().c_str());
 		specpage = iV_GetTexture(resolved.specularFile->c_str(), gfx_api::texture_type::specular_map);
-		ASSERT_OR_RETURN(false, specpage.has_value(), "%s could not load tex page %s", filename.toUtf8().c_str(), resolved.specularFile->c_str());
+		if (!specpage.has_value()) { debug(LOG_ERROR, "%s could not load specular map %s - ignored", filename.toUtf8().c_str(), resolved.specularFile->c_str()); }
 	}
 
 	imdAssignLoadedLevelTexturePages(output, texpage.value(), tcmaskpage, normalpage, specpage);
@@ -1355,7 +1359,12 @@ LoadingTask<> imdLoadLevelTexturesTask(
 
 	const WzString &filename = s.modelName;
 	const auto texpageResult = co_await iV_GetTextureTask(controller, resolved.diffuseFile.c_str(), gfx_api::texture_type::game_texture);
-	CORO_ASSERT_OR_RETURN(load_fail(), texpageResult.has_value() && texpageResult->has_value(), "%s could not load tex page %s", filename.toUtf8().c_str(), resolved.diffuseFile.c_str());
+	// MOD (17.11. 21:47): eine fehlerhafte Mod-Textur darf nicht das Laden der ganzen Karte abbrechen ("Failed to load level data or map")
+	if (!(texpageResult.has_value() && texpageResult->has_value()))
+	{
+		debug(LOG_ERROR, "%s could not load tex page %s - model stays untextured", filename.toUtf8().c_str(), resolved.diffuseFile.c_str());
+		co_return load_ok();
+	}
 	optional<size_t> texpage = texpageResult.value();
 	optional<size_t> tcmaskpage;
 	optional<size_t> normalpage;
@@ -1365,24 +1374,24 @@ LoadingTask<> imdLoadLevelTexturesTask(
 	{
 		debug(LOG_TEXTURE, "Loading tcmask %s for %s", resolved.tcmaskFile->c_str(), filename.toUtf8().c_str());
 		const auto tcmaskpageResult = co_await iV_GetTextureTask(controller, resolved.tcmaskFile->c_str(), gfx_api::texture_type::alpha_mask);
-		CORO_ASSERT_OR_RETURN(load_fail(), tcmaskpageResult.has_value() && tcmaskpageResult->has_value(), "%s could not load tcmask %s", filename.toUtf8().c_str(), resolved.tcmaskFile->c_str());
-		tcmaskpage = tcmaskpageResult.value();
+		if (tcmaskpageResult.has_value() && tcmaskpageResult->has_value()) { tcmaskpage = tcmaskpageResult.value(); }
+		else { debug(LOG_ERROR, "%s could not load tcmask %s - drawn without team colour", filename.toUtf8().c_str(), resolved.tcmaskFile->c_str()); }   // MOD: nicht abbrechen
 	}
 
 	if (resolved.normalFile.has_value())
 	{
 		debug(LOG_TEXTURE, "Loading normal map %s for %s", resolved.normalFile->c_str(), filename.toUtf8().c_str());
 		const auto normalpageResult = co_await iV_GetTextureTask(controller, resolved.normalFile->c_str(), gfx_api::texture_type::normal_map);
-		CORO_ASSERT_OR_RETURN(load_fail(), normalpageResult.has_value() && normalpageResult->has_value(), "%s could not load tex page %s", filename.toUtf8().c_str(), resolved.normalFile->c_str());
-		normalpage = normalpageResult.value();
+		if (normalpageResult.has_value() && normalpageResult->has_value()) { normalpage = normalpageResult.value(); }
+		else { debug(LOG_ERROR, "%s could not load normal map %s - ignored", filename.toUtf8().c_str(), resolved.normalFile->c_str()); }   // MOD: nicht abbrechen
 	}
 
 	if (resolved.specularFile.has_value())
 	{
 		debug(LOG_TEXTURE, "Loading specular map %s for %s", resolved.specularFile->c_str(), filename.toUtf8().c_str());
 		const auto specpageResult = co_await iV_GetTextureTask(controller, resolved.specularFile->c_str(), gfx_api::texture_type::specular_map);
-		CORO_ASSERT_OR_RETURN(load_fail(), specpageResult.has_value() && specpageResult->has_value(), "%s could not load tex page %s", filename.toUtf8().c_str(), resolved.specularFile->c_str());
-		specpage = specpageResult.value();
+		if (specpageResult.has_value() && specpageResult->has_value()) { specpage = specpageResult.value(); }
+		else { debug(LOG_ERROR, "%s could not load specular map %s - ignored", filename.toUtf8().c_str(), resolved.specularFile->c_str()); }   // MOD: nicht abbrechen
 	}
 
 	imdAssignLoadedLevelTexturePages(output, texpage.value(), tcmaskpage, normalpage, specpage);

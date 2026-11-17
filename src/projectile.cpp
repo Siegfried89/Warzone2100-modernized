@@ -683,7 +683,7 @@ static PROJECTILE* proj_SendProjectileAngledInternal(WEAPON* psWeap, SIMPLE_OBJE
 				}
 			}
 			//don't play the sound for a LasSat in multiPlayer
-			else if (!(bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT))
+			else if (psStats->weaponSubClass != WSC_LAS_SAT)   // MOD (21:34): Lasersatellit immer wie im Mehrspieler
 			{
 				audio_PlayObjStaticTrack(&stableProj, modFireID);
 			}
@@ -866,7 +866,7 @@ static PROJECTILE* proj_InFlightFunc(PROJECTILE *psProj)
 
 	/* we want a delay between Las-Sats firing and actually hitting in multiPlayer
 	magic number but that's how long the audio countdown message lasts! */
-	if (bMultiPlayer && psStats->weaponSubClass == WSC_LAS_SAT &&
+	if (psStats->weaponSubClass == WSC_LAS_SAT &&   // MOD (21:34): immer mit Countdown
 	    (unsigned)timeSoFar < LAS_SAT_DELAY * GAME_TICKS_PER_SEC)
 	{
 		return nullptr;
