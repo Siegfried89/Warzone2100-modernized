@@ -23,6 +23,7 @@
 */
 
 #include "lib/framework/frame.h"
+#include <unordered_map>
 #include <algorithm>
 #include <cmath>
 #include "lib/ivis_opengl/piematrix.h"
@@ -534,6 +535,39 @@ static const iIMDBaseShape *modAimVariant(const DROID *psDroid, const iIMDBaseSh
 	return aim ? aim : fireShape;
 }
 
+// MOD (Frage 94, 17.11.): laufende Ketten - die Ketten-Modelle haben Textur-Animation (tracksanim.py, 16 Bilder je Glied); das Bild
+// folgt der gefahrenen Strecke (vorwaerts/rueckwaerts), Stillstand = Glieder stehen. Nur Anzeige (Bildzeit, kein Spielzustand).
+static int modTrackFrame(const DROID *psDroid, const iIMDShape *shape, bool bButton)
+{
+	if (bButton || shape == nullptr || shape->numFrames <= 1) { return 0; }
+	struct Odo { Vector2i last; float acc; unsigned seen; };
+	static std::unordered_map<uint32_t, Odo> s_odo;
+	auto it = s_odo.find(psDroid->id);
+	if (it == s_odo.end())
+	{
+		if (s_odo.size() > 4096) { s_odo.clear(); }
+		it = s_odo.emplace(psDroid->id, Odo{psDroid->pos.xy(), 0.f, graphicsTime}).first;
+	}
+	Odo &o = it->second;
+	if (o.seen != graphicsTime)
+	{
+		const Vector2i d = psDroid->pos.xy() - o.last;
+		if (std::abs(d.x) + std::abs(d.y) < 384)   // Spruenge (Laden, Ebenenwechsel) zaehlen nicht
+		{
+			// Strecke in Fahrtrichtung (rueckwaerts laufen die Glieder andersherum)
+			const float fx = static_cast<float>(iSin(psDroid->rot.direction)) / 65536.f;
+			const float fy = static_cast<float>(iCos(psDroid->rot.direction)) / 65536.f;
+			o.acc += static_cast<float>(d.x) * fx + static_cast<float>(d.y) * fy;
+		}
+		o.last = psDroid->pos.xy();
+		o.seen = graphicsTime;
+	}
+	constexpr float STEP = 2.5f;   // Weltmass je Bild (1/16 Glied): ruhige, gut sichtbare Bewegung ohne Stroboskop-Effekt
+	const int n = shape->numFrames;
+	const int f = static_cast<int>(std::floor(o.acc / STEP));
+	return ((f % n) + n) % n;
+}
+
 static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& modelMatrix2, const glm::mat4 &viewMatrix)
 {
 	iIMDBaseShape *psMoveAnim, *psStillAnim;
@@ -627,13 +661,13 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	const iIMDBaseShape *psShapeProp = (leftFirst ? getLeftPropulsionIMD(psDroid) : getRightPropulsionIMD(psDroid));
 	if (psShapeProp)
 	{
-		if (pie_Draw3DShape(psShapeProp->displayModel(), 0, colour, brightness, pieFlag, iPieData, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+		if (pie_Draw3DShape(psShapeProp->displayModel(), modTrackFrame(psDroid, psShapeProp->displayModel(), bButton), colour, brightness, pieFlag, iPieData, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 		{
 			didDrawSomething = true;
 		}
 		if (!bButton && psDroid->shieldPoints > 0)
 		{
-			if (pie_Draw3DShape(psShapeProp->displayModel(), 0, colour, brightness, shieldPieFlag, iShieldPieData, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+			if (pie_Draw3DShape(psShapeProp->displayModel(), modTrackFrame(psDroid, psShapeProp->displayModel(), bButton), colour, brightness, shieldPieFlag, iShieldPieData, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 			{
 				didDrawSomething = true;
 			}
@@ -1029,13 +1063,13 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	psShapeProp = (leftFirst ? getRightPropulsionIMD(psDroid) : getLeftPropulsionIMD(psDroid));
 	if (psShapeProp)
 	{
-		if (pie_Draw3DShape(psShapeProp->displayModel(), 0, colour, brightness, pieFlag, iPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+		if (pie_Draw3DShape(psShapeProp->displayModel(), modTrackFrame(psDroid, psShapeProp->displayModel(), bButton), colour, brightness, pieFlag, iPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 		{
 			didDrawSomething = true;
 		}
 		if (!bButton && psDroid->shieldPoints > 0)
 		{
-			if (pie_Draw3DShape(psShapeProp->displayModel(), 0, colour, brightness, shieldPieFlag, iShieldPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+			if (pie_Draw3DShape(psShapeProp->displayModel(), modTrackFrame(psDroid, psShapeProp->displayModel(), bButton), colour, brightness, shieldPieFlag, iShieldPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 			{
 				didDrawSomething = true;
 			}

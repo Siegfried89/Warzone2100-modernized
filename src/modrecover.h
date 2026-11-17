@@ -14,7 +14,10 @@
 
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/mat4x4.hpp>
+#include <utility>
 #include <vector>
+
+#include "modwreck.h"
 
 struct DROID;
 struct FEATURE;
@@ -46,6 +49,9 @@ void recoverWithSelection(const std::vector<DROID *> &units);
 bool isTowTruck(const DROID *psDroid);
 /// kann dieses Feature abgeschleppt werden? (gelandetes Wrack mit Bauplan)
 bool isTowable(const FEATURE *psFeature);
+/// (17.11.) Spielstand: Abschlepp-Lkw mit geladenem Wrack
+std::vector<std::pair<uint32_t, modwreck::WreckInfo>> saveTows();
+void loadTows(const std::vector<std::pair<uint32_t, modwreck::WreckInfo>> &tows);
 /// traegt die Einheit gerade ein Turm-Teil oder ein Wrack zur Werkstatt?
 bool carrying(const DROID *psDroid);
 /// Anzeige: Wrack-Modell, das dieser Lkw gerade geladen hat (nullptr = keins)

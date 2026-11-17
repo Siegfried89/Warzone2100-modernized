@@ -439,6 +439,51 @@ bool wreckInfo(const FEATURE *f, WreckInfo &out)
 	return false;
 }
 
+std::vector<SavedWreck> saveState()
+{
+	std::vector<SavedWreck> out;
+	for (const Wreck &w : s_wrecks)
+	{
+		SavedWreck s;
+		s.featureId = w.id;
+		s.age = gameTime - w.born;
+		s.xe = w.xe; s.ye = w.ye;
+		s.halfH = w.halfH; s.halfW = w.halfW;
+		s.rollTotal = w.rollTotal;
+		s.hasInfo = w.hasInfo;
+		s.info = w.info;
+		out.push_back(s);
+	}
+	return out;
+}
+
+void loadState(const std::vector<SavedWreck> &wrecks, GameWorld &world)
+{
+	loadStats();
+	for (const SavedWreck &s : wrecks)
+	{
+		FEATURE *f = static_cast<FEATURE *>(getBaseObjFromId(world.objects.features[0], s.featureId));
+		if (f == nullptr || f->died || !isWreckStats(f->psStats)) { continue; }
+		Wreck w;
+		w.id = f->id;
+		w.born = gameTime >= s.age ? gameTime - s.age : 0;
+		w.x0 = s.xe; w.y0 = s.ye; w.xe = s.xe; w.ye = s.ye;
+		w.dirMove = f->rot.direction;
+		w.variant = TIP;
+		w.dur = 0;                       // gelandet (keine Todesanimation mehr)
+		w.rollTotal = s.rollTotal;
+		w.halfH = s.halfH; w.halfW = s.halfW;
+		w.startFx = w.crashPlayed = w.endFx = true;
+		w.info = s.info;
+		w.hasInfo = s.hasInfo;
+		// Lage wie vor dem Speichern (der Spielstand kennt die Hoehe des liegenden Wracks nicht)
+		const int finalRoll = static_cast<int>((static_cast<int64_t>(w.rollTotal) * 65536 / 360) & 0xFFFF);
+		const int lift = std::abs(iCosR(static_cast<uint16_t>(finalRoll), w.halfH)) + std::abs(iSinR(static_cast<uint16_t>(finalRoll), w.halfW)) + 1;
+		featureSetWreckPose(f, f->rot.direction, finalRoll, map_Height(world.map, w.xe, w.ye) + lift);
+		s_wrecks.push_back(w);
+	}
+}
+
 bool takeWreck(FEATURE *f, GameWorld &world, WreckInfo &out)
 {
 	if (f == nullptr || f->died) { return false; }
