@@ -37,6 +37,8 @@
 #include "modarty.h"
 #include "modauto.h"
 #include "modmines.h"   // MOD: Minenraeumer-Walze
+#include "modapc.h"     // MOD: Schuetzenpanzer
+#include "modoil.h"
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modgroundfire.h"
@@ -2938,6 +2940,12 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 		}
 	}
 	//check for transporters first
+	// MOD (17.11. 21:01): Infanterie auf den eigenen Schuetzenpanzer klicken = einsteigen (begleiten, modapc nimmt sie auf)
+	if (psObj->type == OBJ_DROID && modapc::isApc((DROID *)psObj) && psObj->player == psDroid->player && modoil::isInfantry(psDroid)
+	    && modapc::load((DROID *)psObj) < modapc::CAPACITY)
+	{
+		return DroidOrder(DORDER_GUARD, psObj);
+	}
 	if (psObj->type == OBJ_DROID && ((DROID*)psObj)->isTransporter() && psObj->player == psDroid->player)
 	{
 		order = DroidOrder(DORDER_EMBARK, psObj);
@@ -3463,8 +3471,8 @@ bool secondarySupported(const DROID *psDroid, SECONDARY_ORDER sec)
 		supported = modauto::supported(psDroid);
 		break;
 
-	case DSO_MINECLEAR:   // MOD: nur Minenraeumer (Systemturm MineFlail)
-		supported = modmines::isFlail(psDroid);
+	case DSO_MINECLEAR:   // MOD: Minenraeumer (Walze) und Schuetzenpanzer (Absitzen)
+		supported = modmines::isFlail(psDroid) || modapc::isApc(psDroid);
 		break;
 
 	case DSO_REPAIR_LEVEL:
@@ -3537,7 +3545,7 @@ SECONDARY_STATE secondaryGetState(const DROID *psDroid, SECONDARY_ORDER sec, QUE
 		return (SECONDARY_STATE)(state & DSS_FULLAUTO_MASK);
 		break;
 	case DSO_MINECLEAR:   // MOD
-		return modmines::isFlail(psDroid) ? (SECONDARY_STATE)(state & DSS_MINECLEAR_MASK) : DSS_NONE;
+		return (modmines::isFlail(psDroid) || modapc::isApc(psDroid)) ? (SECONDARY_STATE)(state & DSS_MINECLEAR_MASK) : DSS_NONE;
 		break;
 	case DSO_HALTTYPE:
 		if (psDroid->order.type == DORDER_HOLD)
@@ -4187,7 +4195,7 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 		modarty::apply(psDroid, (State & DSS_ARTY_MASK) != 0);
 		break;
 	case DSO_MINECLEAR:   // MOD: Minenraeumer-Walze an/aus (nur Minenraeumer - bei Kommandeuren ist das Bit eine Fabrik-Zuordnung)
-		if (modmines::isFlail(psDroid))
+		if (modmines::isFlail(psDroid) || modapc::isApc(psDroid))   // Schuetzenpanzer: Absitzen (modapc setzt das Bit danach zurueck)
 		{
 			CurrState = (CurrState & ~DSS_MINECLEAR_MASK) | (State & DSS_MINECLEAR_MASK);
 		}

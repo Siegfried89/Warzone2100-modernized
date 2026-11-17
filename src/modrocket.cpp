@@ -46,7 +46,7 @@ constexpr unsigned COUNTDOWN_MS = 8000;
 constexpr unsigned LAUNCH_MS = 7000;      // so lange bis zur Landung im Orbit
 constexpr size_t CAPACITY = 3;
 constexpr int BOARD_R = DIST_TILE * 7 / 5;
-constexpr float ROCKET_H = 230.f;         // Hoehe des Raketenmodells (rocketsilo.py)
+constexpr float ROCKET_H = 300.f;         // Hoehe des Raketenmodells (rocketsilo.py, Starship-Stil)
 
 enum Stage { ST_ASSEMBLE = 0, ST_READY, ST_COUNTDOWN, ST_LAUNCH };
 struct Silo

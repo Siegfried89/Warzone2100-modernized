@@ -24,6 +24,7 @@
 #include "modarty.h"
 #include "modauto.h"
 #include "modmines.h"
+#include "modapc.h"
 #include "modbuild.h"
 #include "modcover.h"
 #include "moddesigner.h"
@@ -49,7 +50,7 @@ namespace
 {
 // Bilder in images/modrosette.img (Reihenfolge wie rosette.py): 7 Sechsecke (normal, gedrueckt), dann 14 Befehlsknoepfe (normal, gedrueckt)
 enum Hex { H_CENTER = 0, H_PLAN, H_FORMATION, H_FIRE, H_RINGS, H_INFANTRY, H_LAYERS, H_COUNT };
-enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_AUTO, C_MINES, C_COUNT };
+enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_AUTO, C_MINES, C_UNLOAD, C_COUNT };
 int hexImg(int h, bool down) { return h * 2 + (down ? 1 : 0); }
 int cmdImg(int c, bool down) { return H_COUNT * 2 + c * 2 + (down ? 1 : 0); }
 
@@ -245,6 +246,19 @@ std::vector<Item> itemsFor(int hex)
 			return any;
 		};
 		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_MINES, true) + 1)) { v.push_back(mines); }
+		// (Wunsch 17.11. 21:01) Halbketten-Schuetzenpanzer: Infanterie absitzen lassen (Zweitbefehl, ueber das Netz abgeglichen)
+		Item unload; unload.img = C_UNLOAD; unload.tip = _("Unload: the infantry in the selected halftrack APCs dismounts (to load: select infantry and click the APC, up to 8)");
+		unload.action = []() {
+			bool any = false;
+			for (DROID *d : selection())
+			{
+				if (!modapc::isApc(d)) { continue; }
+				any = true;
+				if (modapc::load(d) > 0) { secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_MINECLEAR_SET); }
+			}
+			if (!any) { addConsoleMessage(_("Unload: select a halftrack APC"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+		};
+		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_UNLOAD, true) + 1)) { v.push_back(unload); }
 		break;
 	}
 	case H_LAYERS:
