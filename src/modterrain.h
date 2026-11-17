@@ -49,6 +49,11 @@ int sinkAt(const WorldMapState &mapState, int worldX, int worldY);
 float sinkAtF(const WorldMapState &mapState, float worldX, float worldY);
 /// groesste Absenkung der vier Kacheln an einer Kachelecke (Klassik-Netz ohne Unterteilung)
 int sinkAtCorner(const WorldMapState &mapState, int x, int y);
+/// (17.11.) zusaetzliche Absenkung des Feldmittelpunkts (Klassik-Netz ohne Unterteilung): Krater/Schuetzenloch als Trichter in
+/// genau einem Feld, die Nachbarfelder bleiben eben
+int centerSink(const WorldMapState &mapState, int x, int y);
+/// (17.11.) Krater/Schuetzenloch auf diesem Feld: fuer alle Fahrzeuge (Raeder, Ketten, Halbketten, Luftkissen) unbefahrbar
+bool blocksVehicles(const WorldMapState &mapState, int x, int y);
 /// Absenkung durch ein Bauwerk (tiefer Graben) setzen; 0 = aufheben
 void setStructureSink(int tileX, int tileY, int depth);
 

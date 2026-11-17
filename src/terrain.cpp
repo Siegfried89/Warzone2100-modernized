@@ -356,6 +356,7 @@ static void getGridPos(const WorldMapState& mapState, Vector3i *result, int x, i
 		getGridPos(mapState, &c, x  , y + 1, false, water);
 		getGridPos(mapState, &d, x + 1, y + 1, false, water);
 		averagePos(result, &a, &b, &c, &d);
+		result->y -= modterrain::centerSink(mapState, x, y);   // MOD (17.11.): Krater = Trichter in genau einem Feld
 		return;
 	}
 	// NOTE: z is NEGATED - map space and world space differ by a z flip. Anything

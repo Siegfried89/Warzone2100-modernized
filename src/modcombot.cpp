@@ -921,7 +921,21 @@ void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVa
 	if (an == nullptr) { return; }
 	float ang[15][3];
 	glm::vec3 root(0.f);
+	if (kind == ANIM_WALK && an == walkAnim() && an->nf > 0 && an->ms > 0)
+	{
+		// MOD (17.11., Wunsch "Der Combot verwechselt die Laufrichtungsanimation"): der MF-Lauf-Zyklus (HighSpeed) laeuft in den Daten
+		// rueckwaerts (der Standfuss wandert nach vorn) - rueckwaerts abgespielt geht der Combot vorwaerts in Blickrichtung
+		const unsigned cycle = static_cast<unsigned>(an->nf) * static_cast<unsigned>(an->ms);
+		elapsedMs = (cycle - (elapsedMs % cycle)) % cycle;
+	}
 	sample(*an, elapsedMs, loop, ang, root, centerMean);
+	if (kind == ANIM_FIRE)
+	{
+		// MOD (17.11., "waehrend des Angreifens gleitet er schraeg zur Seite weg"): die Angriffsanimationen enthalten einen Ausfallschritt
+		// (bis ~15 MF-Einheiten schraeg) - der Combot bleibt am Platz der Einheit, nur das Heben/Senken bleibt
+		root.x = 0.f;
+		root.y = 0.f;
+	}
 	const bool noLegs = lo.legs == nullptr || (lo.severed & SEV_LEGS) != 0;
 	if (noLegs)
 	{

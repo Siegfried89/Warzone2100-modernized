@@ -1105,6 +1105,11 @@ void intOpenDebugMenu(OBJECT_TYPE id)
 			{
 				continue;
 			}
+			// MOD (Wunsch 17.11.): keine vorgefertigten Combots (MFP_*) im Cheat-Menue - Combots werden aus Teilen zusammengesetzt
+			if (localTemplate.id.toUtf8().rfind("MFP_", 0) == 0)
+			{
+				continue;
+			}
 			apsTemplateList.push_back(&localTemplate);
 		}
 		ppsStatsList = (BASE_STATS **)apsTemplateList.data(); // FIXME Ugly cast, and is undefined behaviour (strict-aliasing violation) in C/C++.
