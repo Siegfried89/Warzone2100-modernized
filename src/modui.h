@@ -18,6 +18,8 @@ enum Img
 	B_EVAC, B_EVACCREW, B_DEPLOY, B_LAUNCH, B_SEND, B_PRIMARY, B_RETFIRE, B_CLEAR, B_RALLY, B_SELL,
 	PREBUILD, STAT_A, STAT_B, STAT_C, STAT_D, RESBAR, DISP_A, DISP_B,
 	ARR_UP, ARR_UP_HL, ARR_DN, ARR_DN_HL, METALPANEL,
+	// (17.11.) WZ-Stil: gedrueckte/aktive Fassung der sechs Befehlstasten (mfwzbtn.py haengt sie an; aeltere Pakete haben sie nicht)
+	B_GUARD_ON, B_ATTACK_ON, B_MOVE_ON, B_PATROL_ON, B_RETFIRE_ON, B_STOP_ON,
 	IMG_COUNT
 };
 
@@ -25,6 +27,8 @@ enum Img
 bool ready();
 void shutdown();
 
+/// ist dieses Bild in images/mfui.img vorhanden? (aeltere Mod-Pakete haben weniger Bilder)
+bool has(Img id);
 int imgWidth(Img id);
 int imgHeight(Img id);
 /// Bild mit Skalierung zeichnen (oben links bei x,y)
