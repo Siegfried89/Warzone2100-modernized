@@ -48,6 +48,7 @@
 #include "modoutpost.h"
 #include "modrocket.h"
 #include "modapc.h"
+#include "modnuke.h"
 #include "gamestate_serialize.h"
 #include "gamestate_harness.h"
 #include "movebench.h"
@@ -624,6 +625,7 @@ static void gameStateUpdate()
 	modoutpost::tick(gameWorld); // MOD: Aussenposten-Teleport (MF)
 	modrocket::tick();           // MOD (17.11. 20:56): Raketensilo -> Pioniere in den Orbit
 	modapc::tick();              // MOD (17.11. 21:01): Halbketten-Schuetzenpanzer (8 Mann)
+	modnuke::tick();             // MOD (17.11. 21:13): Atomkraftwerk + Uranbergwerk
 	modinvade::tick(gameWorld);   // MOD: Invade (Bohrfahrzeug uebernimmt Gebaeude)
 	modlava::tick(gameWorld);   // MOD: Lavafelder, Solarpaneele, Energiebank
 	modgroundfire::tick(gameWorld);   // MOD: Bodenziel-Punkte, die kein Befehl mehr braucht, entfernen

@@ -5,6 +5,7 @@
 #include "modoil.h"
 #include "modlayer.h"
 #include "modweather.h"
+#include "modnuke.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -250,6 +251,8 @@ void update()
 		s_hasSub[p] = false;
 		std::vector<Node> poles, gens, subs, panels, cons;
 		std::vector<int> genCap;
+		std::vector<int> panelCap;   // Solarpaneel 1, laufendes Atomkraftwerk 150 (stetige Quellen)
+		std::vector<char> panelNuke;
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->status != SS_BUILT) { continue; }
@@ -267,7 +270,20 @@ void update()
 			{
 				// (Wunsch 17.11. 20:35) Solarpaneele speisen das Netz: an der Oberflaeche nur tagsueber, auf den Orbit-Inseln immer
 				const modlayer::Layer ly = modlayer::layerOf(s);
-				if (ly == modlayer::ORBIT || (ly == modlayer::SURFACE && !night)) { panels.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); }
+				if (ly == modlayer::ORBIT || (ly == modlayer::SURFACE && !night))
+				{
+					panels.push_back({s->id, s->pos.x, s->pos.y, s->pos.z});
+					panelCap.push_back(PANEL_CAPACITY);
+					panelNuke.push_back(0);
+				}
+			}
+			else if (modnuke::isPlant(st))
+			{
+				// (Wunsch 17.11. 21:13) Atomkraftwerk: stetige Quelle wie die Sonne, aber viel staerker (Tag und Nacht, solange Uran da ist)
+				s_hasGen[p] = true;
+				panels.push_back({s->id, s->pos.x, s->pos.y, s->pos.z});
+				panelCap.push_back(modnuke::running(s) ? modnuke::GRID_CAPACITY : 0);
+				panelNuke.push_back(1);
 			}
 			if (st->requiresPower)
 			{
@@ -356,7 +372,12 @@ void update()
 		const int total = n + g + m + q;
 		std::vector<int> solarCap(total, 0), genCapC(total, 0), demand(total, 0);
 		std::vector<char> hasSub(total, 0), hasGenC(total, 0);
-		for (int k = 0; k < q; k++) { solarCap[find(par, P0 + k)] += PANEL_CAPACITY; }
+		for (int k = 0; k < q; k++)
+		{
+			const int r = find(par, P0 + k);
+			solarCap[r] += panelCap[static_cast<size_t>(k)];
+			if (panelNuke[static_cast<size_t>(k)] && panelCap[static_cast<size_t>(k)] > 0) { hasGenC[r] = 1; }   // ohne Umspannwerk: speist wie ein Kraftwerk
+		}
 		for (int k = 0; k < g; k++)
 		{
 			genCapC[find(par, G0 + k)] += genCap[static_cast<size_t>(k)];
@@ -404,6 +425,12 @@ void update()
 				{
 					const int64_t d = dist2(c, gens[k]);
 					if (d <= genR * genR) { consider(find(par, G0 + k), d); }
+				}
+				for (int k = 0; k < q; k++)
+				{
+					if (!panelNuke[static_cast<size_t>(k)]) { continue; }
+					const int64_t d = dist2(c, panels[k]);
+					if (d <= genR * genR) { consider(find(par, P0 + k), d); }
 				}
 			}
 			consNet[ci] = net;
