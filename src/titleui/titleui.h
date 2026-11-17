@@ -109,7 +109,6 @@ private:
 	void build();
 	int selected = 0;
 	int page = 0;
-	bool dirty = false;
 };
 
 #endif
