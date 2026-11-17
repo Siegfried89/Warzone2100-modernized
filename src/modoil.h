@@ -23,6 +23,11 @@ namespace modoil
 {
 /// gilt die Fass-Wirtschaft fuer diesen Spieler?
 bool manages(int player);
+/// (17.11. 20:35) Einnahmen-Buch: jede Spielminute steht im Log, woher die Energie kam ("MOD-Wirtschaft ...")
+enum IncomeKind { INC_BARRELS = 0, INC_SOLAR, INC_LAVA, INC_SALVAGE, INC_COUNT };
+void noteIncome(int player, int kind, int amount);
+/// (17.11. 20:35) Gebaeude fertig gebaut: Kraftwerk -> ein Oeltanker und ein Fracht-Lkw stehen sofort daneben, Raffinerie -> ein Fracht-Lkw
+void onBuilt(STRUCTURE *psStruct);
 /// aus power.cpp: Oelpumpe foerdert (amountFP Energie in Festkomma mit fpOne = 1,0) -> wird zu Fass-Fortschritt am Turm
 void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne);
 /// jeden Spielschritt aus der Spielschleife (Explosionen sofort, Logistik einmal je Spielsekunde)

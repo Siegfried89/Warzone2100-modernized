@@ -418,6 +418,15 @@ bool actionTargetTurret(BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, WEAPON *
 		tPitch += clip(pitchError, -pitchRate, pitchRate);  // Addition wrapping intended.
 		onTarget = onTarget && targetPitch == tPitch;
 	}
+	else if (!bRepair && psAttacker->type == OBJ_DROID && modarty::isArtyWeapon(psWeapon->nStat))
+	{
+		// MOD (Wunsch 17.11. 20:38): Steilfeuer - das Rohr steht beim Feuern weit nach oben (nahe Ziele ~62 Grad, weite ~46 Grad)
+		const int range = std::max(1, proj_GetLongRange(*psWeapStats, psAttacker->player));
+		const int dxy = iHypot((psTarget->pos - psAttacker->pos).xy());
+		const int frac = clip(dxy * 100 / range, 0, 100);
+		const uint16_t targetPitch = static_cast<uint16_t>(DEG(62) - DEG(16) * frac / 100);
+		tPitch += clip(angleDelta(targetPitch - tPitch), -pitchRate, pitchRate);  // Addition wrapping intended.
+	}
 
 	psWeapon->rot.direction = tRotation;
 	psWeapon->rot.pitch = tPitch;

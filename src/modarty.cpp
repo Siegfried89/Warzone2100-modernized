@@ -97,7 +97,7 @@ bool isArtyWeapon(uint32_t weaponStat)
 
 uint16_t restPitch(uint32_t weaponStat)
 {
-	return isArtyWeapon(weaponStat) ? static_cast<uint16_t>(DEG(34)) : 0;
+	return isArtyWeapon(weaponStat) ? static_cast<uint16_t>(DEG(48)) : 0;   // (20:38) steiler, wie Artilleriepanzer
 }
 
 void reset()

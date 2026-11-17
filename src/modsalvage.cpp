@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Forschung durch erbeutete Teile, siehe modsalvage.h
 #include "modsalvage.h"
+#include "modoil.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/fixedpoint.h"
@@ -178,6 +179,7 @@ bool onPickup(const FEATURE *psFeature, int player)
 	{
 		// schon bekannt: Schrott bringt etwas Energie
 		addPower(player, static_cast<int32_t>(c->scrap));
+		modoil::noteIncome(static_cast<int>(player), modoil::INC_SALVAGE, static_cast<int>(c->scrap));
 		say(player, "Salvaged scrap from " + c->name + ": +" + std::to_string(c->scrap) + " power");
 		return true;
 	}

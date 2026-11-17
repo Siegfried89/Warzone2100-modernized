@@ -2,6 +2,7 @@
 // MOD: Eigene Karte je Ebene, siehe modlayermap.h
 
 #include "modlayermap.h"
+#include "modweather.h"   // (20:44) Nacht im Orbit
 #include "lib/framework/modtime.h"
 #include "modcombot.h"
 
@@ -545,6 +546,29 @@ void refreshOrbitBase()
 					o[2] = static_cast<uint8_t>(o[2] * (1.f - a) + bl * a);
 				}
 			}
+		}
+	}
+	// (Wunsch 17.11. 20:44) Nacht: der Planet unten wird sehr, sehr dunkel - nur ein paar gelbe Lichter der Basen leuchten
+	const float nk = modweather::nightFactor(graphicsTime);
+	if (nk <= 0.01f) { return; }
+	const float keep = 1.f - 0.94f * nk;
+	for (uint8_t &c : s_floorRgb) { c = static_cast<uint8_t>(static_cast<float>(c) * keep); }
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s->died || s->status != SS_BUILT || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+			const bool known = selectedPlayer < MAX_PLAYERS && (aiCheckAlliances(p, selectedPlayer) || s->visible[selectedPlayer] > 0);
+			const STRUCTURE_TYPE ty = s->pStructureType->type;
+			if (!known || ty == REF_WALL || ty == REF_WALLCORNER || ty == REF_DEFENSE) { continue; }
+			const int x = map_coord(s->pos.x), y = map_coord(s->pos.y);
+			if (x < 0 || y < 0 || x >= W || y >= H) { continue; }
+			const bool big = ty == REF_POWER_GEN || ty == REF_FACTORY || ty == REF_CYBORG_FACTORY || ty == REF_VTOL_FACTORY || ty == REF_HQ || ty == REF_RESEARCH;
+			const float a = nk * (big ? 0.95f : 0.6f);
+			uint8_t *o = &s_floorRgb[(static_cast<size_t>(x) + static_cast<size_t>(y) * W) * 3];
+			o[0] = static_cast<uint8_t>(o[0] * (1.f - a) + 255.f * a);
+			o[1] = static_cast<uint8_t>(o[1] * (1.f - a) + 196.f * a);
+			o[2] = static_cast<uint8_t>(o[2] * (1.f - a) + 80.f * a);
 		}
 	}
 }

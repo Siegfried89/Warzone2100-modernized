@@ -28,6 +28,7 @@
 #include "range_rings.h"
 #include "structure.h"
 #include "template.h"
+#include "qtscript.h"   // triggerEventDroidBuilt
 
 #include <algorithm>
 #include <climits>
@@ -109,6 +110,11 @@ std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
 bool s_have = false;
 UDWORD s_lastSec = 0;
+// (Wunsch 17.11. 20:35 "Economy pruefen") Einnahmen je Quelle seit dem letzten Bericht (Log jede Spielminute)
+int64_t s_ledger[MAX_PLAYERS][INC_COUNT] = {};
+int64_t s_ledgerPower[MAX_PLAYERS] = {};
+bool s_ledgerStarted[MAX_PLAYERS] = {};
+UDWORD s_ledgerMinute = 0;
 
 bool idIs(const WzString &id, const char *s) { return id.toUtf8() == s; }
 bool idStarts(const WzString &id, const char *s) { return id.toUtf8().rfind(s, 0) == 0; }
@@ -354,6 +360,12 @@ int stationBarrels(const STRUCTURE *st)
 	return (stationMilli(st) + 999) / 1000;
 }
 
+void noteIncome(int player, int kind, int amount)
+{
+	if (player < 0 || player >= MAX_PLAYERS || kind < 0 || kind >= INC_COUNT) { return; }
+	s_ledger[player][kind] += amount;
+}
+
 bool manages(int player)
 {
 	if (player < 0 || player >= MAX_PLAYERS || !modPresent()) { return false; }
@@ -363,6 +375,13 @@ bool manages(int player)
 
 void reset()
 {
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		for (int k = 0; k < INC_COUNT; k++) { s_ledger[p][k] = 0; }
+		s_ledgerPower[p] = 0;
+		s_ledgerStarted[p] = false;
+	}
+	s_ledgerMinute = 0;
 	s_barrels.clear();
 	s_progress.clear();
 	s_fuel.clear();
@@ -623,6 +642,7 @@ void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool refined)
 	for (int i = 0; i < barrels; i++)
 	{
 		addPower(player, refined ? REFINED_ENERGY : BARREL_ENERGY);
+		noteIncome(player, INC_BARRELS, refined ? REFINED_ENERGY : BARREL_ENERGY);
 		s_fuel[gen->id] += refined ? REFINED_GRID_SECS : GRID_SECS;
 	}
 }
@@ -713,13 +733,16 @@ void logistics()
 		}
 		if (!manages(p)) { continue; }
 
-		// Kraftwerke: Brennstoff
+		// Kraftwerke: Brennstoff (in Bereitschaft - der Solarstrom reicht - verbraucht ein Kraftwerk nichts)
 		for (STRUCTURE *g : sn.gens)
 		{
 			auto it = s_fuel.find(g->id);
 			if (it == s_fuel.end()) { s_fuel[g->id] = START_FUEL; }
-			else if (it->second > 0) { it->second--; }
+			else if (it->second > 0 && !modgrid::generatorStandby(g)) { it->second--; }
 		}
+		// (20:35) nur Kraftwerke, die Oel brauchen, bekommen welches; die anderen Faesser gehen an die Tankstellen
+		std::vector<STRUCTURE *> activeGens;
+		for (STRUCTURE *g : sn.gens) { if (!modgrid::generatorStandby(g)) { activeGens.push_back(g); } }
 
 		// Raffinerien: ein Fass je REF_SECS Sekunden veredeln
 		for (STRUCTURE *r : sn.refs)
@@ -736,7 +759,7 @@ void logistics()
 		}
 
 		// Kraftwerk holt Fass aus dem Lager (veredelte zuerst)
-		for (STRUCTURE *g : sn.gens)
+		for (STRUCTURE *g : activeGens)
 		{
 			if (s_fuel[g->id] > PULL_BELOW) { continue; }
 			BASE_OBJECT *best = nullptr;
@@ -754,12 +777,14 @@ void logistics()
 				{
 					s_storeR[best->id]--;
 					addPower(p, REFINED_STORED);
+					noteIncome(p, INC_BARRELS, REFINED_STORED);
 					s_fuel[g->id] += REFINED_GRID_SECS;
 				}
 				else
 				{
 					s_store[best->id]--;
 					addPower(p, STORED_ENERGY);
+					noteIncome(p, INC_BARRELS, STORED_ENERGY);
 					s_fuel[g->id] += GRID_SECS;
 				}
 			}
@@ -857,7 +882,7 @@ void logistics()
 				}
 				STRUCTURE *bg = nullptr;
 				bd = INT64_MAX;
-				for (STRUCTURE *g : sn.gens)
+				for (STRUCTURE *g : activeGens)
 				{
 					if (!shares(rd, touchSmall(g->pos.x, g->pos.y))) { continue; }
 					const int64_t dd = d2(g->pos.x, g->pos.y, der->pos.x, der->pos.y);
@@ -1002,9 +1027,10 @@ void logistics()
 					// (16.11.) Tankstellen mit wenig Vorrat werden zuerst beliefert (Fahrzeuge tanken dort)
 					STRUCTURE *bs = nullptr;
 					int64_t bsd = INT64_MAX;
+					const int fillTo = activeGens.empty() ? STATION_CAP : STATION_LOW;   // kein Kraftwerk braucht Oel: Tankstellen ganz fuellen
 					for (STRUCTURE *s : sn.stations)
 					{
-						if (s_station[s->id] >= STATION_LOW * 1000) { continue; }
+						if (s_station[s->id] >= fillTo * 1000) { continue; }
 						const int64_t dd = d2(d->pos.x, d->pos.y, s->pos.x, s->pos.y);
 						if (dd < bsd) { bsd = dd; bs = s; }
 					}
@@ -1028,7 +1054,7 @@ void logistics()
 				{
 					if (storeRoom(t->id) <= 0) { continue; }
 					bool closeBy = false;
-					for (STRUCTURE *g : sn.gens)
+					for (STRUCTURE *g : activeGens)
 					{
 						if (d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y) <= SR2) { closeBy = true; break; }
 					}
@@ -1043,7 +1069,7 @@ void logistics()
 				}
 				STRUCTURE *bg = nullptr;
 				bd = INT64_MAX;
-				for (STRUCTURE *g : sn.gens)
+				for (STRUCTURE *g : activeGens)
 				{
 					const int64_t dd = d2(d->pos.x, d->pos.y, g->pos.x, g->pos.y);
 					if (dd < bd) { bd = dd; bg = g; }
@@ -1138,6 +1164,99 @@ void updateTerrain()
 
 } // namespace
 
+namespace
+{
+/// Einnahmen-Bericht ins Log (jede Spielminute, fuer menschliche Spieler): woher kommt die Energie?
+void ledgerReport()
+{
+	const UDWORD minute = gameTime / 60000;
+	if (minute == s_ledgerMinute) { return; }
+	s_ledgerMinute = minute;
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		if (!isHumanPlayer(p)) { continue; }
+		const int64_t now = getPower(static_cast<unsigned>(p));
+		if (!s_ledgerStarted[p])
+		{
+			s_ledgerStarted[p] = true;
+			s_ledgerPower[p] = now;
+			for (int k = 0; k < INC_COUNT; k++) { s_ledger[p][k] = 0; }
+			continue;
+		}
+		const int64_t delta = now - s_ledgerPower[p];
+		const int64_t known = s_ledger[p][INC_BARRELS] + s_ledger[p][INC_SOLAR] + s_ledger[p][INC_LAVA] + s_ledger[p][INC_SALVAGE];
+		int derricks = 0, linked = 0, barrels = 0, gens = 0, fuelled = 0, standby = 0, refs = 0, trucks = 0, tankers = 0;
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s->died || s->status != SS_BUILT) { continue; }
+			const STRUCTURE_STATS *st = s->pStructureType;
+			if (st->type == REF_RESOURCE_EXTRACTOR)
+			{
+				derricks++;
+				const auto it = s_barrels.find(s->id);
+				if (it != s_barrels.end()) { barrels += it->second; }
+				if (s->pFunctionality != nullptr && s->pFunctionality->resourceExtractor.psPowerGen != nullptr) { linked++; }
+			}
+			else if (st->type == REF_POWER_GEN)
+			{
+				gens++;
+				if (generatorRunning(s)) { fuelled++; }
+				if (modgrid::generatorStandby(s)) { standby++; }
+			}
+			else if (isRefinery(st)) { refs++; }
+		}
+		for (const auto &kv : s_cargo)
+		{
+			if (kv.second.player != p) { continue; }
+			if (kv.second.tank) { tankers++; } else { trucks++; }
+		}
+		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Faesser %lld, Solar %lld, Lava %lld, Bergung %lld, sonstige %lld) | Fass-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (mit Brennstoff %d, Bereitschaft %d) | Raffinerien %d | Lkw %d, Tanker %d",
+		      p, static_cast<long long>(now), static_cast<long long>(delta), static_cast<long long>(s_ledger[p][INC_BARRELS]), static_cast<long long>(s_ledger[p][INC_SOLAR]),
+		      static_cast<long long>(s_ledger[p][INC_LAVA]), static_cast<long long>(s_ledger[p][INC_SALVAGE]), static_cast<long long>(delta - known),
+		      manages(p) ? "ja" : "NEIN", derricks, linked, barrels, gens, fuelled, standby, refs, trucks, tankers);
+		s_ledgerPower[p] = now;
+		for (int k = 0; k < INC_COUNT; k++) { s_ledger[p][k] = 0; }
+	}
+}
+
+/// Fahrzeug nach Vorlage neben einem Gebaeude aufstellen (wie aus einer Fabrik, aber sofort)
+bool spawnNear(const STRUCTURE *s, const char *templateId)
+{
+	const DROID_TEMPLATE *t = getTemplateFromTranslatedNameNoPlayer(templateId);
+	if (t == nullptr)
+	{
+		debug(LOG_INFO, "MOD-Wirtschaft: Vorlage %s fehlt - kein Fahrzeug fuer %s", templateId, getStatsName(s->pStructureType));
+		return false;
+	}
+	const int b = static_cast<int>(s->pStructureType->baseBreadth);
+	UDWORD tx = static_cast<UDWORD>(std::max(0, map_coord(s->pos.x)));
+	UDWORD ty = static_cast<UDWORD>(std::max(0, map_coord(s->pos.y) + (b + 1) / 2 + 1));
+	if (!pickATileGen(gameWorld, &tx, &ty, LOOK_FOR_EMPTY_TILE, zonedPAT)) { return false; }
+	DROID *d = buildDroid(gameWorld, const_cast<DROID_TEMPLATE *>(t), world_coord(static_cast<int>(tx)) + TILE_UNITS / 2,
+	                      world_coord(static_cast<int>(ty)) + TILE_UNITS / 2, s->player, false, nullptr);
+	if (d == nullptr) { return false; }
+	addDroid(d, gameWorld.objects.droids);
+	triggerEventDroidBuilt(d, nullptr);
+	return true;
+}
+} // namespace
+
+void onBuilt(STRUCTURE *s)
+{
+	// (Wunsch 17.11. 20:35) "Oeltanker spawnen beim Bau eines Kraftwerks, und Lkw, die die Oelfaesser zur Raffinerie bringen"
+	if (s == nullptr || s->died || s->capacity != 0 || !modPresent() || !manages(static_cast<int>(s->player))) { return; }   // capacity != 0: Modul fertig
+	const STRUCTURE_STATS *st = s->pStructureType;
+	if (st->type == REF_POWER_GEN)
+	{
+		spawnNear(s, "ScavTanker");
+		spawnNear(s, "ScavLkw");
+	}
+	else if (isRefinery(st))
+	{
+		spawnNear(s, "ScavLkw");
+	}
+}
+
 void tick()
 {
 	processReplacements();
@@ -1147,6 +1266,7 @@ void tick()
 	s_lastSec = gameTime / 1000;
 	if (!modPresent()) { return; }
 	logistics();
+	ledgerReport();
 }
 
 // ---------------------------------------------------------------- Anzeige (Anzeigemodus 4)

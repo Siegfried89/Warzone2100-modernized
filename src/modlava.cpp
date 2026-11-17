@@ -2,6 +2,7 @@
 // MOD: Energiewirtschaft (siehe modlava.h)
 
 #include "modlava.h"
+#include "modweather.h"   // (20:36) Tag/Nacht
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -316,6 +317,7 @@ void tick(GameWorld &world)
 	}
 
 	// Energiebanken (Obergrenze) und Solarpaneele (Einnahme)
+	const bool night = modweather::isNight(gameTime);
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		int storage = 0, income = 0, incomeUnder = 0;   // aus den Stats der fertigen Gebaeude (storageProvide / incomeProvide)
@@ -324,10 +326,17 @@ void tick(GameWorld &world)
 			if (s->status != SS_BUILT || s->died) { continue; }
 			const STRUCTURE_STATS *st = s->pStructureType;
 			storage += st->storageProvide;
-			if (st->incomeProvide > 0) { (modlayer::layerOf(s) == modlayer::SURFACE ? income : incomeUnder) += st->incomeProvide; }
+			if (st->incomeProvide > 0)
+			{
+				// (Wunsch 17.11. 20:36) nachts liefern die Paneele an der Oberflaeche nichts - ausser auf den Orbit-Inseln (dort scheint immer Sonne)
+				const modlayer::Layer ly = modlayer::layerOf(s);
+				if (ly == modlayer::ORBIT) { income += st->incomeProvide; }
+				else if (ly == modlayer::SURFACE) { if (!night) { income += st->incomeProvide; } }
+				else { incomeUnder += st->incomeProvide; }
+			}
 		}
 		const int solarGain = income + ((s_sec % 4 == 0) ? incomeUnder : 0);
-		if (solarGain > 0) { addPower(p, solarGain); }
+		if (solarGain > 0) { addPower(p, solarGain); modoil::noteIncome(p, modoil::INC_SOLAR, solarGain); }
 		if (modoil::manages(p))
 		{
 			const int cap = BASE_CAP + storage;
@@ -354,6 +363,7 @@ void tick(GameWorld &world)
 			if (take <= 0) { continue; }
 			left -= take;
 			addPower(p, take);
+			modoil::noteIncome(p, modoil::INC_LAVA, take);
 			if (left <= 0) { empty.push_back(f->id); }
 		}
 	}

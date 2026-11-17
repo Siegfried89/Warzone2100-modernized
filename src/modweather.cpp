@@ -67,9 +67,11 @@ const char *const NIGHT_SKY_KEY = "sky-night";
 // statt abgedunkelter Texturen dunkelt die Engine das Licht ab (gilt so auch fuer alle Mod-Modelle). Einstellung "Tageszeit".
 const char *const NIGHT_PAGE = "texpages/page-305-sky-night.png";
 const char *const NIGHT_PAGE_OLD = "texpages/page-438-sky-night.png";
-int s_nightOpt = 2;            // 0 Tag (wie die Karte), 1 Nacht, 2 zufaellig (etwa jedes dritte Spiel)
-bool s_nightChecked = false;
-bool s_forceNight = false;
+constexpr unsigned DAY_CYCLE_MS = 20 * 60 * 1000;   // ein Tag (Spielzeit): 20 Minuten
+constexpr unsigned NIGHT_MS = DAY_CYCLE_MS * 3 / 10; // davon 30 % Nacht (6 Minuten)
+constexpr unsigned TWILIGHT_MS = 60 * 1000;          // Daemmerung (Licht blendet ueber)
+float s_nightK = 0.f;          // (20:36) Tag/Nacht-Wechsel: 0 Tag .. 1 Nacht (Daemmerung dazwischen) - Licht an der Oberflaeche
+bool s_skyNight = false;       // Sternenhimmel aufgelegt (Oberflaeche und Orbit)
 const char *const THUNDER_CLIPS[] = {"wx_thunder_0.ogg", "wx_thunder_1.ogg", "wx_thunder_2.ogg", "wx_thunder_3.ogg", "wx_thunder_4.ogg", "wx_thunder_5.ogg"};
 const char *const BED_RAIN[] = {"wx_rain_0.ogg", "wx_rain_1.ogg", "wx_rain_2.ogg"};
 const char *const BED_WIND[] = {"wx_wind_0.ogg", "wx_wind_1.ogg", "wx_wind_2.ogg", "wx_wind_3.ogg"};
@@ -133,15 +135,12 @@ bool skyExists(const char *page)
 	return page != nullptr && PHYSFS_exists(page) != 0;
 }
 
-/// Nacht erzwingen: Sternenhimmel als Grundhimmel, Landschaft abdunkeln
-void forceNightSky()
+/// Himmel fuer die Nacht (Sternenhimmel aus dem Nighttime-Mod, sonst der eigene)
+const char *nightPage()
 {
-	const char *page = skyExists(NIGHT_PAGE) ? NIGHT_PAGE : (skyExists(NIGHT_PAGE_OLD) ? NIGHT_PAGE_OLD : nullptr);
-	if (page == nullptr) { return; }
-	s_basePage = page;
-	s_curPage = page;
-	s_night = true;
-	modSwapSkyBox(page, 0.f);
+	static int which = -1;
+	if (which < 0) { which = skyExists(NIGHT_PAGE) ? 1 : (skyExists(NIGHT_PAGE_OLD) ? 2 : 0); }
+	return which == 1 ? NIGHT_PAGE : (which == 2 ? NIGHT_PAGE_OLD : nullptr);
 }
 
 /// Mode fuer die naechste Unwetterphase waehlen
@@ -179,6 +178,7 @@ void startEvent(unsigned now)
 void applySky(const Def &d, bool wantStorm)
 {
 	const char *target = (wantStorm && d.sky != nullptr && skyExists(d.sky)) ? d.sky : (s_basePage.empty() ? nullptr : s_basePage.c_str());
+	if (s_skyNight && !s_night && !s_basePage.empty() && nightPage() != nullptr) { target = nightPage(); }   // Nacht: Sternenhimmel
 	if (target == nullptr) { return; }
 	if (s_curPage == target) { return; }
 	s_curPage = target;
@@ -191,9 +191,10 @@ void applyLighting(float level, float flash)
 	const float l = smooth(level);
 	float amb[3] = {lerp(1.f, d.ambR, l), lerp(1.f, d.ambG, l), lerp(1.f, d.ambB, l)};
 	float dif[3] = {lerp(1.f, d.difR, l), lerp(1.f, d.difG, l), lerp(1.f, d.difB, l)};
-	if (s_night)
+	const float nk = s_night ? 1.f : smooth(s_nightK);
+	if (nk > 0.f)
 	{
-		for (int i = 0; i < 3; i++) { amb[i] *= NIGHT_AMB[i]; dif[i] *= NIGHT_DIF[i]; }
+		for (int i = 0; i < 3; i++) { amb[i] *= lerp(1.f, NIGHT_AMB[i], nk); dif[i] *= lerp(1.f, NIGHT_DIF[i], nk); }
 	}
 	if (flash > 0.f)
 	{
@@ -267,8 +268,7 @@ void reset()
 	s_level = 0.f;
 	s_lastBase = -1;
 	s_night = false;
-	s_nightChecked = false;
-	s_forceNight = false;
+	s_nightK = 0.f;
 	s_flashN = 0;
 	s_flash = 0.f;
 	s_thunder.clear();
@@ -285,18 +285,28 @@ void onSkybox(const char *page)
 	s_basePage = page;
 	s_curPage = page;
 	s_night = std::strstr(page, NIGHT_SKY_KEY) != nullptr;
-	if (s_forceNight && !s_night) { forceNightSky(); }   // Einstellung "Nacht": auch spaeter gesetzte Himmel bleiben Nacht
 	if (!s_night) { applyLighting(s_level, 0.f); }
 }
 
-void setNightOption(int opt)
+float nightFactor(unsigned t)
 {
-	s_nightOpt = std::max(0, std::min(2, opt));
+	// Ablauf je Zyklus: Tag (70 %), Abenddaemmerung, Nacht (30 %), Morgendaemmerung; das Spiel beginnt am Morgen
+	const unsigned ph = (t + TWILIGHT_MS) % DAY_CYCLE_MS;   // Spielbeginn: heller Morgen (Daemmerung gerade vorbei)
+	const unsigned dusk = DAY_CYCLE_MS - NIGHT_MS;
+	auto ramp = [](int x) { return std::min(1.f, std::max(0.f, static_cast<float>(x) / static_cast<float>(TWILIGHT_MS) + 0.5f)); };
+	if (ph < dusk / 2) { return 1.f - ramp(static_cast<int>(ph)); }                    // Morgendaemmerung am Zyklusanfang
+	return ramp(static_cast<int>(ph) - static_cast<int>(dusk)) * (1.f - ramp(static_cast<int>(ph) - static_cast<int>(DAY_CYCLE_MS)));
 }
 
-int nightOption()
+float visualNight()
 {
-	return s_nightOpt;
+	if (modlayer::current() != modlayer::SURFACE) { return 0.f; }
+	return s_night ? 1.f : smooth(s_nightK);
+}
+
+bool isNight(unsigned t)
+{
+	return (t + TWILIGHT_MS) % DAY_CYCLE_MS >= DAY_CYCLE_MS - NIGHT_MS;
 }
 
 const char *baseSkyPage(const char *current)
@@ -314,14 +324,12 @@ void tick()
 		startIdle(now);
 		s_phaseLen = rndRange(60000, 240000);          // erste Unwetterphase nicht erst nach Ewigkeiten
 	}
-	if (!s_nightChecked && !s_basePage.empty())
-	{
-		// einmal je Spiel (sobald die Karte ihren Himmel gesetzt hat): Tageszeit nach der Einstellung
-		s_nightChecked = true;
-		s_forceNight = s_nightOpt == 1 || (s_nightOpt == 2 && rnd() % 100u < 35u);
-		if (s_forceNight && !s_night) { forceNightSky(); }
-	}
 	const bool layerOk = (modlayer::current() == modlayer::SURFACE);
+	// (20:36) Tag/Nacht-Wechsel nach der Spielzeit (auf allen Rechnern gleich; Solarpaneele richten sich danach). Licht nur an der
+	// Oberflaeche; (20:44) im Orbit klarer Sternenhimmel (die Inseln bleiben in der Sonne, der Planet darunter wird dunkel - modlayermap)
+	const float nk = nightFactor(graphicsTime);
+	s_nightK = layerOk ? nk : 0.f;
+	s_skyNight = nk > 0.5f && (layerOk || modlayer::current() == modlayer::ORBIT);
 	if (!atmosGetWeatherEnabled() || !layerOk)
 	{
 		// Wetter aus oder Untergrund/Orbit: nichts anzeigen, Nacht-Licht bleibt (Himmel gilt nur an der Oberflaeche)
@@ -329,8 +337,8 @@ void tick()
 		{
 			s_level = 0.f;
 			deactivate();
-			applySky(kDefs[M_CLEAR], false);
 		}
+		applySky(kDefs[M_CLEAR], false);   // Tag/Nacht-Himmel auch ohne Wetter
 		s_flash = 0.f;
 		applyLighting(0.f, 0.f);
 		s_layerOk = layerOk;
@@ -392,8 +400,7 @@ void drawOverlay()
 	const Def &d = kDefs[s_mode];
 	const float l = smooth(s_level);
 	const float w = static_cast<float>(screenWidth) * 1.5f, h = static_cast<float>(screenHeight) * 1.5f;
-	float night = 0.f;
-	if (s_night) { night = 0.20f; }
+	float night = 0.20f * (s_night ? 1.f : smooth(s_nightK));
 	if (l > 0.01f && d.tintA > 0.f)
 	{
 		const float a = d.tintA * l;

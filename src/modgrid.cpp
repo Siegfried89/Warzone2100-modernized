@@ -3,6 +3,8 @@
 
 #include "modgrid.h"
 #include "modoil.h"
+#include "modlayer.h"
+#include "modweather.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -42,6 +44,17 @@ constexpr int MAX_LINKS_PER_POLE = 3;
 constexpr int CABLE_HEIGHT = 150;          // Hoehe der Kabelanschluesse am Mast (16.11. 19:07: WZ-Stahlgittermast in voller Groesse - Ausleger bei 150)
 constexpr int GEN_CABLE_HEIGHT = 90;
 constexpr int SAG_STEPS = 12;
+// (Wunsch 17.11. 20:35) Umspannwerk: zentraler Knoten. Leistung in "Einheiten": Kraftwerk 40 (+20 mit Modul), Solarpaneel 1;
+// Verbraucher 1, grosse (Fabrik/Forschung/Raffinerie) 3.
+constexpr int GEN_CAPACITY = 40;
+constexpr int GEN_MODULE_CAPACITY = 20;
+constexpr int PANEL_CAPACITY = 1;
+constexpr int SMALL_DEMAND = 1;
+constexpr int BIG_DEMAND = 3;
+constexpr int PANEL_LINK_RANGE = 2 * 128;     // Paneele bis 2 Felder auseinander bilden ein Solarfeld
+constexpr int SUB_SUPPLY_RANGE = 5 * 128;     // Versorgungsradius direkt um das Umspannwerk
+constexpr int SUB_CABLE_HEIGHT = 120;
+constexpr int PANEL_CABLE_HEIGHT = 30;
 
 struct Node
 {
@@ -68,6 +81,9 @@ struct Marker
 std::unordered_map<uint32_t, bool> s_powered;
 std::unordered_map<uint32_t, unsigned> s_upAt;       // PowerDown: Zeitpunkt, ab dem ein wieder versorgtes Gebaeude hochgefahren ist
 std::unordered_map<uint32_t, bool> s_down;           // PowerDown: Gebaeude ist (laut Gate) abgeschaltet
+bool s_hasSub[MAX_PLAYERS] = {};                   // (20:35) Spieler hat ein Umspannwerk
+std::set<uint32_t> s_standby;                      // Kraftwerke in Bereitschaft (Solarstrom reicht)
+std::set<int> s_standbyNet;
 bool s_hasGen[MAX_PLAYERS] = {};                   // PowerDown nur, wenn der Spieler ueberhaupt ein Kraftwerk hat (sonst kein Wiederanlauf moeglich)
 std::unordered_map<uint32_t, bool> s_held;           // wir haben die Fabrik/Forschung selbst auf Halt gesetzt (nicht der Spieler)
 constexpr int BASE_GEN_RANGE = 9 * 128;              // Fabriken/Forschung: 9 Felder um ein laufendes Kraftwerk
@@ -202,6 +218,8 @@ void reset()
 	s_crewOff.clear();
 	for (int p = 0; p < MAX_PLAYERS; p++) { s_crewActive[p] = false; s_crewUsed[p] = 0; s_crewSupply[p] = 0; s_crewOffCount[p] = 0; }
 	s_held.clear();
+	s_standby.clear();
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_hasSub[p] = false; }
 	s_powered.clear();
 	s_cables.clear();
 	s_markers.clear();
@@ -221,30 +239,51 @@ void update()
 	s_cables.clear();
 	s_markers.clear();
 	s_crewOff.clear();
+	s_standby.clear();
 	for (int p = 0; p < MAX_PLAYERS; p++) { updateCrew(p); }
+	const bool night = modweather::isNight(gameTime);
 
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		unsigned restartIndex = 0;
 		s_hasGen[p] = false;
-		std::vector<Node> poles, gens, cons;
+		s_hasSub[p] = false;
+		std::vector<Node> poles, gens, subs, panels, cons;
+		std::vector<int> genCap;
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->status != SS_BUILT) { continue; }
 			const STRUCTURE_STATS *st = s->pStructureType;
 			if (isPole(st)) { poles.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); }
-			else if (st->type == REF_POWER_GEN) { s_hasGen[p] = true; if (modoil::generatorRunning(s)) { gens.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); } }
-			else if (st->requiresPower)
+			else if (isSubstation(st)) { subs.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); s_hasSub[p] = true; }
+			else if (st->type == REF_POWER_GEN)
+			{
+				s_hasGen[p] = true;
+				// alle Kraftwerke haengen am Netz; Leistung liefern nur die mit Brennstoff (oder in Bereitschaft)
+				gens.push_back({s->id, s->pos.x, s->pos.y, s->pos.z});
+				genCap.push_back(modoil::generatorRunning(s) ? GEN_CAPACITY + GEN_MODULE_CAPACITY * static_cast<int>(s->capacity) : 0);
+			}
+			else if (st->incomeProvide > 0)
+			{
+				// (Wunsch 17.11. 20:35) Solarpaneele speisen das Netz: an der Oberflaeche nur tagsueber, auf den Orbit-Inseln immer
+				const modlayer::Layer ly = modlayer::layerOf(s);
+				if (ly == modlayer::ORBIT || (ly == modlayer::SURFACE && !night)) { panels.push_back({s->id, s->pos.x, s->pos.y, s->pos.z}); }
+			}
+			if (st->requiresPower)
 			{
 				const bool big = st->type == REF_FACTORY || st->type == REF_CYBORG_FACTORY || st->type == REF_VTOL_FACTORY || st->type == REF_RESEARCH || st->id.startsWith("A0BaBaRefinery");
 				cons.push_back({s->id, s->pos.x, s->pos.y, s->pos.z, big});
 			}
 		}
-		if (poles.empty() && gens.empty() && cons.empty()) { continue; }
+		if (poles.empty() && gens.empty() && cons.empty() && subs.empty()) { continue; }
+		const bool subMode = !subs.empty();   // (20:35) ab dem ersten Umspannwerk ist es der zentrale Knoten des Netzes
 
 		const int n = static_cast<int>(poles.size());
 		const int g = static_cast<int>(gens.size());
-		std::vector<int> par(n + g);
+		const int m = static_cast<int>(subs.size());
+		const int q = static_cast<int>(panels.size());
+		const int G0 = n, S0 = n + g, P0 = n + g + m;
+		std::vector<int> par(n + g + m + q);
 		std::iota(par.begin(), par.end(), 0);
 
 		// Mast-Mast-Leitungen: jeder Mast verbindet sich mit seinen (bis zu 3) naechsten Nachbarn in Reichweite
@@ -268,25 +307,133 @@ void update()
 		std::vector<std::pair<int, int>> cableEdges(edges.begin(), edges.end());
 		for (const auto &e : cableEdges) { unite(par, e.first, e.second); }
 
-		// Kraftwerke: alle Masten in Reichweite gehoeren zum selben Netz, Kabel zum naechsten
-		std::vector<std::pair<int, int>> genCable;   // (Kraftwerk, Mast)
-		for (int k = 0; k < g; k++)
+		// Kraftwerke, Umspannwerke und Solarpaneele haengen sich an die Masten (und Umspannwerke) in Reichweite; Kabel zum naechsten
+		struct Link { int node; int x, y, z; int hb; int tx, ty, tz; int ht; };
+		std::vector<Link> extraCables;
+		auto attach = [&](int node, const Node &a, int range, int heightA)
 		{
 			int best = -1;
 			int64_t bestD = 0;
+			bool bestIsSub = false;
 			for (int i = 0; i < n; i++)
 			{
-				const int64_t d = dist2(gens[k], poles[i]);
-				if (d <= static_cast<int64_t>(GEN_LINK_RANGE) * GEN_LINK_RANGE)
+				const int64_t d = dist2(a, poles[i]);
+				if (d <= static_cast<int64_t>(range) * range)
 				{
-					unite(par, n + k, i);
-					if (best < 0 || d < bestD) { best = i; bestD = d; }
+					unite(par, node, i);
+					if (best < 0 || d < bestD) { best = i; bestD = d; bestIsSub = false; }
 				}
 			}
-			if (best >= 0) { genCable.emplace_back(k, best); }
+			for (int k = 0; k < m; k++)
+			{
+				if (S0 + k == node) { continue; }
+				const int64_t d = dist2(a, subs[k]);
+				if (d <= static_cast<int64_t>(range) * range)
+				{
+					unite(par, node, S0 + k);
+					if (best < 0 || d < bestD) { best = k; bestD = d; bestIsSub = true; }
+				}
+			}
+			if (best >= 0)
+			{
+				const Node &b = bestIsSub ? subs[best] : poles[best];
+				extraCables.push_back({node, a.x, a.y, a.z, heightA, b.x, b.y, b.z, bestIsSub ? SUB_CABLE_HEIGHT : CABLE_HEIGHT});
+			}
+		};
+		for (int k = 0; k < m; k++) { attach(S0 + k, subs[k], LINK_RANGE, SUB_CABLE_HEIGHT); }
+		for (int k = 0; k < g; k++) { attach(G0 + k, gens[k], GEN_LINK_RANGE, GEN_CABLE_HEIGHT); }
+		for (int k = 0; k < q; k++)
+		{
+			// Solarfeld: Paneele dicht beieinander bilden ein Feld (ein Mast/Umspannwerk genuegt fuer das ganze Feld)
+			for (int j = 0; j < k; j++)
+			{
+				if (dist2(panels[k], panels[j]) <= static_cast<int64_t>(PANEL_LINK_RANGE) * PANEL_LINK_RANGE) { unite(par, P0 + k, P0 + j); }
+			}
+			attach(P0 + k, panels[k], GEN_LINK_RANGE, PANEL_CABLE_HEIGHT);
 		}
-		std::vector<char> energized(n + g, 0);
-		for (int k = 0; k < g; k++) { energized[find(par, n + k)] = 1; }
+
+		// Netze: Quellen (laufende Kraftwerke, Solarpaneele), Umspannwerke, Leistung
+		const int total = n + g + m + q;
+		std::vector<int> solarCap(total, 0), genCapC(total, 0), demand(total, 0);
+		std::vector<char> hasSub(total, 0), hasGenC(total, 0);
+		for (int k = 0; k < q; k++) { solarCap[find(par, P0 + k)] += PANEL_CAPACITY; }
+		for (int k = 0; k < g; k++)
+		{
+			genCapC[find(par, G0 + k)] += genCap[static_cast<size_t>(k)];
+			if (genCap[static_cast<size_t>(k)] > 0) { hasGenC[find(par, G0 + k)] = 1; }
+		}
+		std::vector<char> anyGen(total, 0);
+		for (int k = 0; k < g; k++) { anyGen[find(par, G0 + k)] = 1; }
+		for (int k = 0; k < m; k++) { hasSub[find(par, S0 + k)] = 1; }
+
+		// Netze, die Strom haben koennten (ohne Umspannwerk: ein laufendes Kraftwerk; mit: Umspannwerk + Quelle)
+		std::vector<char> live(total, 0);
+		for (int r = 0; r < total; r++)
+		{
+			if (find(par, r) != r) { continue; }
+			live[r] = subMode ? (hasSub[r] && (solarCap[r] > 0 || genCapC[r] > 0)) : hasGenC[r];
+		}
+		// Verbraucher einem Netz zuordnen: Versorgungsbereich eines Mastes oder Umspannwerks (ohne Umspannwerk wie bisher auch eines Kraftwerks);
+		// liegen mehrere in Reichweite, gewinnt ein Netz mit Strom, dann das naechste
+		std::vector<int> consNet(cons.size(), -1);
+		for (size_t ci = 0; ci < cons.size(); ci++)
+		{
+			const Node &c = cons[ci];
+			int net = -1;
+			int64_t bestD = INT64_MAX;
+			bool bestLive = false;
+			auto consider = [&](int r, int64_t d)
+			{
+				const bool lv = live[r] != 0;
+				if (net < 0 || (lv && !bestLive) || (lv == bestLive && d < bestD)) { net = r; bestD = d; bestLive = lv; }
+			};
+			for (int i = 0; i < n; i++)
+			{
+				const int64_t d = dist2(c, poles[i]);
+				if (d <= static_cast<int64_t>(SUPPLY_RANGE) * SUPPLY_RANGE) { consider(find(par, i), d); }
+			}
+			for (int k = 0; k < m; k++)
+			{
+				const int64_t d = dist2(c, subs[k]);
+				if (d <= static_cast<int64_t>(SUB_SUPPLY_RANGE) * SUB_SUPPLY_RANGE) { consider(find(par, S0 + k), d); }
+			}
+			if (!subMode)
+			{
+				const int64_t genR = c.big ? BASE_GEN_RANGE : GEN_LINK_RANGE;
+				for (int k = 0; k < g; k++)
+				{
+					const int64_t d = dist2(c, gens[k]);
+					if (d <= genR * genR) { consider(find(par, G0 + k), d); }
+				}
+			}
+			consNet[ci] = net;
+			if (net >= 0) { demand[net] += c.big ? BIG_DEMAND : SMALL_DEMAND; }
+		}
+
+		// Leistung je Netz: reicht der Solarstrom, gehen die Kraftwerke in Bereitschaft (verbrauchen kein Oel - das Oel geht an die Tankstellen)
+		std::vector<int> capacity(total, 0);
+		std::vector<char> fed(total, 0);
+		for (int r = 0; r < total; r++)
+		{
+			if (find(par, r) != r) { continue; }
+			if (subMode)
+			{
+				if (!hasSub[r]) { continue; }
+				if (solarCap[r] > 0 && solarCap[r] >= demand[r] && anyGen[r]) { capacity[r] = solarCap[r]; s_standbyNet.insert(r); }
+				else { capacity[r] = solarCap[r] + genCapC[r]; }
+				fed[r] = capacity[r] > 0;
+			}
+			else
+			{
+				fed[r] = hasGenC[r];
+				capacity[r] = fed[r] ? INT32_MAX / 4 : 0;   // ohne Umspannwerk wie bisher: ein laufendes Kraftwerk versorgt alles am Netz
+			}
+		}
+		for (int k = 0; k < g; k++)
+		{
+			if (s_standbyNet.count(find(par, G0 + k))) { s_standby.insert(gens[k].id); }
+		}
+		s_standbyNet.clear();
 
 		const bool show = p == static_cast<int>(selectedPlayer) || aiCheckAlliances(p, static_cast<int>(selectedPlayer));
 		if (show)
@@ -294,31 +441,33 @@ void update()
 			for (const auto &e : cableEdges)
 			{
 				const Node &a = poles[e.first], &b = poles[e.second];
-				s_cables.push_back({p, a.x, a.y, a.z + CABLE_HEIGHT, b.x, b.y, b.z + CABLE_HEIGHT, energized[find(par, e.first)] != 0});
+				s_cables.push_back({p, a.x, a.y, a.z + CABLE_HEIGHT, b.x, b.y, b.z + CABLE_HEIGHT, fed[find(par, e.first)] != 0});
 			}
-			for (const auto &gc : genCable)
+			for (const Link &l : extraCables)
 			{
-				const Node &a = gens[gc.first], &b = poles[gc.second];
-				s_cables.push_back({p, a.x, a.y, a.z + GEN_CABLE_HEIGHT, b.x, b.y, b.z + CABLE_HEIGHT, true});
+				s_cables.push_back({p, l.x, l.y, l.z + l.hb, l.tx, l.ty, l.tz + l.ht, fed[find(par, l.node)] != 0});
 			}
 			for (int i = 0; i < n; i++)
 			{
-				s_markers.push_back({p, poles[i].x, poles[i].y, poles[i].z, energized[find(par, i)] != 0, true});
+				s_markers.push_back({p, poles[i].x, poles[i].y, poles[i].z, fed[find(par, i)] != 0, true});
+			}
+			for (int k = 0; k < m; k++)
+			{
+				s_markers.push_back({p, subs[k].x, subs[k].y, subs[k].z, fed[find(par, S0 + k)] != 0, true});
 			}
 		}
 
-		// Verbraucher: im Versorgungsbereich eines gespeisten Mastes oder eines Kraftwerks
-		for (const Node &c : cons)
+		// Verbraucher: versorgt, wenn ihr Netz gespeist ist und die Leistung reicht (in fester Reihenfolge - bei Ueberlast fallen die letzten aus)
+		std::vector<int> used(total, 0);
+		for (size_t ci = 0; ci < cons.size(); ci++)
 		{
+			const Node &c = cons[ci];
+			const int net = consNet[ci];
 			bool ok = false;
-			for (int i = 0; i < n && !ok; i++)
+			if (net >= 0 && fed[net])
 			{
-				ok = energized[find(par, i)] != 0 && dist2(c, poles[i]) <= static_cast<int64_t>(SUPPLY_RANGE) * SUPPLY_RANGE;
-			}
-			const int64_t genR = c.big ? BASE_GEN_RANGE : GEN_LINK_RANGE;
-			for (int k = 0; k < g && !ok; k++)
-			{
-				ok = dist2(c, gens[k]) <= genR * genR;
+				const int need = c.big ? BIG_DEMAND : SMALL_DEMAND;
+				if (used[net] + need <= capacity[net]) { used[net] += need; ok = true; }
 			}
 			if (s_crewOff.find(c.id) != s_crewOff.end()) { ok = false; }   // Besatzungsmangel: wie ohne Strom abgeschaltet
 			// PowerDown: kehrt die Versorgung zurueck, faehrt das Gebaeude nach Reihenfolge (ein Gebaeude je 1,2 s) wieder hoch
@@ -331,6 +480,16 @@ void update()
 			if (show) { s_markers.push_back({p, c.x, c.y, c.z, ok, false}); }
 		}
 	}
+}
+
+bool generatorStandby(const STRUCTURE *psGen)
+{
+	return psGen != nullptr && s_standby.count(psGen->id) != 0;
+}
+
+bool isSubstation(const STRUCTURE_STATS *psStats)
+{
+	return psStats != nullptr && psStats->id.startsWith("A0Substation");
 }
 
 bool isPowered(const STRUCTURE *psStruct)
@@ -348,7 +507,7 @@ bool isPoweredDown(const STRUCTURE *psStruct)
 bool powerDownGate(STRUCTURE *s)
 {
 	const STRUCTURE_STATS *st = s->pStructureType;
-	if (!st->requiresPower || s->status != SS_BUILT || !modoil::manages(s->player) || !s_hasGen[s->player]) { return false; }
+	if (!st->requiresPower || s->status != SS_BUILT || !modoil::manages(s->player) || !(s_hasGen[s->player] || s_hasSub[s->player])) { return false; }
 	const auto it = s_powered.find(s->id);
 	if (it == s_powered.end()) { return false; }          // gerade erst fertig: bis zur naechsten Berechnung Gnadenfrist
 	bool down = !it->second;

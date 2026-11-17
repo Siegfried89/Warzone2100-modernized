@@ -1065,6 +1065,7 @@ void structureBuild(GameWorld& world, STRUCTURE *psStruct, DROID *psDroid, int b
 	if (buildPoints > 0 && psStruct->currentBuildPts >= structureBuildPointsToCompletion(*psStruct))
 	{
 		buildingComplete(psStruct, world);
+		if (&world == &gameWorld) { modoil::onBuilt(psStruct); }   // MOD (17.11. 20:35): Kraftwerk/Raffinerie bringen ihre Fahrzeuge mit
 
 		//only play the sound if selected player
 		if (psDroid &&
@@ -4327,7 +4328,7 @@ int modBuildCategory(const STRUCTURE_STATS *st)
 	case REF_WALL: case REF_WALLCORNER: case REF_GATE: return has("Pipeline") ? 0 : 3;
 	default: break;
 	}
-	if (has("Refinery") || has("Pipeline") || has("PowerPole") || has("EnergyBank") || has("Solar") || has("OilStore") || has("Storage") || has("WaterTower")) { return 0; }
+	if (has("Refinery") || has("Pipeline") || has("PowerPole") || has("Substation") || has("EnergyBank") || has("Solar") || has("OilStore") || has("Storage") || has("WaterTower")) { return 0; }
 	if (has("Cryo") || has("Crane") || has("LayerShaft") || has("Gantry") || has("Assembly") || has("Factory") || has("Research")) { return 1; }
 	if (has("Ammo") || has("Container") || has("Outpost") || has("ATC") || has("Beacon") || has("Relay") || has("Radar") || has("Uplink")) { return 2; }
 	if (has("Trench") || has("Sandbag") || has("Hedgehog") || has("TankTrap") || has("DragonTeeth") || has("Wall")) { return 3; }
@@ -4558,6 +4559,9 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 				else if (id.find("OilStore") != std::string::npos) { eco = 3; }
 				else if (st->type == REF_POWER_GEN) { eco = 4; }
 				else if (st->type == REF_POWER_MODULE) { eco = 5; }
+				else if (id.find("Substation") != std::string::npos) { eco = 6; }   // (20:35) Umspannwerk direkt nach dem Kraftwerk
+				else if (id.find("PowerPole") != std::string::npos) { eco = 7; }
+				else if (id.find("Solar") != std::string::npos) { eco = 8; }
 			}
 			return cat * 100 + eco * 2 + (scav ? 0 : 1);
 		};
