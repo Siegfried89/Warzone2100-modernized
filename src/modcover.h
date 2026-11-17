@@ -20,4 +20,7 @@ namespace modcover
 bool distributeOnNetwork(unsigned player, const STRUCTURE *start);
 /// Knopf "Take cover": Infanterie bemannt die naechsten Stellungen. Gibt die Zahl der losgeschickten Infanteristen zurueck.
 int takeCover(unsigned player);
+/// (17.11.) "Raus aus der Deckung": die gewaehlte Infanterie (sonst alle eigene Infanterie in Deckung) verlaesst Graeben, Gruben,
+/// Krater und Haeuser und sammelt sich gut zwei Felder dahinter (zur eigenen Basis hin). Gibt die Zahl der Infanteristen zurueck.
+int leaveCover(unsigned player);
 }

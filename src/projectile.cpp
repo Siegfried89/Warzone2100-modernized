@@ -47,6 +47,7 @@
 #include "modincoming.h"
 #include "modpointdef.h"
 #include "projectile.h"
+#include "lib/ivis_opengl/imd.h"   // MOD: modelGet (MG-Einschlag je Ziel)
 #include "visibility.h"
 #include "group.h"
 #include "cmddroid.h"
@@ -1364,6 +1365,28 @@ static void proj_ImpactFunc(PROJECTILE *psObj)
 			else
 			{
 				imd = psStats->pTargetHitGraphic;
+				// MOD (Wunsch 12.11. "MG-Einschlag nach Zielart"): Maschinengewehre zeigen je Ziel einen eigenen Einschlag -
+				// Fahrzeuge/Gebaeude/Wracks = Metallfunken, Felsen/Baeume/Hochhaeuser = Fels-/Betonsplitter (Mod-Daten mgimpact.py)
+				if (psStats->weaponSubClass == WSC_MGUN && imd != nullptr)
+				{
+					static iIMDBaseShape *s_metal = nullptr, *s_rock = nullptr;
+					static bool s_tried = false;
+					if (!s_tried)
+					{
+						s_tried = true;
+						s_metal = modelGet("fxmgimp_metal.pie");
+						s_rock = modelGet("fxmgimp_rock.pie");
+					}
+					const BASE_OBJECT *t = psObj->psDest;
+					bool rock = false;
+					if (t->type == OBJ_FEATURE)
+					{
+						const FEATURE_TYPE ft = static_cast<const FEATURE *>(t)->psStats->subType;
+						rock = ft == FEAT_BOULDER || ft == FEAT_TREE || ft == FEAT_SKYSCRAPER || ft == FEAT_BUILDING || ft == FEAT_LOS_OBJ;
+					}
+					iIMDBaseShape *v = rock ? s_rock : s_metal;
+					if (v != nullptr) { imd = v; }
+				}
 			}
 
 			addMultiEffect(&position, &scatter, EFFECT_EXPLOSION, facing, true, (imd) ? imd->displayModel() : nullptr, psStats->numExplosions, psStats->lightWorld, psStats->effectSize, psObj->time);

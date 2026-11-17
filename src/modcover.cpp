@@ -18,6 +18,7 @@
 #include "structure.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <queue>
@@ -266,6 +267,55 @@ int takeCover(unsigned player)
 		{
 			snprintf(msg, sizeof(msg), "%s", _("Take cover: no free trenches, pits or buildings nearby"));
 		}
+		addConsoleMessage(msg, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+	}
+	return sent;
+}
+int leaveCover(unsigned player)
+{
+	if (player >= MAX_PLAYERS) { return 0; }
+	// Basis: Mittel aus Hauptquartier, Fabriken, Kraftwerken, Forschung (sonst aller Einheiten)
+	int64_t hx = 0, hy = 0, n = 0;
+	for (const STRUCTURE *st : gameWorld.objects.structures[player])
+	{
+		if (st->died || st->pStructureType == nullptr || st->status != SS_BUILT) { continue; }
+		const STRUCTURE_TYPE t = st->pStructureType->type;
+		if (t == REF_HQ || t == REF_FACTORY || t == REF_CYBORG_FACTORY || t == REF_POWER_GEN || t == REF_RESEARCH) { hx += st->pos.x; hy += st->pos.y; ++n; }
+	}
+	bool anySelected = false;
+	for (const DROID *d : gameWorld.objects.droids[player]) { if (d->selected && !d->died && modoil::isInfantry(d)) { anySelected = true; break; } }
+	std::vector<DROID *> out;
+	for (DROID *d : gameWorld.objects.droids[player])
+	{
+		if (d->died || !modoil::isInfantry(d) || (anySelected && !d->selected)) { continue; }
+		const bool inCover = modoil::droidInTrench(d) || modterrain::droidInCover(d) || modoil::isHouseOccupant(d);
+		if (!inCover) { continue; }
+		out.push_back(d);
+	}
+	int sent = 0;
+	for (size_t i = 0; i < out.size(); ++i)
+	{
+		DROID *d = out[i];
+		double dx = 0.0, dy = 1.0;
+		if (n > 0)
+		{
+			dx = static_cast<double>(hx / n - d->pos.x); dy = static_cast<double>(hy / n - d->pos.y);
+			const double L = std::sqrt(dx * dx + dy * dy);
+			if (L < 1.0) { dx = 0.0; dy = 1.0; } else { dx /= L; dy /= L; }
+		}
+		// gut zwei Felder Richtung Basis, seitlich etwas versetzt (nicht alle auf einen Punkt)
+		const double side = (static_cast<int>(i % 5) - 2) * 0.35 * TILE_UNITS;
+		const int tx = d->pos.x + static_cast<int>(dx * 2.3 * DIST_TILE - dy * side);
+		const int ty = d->pos.y + static_cast<int>(dy * 2.3 * DIST_TILE + dx * side);
+		if (!worldOnMap(gameWorld.map, tx, ty)) { continue; }
+		orderDroidLoc(d, DORDER_MOVE, static_cast<UDWORD>(tx), static_cast<UDWORD>(ty), ModeQueue);
+		++sent;
+	}
+	if (player == selectedPlayer)
+	{
+		char msg[128];
+		if (sent > 0) { snprintf(msg, sizeof(msg), _("Leave cover: %d infantry leave their positions"), sent); }
+		else { snprintf(msg, sizeof(msg), "%s", _("Leave cover: no infantry in cover")); }
 		addConsoleMessage(msg, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 	}
 	return sent;

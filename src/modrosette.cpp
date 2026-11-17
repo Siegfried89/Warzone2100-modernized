@@ -47,7 +47,7 @@ namespace
 {
 // Bilder in images/modrosette.img (Reihenfolge wie rosette.py): 7 Sechsecke (normal, gedrueckt), dann 14 Befehlsknoepfe (normal, gedrueckt)
 enum Hex { H_CENTER = 0, H_PLAN, H_FORMATION, H_FIRE, H_RINGS, H_INFANTRY, H_LAYERS, H_COUNT };
-enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_COUNT };
+enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_COUNT };
 int hexImg(int h, bool down) { return h * 2 + (down ? 1 : 0); }
 int cmdImg(int c, bool down) { return H_COUNT * 2 + c * 2 + (down ? 1 : 0); }
 
@@ -172,6 +172,9 @@ std::vector<Item> itemsFor(int hex)
 		Item cover; cover.img = C_COVER; cover.tip = _("Take cover: the selected infantry (or all infantry, if none is selected) mans the nearest trenches, pits, sandbag positions and buildings");
 		cover.action = []() { if (selectedPlayer < MAX_PLAYERS) { modcover::takeCover(selectedPlayer); } };
 		v.push_back(cover);
+		Item leave; leave.img = C_LEAVE; leave.tip = _("Leave cover: the selected infantry (or all infantry in cover) leaves trenches, pits, craters and buildings and gathers just behind them");
+		leave.action = []() { if (selectedPlayer < MAX_PLAYERS) { modcover::leaveCover(selectedPlayer); } };
+		v.push_back(leave);
 		Item spread; spread.img = C_SPREAD; spread.tip = _("Spread out: the selected units spread out evenly (against artillery and bombs)");
 		spread.action = []() { modincoming::spreadUnits(selection()); };
 		v.push_back(spread);
