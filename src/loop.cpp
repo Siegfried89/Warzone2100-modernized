@@ -46,6 +46,7 @@
 #include "modmines.h"
 #include "modai.h"
 #include "modoutpost.h"
+#include "modrocket.h"
 #include "gamestate_serialize.h"
 #include "gamestate_harness.h"
 #include "movebench.h"
@@ -620,6 +621,7 @@ static void gameStateUpdate()
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)
 	modoutpost::tick(gameWorld); // MOD: Aussenposten-Teleport (MF)
+	modrocket::tick();           // MOD (17.11. 20:56): Raketensilo -> Pioniere in den Orbit
 	modinvade::tick(gameWorld);   // MOD: Invade (Bohrfahrzeug uebernimmt Gebaeude)
 	modlava::tick(gameWorld);   // MOD: Lavafelder, Solarpaneele, Energiebank
 	modgroundfire::tick(gameWorld);   // MOD: Bodenziel-Punkte, die kein Befehl mehr braucht, entfernen
