@@ -57,6 +57,7 @@
 #include "lib/netplay/sync_debug.h"
 #include "game_world.h"
 #include "modlayermap.h"
+#include "modfort.h"
 #include "congestion_overlay.h"
 #include "pathfinding_backend.h"
 #include "corridor_map.h"
@@ -129,13 +130,14 @@ struct PathBlockingType
 	FPATH_MOVETYPE moveType;
 	int layer;   // MOD: Ebenen - die Sperrkarte gehoert zur Karte einer Ebene
 	bool houseAccess = true;   // MOD: Cyborgs duerfen nicht durch Haeuser, echte Infanterie schon
+	bool heavy = false;        // MOD (17.11.): schwerer Kettenpanzer - ueberfaehrt Stellungen
 };
 /// Pathfinding blocking map
 struct PathBlockingMap
 {
 	bool operator ==(PathBlockingType const &z) const
 	{
-		return type.gameTime == z.gameTime && type.layer == z.layer && type.houseAccess == z.houseAccess &&
+		return type.gameTime == z.gameTime && type.layer == z.layer && type.houseAccess == z.houseAccess && type.heavy == z.heavy &&
 		       fpathIsEquivalentBlocking(type.propulsion, type.owner, type.moveType,
 		                                 z.propulsion,    z.owner,    z.moveType);
 	}
@@ -143,6 +145,8 @@ struct PathBlockingMap
 	PathBlockingType type;
 	/// One byte per tile, each holding 0 or 1, which the checksum below relies on.
 	std::vector<uint8_t> map;
+	/// MOD (17.11.): Infanterie - Stellungsfelder nur ueber offene Seiten betreten/verlassen (modfort); leer = keine Regel
+	std::vector<uint8_t> fortSides;
 	std::vector<uint8_t> dangerMap;	// using threatBits
 };
 
@@ -525,6 +529,12 @@ static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF)
 			if (context.isBlocked(x, y))
 			{
 				// tile is blocked, skip it
+				continue;
+			}
+			// MOD (17.11.): in eine Stellung nur durch eine offene Seite (Gang, Oeffnung), nicht durch die Sandsackwand
+			if (!context.blockingMap->fortSides.empty() && x >= 0 && y >= 0 && x < gameWorld.map.width && y < gameWorld.map.height
+			    && !modfort::edgeOpen(context.blockingMap->fortSides, gameWorld.map.width, node.p.x, node.p.y, x, y))
+			{
 				continue;
 			}
 
@@ -1177,6 +1187,7 @@ void fpathSetBlockingMap(PATHJOB *psJob)
 	type.owner = psJob->owner;
 	type.moveType = psJob->moveType;
 	type.houseAccess = psJob->houseAccess;
+	type.heavy = psJob->heavy;
 	type.layer = static_cast<int>(modlayermap::resident());   // MOD: Ebenen - gameWorld.map ist hier die Karte der Ebene der Einheit
 
 	// Find the map.
@@ -1198,9 +1209,13 @@ void fpathSetBlockingMap(PATHJOB *psJob)
 		for (int y = 0; y < gameWorld.map.height; ++y)
 			for (int x = 0; x < gameWorld.map.width; ++x)
 			{
-				map[x + y * gameWorld.map.width] = fpathBaseBlockingTile(gameWorld.map, x, y, type.propulsion, type.owner, type.moveType, type.houseAccess);
+				map[x + y * gameWorld.map.width] = fpathBaseBlockingTile(gameWorld.map, x, y, type.propulsion, type.owner, type.moveType, type.houseAccess, type.heavy);
 				checksumMap ^= map[x + y * gameWorld.map.width] * (factor = 3 * factor + 1);
 			}
+		if (!type.heavy && type.propulsion != PROPULSION_TYPE_LIFT)   // (gleichwertige Sperrkarten werden zwischen Bodenantrieben geteilt)
+		{
+			modfort::copySides(blockMap->fortSides);   // MOD (17.11.): Stellungen nur ueber die Oeffnungen
+		}
 		if (!isHumanPlayer(type.owner) && type.moveType == FMT_MOVE)
 		{
 			std::vector<uint8_t> &dangerMap = blockMap->dangerMap;

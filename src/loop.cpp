@@ -123,6 +123,7 @@
 #include "modmorale.h"
 #include "modrecover.h"
 #include "modnestcrew.h"
+#include "modfort.h"
 #include "modcrates.h"
 #include "modincoming.h"
 #include "modterrain.h"
@@ -606,6 +607,7 @@ static void gameStateUpdate()
 	modterrain::tick();          // MOD: Krater sinken unter der Staubwolke ein
 	modrecover::tick();          // MOD: Turm-Teile bergen, Werkstatt
 	modnestcrew::tick();         // MOD: leere MG-Stellungen neu besetzen
+	modfort::tick();             // MOD (17.11.): Stellungsnetz (offene Seiten, Oeffnungen nach innen)
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)

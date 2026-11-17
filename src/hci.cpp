@@ -79,6 +79,7 @@
 #include "modformation.h"
 #include "modpanel.h"
 #include "modterrain.h"
+#include "modfort.h"
 #include "modbuild.h"
 #include "modhelp.h"
 #include "modammo.h"
@@ -751,6 +752,7 @@ void interfaceShutDown()
 	modferry::reset();       // MOD
 	modgroundfire::reset();  // MOD
 	modterrain::reset();     // MOD
+	modfort::reset();        // MOD 17.11.
 	modbuild::reset();       // MOD
 	modhelp::reset();        // MOD
 	modammo::reset();        // MOD
