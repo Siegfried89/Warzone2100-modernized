@@ -45,6 +45,7 @@
 #include "projectile.h"
 #include "lib/netplay/netplay.h"								// the netplay library.
 #include "multiplay.h"
+#include "modgroundfire.h"   // MOD
 #include "multigifts.h"
 #include "multirecv.h"
 #include "lib/sound/audio_id.h"
@@ -317,6 +318,26 @@ void sendStructureInfo(const STRUCTURE *psStruct, STRUCTURE_INFO structureInfo_,
 	NETend(w);
 }
 
+// MOD: Turm/Stellung soll einen Bodenpunkt beschiessen (STRUCTUREINFO_MOD_GROUNDFIRE mit Weltkoordinaten)
+void sendStructureGroundFire(const STRUCTURE *psStruct, int32_t worldX, int32_t worldY, const OrderSource &source)
+{
+	uint8_t  player = psStruct->player;
+	uint32_t structId = psStruct->id;
+	uint8_t  structureInfo = STRUCTUREINFO_MOD_GROUNDFIRE;
+
+	orderProvenanceRecord(player, source.origin(), false);
+
+	auto w = NETbeginEncode(NETgameQueue(realSelectedPlayer), GAME_STRUCTUREINFO);
+	NETuint8_t(w, player);
+	NETuint32_t(w, structId);
+	NETuint8_t(w, structureInfo);
+	NETint32_t(w, worldX);
+	NETint32_t(w, worldY);
+	OrderProvenanceWire provenance = orderProvenanceFromSource(source);
+	NETOrderProvenance(w, provenance);
+	NETend(w);
+}
+
 void recvStructureInfo(NETQUEUE queue)
 {
 	uint8_t         player = 0;
@@ -331,6 +352,12 @@ void recvStructureInfo(NETQUEUE queue)
 	NETuint8_t(r, player);
 	NETuint32_t(r, structId);
 	NETuint8_t(r, structureInfo);
+	int32_t groundX = 0, groundY = 0;   // MOD: STRUCTUREINFO_MOD_GROUNDFIRE
+	if (structureInfo == STRUCTUREINFO_MOD_GROUNDFIRE)
+	{
+		NETint32_t(r, groundX);
+		NETint32_t(r, groundY);
+	}
 	if (structureInfo == STRUCTUREINFO_MANUFACTURE)
 	{
 		WzString name;
@@ -366,7 +393,7 @@ void recvStructureInfo(NETQUEUE queue)
 	NETOrderProvenance(r, provenance);
 	bool validMessage = NETend(r);
 
-	if (!validMessage || player >= MAX_PLAYERS || structureInfo > STRUCTUREINFO_RELEASERESEARCH || nameLength > MAX_TEMPLATE_NAME_LENGTH)
+	if (!validMessage || player >= MAX_PLAYERS || structureInfo > STRUCTUREINFO_MOD_GROUNDFIRE || nameLength > MAX_TEMPLATE_NAME_LENGTH)
 	{
 		if (recordInvalidMessage(queue.index, GAME_STRUCTUREINFO))
 		{
@@ -391,6 +418,17 @@ void recvStructureInfo(NETQUEUE queue)
 	}
 
 	CHECK_STRUCTURE(psStruct);
+
+	if (structureInfo == STRUCTUREINFO_MOD_GROUNDFIRE)
+	{
+		// MOD: Turm/Stellung beschiesst einen Bodenpunkt (nur Verteidigungen mit Bodenwaffe)
+		if (worldOnMap(gameWorld.map, groundX, groundY))
+		{
+			orderProvenanceRecordReported(player, static_cast<OrderOrigin>(provenance.origin));
+			modgroundfire::structureFireAt(psStruct, Vector2i(groundX, groundY));
+		}
+		return;
+	}
 
 	const bool researchInfo = structureInfo == STRUCTUREINFO_HOLDRESEARCH || structureInfo == STRUCTUREINFO_RELEASERESEARCH;
 	if (researchInfo ? psStruct->pStructureType->type != REF_RESEARCH : !psStruct->isFactory())

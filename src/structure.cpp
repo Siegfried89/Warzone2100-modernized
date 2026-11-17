@@ -43,6 +43,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "modgroundfire.h"   // MOD
 #include "modsound.h"
 #include "modaidiff.h"
 #include "modlayer.h"
@@ -3347,7 +3348,13 @@ static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 			if (psStructure->asWeaps[i].nStat > 0 &&
 			    psStructure->getWeaponStats(i)->weaponSubClass != WSC_LAS_SAT)
 			{
-				if (aiChooseTarget(psStructure, &psChosenObjs[i], i, true, &tmpOrigin))
+				BASE_OBJECT *psGround = modgroundfire::structureGroundTarget(psStructure);   // MOD: befohlener Bodenpunkt (Strg + Rechtsklick)
+				if (psGround != nullptr)
+				{
+					psChosenObjs[i] = psGround;
+					setStructureTarget(psStructure, psGround, i, ORIGIN_VISUAL);
+				}
+				else if (aiChooseTarget(psStructure, &psChosenObjs[i], i, true, &tmpOrigin))
 				{
 					objTrace(psStructure->id, "Weapon %d is targeting %d at (%d, %d)", i, psChosenObjs[i]->id,
 					         psChosenObjs[i]->pos.x, psChosenObjs[i]->pos.y);
