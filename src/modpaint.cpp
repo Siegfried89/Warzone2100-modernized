@@ -57,7 +57,7 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -81,6 +81,9 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Spread out", "Spread out: the selected units spread out evenly (against artillery and bombs)", "", 150, 200, 200, false },
 	{ "Salvage", "Salvage: drag a circle around parts, artefacts and wrecks - an armed, escorted salvage team gathers at the base first, then recovers everything in it (wrecks are towed to the repair facility by flatbed trucks)", "Salvage: drag a circle around the salvage (right click cancels)", 120, 220, 255, true },
 	{ "Take cover", "Take cover: the selected infantry (or all infantry, if none is selected) mans the nearest trenches, pits, sandbag positions and buildings", "", 200, 170, 110, false },
+	// MOD (Wunsch 17.11. 18:12/18:13): Panzersperrenfeld (gruene Pyramiden) und Minenfeld
+	{ "Tank traps", "Tank trap field: drag an area - builders put a staggered field of tank traps into it (vehicles cannot pass)", "Tank traps: drag the area (right click cancels)", 40, 200, 80, true },
+	{ "Minefield", "Minefield: drag an area - builders lay hidden mines in it; they blow up enemy ground units that drive over them", "Minefield: drag the area (right click cancels)", 255, 90, 40, true },
 };
 
 constexpr int BTN_W = 66;
@@ -88,7 +91,7 @@ constexpr int BTN_H = 20;
 constexpr int GAP = 3;
 constexpr int PAD = 4;
 constexpr int COLS = 2;
-constexpr int ROWS = 6;   // (17.11.) + "Take cover"
+constexpr int ROWS = 7;   // (17.11.) + "Take cover", + Panzersperren / Minenfeld
 constexpr int TOTAL_W = COLS * BTN_W + (COLS - 1) * GAP + 2 * PAD;
 constexpr int TOTAL_H = ROWS * BTN_H + (ROWS - 1) * GAP + 2 * PAD + 12;   // + Titelzeile
 constexpr unsigned SHOW_MS = 25000;   // so lange bleibt eine Zeichnung sichtbar
@@ -100,6 +103,8 @@ struct Stroke
 	Mode mode;
 	std::vector<Vector2i> pts;
 	unsigned born = 0;
+	std::vector<Vector2i> marks;   // Panzersperren / Minen: geplante Stellen
+	int side = 0;                  // Verteidigungslinie: Seite der Querstriche (zum Feind)
 };
 
 std::shared_ptr<W_SCREEN> s_screen;
@@ -353,6 +358,8 @@ bool fits(Mode m, const DROID *d)
 	case M_ARTY: return isArty(d);
 	case M_AIR: return isAir(d) && hasWeapon(d);
 	case M_COMBOT: return modcombot::isModular(d);
+	case M_TRAPS:
+	case M_MINES: return isBuilder(d);
 	default: return false;
 	}
 }
@@ -772,6 +779,78 @@ std::vector<Vector2i> circlePts(const Vector2i &c, int r, int n)
 
 // ------------------------------------------------------------------------------------------------- Auftraege
 
+// MOD (17.11. 18:12/18:13): Stellen fuer Panzersperren (Schachbrett - Fahrzeuge kommen nicht durch, auch nicht schraeg) bzw. Minen
+// (verstreut, etwa jedes dritte Feld) in der gezeichneten Flaeche; nur freie, befahrbare Felder
+bool insidePoly(const std::vector<Vector2i> &poly, int64_t x, int64_t y)
+{
+	bool in = false;
+	for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++)
+	{
+		const int64_t xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+		if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) { in = !in; }
+	}
+	return in;
+}
+
+std::vector<Vector2i> fieldSpots(const std::vector<Vector2i> &raw, bool mines)
+{
+	std::vector<Vector2i> out;
+	if (raw.size() < 3) { return out; }
+	int x0 = INT32_MAX, y0 = INT32_MAX, x1 = INT32_MIN, y1 = INT32_MIN;
+	for (const Vector2i &p : raw) { x0 = std::min(x0, p.x); y0 = std::min(y0, p.y); x1 = std::max(x1, p.x); y1 = std::max(y1, p.y); }
+	const int tx0 = std::max(1, map_coord(x0)), ty0 = std::max(1, map_coord(y0));
+	const int tx1 = std::min(gameWorld.map.width - 2, map_coord(x1)), ty1 = std::min(gameWorld.map.height - 2, map_coord(y1));
+	if (tx1 < tx0 || ty1 < ty0 || (tx1 - tx0) * (ty1 - ty0) > 4096) { return out; }
+	for (int ty = ty0; ty <= ty1; ++ty)
+	{
+		for (int tx = tx0; tx <= tx1; ++tx)
+		{
+			const int cx = world_coord(tx) + TILE_UNITS / 2, cy = world_coord(ty) + TILE_UNITS / 2;
+			if (!insidePoly(raw, cx, cy)) { continue; }
+			if (mines)
+			{
+				uint32_t h = static_cast<uint32_t>(tx) * 73856093u ^ static_cast<uint32_t>(ty) * 19349663u;
+				h *= 2654435761u;
+				if ((h >> 16) % 100u >= 36u) { continue; }
+			}
+			else if ((tx + ty) % 2 != 0) { continue; }
+			const MAPTILE *t = mapTile(gameWorld.map, tx, ty);
+			if (t == nullptr || TileHasStructure(t) || TileHasFeature(t) || terrainType(t) == TER_WATER || terrainType(t) == TER_CLIFFFACE) { continue; }
+			out.emplace_back(cx, cy);
+		}
+	}
+	const size_t cap = mines ? 40 : 64;
+	if (out.size() > cap)
+	{
+		const Vector2i c = centroid(raw);
+		std::stable_sort(out.begin(), out.end(), [&c](const Vector2i &a, const Vector2i &b) { return dist2(a, c) < dist2(b, c); });
+		out.resize(cap);
+	}
+	return out;
+}
+
+// Verteidigungslinie: die Querstriche zeigen zur Feindseite = weg von der eigenen Basis (Mitte der eigenen Bauwerke)
+int defendSide(const std::vector<Vector2i> &pts)
+{
+	if (pts.size() < 2 || selectedPlayer >= MAX_PLAYERS) { return 1; }
+	int64_t sx = 0, sy = 0, cnt = 0;
+	for (const STRUCTURE *st : gameWorld.objects.structures[selectedPlayer]) { if (st != nullptr && !st->died) { sx += st->pos.x; sy += st->pos.y; ++cnt; } }
+	if (cnt == 0)
+	{
+		for (const DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d != nullptr && !d->died) { sx += d->pos.x; sy += d->pos.y; ++cnt; } }
+	}
+	if (cnt == 0) { return 1; }
+	const int64_t hx0 = sx / cnt, hy0 = sy / cnt;
+	int64_t acc = 0;
+	for (size_t i = 1; i < pts.size(); ++i)
+	{
+		const int64_t tx = pts[i].x - pts[i - 1].x, ty = pts[i].y - pts[i - 1].y;
+		const int64_t hx = hx0 - pts[i].x, hy = hy0 - pts[i].y;
+		acc += (tx * hy - ty * hx) / 64;
+	}
+	return acc > 0 ? -1 : 1;   // Normale (-ty, tx) zeigt zur Basis, wenn acc > 0 -> Striche auf die andere Seite
+}
+
 void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 {
 	if (raw.empty()) { return; }
@@ -829,6 +908,23 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 				const bool add = k >= builders.size();
 				send(b, DroidOrder(DORDER_LINEBUILD, trench, seg[k], seg[k + 1], 0), add);
 			}
+		}
+		break;
+	}
+	case M_TRAPS:
+	case M_MINES:
+	{
+		// MOD (17.11. 18:12/18:13): Baufahrzeuge/Infanterie mit Spaten bauen das Feld, Stellen reihum verteilt
+		STRUCTURE_STATS *st = (m == M_TRAPS) ? firstAvailable({ "A0TankTrap", "A0TankTrapHeavy" }) : firstAvailable({ "A0Mine" });
+		if (st == nullptr) { break; }
+		std::vector<DROID *> builders;
+		for (DROID *d : units) { if (isTruck(d) && !isAir(d)) { builders.push_back(d); } }
+		if (builders.empty()) { for (DROID *d : units) { if (isBuilder(d)) { builders.push_back(d); } } }
+		if (builders.empty()) { break; }
+		const std::vector<Vector2i> spots = fieldSpots(raw, m == M_MINES);
+		for (size_t k = 0; k < spots.size(); ++k)
+		{
+			send(builders[k % builders.size()], DroidOrder(DORDER_BUILD, st, spots[k], 0), k >= builders.size());
 		}
 		break;
 	}
@@ -954,75 +1050,211 @@ std::vector<glm::vec2> screenPath(const std::vector<Vector2i> &pts, const glm::m
 	return out;
 }
 
-void softSeg(const glm::vec2 &a, const glm::vec2 &b, float w, PIELIGHT col)
+// MOD (Wunsch 17.11. 18:10): "ALLE Pfeil- und Befehlsmarker genauso schoen machen wie unsere Sensoren- und Reichweitenmarker. Gleich
+// leuchtend und schoen rendern. Und noch dicker." - Aufbau wie die Reichweitenringe: heller, fast weisser Kern, darunter ein weicher
+// farbiger Lichthof in zwei Stufen, in der Mitte eine heisse Linie. Lagen: 0 aeusserer Hof, 1 innerer Hof, 2 Kern, 3 heisse Mitte.
+PIELIGHT mixCol(const ModeInfo &mi, float toWhite, float a)
 {
-	const glm::vec2 d = b - a;
-	const float len = glm::length(d);
-	if (len < 0.01f || w <= 0.5f) { return; }
-	const glm::vec2 c = (a + b) * 0.5f;
-	pie_DrawSoftRoundedBoxRotated(c.x, c.y, len + w, w, std::atan2(d.y, d.x), col, w * 0.5f, std::max(1.2f, w * 0.18f));
+	const auto ch = [toWhite](unsigned char c) { return static_cast<UBYTE>(std::min(255, static_cast<int>(c + (255 - c) * toWhite))); };
+	return pal_RGBA(ch(mi.r), ch(mi.g), ch(mi.b), static_cast<UBYTE>(std::clamp(static_cast<int>(a), 0, 255)));
 }
 
-void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm::mat4 &m)
+struct Seg
+{
+	glm::vec2 a, b;
+	float w;        // Breite des Kerns
+	float alpha;    // 0..255
+	bool box;       // Scheibe (Pfeilspitze/Pyramide): eckig statt Kapsel
+};
+
+void drawSegLayer(const Seg &g, int layer, const ModeInfo &mi, float twOverride = -1.f)
+{
+	const glm::vec2 d = g.b - g.a;
+	const float len = glm::length(d);
+	if (g.w <= 0.5f || g.alpha <= 0.f) { return; }
+	const float sc = modui::uiScale();
+	float ww = g.w, soft = 1.6f, tw = 0.35f, am = 1.f, corner = g.box ? 1.f : g.w * 0.5f;
+	switch (layer)
+	{
+	case 0: ww = g.w + 34.f * sc; soft = ww * 0.5f; tw = 0.15f; am = 0.075f; corner = ww * 0.5f; break;
+	case 1: ww = g.w + 14.f * sc; soft = 7.f * sc; tw = 0.35f; am = 0.2f; corner = ww * 0.5f; break;
+	case 2: break;
+	default:
+		if (g.box) { return; }
+		ww = std::max(2.f, g.w * 0.32f); soft = 1.2f; tw = 0.8f; am = 0.9f; corner = ww * 0.5f; break;
+	}
+	if (twOverride >= 0.f) { tw = twOverride; }
+	const glm::vec2 c = (g.a + g.b) * 0.5f;
+	const float along = g.box ? std::max(1.f, len) + (layer <= 1 ? ww - g.w : 0.f) : len + ww;
+	pie_DrawSoftRoundedBoxRotated(c.x, c.y, along, ww, len > 0.01f ? std::atan2(d.y, d.x) : 0.f, mixCol(mi, tw, g.alpha * am), corner, soft);
+}
+
+void drawSegs(const std::vector<Seg> &segs, const ModeInfo &mi)
+{
+	for (int layer = 0; layer < 4; ++layer)
+	{
+		for (const Seg &g : segs) { drawSegLayer(g, layer, mi); }
+	}
+}
+
+// gefuelltes Dreieck aus Querscheiben (Pfeilspitze, Pyramide): Spitze tip, Grundlinie bei base, halbe Grundbreite halfW
+void triangleSegs(std::vector<Seg> &out, const glm::vec2 &base, const glm::vec2 &tip, float halfW, float alpha)
+{
+	const glm::vec2 d = tip - base;
+	const float L = glm::length(d);
+	if (L < 1.f) { return; }
+	const glm::vec2 dir = d / L, perp(-dir.y, dir.x);
+	const int K = std::clamp(static_cast<int>(L / 2.5f), 6, 16);
+	for (int k = 0; k < K; ++k)
+	{
+		const float f = (static_cast<float>(k) + 0.5f) / static_cast<float>(K);
+		const glm::vec2 c = base + d * f;
+		const float across = std::max(1.f, 2.f * halfW * (1.f - f));
+		// Scheibe quer zur Richtung: a/b liegen auf der Querachse, Breite = Dicke entlang der Richtung
+		out.push_back(Seg{ c - perp * (across * 0.5f), c + perp * (across * 0.5f), L / static_cast<float>(K) + 1.5f, alpha, true });
+	}
+}
+
+// Chaikin-Glaettung (wie screenPath), damit Querstriche/Felder genau an der gezeichneten Linie sitzen
+std::vector<glm::vec2> smoothWorld(const std::vector<Vector2i> &pts)
+{
+	std::vector<glm::vec2> raw;
+	for (const Vector2i &p : pts) { raw.emplace_back(static_cast<float>(p.x), static_cast<float>(p.y)); }
+	if (raw.size() < 3) { return raw; }
+	for (int it = 0; it < 2; ++it)
+	{
+		std::vector<glm::vec2> o;
+		o.push_back(raw.front());
+		for (size_t i = 0; i + 1 < raw.size(); ++i)
+		{
+			o.push_back(raw[i] * 0.75f + raw[i + 1] * 0.25f);
+			o.push_back(raw[i] * 0.25f + raw[i + 1] * 0.75f);
+		}
+		o.push_back(raw.back());
+		raw.swap(o);
+	}
+	return raw;
+}
+
+bool projectF(const glm::vec2 &w, const glm::mat4 &m, glm::vec2 &out)
+{
+	Vector2i sp(0, 0);
+	if (!project(Vector2i(static_cast<int>(w.x), static_cast<int>(w.y)), m, sp)) { return false; }
+	out = glm::vec2(static_cast<float>(sp.x), static_cast<float>(sp.y));
+	return true;
+}
+
+// MOD (Wunsch 17.11. 18:10): Verteidigungslinie wie auf Kriegskarten (Ultimate General): Linie mit kurzen Querstrichen zur Feindseite
+void tickSegs(std::vector<Seg> &out, const std::vector<Vector2i> &pts, int side, float w, float alpha, const glm::mat4 &m)
+{
+	if (side == 0) { return; }
+	const std::vector<glm::vec2> wp = smoothWorld(pts);
+	if (wp.size() < 2) { return; }
+	std::vector<float> acc(wp.size(), 0.f);
+	for (size_t i = 1; i < wp.size(); ++i) { acc[i] = acc[i - 1] + glm::length(wp[i] - wp[i - 1]); }
+	const float L = acc.back();
+	const float step = DIST_TILE * 1.3f, tickLen = DIST_TILE * 0.7f;
+	auto at = [&](float s) {
+		s = std::clamp(s, 0.f, L);
+		size_t i = 1;
+		while (i + 1 < wp.size() && acc[i] < s) { ++i; }
+		const float seg = std::max(0.001f, acc[i] - acc[i - 1]);
+		return wp[i - 1] + (wp[i] - wp[i - 1]) * ((s - acc[i - 1]) / seg);
+	};
+	for (float s = step * 0.5f; s <= L - step * 0.25f; s += step)
+	{
+		glm::vec2 t = at(s + DIST_TILE * 0.3f) - at(s - DIST_TILE * 0.3f);
+		if (glm::length(t) < 0.01f) { continue; }
+		t = glm::normalize(t);
+		const glm::vec2 n = glm::vec2(-t.y, t.x) * static_cast<float>(side);
+		const glm::vec2 p = at(s);
+		glm::vec2 a, b;
+		if (!projectF(p, m, a) || !projectF(p + n * tickLen, m, b)) { continue; }
+		out.push_back(Seg{ a, b, w * 0.8f, alpha, false });
+	}
+}
+
+// MOD (Wunsch 17.11. 18:12): Panzersperrenfeld - gruene Pyramiden an den geplanten Stellen
+void pyramidSegs(std::vector<Seg> &out, std::vector<Seg> &facets, const std::vector<Vector2i> &marks, float alpha, const glm::mat4 &m)
+{
+	for (const Vector2i &p : marks)
+	{
+		glm::vec2 g, t;
+		const glm::vec2 w(static_cast<float>(p.x), static_cast<float>(p.y));
+		if (!projectF(w, m, g) || !projectF(w + glm::vec2(DIST_TILE * 0.32f, 0.f), m, t)) { continue; }
+		const float r = std::clamp(glm::length(t - g), 4.f, 40.f);   // perspektivische Groesse
+		const glm::vec2 base = g + glm::vec2(0.f, r * 0.35f), tip = g - glm::vec2(0.f, r * 1.35f);
+		triangleSegs(out, base, tip, r * 0.95f, alpha);
+		// helle linke Flanke (Pyramide)
+		const glm::vec2 fb = base - glm::vec2(r * 0.95f * 0.5f, 0.f);
+		triangleSegs(facets, fb, tip - glm::vec2(r * 0.03f, 0.f), r * 0.95f * 0.5f, alpha * 0.55f);
+	}
+}
+
+// MOD (Wunsch 17.11. 18:13): Minenfeld - Minen-Zeichen (Scheibe mit Zuendkreuz) an den geplanten Stellen
+void mineSegs(std::vector<Seg> &out, std::vector<Seg> &cross, const std::vector<Vector2i> &marks, float alpha, const glm::mat4 &m)
+{
+	for (const Vector2i &p : marks)
+	{
+		glm::vec2 g, t;
+		const glm::vec2 w(static_cast<float>(p.x), static_cast<float>(p.y));
+		if (!projectF(w, m, g) || !projectF(w + glm::vec2(DIST_TILE * 0.28f, 0.f), m, t)) { continue; }
+		const float r = std::clamp(glm::length(t - g), 4.f, 34.f);
+		out.push_back(Seg{ g, g, r * 1.6f, alpha, false });   // Scheibe (Kapsel der Laenge 0 = Kreis)
+		cross.push_back(Seg{ g - glm::vec2(r * 0.6f, r * 0.6f), g + glm::vec2(r * 0.6f, r * 0.6f), std::max(1.5f, r * 0.22f), alpha, false });
+		cross.push_back(Seg{ g - glm::vec2(r * 0.6f, -r * 0.6f), g + glm::vec2(r * 0.6f, -r * 0.6f), std::max(1.5f, r * 0.22f), alpha, false });
+	}
+}
+
+void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm::mat4 &m, const std::vector<Vector2i> *marks = nullptr, int side = 0)
 {
 	const ModeInfo &mi = kModes[mode];
 	const bool closed = mi.area;
-	const bool arrow = !closed && mode != M_RALLY && mode != M_DEFEND;   // Rally = Kreis/Spirale, Defend = Linie: ohne Spitze
+	const bool field = mode == M_TRAPS || mode == M_MINES;
+	const bool arrow = !closed && mode != M_RALLY && mode != M_DEFEND;   // Rally = Kreis/Spirale, Defend = Linie mit Querstrichen
 	std::vector<glm::vec2> p = screenPath(pts, m, closed);
 	if (p.size() < 2 || alpha <= 0) { return; }
 	const float sc = modui::uiScale();
-	const float body = (arrow ? 13.f : 7.f) * sc;   // Strichstaerke
-	const float halo = body + 14.f * sc;            // leuchtender Hof
+	const float body = (arrow ? 18.f : 11.f) * sc;   // Strichstaerke (17.11. 18:10: noch dicker)
+	std::vector<Seg> segs;
 	// Pfeil: Spitze am Ende, Koerper endet an ihrer Basis
 	glm::vec2 tip = p.back(), dir(1.f, 0.f);
 	float headL = 0.f, headW = 0.f;
 	if (arrow)
 	{
 		headL = body * 2.6f; headW = body * 2.7f;
-		// Richtung aus dem letzten Stueck (etwa eine Spitzenlaenge zurueck)
 		size_t k = p.size() - 1;
 		float back = 0.f;
 		while (k > 0 && back < headL) { back += glm::length(p[k] - p[k - 1]); --k; }
 		dir = tip - p[k];
 		if (glm::length(dir) < 0.01f) { dir = glm::vec2(1.f, 0.f); } else { dir = glm::normalize(dir); }
-		// Punkte innerhalb der Spitze weglassen
 		while (p.size() > 2 && glm::length(p.back() - tip) < headL * 0.8f && glm::dot(tip - p.back(), dir) < headL * 0.8f) { p.pop_back(); }
 		p.push_back(tip - dir * (headL * 0.8f));
 	}
 	const size_t n = p.size();
-	auto colA = [&](float a, float bright) {
-		const int r = std::min(255, static_cast<int>(mi.r + (255 - mi.r) * bright));
-		const int g = std::min(255, static_cast<int>(mi.g + (255 - mi.g) * bright));
-		const int b = std::min(255, static_cast<int>(mi.b + (255 - mi.b) * bright));
-		return pal_RGBA(static_cast<UBYTE>(r), static_cast<UBYTE>(g), static_cast<UBYTE>(b), static_cast<UBYTE>(std::clamp(static_cast<int>(a), 0, 255)));
-	};
-	// 1. Hof (breit, schwach, heller), 2. Kern
-	for (int pass = 0; pass < 2; ++pass)
+	// Felder (Panzersperren/Minen): Umriss nur schwach, die Zeichen tragen die Aussage
+	const float outlineA = (field && marks != nullptr && !marks->empty()) ? static_cast<float>(alpha) * 0.3f : static_cast<float>(alpha);
+	for (size_t i = 1; i < n; ++i)
 	{
-		for (size_t i = 1; i < n; ++i)
-		{
-			const float s = static_cast<float>(i) / static_cast<float>(n - 1);
-			// Pfeil: schmaler, durchsichtiger Schwanz -> voller Koerper (wie die Kriegskarten-Pfeile); Linien/Kreise gleichmaessig
-			const float taper = arrow ? (0.35f + 0.65f * std::min(1.f, s / 0.45f)) : 1.f;
-			const float fade = arrow ? std::min(1.f, 0.15f + s / 0.4f) : 1.f;
-			if (pass == 0) { softSeg(p[i - 1], p[i], halo * (arrow ? (0.6f + 0.4f * taper) : 1.f), colA(alpha * 0.28f * fade, 0.45f)); }
-			else { softSeg(p[i - 1], p[i], body * taper, colA(alpha * fade, 0.f)); }
-		}
-		if (arrow)
-		{
-			// Spitze aus Scheiben quer zur Richtung (Dreieck mit weichen Kanten)
-			const glm::vec2 base = tip - dir * headL;
-			const float ang = std::atan2(dir.y, dir.x);
-			const int K = 12;
-			for (int k = 0; k < K; ++k)
-			{
-				const float f = (static_cast<float>(k) + 0.5f) / static_cast<float>(K);
-				const glm::vec2 c = base + dir * (headL * f);
-				const float wAcross = headW * (1.f - f) + (pass == 0 ? 12.f * sc : 0.f);
-				const float wAlong = headL / static_cast<float>(K) + 2.f;
-				pie_DrawSoftRoundedBoxRotated(c.x, c.y, wAlong, std::max(1.f, wAcross), ang, pass == 0 ? colA(alpha * 0.28f, 0.45f) : colA(alpha, 0.f), 1.f, 1.2f);
-			}
-		}
+		const float s = static_cast<float>(i) / static_cast<float>(n - 1);
+		// Pfeil: schmaler, durchsichtiger Schwanz -> voller Koerper (wie die Kriegskarten-Pfeile); Linien/Kreise gleichmaessig
+		const float taper = arrow ? (0.35f + 0.65f * std::min(1.f, s / 0.45f)) : (field ? 0.55f : 1.f);
+		const float fade = arrow ? std::min(1.f, 0.15f + s / 0.4f) : 1.f;
+		segs.push_back(Seg{ p[i - 1], p[i], body * taper, outlineA * fade, false });
+	}
+	if (arrow) { triangleSegs(segs, tip - dir * headL, tip, headW * 0.5f, static_cast<float>(alpha)); }
+	if (mode == M_DEFEND) { tickSegs(segs, pts, side, body, static_cast<float>(alpha), m); }
+	std::vector<Seg> extra;
+	if (field && marks != nullptr)
+	{
+		if (mode == M_TRAPS) { pyramidSegs(segs, extra, *marks, static_cast<float>(alpha), m); }
+		else { mineSegs(segs, extra, *marks, static_cast<float>(alpha), m); }
+	}
+	drawSegs(segs, mi);
+	if (!extra.empty())
+	{
+		// Pyramiden-Flanke heller, Zuendkreuz der Mine fast weiss
+		for (const Seg &g : extra) { drawSegLayer(g, 2, mi, mode == M_TRAPS ? 0.7f : 0.92f); }
 	}
 }
 } // namespace
@@ -1080,6 +1312,8 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	st.mode = m;
 	st.pts = s_cur;
 	st.born = realTime;
+	if (m == M_TRAPS || m == M_MINES) { st.marks = fieldSpots(s_cur, m == M_MINES); }
+	if (m == M_DEFEND) { st.side = defendSide(s_cur); }
 	// MOD (Wunsch 16.11. 21:25): hoechstens ein Marker je Aktion - eine neue Zeichnung ersetzt die alte derselben Art
 	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [m](const Stroke &o) { return o.mode == m; }), s_done.end());
 	s_done.push_back(std::move(st));
@@ -1095,7 +1329,7 @@ void drawOverlay(const glm::mat4 &m)
 	{
 		const unsigned age = realTime - st.born;
 		const int a = age >= SHOW_MS ? 0 : static_cast<int>(230 - 200 * static_cast<int64_t>(age) / static_cast<int64_t>(SHOW_MS));
-		if (a > 0) { drawStroke(st.pts, st.mode, a, m); }
+		if (a > 0) { drawStroke(st.pts, st.mode, a, m, &st.marks, st.side); }
 	}
 	if (s_op.active)
 	{
@@ -1106,7 +1340,10 @@ void drawOverlay(const glm::mat4 &m)
 	}
 	if (s_drawing && s_mode >= 0)
 	{
-		drawStroke(s_cur, s_mode, 255, m);
+		// Vorschau: Querstriche / geplante Panzersperren und Minen schon waehrend des Zeichnens
+		std::vector<Vector2i> marks;
+		if ((s_mode == M_TRAPS || s_mode == M_MINES) && s_cur.size() >= 3) { marks = fieldSpots(s_cur, s_mode == M_MINES); }
+		drawStroke(s_cur, s_mode, 255, m, &marks, s_mode == M_DEFEND ? defendSide(s_cur) : 0);
 	}
 }
 

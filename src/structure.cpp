@@ -43,6 +43,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "modupgrade.h"
 #include "modgroundfire.h"   // MOD
 #include "modsound.h"
 #include "modaidiff.h"
@@ -792,6 +793,7 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->storageProvide = std::max(0, ini.value("storageProvide", 0).toInt());   // MOD: Energie-Obergrenze
 		psStats->incomeProvide = std::max(0, ini.value("incomeProvide", 0).toInt());   // MOD: Energie je Sekunde
 		psStats->infantryPassable = ini.value("infantryPassable", false).toBool();   // MOD
+		psStats->passable = ini.value("passable", false).toBool();   // MOD (17.11.): Minen
 		psStats->infantryBuildable = ini.value("infantryBuildable", false).toBool();   // MOD
 		psStats->turretSpinMs = static_cast<unsigned>(std::max(500, ini.value("turretSpinMs", 3000).toInt()));   // MOD
 
@@ -1719,7 +1721,8 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 				}
 				/* Remove any walls underneath the building. You can build defense buildings on top
 				 * of walls, you see. This is not the place to test whether we own it! */
-				if (isBuildableOnWalls(pStructureType->type) && TileHasWall(psTile))
+				if ((isBuildableOnWalls(pStructureType->type) && TileHasWall(psTile))
+				    || (TileHasStructure(psTile) && modupgrade::canReplace(pStructureType, static_cast<const STRUCTURE *>(psTile->psObject), player)))   // MOD: Ausbau wie ein Modul (Betonbunker auf Scav-Bunker)
 				{
 					STRUCTURE *psWall = (STRUCTURE *)psTile->psObject;
 					if (std::find(wallsToReplace.begin(), wallsToReplace.end(), psWall) == wallsToReplace.end())
@@ -1784,7 +1787,10 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		case REF_REARM_PAD:
 			break;  // Not blocking.
 		default:
-			auxStructureBlocking(psBuilding, world.map);
+			if (!pStructureType->passable)   // MOD (17.11.): Minen blockieren nicht
+			{
+				auxStructureBlocking(psBuilding, world.map);
+			}
 			break;
 		}
 
@@ -4664,6 +4670,19 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 
 	STRUCTURE_STATS *psBuilding = castStructureStats(psStats);
 	DROID_TEMPLATE *psTemplate = castDroidTemplate(psStats);
+	if (psBuilding != nullptr && modupgrade::isUpgrade(psBuilding))
+	{
+		// MOD (Wunsch 17.11. 18:02): ein Ausbau (Betonbunker) darf nur genau auf ein eigenes, fertiges Grundbauwerk (Scav-Bunker) gesetzt werden
+		for (int j = 0; j < b.size.y; ++j)
+		{
+			for (int i = 0; i < b.size.x; ++i)
+			{
+				const MAPTILE *psTile = mapTile(world.map, b.map.x + i, b.map.y + j);
+				if (!TileHasStructure(psTile) || !modupgrade::canReplace(psBuilding, static_cast<const STRUCTURE *>(psTile->psObject), player)) { return false; }
+			}
+		}
+		return true;
+	}
 	if (psBuilding != nullptr)
 	{
 		for (int j = 0; j < b.size.y; ++j)
@@ -4924,7 +4943,7 @@ void modMoveStructureToLayerMap(STRUCTURE *psStruct, int layer)
 			}
 		}
 	}
-	if (psStruct->pStructureType->type != REF_REARM_PAD)
+	if (psStruct->pStructureType->type != REF_REARM_PAD && !psStruct->pStructureType->passable)   // MOD: Minen blockieren nicht
 	{
 		auxStructureBlocking(psStruct, gameWorld.map);
 	}

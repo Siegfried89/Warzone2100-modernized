@@ -126,6 +126,7 @@ struct STRUCTURE_STATS : public BASE_STATS
 	unsigned turretSpinMs = 3000;	// MOD: Drehzeit eines Sensor-Turms ohne Waffe in ms (Standard 3 s; Baukran langsamer)
 	bool infantryBuildable = false;	// MOD: darf auch von Kampf-Infanterie mit Spaten gebaut werden (Graeben, Gruben, Sandsaecke, MG-Nester)
 	bool infantryPassable = false;	// MOD: Infanterie darf das Feld betreten (Graeben, Gruben) und bekommt dort Schutz
+	bool passable = false;			// MOD (17.11.): blockiert das Feld nicht - alle Einheiten fahren darueber (Minen)
 	bool requiresPower = false;		// MOD: arbeitet nur im Versorgungsbereich eines gespeisten Strommastes (siehe modgrid)
 	int crewCost = 0;				// MOD (MF): bindet so viel Besatzung (Besatzungskonto, siehe modgrid)
 	int crewProvide = 0;			// MOD (MF): stellt bis zu so viel Besatzung (Kryo-Farm)

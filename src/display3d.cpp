@@ -1541,6 +1541,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 		displayProximityMsgs(viewMatrix, perspectiveViewMatrix);
 	}
 	displayDelivPoints(viewMatrix, perspectiveViewMatrix);
+	modferry::draw3D(viewMatrix);   // MOD (17.11. 18:18): Landezonen-Lichter rot / blau / gruen
 	display3DProjectiles(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
 	wzPerfEnd(PERF_MODEL_INIT);
 

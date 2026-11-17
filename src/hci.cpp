@@ -85,6 +85,8 @@
 #include "modammo.h"
 #include "modauto.h"
 #include "modtankguns.h"
+#include "modimpostor.h"
+#include "modmines.h"
 #include "modfuel.h"
 #include "modai.h"
 #include "modpointdef.h"
@@ -762,6 +764,8 @@ void interfaceShutDown()
 	modammo::reset();        // MOD
 	modauto::reset();        // MOD: Fully autonomous
 	modtankguns::reset();    // MOD (17.11.): Panzer-Feuerhalt / Rumpf-MG
+	modimpostor::reset();    // MOD (17.11. 18:02): Einheiten-Sprites
+	modmines::reset();       // MOD (17.11. 18:13): Minen
 	modfuel::reset();        // MOD
 	modai::reset();          // MOD
 	modpointdef::reset();    // MOD: Punktverteidigung

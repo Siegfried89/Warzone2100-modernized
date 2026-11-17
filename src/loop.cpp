@@ -43,6 +43,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "loop.h"
+#include "modmines.h"
 #include "modai.h"
 #include "modoutpost.h"
 #include "gamestate_serialize.h"
@@ -640,6 +641,7 @@ static void gameStateUpdate()
 
 	// Check which objects are visible.
 	executeFnAndProcessScriptQueuedRemovals([]() { processVisibility(); });
+	modmines::tick();   // MOD (17.11.): Minen fuer Gegner verstecken, unter feindlichen Bodeneinheiten ausloesen
 
 	// Update the map.
 	mapUpdate(gameWorld);

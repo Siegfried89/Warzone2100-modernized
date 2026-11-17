@@ -18,8 +18,10 @@ namespace modferry
 {
 /// jeden Spielschritt (rechnet selbst nur jede Sekunde)
 void tick(GameWorld &world);
-/// Anzeige: blinkende Lichter an den Leuchtfeuern
+/// Anzeige: Transportschleife (Pfeil im Bildschirm)
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
+/// Anzeige im 3D-Bild: Landezonen-Lichter der Leuchtfeuer, rot / blau / gruen nach Sicherheit (17.11. 18:18)
+void draw3D(const glm::mat4 &viewMatrix);
 /// Spielende / Laden
 void reset();
 }
