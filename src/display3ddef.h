@@ -26,8 +26,19 @@
 #define TILE_SIZE (TILE_WIDTH*TILE_HEIGHT)
 
 // Amount of visible terrain tiles in x/y direction
-#define VISIBLE_XTILES 64
-#define VISIBLE_YTILES 64
+// MOD (17.11., Wunsch "Sichtweite massiv erweitern" fuer Riesenkarten): statt 64 x 64 Felder (Rand ~32 Felder vor dem Blickpunkt - auf
+// grossen Karten brachen Boden und Objekte sichtbar ab) jetzt 192 x 192 Felder (Rand ~96 Felder = 12288 Welteinheiten). Feinraster
+// (Zweig viertel, Felder halber Kantenlaenge): 320 x 320 Feinfelder (~80 Original-Felder). Der Nebel endet kurz vor diesem Rand
+// (lighting.cpp updateFogDistance), dahinter ist nichts mehr zu sehen.
+#if defined(WZ_MOD_FINE_GRID)
+#define VISIBLE_XTILES 320
+#define VISIBLE_YTILES 320
+#else
+#define VISIBLE_XTILES 192
+#define VISIBLE_YTILES 192
+#endif
+// alte Groesse - fuer Dinge, die nur die Umgebung der Kamera betreffen (Wetterteilchen)
+#define VISIBLE_TILES_NEAR 64
 
 #define	RADTLX		(OBJ_BACKX + OBJ_BACKWIDTH + BASE_GAP + 1 +D_W)	// Paul's settings (492+12)
 #define	RADTLY		(RET_Y + 1)									// Paul's settings (332-17)

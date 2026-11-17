@@ -43,13 +43,16 @@ float overlayAaLimit(vec2 worldXZ, float band)
 // MOD (Wunsch 16.11. 21:42): Leuchtringe wie in Supreme Commander - duenner, heller Kern (fast weiss) plus weicher Lichthof zu beiden
 // Seiten (SupCom zeichnet die Reichweiten als duenne Linie und laesst sie im Glow-Durchgang leuchten). Farben bleiben (Sensor blau,
 // Waffe rot, Mindestreichweite gold). x = Kern (deckend), y = Lichthof (wird aufaddiert), z = Fuellung (deckend, Ringfarbe).
-vec3 channelOverlay(float field, float band, float maxW)
+vec3 channelOverlay(float field, float band, float maxW, float wPix)
 {
 	float sd = (field * 2.0 - 1.0) * band; // decode [0, 1] -> [-band, +band]
 	float uncovered = step(0.999, field);  // generate-pass clear = outside all rings
 	float covered = 1.0 - uncovered;
 	// fwidth(sd) ~ how much signed distance changes across this pixel.
-	float w = min(max(fwidth(min(sd, band)), 1e-4), maxW);
+	// MOD (17.11.): Pixelgroesse aus der Bodenposition statt aus der Ableitung des groben SDF-Rasters - dessen Ableitung springt von
+	// Rasterfeld zu Rasterfeld; bei kleinen Ringen nah an der Kamera (Mindestreichweite, gold) blutete der Lichthof dadurch in
+	// eckigen Bloecken in den Boden.
+	float w = min(max(wPix, 1e-4), maxW);
 	float px = abs(sd) / w;                // Abstand zur Ringlinie in Bildpunkten
 	float ring = (1.0 - smoothstep(0.0, RING_HALF_PX * 0.8, px)) * covered;
 	float fill = (1.0 - smoothstep(0.0, RING_HALF_PX, max(sd, 0.0) / w)) * fillAlpha * covered;
@@ -65,10 +68,12 @@ void main()
 	vec3 lit = texture(sceneTexture, uv).rgb;
 	vec3 result = lit;
 	float depth = texture(prepassDepth, uv).r;
+	// Bodenposition und ihre Pixelgroesse ausserhalb der Verzweigungen (Ableitungen nur im gleichmaessigen Kontrollfluss)
+	vec3 viewPos = wzGetViewPosition(texCoords, min(depth, SKY_DEPTH_THRESHOLD), invProjectionMatrix);
+	vec3 worldPos = (invViewMatrix * vec4(viewPos, 1.0)).xyz;
+	float wPix = max(length(dFdx(worldPos.xz)), length(dFdy(worldPos.xz)));
 	if (depth < SKY_DEPTH_THRESHOLD)
 	{
-		vec3 viewPos = wzGetViewPosition(texCoords, depth, invProjectionMatrix);
-		vec3 worldPos = (invViewMatrix * vec4(viewPos, 1.0)).xyz;
 		// Map terrain XZ into the frustum-fitted SDF atlas (same space as generate).
 		vec2 sdfUv = (worldPos.xz - sdfOriginExtent.xy) / max(sdfOriginExtent.zw, vec2(1e-3));
 		if (all(greaterThanEqual(sdfUv, vec2(0.0))) && all(lessThanEqual(sdfUv, vec2(1.0))))
@@ -77,9 +82,9 @@ void main()
 			vec3 field = texture(rangeRingSdf, sdfUv).rgb;
 			float band = max(sdfBand, 1e-3);
 			float maxW = overlayAaLimit(worldPos.xz, band);
-			vec3 sensor = channelOverlay(field.r, band, maxW);
-			vec3 weapon = channelOverlay(field.g, band, maxW);
-			vec3 minRange = channelOverlay(field.b, band, maxW);
+			vec3 sensor = channelOverlay(field.r, band, maxW, wPix);
+			vec3 weapon = channelOverlay(field.g, band, maxW, wPix);
+			vec3 minRange = channelOverlay(field.b, band, maxW, wPix);
 			// Kern heller (Richtung Weiss) wie eine leuchtende Linie, Hof in der Ringfarbe
 			vec3 sC = mix(sensorColor.rgb, vec3(1.0), 0.35), wC = mix(weaponColor.rgb, vec3(1.0), 0.35), mC = mix(minRangeColor.rgb, vec3(1.0), 0.35);
 			vec3 overlay = sC * sensor.x + wC * weapon.x + mC * minRange.x

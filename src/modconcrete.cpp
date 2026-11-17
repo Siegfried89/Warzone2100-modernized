@@ -119,6 +119,57 @@ int overrideTexture(WorldMapState &m, int x, int y, bool classic)
 	return (s_first + s_maskIndex[mask]) & TILE_NUMMASK;
 }
 
+namespace
+{
+// Karten-Beton (voll graue Kacheln): Arizona 22 und 77 ("a_concrete" an allen vier Ecken)
+bool mapConcrete(WorldMapState &m, int x, int y)
+{
+	if (x < 0 || y < 0 || x >= m.width || y >= m.height || currentMapTileset != MAP_TILESET::ARIZONA) { return false; }
+	const unsigned t = TileNumber_tile(mapTile(m, x, y)->texture);
+	return t == 22 || t == 77;
+}
+}
+
+int classicDecal(WorldMapState &m, int x, int y, int decalNo, bool waterOnly)
+{
+	constexpr int BASE = 1048576;
+	if (waterOnly)
+	{
+		return BASE + 17;   // Wasser-Kachel 17 (alle mitgelieferten Kachelsaetze)
+	}
+	load();
+	if (x < 0 || y < 0 || x >= m.width || y >= m.height || decalNo >= 4095) { return decalNo; }
+	const MAPTILE *t = mapTile(m, x, y);
+	if (TILE_HAS_DECAL(t) || TileNumber_tile(t->texture) == MOD_TILE_VOID) { return decalNo; }
+	const unsigned char tt = terrainType(t);
+	if (tt == TER_WATER || tt == TER_CLIFFFACE) { return decalNo; }
+	const bool structOk = s_first >= 0;
+	if ((structOk && concreteAt(m, x, y)) || mapConcrete(m, x, y)) { return decalNo; }
+	static const int DX[8] = {0, 1, 0, -1, 1, 1, -1, -1};
+	static const int DY[8] = {-1, 0, 1, 0, -1, 1, 1, -1};
+	int mask = 0;
+	bool anyStruct = false;
+	for (int k = 0; k < 8; ++k)
+	{
+		const bool st = structOk && concreteAt(m, x + DX[k], y + DY[k]);
+		if (st || mapConcrete(m, x + DX[k], y + DY[k]))
+		{
+			mask |= 1 << k;
+			anyStruct = anyStruct || st;
+		}
+	}
+	mask = canonical(mask);
+	if (mask == 0) { return decalNo; }
+	const int layer = anyStruct ? s_first : 22;
+	if (layer < 0 || layer > 511) { return decalNo; }
+#if defined(WZ_MOD_FINE_GRID)
+	constexpr int fine = 1;
+#else
+	constexpr int fine = 0;
+#endif
+	return BASE * (2 + fine + 2 * layer) + 4096 * mask + (decalNo >= 0 ? decalNo : 4095);
+}
+
 bool isEdgeTile(int tex)
 {
 	return s_first >= 0 && tex >= 0 && static_cast<int>(TileNumber_tile(static_cast<unsigned short>(tex))) != s_first;

@@ -79,12 +79,74 @@ vec3 modvColor(vec3 P)
 	return mix(col * lightC, haze, max(0.15 + 0.85 * smoothstep(9000.0, 32000.0, distG), smoothstep(0.0, 0.35, outside)));
 }
 
+#define MODC_TEXGRAD(tex, coord, dx, dy) textureGrad(tex, coord, dx, dy)
+// MOD (17.11., "Die Betontexturen laufen nirgends weich aus"): Klassik-Grafik - weicher Betonrand und Wasserflaeche.
+// Die Engine (src/modconcrete.cpp classicDecal) kodiert in der Kachelnummer: 1048576 * k + 4096 * Randmaske + eigene Kachel (4095 = keine).
+// k = 1: reines Wasserfeld -> Wasserkachel 17 weltfest gezeichnet (darunter scheint der Wasserdurchgang leicht durch).
+// k >= 2: Feld neben Beton -> der Beton (Kachel (k-2)/2, Feinraster (k-2)%2) laeuft von den markierten Raendern/Ecken aus weich und
+// unregelmaessig (Rauschen) etwa 0,4 Feld weit auf dieses Feld aus. Nur ganzzahlige Grundrechenarten (keine Bit-Operatoren).
+const int MODC_BASE = 1048576;
+int modcLayer(int t)
+{
+	if (t < MODC_BASE) { return t; }
+	int r = t - (t / 4096) * 4096;
+	return (r == 4095) ? -1 : r;
+}
+float modcHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float modcNoise(vec2 p)
+{
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(modcHash(i), modcHash(i + vec2(1.0, 0.0)), f.x), mix(modcHash(i + vec2(0.0, 1.0)), modcHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+bool modcBit(int m, int b) { int q = m / b; return (q - (q / 2) * 2) == 1; }
+vec4 modcSample(float layer, vec2 uv)
+{
+	// weltfeste UV (gekachelt), Ableitungen der ungebrochenen UV -> keine Mip-Naht an den Kachelgrenzen
+	return MODC_TEXGRAD(decalTex, vec3(fract(uv), layer), dFdx(uv), dFdy(uv));
+}
+vec4 modcApply(vec4 decal, int t, vec3 P)
+{
+	if (t < MODC_BASE) { return decal; }
+	int k = t / MODC_BASE;
+	vec2 w = vec2(P.x, -P.z);
+	if (k == 1)
+	{
+		vec4 wc = modcSample(17.0, w / 512.0);
+		return vec4(wc.rgb, 0.85);
+	}
+	int hi = k - 2;
+	int lay = hi / 2;
+	int fine = hi - lay * 2;
+	int m = (t - k * MODC_BASE) / 4096;
+	float size = (fine == 1) ? 64.0 : 128.0;
+	vec2 f = fract(w / size);
+	float d = 9.0;
+	if (modcBit(m, 1)) { d = min(d, f.y); }
+	if (modcBit(m, 2)) { d = min(d, 1.0 - f.x); }
+	if (modcBit(m, 4)) { d = min(d, 1.0 - f.y); }
+	if (modcBit(m, 8)) { d = min(d, f.x); }
+	if (modcBit(m, 16)) { d = min(d, length(vec2(1.0 - f.x, f.y))); }
+	if (modcBit(m, 32)) { d = min(d, length(vec2(1.0 - f.x, 1.0 - f.y))); }
+	if (modcBit(m, 64)) { d = min(d, length(vec2(f.x, 1.0 - f.y))); }
+	if (modcBit(m, 128)) { d = min(d, length(vec2(f.x, f.y))); }
+	d *= size;   // Weltmass
+	float n = ((modcNoise(w / 37.0) - 0.5) * 34.0 + (modcNoise(w / 11.0) - 0.5) * 14.0) * smoothstep(0.0, 14.0, d);
+	float a = 1.0 - smoothstep(0.0, 54.0, d + n);
+	if (a <= 0.001) { return decal; }
+	vec4 c = modcSample(float(lay), w / 128.0);
+	return vec4(mix(decal.rgb, c.rgb, a), max(decal.a, a));
+}
+
 vec3 blendAddEffectLighting(vec3 a, vec3 b) {
 	return min(a + b, vec3(1.0));
 }
 
 vec4 main_classic() {
-	vec4 decal = fragf.tileNo >= 0 ? texture(decalTex, vec3(frag.uvDecal, fragf.tileNo), WZ_MIP_LOAD_BIAS) : vec4(0);
+	int modcBaseTile = modcLayer(fragf.tileNo);
+	vec4 decal = modcBaseTile >= 0 ? texture(decalTex, vec3(frag.uvDecal, modcBaseTile), WZ_MIP_LOAD_BIAS) : vec4(0);
+	decal = modcApply(decal, fragf.tileNo, frag.posModelSpace);   // MOD (17.11.): weicher Betonrand / Wasserflaeche
 
 	vec3 L = normalize(frag.groundLightDir);
 	vec3 N = vec3(0,0,1);

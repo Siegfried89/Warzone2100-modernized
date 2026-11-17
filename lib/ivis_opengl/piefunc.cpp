@@ -39,14 +39,32 @@
 #endif
 #include <glm/gtx/transform.hpp>
 #include <array>
+#include <vector>
 
 static GFX *skyboxGfx = nullptr;
 static GFX *radarViewGfx[2] = { nullptr, nullptr };
 
 #define VW_VERTICES 5
 
+static bool s_viewMarker = false;   // MOD (17.11.): statt des Sichtfensters den Kameramarker zeichnen
+
+void pie_SetViewingMarker(const float *xy, const uint8_t *rgba, int count)
+{
+	if (!radarViewGfx[0])
+	{
+		radarViewGfx[0] = new GFX(GFX_COLOUR, 2);
+		radarViewGfx[1] = new GFX(GFX_COLOUR, 2);
+	}
+	if (count < 3) { s_viewMarker = false; return; }
+	std::vector<gfx_api::gfxFloat> vert(static_cast<size_t>(count) * 2);
+	for (int i = 0; i < count * 2; ++i) { vert[i] = static_cast<gfx_api::gfxFloat>(xy[i]); }
+	radarViewGfx[0]->buffers(count, vert.data(), rgba);
+	s_viewMarker = true;
+}
+
 void pie_SetViewingWindow(Vector3i *v, PIELIGHT colour)
 {
+	s_viewMarker = false;
 	Vector3i pieVrts_insidefill[VW_VERTICES - 1];
 	Vector3i pieVrts_outline[VW_VERTICES];
 
@@ -102,9 +120,11 @@ void pie_SetViewingWindow(Vector3i *v, PIELIGHT colour)
 
 void pie_DrawViewingWindow(const glm::mat4 &modelViewProjectionMatrix)
 {
+	if (!radarViewGfx[0]) { return; }
 	gfx_api::RadarViewInsideFillPSO::get().bind();
 	gfx_api::RadarViewInsideFillPSO::get().bind_constants({ modelViewProjectionMatrix });
 	radarViewGfx[0]->draw<gfx_api::RadarViewInsideFillPSO>(modelViewProjectionMatrix);
+	if (s_viewMarker) { return; }   // MOD: der Marker ist eine einzige Dreiecksfolge (kein Umriss)
 	gfx_api::RadarViewOutlinePSO::get().bind();
 	gfx_api::RadarViewOutlinePSO::get().bind_constants({ modelViewProjectionMatrix });
 	radarViewGfx[1]->draw<gfx_api::RadarViewOutlinePSO>(modelViewProjectionMatrix);

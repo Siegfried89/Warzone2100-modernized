@@ -2095,7 +2095,8 @@ bool validOrderForLoc(DROID_ORDER order)
 void orderDroidLoc(DROID *psDroid, DROID_ORDER order, UDWORD x, UDWORD y, QUEUE_MODE mode)
 {
 	ASSERT_OR_RETURN(, psDroid != nullptr, "Invalid unit pointer");
-	ASSERT_OR_RETURN(, validOrderForLoc(order), "Invalid order for location");
+	// MOD: "Boden beschiessen" ist ebenfalls ein Ortsbefehl (Skripte, z. B. die Belagerungs-Artillerie der Stadtkarte)
+	ASSERT_OR_RETURN(, validOrderForLoc(order) || order == DORDER_ATTACKGROUND, "Invalid order for location");
 
 	DROID_ORDER_DATA sOrder(order, Vector2i(x, y));
 	if (mode == ModeQueue)

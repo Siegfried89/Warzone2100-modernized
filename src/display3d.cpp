@@ -66,6 +66,7 @@
 #include "effects.h"
 #include "edit3d.h"
 #include "feature.h"
+#include "mapgrid.h"
 #include "hci.h"
 #include "display.h"
 #include "intdisplay.h"
@@ -3909,8 +3910,26 @@ static void modQueueHealthBar(BatchedMultiRectRenderer& renderer, size_t rectGro
 	modQueueBarSegments(renderer, rectGroup, x0, full, y0 + 1, y0 + 4);
 }
 
+// MOD (17.11.): Ring aus kleinen Punkten als echter Bodenkreis um die Fuesse (projiziert: Mitte + zwei Halbachsen, siehe calcScreenCoords)
+static void modQueueGroundRing(BatchedMultiRectRenderer& renderer, size_t rectGroup, const SCREEN_DISP_DATA &d)
+{
+	const float per = 3.3f * (std::hypot(d.modAx, d.modAy) + std::hypot(d.modBx, d.modBy));
+	const int N = std::max(24, std::min(96, static_cast<int>(per / 5.f)));
+	const PIELIGHT core = pal_RGBA(235, 255, 215, 255);
+	const PIELIGHT halo = pal_RGBA(90, 190, 90, 150);
+	for (int i = 0; i < N; ++i)
+	{
+		const float a = (6.2831853f * static_cast<float>(i)) / static_cast<float>(N);
+		const float c = std::cos(a), sn = std::sin(a);
+		const int x = d.modFootX + static_cast<int>(d.modAx * c + d.modBx * sn);
+		const int y = d.modFootY + static_cast<int>(d.modAy * c + d.modBy * sn);
+		renderer.addRect(PIERECT_DrawRequest(x - 1, y - 1, x + 2, y + 2, halo), rectGroup);
+		renderer.addRect(PIERECT_DrawRequest(x, y, x + 1, y + 1, core), rectGroup);
+	}
+}
+
 // MOD: Ring aus kleinen Punkten (Ellipse auf dem Boden) um die Fuesse der gewaehlten Einheit; heller Kern + schwacher Hof
-static void modQueueSelectionRing(BatchedMultiRectRenderer& renderer, size_t rectGroup, int cx, int cy, int screenR)
+[[maybe_unused]] static void modQueueSelectionRing(BatchedMultiRectRenderer& renderer, size_t rectGroup, int cx, int cy, int screenR)
 {
 	const int rx = std::max(screenR + screenR / 6, 13);
 	const int ry = std::max(rx * 9 / 20, 5);
@@ -4007,34 +4026,44 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 	if (drawBox)
 	{
 		// MOD: Auswahl-Hervorhebung wie in Rome Total War: Leuchtring um die Fuesse der Einheit (statt der vier Eckwinkel)
-		modQueueSelectionRing(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY), static_cast<int>(psDroid->sDisplay.screenR));
+		if (psDroid->sDisplay.modFootValid)
+		{
+			modQueueGroundRing(batchedMultiRectRenderer, rectGroup, psDroid->sDisplay);
+		}
+		else
+		{
+			modQueueSelectionRing(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY), static_cast<int>(psDroid->sDisplay.screenR));
+		}
 	}
+	// MOD (17.11.): Balken knapp ueber der Oberkante des Modells (nicht hoch ueber dem gerechneten Mittelpunkt)
+	const int barY = psDroid->sDisplay.modFootValid ? std::min(static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), psDroid->sDisplay.modTopY - 6)
+	                                               : static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR);
 
 	/* Power bars */
-	modQueueHealthBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), barHalf, static_cast<int>(damage), powerCol, powerColShadow);
+	modQueueHealthBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), barY, barHalf, static_cast<int>(damage), powerCol, powerColShadow);
 	{
 		const int ammoSegs = modammo::segments(psDroid);
 		if (ammoSegs >= 0)
 		{
-			modQueueAmmoBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), barHalf, ammoSegs);
+			modQueueAmmoBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), barY, barHalf, ammoSegs);
 		}
 		const int fuelPm = modfuel::permille(psDroid);
 		if (fuelPm >= 0)
 		{
-			modQueueFuelBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), static_cast<int>(psDroid->sDisplay.screenY) + static_cast<int>(psDroid->sDisplay.screenR), barHalf, fuelPm, ammoSegs >= 0 ? 2 : 1);
+			modQueueFuelBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), barY, barHalf, fuelPm, ammoSegs >= 0 ? 2 : 1);
 		}
 	}
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(
 		psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 3,
-		psDroid->sDisplay.screenY + psDroid->sDisplay.screenR,
+		barY,
 		psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 1,
-		psDroid->sDisplay.screenY + psDroid->sDisplay.screenR - shields, WZCOL_LBLUE),
+		barY - shields, WZCOL_LBLUE),
 	rectGroup);
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(
 		psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 2,
-		psDroid->sDisplay.screenY + psDroid->sDisplay.screenR,
+		barY,
 		psDroid->sDisplay.screenX - psDroid->sDisplay.screenR,
-		psDroid->sDisplay.screenY + psDroid->sDisplay.screenR - shields, WZCOL_BLACK),
+		barY - shields, WZCOL_BLACK),
 	rectGroup);
 }
 
@@ -4116,7 +4145,11 @@ static void queueDroidEnemyHealthBarsRects(DROID *psDroid, BatchedMultiRectRende
 		boxCol = WZCOL_WHITE;
 
 		/* Power bars */
-		modQueueHealthBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(scrX), static_cast<int>(scrY) + static_cast<int>(scrR), barHalf, static_cast<int>(damage), powerCol, powerColShadow);
+		{
+			int eBarY = static_cast<int>(scrY) + static_cast<int>(scrR);
+			if (psDroid->sDisplay.modFootValid) { eBarY = std::min(eBarY, psDroid->sDisplay.modTopY - 6); }   // MOD (17.11.): ueber dem Modell
+			modQueueHealthBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(scrX), eBarY, barHalf, static_cast<int>(damage), powerCol, powerColShadow);
+		}
 	}
 }
 
@@ -4459,6 +4492,38 @@ void calcScreenCoords(DROID *psDroid, const glm::mat4 &perspectiveViewMatrix)
 	/* Store away the screen coordinates so we can select the droids without doing a transform */
 	psDroid->sDisplay.screenX = center.x;
 	psDroid->sDisplay.screenY = center.y;
+	// MOD (Wunsch 17.11. "Auswahlmarker bei Seitenansicht hoch"): der Auswahlring liegt als Ellipse auf dem Boden um die Fuesse
+	// (projizierter Kreis), die Balken sitzen knapp ueber der Oberkante des Modells - nicht mehr ueber dem hochgerechneten Mittelpunkt.
+	{
+		psDroid->sDisplay.modFootValid = false;
+		const int R = std::max(48, (wsRadius * 4) / 5);
+		int topH = 40;
+		if (psBStats && psBStats->pIMD && psBStats->pIMD->displayModel())
+		{
+			topH = std::max(24, psBStats->pIMD->displayModel()->max.y + 22);
+		}
+		Vector3i pts[6] = {Vector3i(0, 2, 0), Vector3i(R, 2, 0), Vector3i(0, 2, R), Vector3i(-R, 2, 0), Vector3i(0, 2, -R), Vector3i(0, topH, 0)};
+		Vector2i sp[6];
+		bool ok = true;
+		for (int k = 0; k < 6; ++k)
+		{
+			sp[k] = Vector2i(0, 0);
+			if (pie_RotateProjectWithPerspective(&pts[k], perspectiveViewMatrix, &sp[k]) <= 0) { ok = false; }
+		}
+		if (ok)
+		{
+			psDroid->sDisplay.modFootX = (sp[1].x + sp[2].x + sp[3].x + sp[4].x) / 4;
+			psDroid->sDisplay.modFootY = (sp[1].y + sp[2].y + sp[3].y + sp[4].y) / 4;
+			psDroid->sDisplay.modAx = static_cast<float>(sp[1].x - sp[3].x) * 0.5f;
+			psDroid->sDisplay.modAy = static_cast<float>(sp[1].y - sp[3].y) * 0.5f;
+			psDroid->sDisplay.modBx = static_cast<float>(sp[2].x - sp[4].x) * 0.5f;
+			psDroid->sDisplay.modBy = static_cast<float>(sp[2].y - sp[4].y) * 0.5f;
+			psDroid->sDisplay.modTopY = sp[5].y;
+			// unsinnig grosse Ellipsen (Kamera fast in der Einheit) nicht zeichnen
+			const float big = std::max(std::abs(psDroid->sDisplay.modAx) + std::abs(psDroid->sDisplay.modBx), std::abs(psDroid->sDisplay.modAy) + std::abs(psDroid->sDisplay.modBy));
+			psDroid->sDisplay.modFootValid = big < static_cast<float>(pie_GetVideoBufferWidth());
+		}
+	}
 	// MOD: einheitliche Balkenlaenge/Auswahlgroesse, unabhaengig von Modellgroesse und Zoom (leicht anklickbar, Balken immer kurz)
 	psDroid->sDisplay.screenR = static_cast<UDWORD>(std::min(16.0f, std::max(9.0f, static_cast<float>(radius))));
 }
@@ -4615,6 +4680,53 @@ int calculateCameraHeightAt(WorldMapState& mapState, int worldX, int worldZ)
 	return static_cast<int>(std::lround(calculateCameraHeight(calcInterpolatedAverageTerrainHeight(mapState, worldX, worldZ))));
 }
 
+/// MOD (17.11.): Die Kamera taucht nicht mehr in Haeuser/Hochhaeuser ein (dort wurden sie abgeschnitten und verschwanden). Liegt das
+/// Kamera-Auge fuer die gewuenschte Hoehe innerhalb eines Gebaeudes oder Features, wird die Hoehe so weit angehoben, dass das Auge knapp
+/// ueber dessen Dach bleibt (weich ueber trackHeight). Nur Anzeige.
+static float modCameraClearance(float pivotY)
+{
+	const glm::mat4 view =
+		glm::translate(glm::vec3(0.f, 0.f, distance)) *
+		glm::scale(glm::vec3(pie_GetResScalingFactor() / 100.f)) *
+		glm::rotate(UNDEG(playerPos.r.z), glm::vec3(0.f, 0.f, 1.f)) *
+		glm::rotate(UNDEG(playerPos.r.x), glm::vec3(1.f, 0.f, 0.f)) *
+		glm::rotate(UNDEG(playerPos.r.y), glm::vec3(0.f, 1.f, 0.f)) *
+		glm::translate(glm::vec3(-static_cast<float>(playerPos.p.x), -pivotY, static_cast<float>(playerPos.p.z)));
+	const glm::vec3 eye = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
+	const int ex = static_cast<int>(eye.x), ey = static_cast<int>(-eye.z);
+	if (!worldOnMap(gameWorld.map, ex, ey)) { return 0.f; }
+	constexpr float MARGIN = 40.f;
+	float need = 0.f;
+	for (BASE_OBJECT *o : gridStartIterate(ex, ey, DIST_TILE * 4))
+	{
+		const iIMDShape *imd = nullptr;
+		if (o->type == OBJ_FEATURE)
+		{
+			const FEATURE *f = static_cast<const FEATURE *>(o);
+			if (f->psStats != nullptr && f->psStats->psImd != nullptr) { imd = f->psStats->psImd->displayModel(); }
+		}
+		else if (o->type == OBJ_STRUCTURE)
+		{
+			const STRUCTURE *st = static_cast<const STRUCTURE *>(o);
+			if (st->sDisplay.imd != nullptr) { imd = st->sDisplay.imd->displayModel(); }
+		}
+		if (imd == nullptr || o->died) { continue; }
+		const float top = static_cast<float>(o->pos.z) + static_cast<float>(imd->max.y);
+		if (top + MARGIN <= eye.y) { continue; }
+		// Auge in den Modellraum des Objekts drehen und gegen den Grundriss pruefen
+		const float dx = eye.x - static_cast<float>(o->pos.x);
+		const float dz = eye.z + static_cast<float>(o->pos.y);
+		const float a = UNDEG(o->rot.direction);
+		// Modellmatrix dreht um -Richtung (renderStructure/displayFeature) -> zurueck um +Richtung
+		const float lx = dx * std::cos(a) + dz * std::sin(a);
+		const float lz = -dx * std::sin(a) + dz * std::cos(a);
+		if (lx < static_cast<float>(imd->min.x) - MARGIN || lx > static_cast<float>(imd->max.x) + MARGIN) { continue; }
+		if (lz < static_cast<float>(imd->min.z) - MARGIN || lz > static_cast<float>(imd->max.z) + MARGIN) { continue; }
+		need = std::max(need, top + MARGIN - eye.y);
+	}
+	return need;
+}
+
 /// The last step of moving the camera each frame, after scrolling, panning and rotating.
 /// Follows the terrain height, or lets the war camera move the camera. Runs before the scene is drawn.
 static void updateCameraForFrame()
@@ -4629,7 +4741,8 @@ static void updateCameraForFrame()
 	{
 		/* Move the autonomous camera if necessary */
 		updatePlayerAverageCentreTerrainHeight();
-		const float desiredCameraHeight = calculateCameraHeight(averageCentreTerrainHeight);
+		float desiredCameraHeight = calculateCameraHeight(averageCentreTerrainHeight);
+		desiredCameraHeight += modCameraClearance(desiredCameraHeight);   // MOD: nicht in Gebaeude eintauchen
 		camtrace::markHeightTarget(static_cast<int>(std::lround(averageCentreTerrainHeight)), static_cast<int>(std::lround(desiredCameraHeight)));
 		trackHeight(desiredCameraHeight);
 	}
