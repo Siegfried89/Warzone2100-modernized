@@ -8,6 +8,10 @@
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/piepalette.h"
+#include "lib/ivis_opengl/piedef.h"
+#include "lib/ivis_opengl/imd.h"
+#include "lib/ivis_opengl/ivisdef.h"
+#include "lib/ivis_opengl/pielighting.h"
 
 #include "ai.h"
 #include "droid.h"
@@ -25,6 +29,9 @@
 #include <cmath>
 #include <map>
 #include <vector>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace modferry
 {
@@ -216,12 +223,15 @@ void drawFerryRoute(const Vector2i &from, const Vector2i &to, const glm::mat4 &m
 	const float L = glm::length(B - A);
 	if (L < DIST_TILE) { return; }
 	const glm::vec2 dir = (B - A) / L, perp(-dir.y, dir.x);
-	const float halfW = DIST_TILE * 0.32f;                 // Band etwa 2/3 Feld breit
+	const float halfW = DIST_TILE * 0.42f;                 // Band (17.11. 18:10: dicker, vorher 0,32)
 	const float headL = DIST_TILE * 0.9f;                   // grosse Spitze am Ende
 	const float bodyEnd = L - headL * 0.85f;
 	const int alpha = hot ? 0xdd : 0xaa;
 	const PIELIGHT band = pal_RGBA(0x65, 0x4b, 0xc2, static_cast<UBYTE>(alpha * 0.42f));
 	const PIELIGHT glow = pal_RGBA(0x75, 0x58, 0xe2, static_cast<UBYTE>(alpha * 0.16f));
+	// MOD (Wunsch 17.11. 18:10): leuchtend wie die Sensor-/Reichweitenringe - weiter, sehr weicher Lichthof und heller Kernstreifen
+	const PIELIGHT halo = pal_RGBA(0x8a, 0x70, 0xff, static_cast<UBYTE>(alpha * 0.07f));
+	const PIELIGHT hotLine = pal_RGBA(0xc8, 0xbc, 0xff, static_cast<UBYTE>(alpha * 0.55f));
 	// 1. Band (Hof + Kern) in Abschnitten von 1/2 Feld, perspektivisch breit
 	RoutePt prev = projectOnGround(A, perp, halfW, m);
 	for (float s = DIST_TILE * 0.5f; ; s += DIST_TILE * 0.5f)
@@ -231,8 +241,19 @@ void drawFerryRoute(const Vector2i &from, const Vector2i &to, const glm::mat4 &m
 		if (prev.ok && cur.ok)
 		{
 			const float w = prev.halfW + cur.halfW;            // = volle Breite (Mittel der beiden Enden x 2 / 2)
+			{
+				const glm::vec2 dd = cur.c - prev.c;
+				const float ll = glm::length(dd);
+				if (ll > 0.01f)
+				{
+					const glm::vec2 cc = (prev.c + cur.c) * 0.5f;
+					const float hw = w * 2.6f;
+					pie_DrawSoftRoundedBoxRotated(cc.x, cc.y, ll + hw * 0.5f, hw, std::atan2(dd.y, dd.x), halo, hw * 0.5f, hw * 0.45f);
+				}
+			}
 			softSeg(prev.c, cur.c, w * 1.55f, glow);
 			softSeg(prev.c, cur.c, w, band);
+			softSeg(prev.c, cur.c, std::max(2.f, w * 0.16f), hotLine);
 		}
 		prev = cur;
 		if (t >= bodyEnd) { break; }
@@ -316,24 +337,99 @@ void drawOverlay(const glm::mat4 &m)
 			drawFerryRoute(home->pos.xy(), front->pos.xy(), m, hot);
 		}
 	}
-	const bool on = (realTime / 450) % 2 == 0;     // Blinktakt
-	const bool on2 = (realTime / 450) % 2 == 1;
+	// (17.11. 18:18) die Lichter der Leuchtfeuer sind jetzt echte 3D-Leuchtfeuer (draw3D), nach Sicherheit gefaerbt
+}
+
+// ---------------------------------------------------------------- Landezonen-Lichter (Wunsch 17.11. 18:18)
+// "Drei Varianten von Landezonen-Leuchtpunktsignalen: Rot = Landezone nicht sicher (Einheiten und Gebaeude im grossen Radius), Blau =
+// etwas sicher (Gegner in einem groesseren Radius entfernt), Gruen = sicher (genau das gleiche kraeftige blinkende Gruen wie bei der
+// Reparaturstation). Rot und Gruen genauso kraeftig wie bei der Reparaturstation."
+// Gerechnet wird mit dem, was der eigene Spieler sieht (sichtbare feindliche Einheiten und Gebaeude); nur Anzeige.
+namespace
+{
+constexpr int SAFE_NEAR = DIST_TILE * 14;   // darin Feinde -> rot
+constexpr int SAFE_FAR = DIST_TILE * 28;    // darin Feinde -> blau, sonst gruen
+struct Safety { int state = 2; unsigned at = 0; };
+std::map<uint32_t, Safety> s_safety;
+
+int safetyOf(const STRUCTURE *b)
+{
+	Safety &sf = s_safety[b->id];
+	if (sf.at != 0 && realTime - sf.at < 1000u) { return sf.state; }
+	sf.at = std::max(1u, realTime);
+	int64_t best = INT64_MAX;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		if (p == b->player || aiCheckAlliances(p, b->player)) { continue; }
+		auto look = [&](const BASE_OBJECT *o) {
+			if (o == nullptr || o->died || (selectedPlayer < MAX_PLAYERS && o->visible[selectedPlayer] == 0)) { return; }
+			const int64_t dx = o->pos.x - b->pos.x, dy = o->pos.y - b->pos.y;
+			best = std::min(best, dx * dx + dy * dy);
+		};
+		for (const DROID *d : gameWorld.objects.droids[p]) { look(d); }
+		for (const STRUCTURE *st : gameWorld.objects.structures[p]) { look(st); }
+	}
+	const int64_t n2 = static_cast<int64_t>(SAFE_NEAR) * SAFE_NEAR, f2 = static_cast<int64_t>(SAFE_FAR) * SAFE_FAR;
+	sf.state = best <= n2 ? 0 : (best <= f2 ? 1 : 2);
+	return sf.state;
+}
+}
+
+void draw3D(const glm::mat4 &viewMatrix)
+{
+	if (selectedPlayer >= MAX_PLAYERS || modlayer::current() != modlayer::SURFACE) { return; }
+	static const iIMDBaseShape *s_shape[3] = { nullptr, nullptr, nullptr };
+	static bool s_tried = false;
+	if (!s_tried)
+	{
+		s_tried = true;
+		s_shape[0] = modelGet(WzString::fromUtf8("modlzbeacon_red.pie"));
+		s_shape[1] = modelGet(WzString::fromUtf8("modlzbeacon_blue.pie"));
+		s_shape[2] = modelGet(WzString::fromUtf8("modrallybeacon.pie"));   // Gruen der Reparaturstation
+	}
+	static const PIELIGHT kLight[3] = { pal_Colour(255, 90, 70), pal_Colour(110, 160, 255), pal_Colour(150, 255, 140) };
+	static const float kPower[3] = { 2.2f, 1.7f, 2.2f };
+	const glm::mat4 bill(glm::transpose(glm::mat3(viewMatrix)));
+	const unsigned phase = graphicsTime % 1000u;
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (!isBeacon(s) || !s->visibleForLocalDisplay()) { continue; }
-			// vier kleine Lichter an den Ecken, abwechselnd blinkend wie an einer WZ-Landezone
+			const int st = safetyOf(s);
+			const iIMDBaseShape *shape = s_shape[st] != nullptr ? s_shape[st] : s_shape[2];
+			if (shape == nullptr) { continue; }
+			// vier Lichter an den Ecken, diagonal abwechselnd im Takt der Reparaturstation (je halbe Sekunde)
 			static const int C[4][2] = { { -1, -1 }, { 1, 1 }, { 1, -1 }, { -1, 1 } };
+			bool anyOn = false;
+			float pulseMax = 0.f;
 			for (int k = 0; k < 4; ++k)
 			{
-				if ((k < 2) ? !on : !on2) { continue; }
+				const unsigned ph = (k < 2) ? phase : (phase + 500u) % 1000u;
+				const bool on = ph < 520u;
+				const float pulse = on ? (1.f - 0.25f * static_cast<float>(ph) / 520.f) : 0.18f;
+				anyOn = anyOn || on;
+				pulseMax = std::max(pulseMax, pulse);
 				const int wx = s->pos.x + C[k][0] * (DIST_TILE * 2 / 5), wy = s->pos.y + C[k][1] * (DIST_TILE * 2 / 5);
-				Vector2i sp(0, 0);
-				if (!project(Vector3i(wx, wy, map_Height(gameWorld.map, wx, wy) + 14), m, sp)) { continue; }
-				const PIELIGHT c = (k < 2) ? pal_RGBA(255, 70, 50, 255) : pal_RGBA(90, 255, 110, 255);
-				pie_BoxFill_alpha(sp.x - 3, sp.y - 3, sp.x + 3, sp.y + 3, pal_RGBA(c.byte.r, c.byte.g, c.byte.b, 90));
-				pie_BoxFill_alpha(sp.x - 1, sp.y - 1, sp.x + 2, sp.y + 2, c);
+				const glm::vec3 pos(static_cast<float>(wx), static_cast<float>(map_Height(gameWorld.map, wx, wy) + 16), static_cast<float>(-wy));
+				const float sc = on ? 2.4f : 1.4f;   // Reparaturstation: 2,6 / 1,5 (ein Einzellicht)
+				const int alpha = std::clamp(static_cast<int>(255.f * pulse), 0, 255);
+				const glm::mat4 bb = glm::translate(glm::mat4(1.f), pos) * glm::mat4(bill) * glm::scale(glm::mat4(1.f), glm::vec3(sc));
+				pie_Draw3DShape(shape->displayModel(), 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, bb, viewMatrix, 0.f, true);
+				if (on)
+				{
+					const glm::mat4 core = glm::translate(glm::mat4(1.f), pos) * glm::mat4(bill) * glm::scale(glm::mat4(1.f), glm::vec3(sc * 0.55f));
+					pie_Draw3DShape(shape->displayModel(), 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, core, viewMatrix, 0.f, true);
+				}
+			}
+			if (anyOn)
+			{
+				LIGHT light;
+				light.position = Vector3i(s->pos.x, map_Height(gameWorld.map, s->pos.x, s->pos.y) + 40, s->pos.y);
+				light.range = 420;
+				light.colour = kLight[st];
+				light.intensity = kPower[st] * pulseMax;
+				getCurrentLightingData().lights.push_back(light);
 			}
 		}
 	}
@@ -341,6 +437,7 @@ void drawOverlay(const glm::mat4 &m)
 
 void reset()
 {
+	s_safety.clear();
 	s_trans.clear();
 	s_next = 0;
 }

@@ -32,6 +32,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "action.h"
+#include "modupgrade.h"
 #include "modarty.h"
 #include "combat.h"
 #include "formation.h"
@@ -1737,6 +1738,17 @@ void actionUpdateDroid(DROID *psDroid)
 							psDroid->action = DACTION_BUILD;
 						}
 					}
+					else if (modupgrade::canReplace(order->psStats, psStruct, psDroid->player))
+					{
+						// MOD (Wunsch 17.11. 18:02): Ausbau wie ein Modul - Betonbunker auf den Scav-Bunker
+						if (droidStartBuild(psDroid) == DroidStartBuildSuccess)
+						{
+							syncDebug("Reached build target: upgrade");
+							psDroid->action = DACTION_BUILD;
+							psDroid->actionStarted = gameTime;
+							psDroid->actionPoints = 0;
+						}
+					}
 					else
 					{
 						syncDebug("Reached build target: already-structure");
@@ -1795,6 +1807,10 @@ void actionUpdateDroid(DROID *psDroid)
 						else if (IsStatExpansionModule(psStructStats))
 						{
 							setUpBuildModule(psDroid);
+						}
+						else if (modupgrade::canReplace(order->psStats, psStruct, psDroid->player))
+						{
+							if (droidStartBuild(psDroid) == DroidStartBuildSuccess) { psDroid->action = DACTION_BUILD; }   // MOD: Ausbau (Betonbunker)
 						}
 						else
 						{
