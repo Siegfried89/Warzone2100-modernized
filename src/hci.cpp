@@ -97,6 +97,7 @@
 #include "modwreck.h"
 #include "modparts.h"
 #include "modpaint.h"
+#include "modrosette.h"
 #include "modmorale.h"
 #include "modrecover.h"
 #include "modnestcrew.h"
@@ -739,6 +740,7 @@ void interfaceShutDown()
 	moddesigner::shutdown(); // MOD
 	modpanel::shutdown();    // MOD
 	modpaint::shutdown();    // MOD
+	modrosette::shutdown();  // MOD (17.11.)
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
@@ -1217,6 +1219,7 @@ INT_RETVAL intRunWidgets()
 	modpanel::tick();      // MOD: Combot-Auswahlfeld
 	modlayer::tick();      // MOD: Ebenen-Knoepfe
 	modpaint::tick();      // MOD: Schlachtplan (Frei malen)
+	modrosette::tick();    // MOD (17.11.): Mod-Rosette im WZ-Stil
 	moddesigner::tick();   // MOD: Combot-Designer
 
 	if (quitToMainMenuRequested)
@@ -2346,8 +2349,12 @@ bool intAddReticule()
 			setReticuleButtonDimensions(*retbutstats[i].button, retbutstats[i].filename);
 		}
 	}
-	intAddSensorModeButton();
-	intAddFormationButtons();
+	// (17.11. 14:14) Sensor- und Formationsknoepfe sind jetzt in der Mod-Rosette (modrosette.cpp) - nur ohne Rosetten-Bilder wie bisher
+	if (!PHYSFS_exists("images/modrosette.img"))
+	{
+		intAddSensorModeButton();
+		intAddFormationButtons();
+	}
 	ReticuleUp = true;
 	return true;
 }

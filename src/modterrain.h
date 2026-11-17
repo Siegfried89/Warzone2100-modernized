@@ -59,6 +59,16 @@ bool blocksVehicles(const WorldMapState &mapState, int x, int y);
 /// Absenkung durch ein Bauwerk (tiefer Graben) setzen; 0 = aufheben
 void setStructureSink(int tileX, int tileY, int depth);
 
+/// (17.11. 14:14) "Beim Krater sieht man einen kegelfoermigen Erdhaufen. Den schuettet der Bagger dann hinein."
+/// Erdhaufen am Rand jedes Kraters/Schuetzenlochs der aktiven Ebene (nur Anzeige): Weltlage, Groesse 0..1 (nach Resttiefe), Drehung
+struct CraterPile
+{
+	int worldX = 0, worldY = 0;
+	float scale = 1.f;
+	int rotDeg = 0;
+};
+void craterPiles(std::vector<CraterPile> &out);
+
 /// jeden Spielschritt: verzoegerte Krater anlegen (unter der Staubwolke)
 void tick();
 

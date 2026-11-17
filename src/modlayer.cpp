@@ -5,6 +5,7 @@
 #include "lib/sound/tracklib.h"
 #include "modlayermap.h"
 #include "modui.h"
+#include "modrosette.h"
 #include "modcombot.h"
 #include "modoil.h"
 
@@ -357,7 +358,7 @@ void tick()
 	// den Haeusern; Infanterie in besetzten Gebaeuden = dumpf mit Treppenhaus-Hall (je Klangquelle, siehe soundInBuilding)
 	sound_SetSampleEnvironmentHook(&soundInBuilding);
 	sound_SetEnvironment(s_current == UNDERGROUND ? 2 : ((s_current == SURFACE && currentMapTileset == MAP_TILESET::URBAN) ? 1 : 0));
-	const bool want = !s_suppressed;
+	const bool want = !s_suppressed && !modrosette::active();   // (17.11.) Ebenen-Knoepfe jetzt in der Mod-Rosette
 	if (!want && !s_screen) { return; }
 	ensureScreen();
 	if (!s_root) { return; }
