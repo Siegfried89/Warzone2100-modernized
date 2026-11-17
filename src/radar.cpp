@@ -55,6 +55,7 @@
 #include "warzoneconfig.h"
 #include "order.h"
 #include "cameratrace.h"
+#include "modbigmap.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
 #endif
@@ -993,6 +994,7 @@ void RadarWidget::released(W_CONTEXT *context, WIDGET_KEY key)
 
 			CalcRadarPosition(gameWorld.map, x, y, &PosX, &PosY);
 
+			modbigmap::radarClicked(PosX, PosY);   // MOD (Wunsch 17.11. 18:48): Klick auf die Minikarte oeffnet die strategische Karte
 			if (war_GetRadarJump())
 			{
 				/* Go instantly */

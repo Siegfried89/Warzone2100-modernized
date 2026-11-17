@@ -3,6 +3,10 @@
 #include "modmines.h"
 
 #include "lib/framework/frame.h"
+#include "lib/framework/input.h"
+#include "lib/ivis_opengl/pieblitfunc.h"
+#include "lib/ivis_opengl/piematrix.h"
+#include "lib/ivis_opengl/piepalette.h"
 #include "lib/framework/fixedpoint.h"
 #include "lib/framework/math_ext.h"
 #include "lib/gamelib/gtime.h"
@@ -21,7 +25,9 @@
 #include "objmem.h"
 #include "stats.h"
 #include "structure.h"
+#include "modui.h"
 
+#include <cmath>
 #include <vector>
 
 namespace modmines
@@ -129,6 +135,39 @@ void tick()
 	for (STRUCTURE *s : boom)
 	{
 		if (!s->died) { blast(s); }
+	}
+}
+
+void drawOverlay(const glm::mat4 &m)
+{
+	if (selectedPlayer >= MAX_PLAYERS || !(keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT))) { return; }
+	const STRUCTURE_STATS *ms = mineStats();
+	if (ms == nullptr) { return; }
+	const float sc = modui::uiScale();
+	const float r = 8.f * sc;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s == nullptr || s->died || s->pStructureType != ms || s->visible[selectedPlayer] == 0) { continue; }
+			if (modlayer::layerOf(s) != modlayer::current()) { continue; }
+			const Vector3i pos(s->pos.x, map_Height(gameWorld.map, s->pos.x, s->pos.y) + 6, -s->pos.y);
+			Vector2i sp(0, 0);
+			if (pie_RotateProjectWithPerspective(&pos, m, &sp) <= 0) { continue; }
+			const float x = static_cast<float>(sp.x), y = static_cast<float>(sp.y);
+			// gelbes Warnzeichen: weicher Lichthof, gelbe Scheibe mit dunklem Rand, schwarze Mine (Kreis mit vier Zuendstiften)
+			pie_DrawSoftRoundedBox(x - r * 2.2f, y - r * 2.2f, x + r * 2.2f, y + r * 2.2f, pal_RGBA(255, 220, 40, 60), r * 2.2f, r * 1.4f);
+			pie_DrawSoftRoundedBox(x - r - 1.5f, y - r - 1.5f, x + r + 1.5f, y + r + 1.5f, pal_RGBA(40, 30, 0, 230), r + 1.5f, 1.2f);
+			pie_DrawSoftRoundedBox(x - r, y - r, x + r, y + r, pal_RGBA(255, 214, 30, 255), r, 1.2f);
+			const float k = r * 0.42f;
+			pie_DrawSoftRoundedBox(x - k, y - k, x + k, y + k, pal_RGBA(25, 22, 10, 255), k, 1.f);
+			for (int i = 0; i < 4; ++i)
+			{
+				const float a = static_cast<float>(i) * 1.5707963f + 0.785398f;
+				const float cx = x + std::cos(a) * k * 1.45f, cy = y + std::sin(a) * k * 1.45f;
+				pie_DrawSoftRoundedBoxRotated(cx, cy, k * 0.9f, std::max(1.5f, k * 0.38f), a, pal_RGBA(25, 22, 10, 255), 1.f, 1.f);
+			}
+		}
 	}
 }
 

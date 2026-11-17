@@ -87,6 +87,7 @@
 #include "modtankguns.h"
 #include "modimpostor.h"
 #include "modmines.h"
+#include "modbigmap.h"
 #include "modfuel.h"
 #include "modai.h"
 #include "modpointdef.h"
@@ -744,6 +745,7 @@ void interfaceShutDown()
 	moddesigner::shutdown(); // MOD
 	modpanel::shutdown();    // MOD
 	modpaint::shutdown();    // MOD
+	modbigmap::shutdown();   // MOD (17.11.): strategische Karte
 	modrosette::shutdown();  // MOD (17.11.)
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
@@ -1227,6 +1229,7 @@ INT_RETVAL intRunWidgets()
 	modpanel::tick();      // MOD: Combot-Auswahlfeld
 	modlayer::tick();      // MOD: Ebenen-Knoepfe
 	modpaint::tick();      // MOD: Schlachtplan (Frei malen)
+	modbigmap::tick();     // MOD (17.11.): strategische Karte, Knoepfe an der Minikarte
 	modrosette::tick();    // MOD (17.11.): Mod-Rosette im WZ-Stil
 	moddesigner::tick();   // MOD: Combot-Designer
 

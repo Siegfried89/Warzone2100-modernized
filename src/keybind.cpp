@@ -90,6 +90,7 @@
 
 #include "screens/ingameopscreen.h"
 #include "titleui/options/optionsforms.h"
+#include "modbigmap.h"
 
 /*
 	KeyBind.c
@@ -1024,6 +1025,7 @@ void	kf_LowerTile()
 MappableFunction kf_Zoom(const int multiplier)
 {
 	return [multiplier]() {
+		if (modbigmap::zoom(multiplier)) { return; }   // MOD (17.11.): Mausrad ueber der strategischen Karte zoomt die Karte
 		incrementViewDistance(war_GetMapZoomRate() * multiplier);
 	};
 }

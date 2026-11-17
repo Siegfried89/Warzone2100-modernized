@@ -18,6 +18,7 @@
 
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
+#include <functional>
 
 namespace modpaint
 {
@@ -27,6 +28,8 @@ void tick();
 bool processMouse(bool overUi, const Vector2i &worldPos);
 /// Zeichnungen im 3D-Bild einblenden
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
+/// (17.11.) Zeichnungen auf der grossen Karte (modbigmap): toScreen rechnet Weltpunkte in Bildschirmpunkte um
+void drawOnMap(const std::function<bool(const Vector2i &, Vector2i &)> &toScreen);
 /// Beschriftung am Mauszeiger, solange ein Zeichenmodus aktiv ist (sonst nullptr)
 const char *activeLabel();
 /// (17.11.) Zeichenmodus nach Beschriftung waehlen (z. B. "Salvage" aus der Mod-Rosette)

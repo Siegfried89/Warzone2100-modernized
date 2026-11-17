@@ -9,9 +9,14 @@
 // Alles in der Spielzeit (gameTime, Spielobjekt-Reihenfolge) und damit im Mehrspieler synchron.
 #pragma once
 
+#include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
+#include <glm/fwd.hpp>
+
 namespace modmines
 {
 /// jeden Spielschritt direkt nach processVisibility(): Minen verstecken, Ausloeser pruefen
 void tick();
+/// (Wunsch 17.11. 18:48) "Mit Shift sieht man alle Minen besser, weil sie ein gelbes Icon bekommen" - nur Anzeige
+void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
 void reset();
 }
