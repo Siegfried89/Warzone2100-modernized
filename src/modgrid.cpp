@@ -277,7 +277,7 @@ void update()
 					panelNuke.push_back(0);
 				}
 			}
-			else if (modnuke::isPlant(st))
+			else if (modnuke::isPlant(st) || modnuke::isHydro(st))
 			{
 				// (Wunsch 17.11. 21:13) Atomkraftwerk: stetige Quelle wie die Sonne, aber viel staerker (Tag und Nacht, solange Uran da ist)
 				s_hasGen[p] = true;

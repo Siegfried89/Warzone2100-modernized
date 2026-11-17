@@ -50,7 +50,7 @@ Kind kindOf(const STRUCTURE *s)
 	case REF_DEFENSE: return (has("Tower") || has("tow") || has("Tow")) ? K_TOP : K_NONE;
 	default: break;
 	}
-	if (has("Refinery") || has("Cryo") || has("LayerShaft") || has("Storage") || has("NuclearPlant") || has("RocketSilo")) { return K_CORNERS; }
+	if (has("Refinery") || has("Cryo") || has("LayerShaft") || has("Storage") || has("NuclearPlant") || has("RocketSilo") || has("HydroPlant") || has("Sat-link")) { return K_CORNERS; }
 	if (has("UraniumMine")) { return K_TOP; }
 	if (has("Tower")) { return K_TOP; }
 	return K_NONE;

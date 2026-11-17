@@ -16,6 +16,7 @@
 #include "modoil.h"
 #include "power.h"
 #include "structure.h"
+#include "terrain.h"
 
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
@@ -32,6 +33,7 @@ constexpr int FIRST_LOAD = 2;           // Erstbeladung beim Bau (Einheiten)
 constexpr int INCOME_1 = 3;             // Energie je Sekunde mit 1 Kuehlturm, Tag und Nacht gleich
 constexpr int INCOME_2 = 5;             // mit 2 Kuehltuermen (Ausbau)
 constexpr int GRID_1 = 100, GRID_2 = 150;
+constexpr int HYDRO_INCOME = 2, HYDRO_GRID = 60;   // (22:42) Wasserkraftwerk
 constexpr int MINE_SECONDS = 30;        // ein Bergwerk im Untergrund foerdert eine Einheit je 30 s
 constexpr int STOCK_MAX = 20;           // Uranlager je Spieler
 constexpr unsigned WARN_EVERY_S = 60;   // Hinweis "kein Uran" hoechstens jede Minute
@@ -58,6 +60,25 @@ bool isPlant(const STRUCTURE_STATS *psStats)
 	return psStats != nullptr && psStats->id.startsWith("A0NuclearPlant");
 }
 
+bool isHydro(const STRUCTURE_STATS *psStats)
+{
+	return psStats != nullptr && psStats->id.startsWith("A0HydroPlant");
+}
+
+bool waterNear(const WorldMapState &map, int x0, int y0, int w, int h)
+{
+	int water = 0;
+	for (int y = y0 - 1; y <= y0 + h; ++y)
+	{
+		for (int x = x0 - 1; x <= x0 + w; ++x)
+		{
+			if (x < 0 || y < 0 || x >= map.width || y >= map.height) { continue; }
+			if (terrainType(mapTile(map, x, y)) == TER_WATER) { ++water; }
+		}
+	}
+	return water >= 2;
+}
+
 static bool twoTowers(const STRUCTURE_STATS *psStats)
 {
 	return psStats != nullptr && psStats->id.compare("A0NuclearPlant2") == 0;
@@ -65,6 +86,10 @@ static bool twoTowers(const STRUCTURE_STATS *psStats)
 
 int gridCapacity(const STRUCTURE *psStruct)
 {
+	if (psStruct != nullptr && isHydro(psStruct->pStructureType))
+	{
+		return (!psStruct->died && psStruct->status == SS_BUILT) ? HYDRO_GRID : 0;
+	}
 	return running(psStruct) ? (twoTowers(psStruct->pStructureType) ? GRID_2 : GRID_1) : 0;
 }
 
@@ -110,6 +135,10 @@ void tick()
 		}
 		// Kraftwerke: Uran nachladen, Energie liefern
 		int gain = 0;
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (!s->died && s->status == SS_BUILT && isHydro(s->pStructureType)) { gain += HYDRO_INCOME; }   // Wasserkraft: stetig, ohne Brennstoff
+		}
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->died || s->status != SS_BUILT || !isPlant(s->pStructureType)) { continue; }

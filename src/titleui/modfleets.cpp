@@ -170,7 +170,9 @@ unsigned s_selectedButton = 0;     // hervorgehobene Zeile (gewaehlte Flotte)
 // (Wunsch 22:13) "generell verschoenern - wunderschoene Icons und leuchtende UIs, es soll Bombe aussehen":
 // Verlaufs-Tafel mit leuchtendem Rahmen und Eck-Akzenten, Neon-Icons (images/modfleets.img), Leuchtbalken beim Ueberfahren,
 // pulsierender Editor-Knopf.
-enum FleetIcon { IC_INFANTRY = 0, IC_CYBORG, IC_TANK, IC_ARTY, IC_AIR, IC_SYSTEMS, IC_DESIGNER, IC_FLEET, IC_STAR };
+enum FleetIcon { IC_INFANTRY = 0, IC_CYBORG, IC_TANK, IC_ARTY, IC_AIR, IC_SYSTEMS, IC_DESIGNER, IC_FLEET, IC_STAR,
+                 IC_BTN_UP, IC_BTN_DOWN, IC_BTN_HI, IC_NEW, IC_RENAME, IC_UPDATE, IC_DELETE, IC_USE, IC_LEFT, IC_RIGHT };
+std::map<unsigned, int> s_btnIcon;    // Knopf-ID -> Sinnbild
 IMAGEFILE *icons()
 {
 	static IMAGEFILE *s_icons = nullptr;
@@ -182,11 +184,15 @@ IMAGEFILE *icons()
 	}
 	return s_icons;
 }
-void drawIcon(int id, int x, int y, int size, uint8_t alpha = 255)
+void drawImg(int id, int x, int y, int w, int h, uint8_t alpha = 255)
 {
 	IMAGEFILE *img = icons();
 	if (img == nullptr) { return; }
-	iV_DrawImageFileAnisotropic(img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(size), static_cast<float>(size)), defaultProjectionMatrix(), alpha);
+	iV_DrawImageFileAnisotropic(img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(w), static_cast<float>(h)), defaultProjectionMatrix(), alpha);
+}
+void drawIcon(int id, int x, int y, int size, uint8_t alpha = 255)
+{
+	drawImg(id, x, y, size, size, alpha);
 }
 struct IconSpot { int id; int x, y, size; };
 std::vector<IconSpot> s_iconSpots;     // Icons auf der Tafel (relativ zur Tafel), beim Aufbau gesammelt
@@ -275,26 +281,44 @@ void displayFleetLine(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	displayTextOption(psWidget, xOffset, yOffset);
 }
 
-/// Knopf mit Verlauf und leuchtendem Rahmen; der Editor-Knopf pulsiert golden und zeigt sein Icon
-void displayFleetButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+/// (Wunsch 22:42) "jeden neuen Knopf im Stil der WZ-Knoepfe im Kommandomenue (Patrouille, Feuerunterstuetzung ...): genau gleiche Form,
+/// Rand und Hintergrund - einziger Unterschied: das farbige Leuchten der neuen Icons". Vorlagen aus image_ord_* (fleeticons.py), Ueberfahren =
+/// WZ-Hervorhebung (image_des_hilight), gedrueckt = heller Hintergrund wie image_ord_*down.
+void displayWzButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
+	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
 	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
-	const int x1 = x0 + psWidget->width(), y1 = y0 + psWidget->height();
-	const bool big = psWidget->id == ID_DESIGNER;
-	const bool hover = static_cast<W_BUTTON *>(psWidget)->isMouseOverWidget();
-	if (big)
+	const int w = psWidget->width(), h = psWidget->height();
+	const bool down = (b->getState() & (WBUT_DOWN | WBUT_CLICKLOCK)) != 0;
+	drawImg(down ? IC_BTN_DOWN : IC_BTN_UP, x0, y0, w, h);
+	const auto it = s_btnIcon.find(psWidget->id);
+	if (it != s_btnIcon.end())
 	{
-		const float pl = pulse(1800);
-		gradientBox(x0, y0, x1, y1, pal_RGBA(120, 86, 20, 235), pal_RGBA(60, 36, 8, 235), 8);
-		glowFrame(x0, y0, x1, y1, pal_RGBA(255, 205, 90, 255), 7, (hover ? 1.f : 0.55f) + 0.35f * pl);
-		drawIcon(IC_DESIGNER, x0 + 4, y0 + (psWidget->height() - 28) / 2, 28);
+		const int sz = h * 9 / 10;
+		drawIcon(it->second, x0 + (w - sz) / 2, y0 + (h - sz) / 2, sz);
 	}
-	else
+	if (b->isMouseOverWidget())
 	{
-		gradientBox(x0, y0, x1, y1, hover ? pal_RGBA(50, 90, 150, 235) : pal_RGBA(34, 46, 76, 235), hover ? pal_RGBA(26, 50, 96, 235) : pal_RGBA(18, 24, 42, 235), 6);
-		glowFrame(x0, y0, x1, y1, hover ? pal_RGBA(140, 220, 255, 255) : pal_RGBA(80, 120, 180, 255), hover ? 4 : 1, hover ? 0.9f : 0.3f);
+		const int ex = std::max(1, w / 36), ey = std::max(1, h / 24);
+		drawImg(IC_BTN_HI, x0 - ex, y0 - ey, w + 2 * ex, h + 2 * ey);
 	}
-	displayTextOption(psWidget, xOffset, yOffset);
+}
+
+std::shared_ptr<W_BUTTON> wzButton(WIDGET *parent, unsigned id, int x, int y, int w, int h, int icon, const char *tip)
+{
+	W_BUTINIT init;
+	init.formID = FRONTEND_BOTFORM;
+	init.id = id;
+	init.x = static_cast<short>(x);
+	init.y = static_cast<short>(y);
+	init.width = static_cast<unsigned short>(w);
+	init.height = static_cast<unsigned short>(h);
+	init.pDisplay = displayWzButton;
+	auto btn = std::make_shared<W_BUTTON>(&init);
+	parent->attach(btn);
+	if (tip != nullptr) { btn->setTip(tip); }
+	s_btnIcon[id] = icon;
+	return btn;
 }
 
 std::shared_ptr<W_BUTTON> lineButton(WIDGET *parent, unsigned id, int x, int y, int w, const std::string &text, iV_fonts font = font_regular, int h = LINE_H,
@@ -307,7 +331,8 @@ std::shared_ptr<W_BUTTON> lineButton(WIDGET *parent, unsigned id, int x, int y, 
 	init.y = static_cast<short>(y);
 	init.width = static_cast<unsigned short>(w);
 	init.height = static_cast<unsigned short>(h);
-	init.pDisplay = framed ? displayFleetButton : displayFleetLine;
+	init.pDisplay = displayFleetLine;
+	(void)framed;
 	init.FontID = font;
 	if (centre) { init.style |= WBUT_TXTCENTRE; }
 	init.pText = text.c_str();   // der Knopf kopiert den Text
@@ -321,12 +346,14 @@ std::shared_ptr<W_BUTTON> lineButton(WIDGET *parent, unsigned id, int x, int y, 
 	return b;
 }
 
-void headLabel(WIDGET *parent, unsigned id, int x, int y, int w, const std::string &text, PIELIGHT col, iV_fonts font = font_regular_bold, int h = LINE_H)
+void headLabel(WIDGET *parent, unsigned id, int x, int y, int w, const std::string &text, PIELIGHT col, iV_fonts font = font_regular_bold, int h = LINE_H,
+               bool centre = false)
 {
 	auto l = std::make_shared<W_LABEL>();
 	parent->attach(l);
 	l->id = id;
 	l->setGeometry(x, y, w, h);
+	if (centre) { l->setTextAlignment(WLAB_ALIGNCENTRE); }
 	l->setFont(font, col);
 	l->setString(WzString::fromUtf8(text));
 	l->setTransparentToClicks(true);
@@ -397,13 +424,14 @@ void WzFleetTitleUI::build()
 	WIDGET *form = panel.get();
 	const int W = PANEL_W;
 	s_iconSpots.clear();
+	s_btnIcon.clear();
 
 	// ---- Kopf: Titel, eine Zeile Erklaerung, grosser Knopf zum Einheiteneditor
 	s_iconSpots.push_back({IC_FLEET, 14, 10, 40});
 	headLabel(form, ID_HEAD + 20, 60, 8, 300, _("FLEETS"), pal_RGBA(200, 240, 255, 255), font_large, 30);
 	headLabel(form, ID_HEAD + 21, 60, 34, 330, _("Your unit designs - for every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
-	lineButton(form, ID_DESIGNER, W - 226, 12, 210, _("Unit designer"), font_regular_bold, 34, true, true);
-	widgSetTip(psWScreen, ID_DESIGNER, _("Design units with all parts; save them with the star. Closing the designer brings you back here."));
+	headLabel(form, ID_HEAD + 23, W - 250, 22, 160, _("Unit designer"), pal_RGBA(255, 214, 110, 255), font_regular_bold, 22, true);
+	wzButton(form, ID_DESIGNER, W - 88, 10, 72, 48, IC_DESIGNER, _("Design units with all parts; save them with the star. Closing the designer brings you back here."));
 
 	// ---- links: Flotten
 	const std::string active = s_doc.value("active", std::string());
@@ -435,19 +463,25 @@ void WzFleetTitleUI::build()
 	edit->setMaxStringSize(40);
 	edit->setPlaceholder(_("Fleet name"));
 	if (!fleets().empty()) { edit->setString(WzString::fromUtf8(fleets()[selected].value("name", std::string()))); }
-	const int bw = 100, bh = 24, bx0 = 16, bx1 = 120;
-	lineButton(form, ID_NEW, bx0, 300, bw, _("New"), font_regular, bh, true, true);
-	lineButton(form, ID_RENAME, bx1, 300, bw, _("Rename"), font_regular, bh, true, true);
-	lineButton(form, ID_UPDATE, bx0, 328, bw, _("Update"), font_regular, bh, true, true);
-	lineButton(form, ID_FAV, bx1, 328, bw, _("Favourite"), font_regular, bh, true, true);
-	lineButton(form, ID_DEL, bx0, 356, bw, _("Delete"), font_regular, bh, true, true);
-	lineButton(form, ID_USE, bx1, 356, bw, _("Use everywhere"), font_regular, bh, true, true);
-	widgSetTip(psWScreen, ID_NEW, _("New fleet from all designs saved with the star"));
-	widgSetTip(psWScreen, ID_UPDATE, _("This fleet takes over the designs saved with the star"));
-	widgSetTip(psWScreen, ID_USE, _("The designs of this fleet are available in every game mode (campaign, skirmish, multiplayer)"));
+	// Aktionen als WZ-Befehlsknoepfe (1,5-fach), Beschriftung darunter
+	struct Act { unsigned id; int icon; const char *cap; const char *tip; };
+	const Act acts[6] = {
+		{ID_NEW, IC_NEW, _("New"), _("New fleet from all designs saved with the star")},
+		{ID_RENAME, IC_RENAME, _("Rename"), _("Give the selected fleet the name from the box")},
+		{ID_UPDATE, IC_UPDATE, _("Update"), _("This fleet takes over the designs saved with the star")},
+		{ID_FAV, IC_STAR, _("Favourite"), _("Favourite fleets are listed first")},
+		{ID_DEL, IC_DELETE, _("Delete"), _("Delete the selected fleet")},
+		{ID_USE, IC_USE, _("Everywhere"), _("The designs of this fleet are available in every game mode (campaign, skirmish, multiplayer)")}};
+	for (int k = 0; k < 6; ++k)
+	{
+		const int cx = 16 + (k % 3) * 70, cy = 302 + (k / 3) * 58;
+		wzButton(form, acts[k].id, cx + 8, cy, 54, 36, acts[k].icon, acts[k].tip);
+		headLabel(form, ID_HEAD + 40 + static_cast<unsigned>(k), cx - 4, cy + 38, 78, acts[k].cap, pal_RGBA(190, 210, 240, 255), font_small, 16, true);
+	}
 
 	// ---- Fusszeile: Zurueck + Meldung
-	lineButton(form, ID_BACK, 16, PANEL_H - 32, 100, _("Back"), font_regular_bold, 24, true, true);
+	// TRANSLATORS: "Return", in this context, means "return to previous screen/menu"
+	addMultiBut(*form, ID_BACK, 16, PANEL_H - 34, 30, 29, P_("menu", "Return"), IMAGE_RETURN, IMAGE_RETURN_HI, IMAGE_RETURN_HI);   // WZ-Zurueck-Knopf
 	auto info = std::make_shared<W_LABEL>();
 	form->attach(info);
 	info->id = ID_INFO;
@@ -517,9 +551,9 @@ void WzFleetTitleUI::build()
 	const int fy = 62 + LINE_H + 4 + DESIGN_ROWS * LINE_H + 2;
 	if (pages > 1)
 	{
-		lineButton(form, ID_PREV, X, fy, 44, "<", font_regular_bold, 22, true, true);
+		wzButton(form, ID_PREV, X, fy - 2, 36, 24, IC_LEFT, nullptr);
 		headLabel(form, ID_HEAD + 4, X + 52, fy, 60, astringf("%d / %d", page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22);
-		lineButton(form, ID_NEXT, X + 112, fy, 44, ">", font_regular_bold, 22, true, true);
+		wzButton(form, ID_NEXT, X + 112, fy - 2, 36, 24, IC_RIGHT, nullptr);
 	}
 	headLabel(form, ID_HEAD + 22, X + 170, fy, RW - 170, _("Click a design: favourite on/off"), WZCOL_TEXT_MEDIUM, font_small, 22);
 }

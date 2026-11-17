@@ -796,7 +796,7 @@ static bool updateSatLaser(EFFECT *psEffect, LightingData& lightData)
 		LIGHT light;
 		light.position = Vector3f(xPos, startHeight, yPos);
 		light.range = 800;
-		light.colour = pal_Colour(0, 0, 255);
+		light.colour = pal_Colour(40, 255, 90);   // MOD (17.11. 22:42): gruener Laser
 		lightData.lights.push_back(light);
 		return true;
 	}

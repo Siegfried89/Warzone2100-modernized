@@ -16,6 +16,7 @@
 
 struct STRUCTURE;
 struct STRUCTURE_STATS;
+struct WorldMapState;
 
 namespace modnuke
 {
@@ -23,6 +24,10 @@ namespace modnuke
 int gridCapacity(const STRUCTURE *psStruct);
 
 bool isPlant(const STRUCTURE_STATS *psStats);
+/// (22:42) Wasserkraftwerk "A0HydroPlant": nur am Wasser baubar (mind. 2 Wasserfelder rundherum), +2 Energie/s Tag und Nacht, Netz 60
+bool isHydro(const STRUCTURE_STATS *psStats);
+/// genug Wasser an diesem Bauplatz (Felder x0..x0+w-1, y0..y0+h-1 und ihr Rand)?
+bool waterNear(const WorldMapState &map, int x0, int y0, int w, int h);
 bool isMine(const STRUCTURE_STATS *psStats);
 /// laeuft das Atomkraftwerk gerade (hat Uran)?
 bool running(const STRUCTURE *psStruct);
