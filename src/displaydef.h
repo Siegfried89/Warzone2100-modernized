@@ -36,6 +36,11 @@ struct SCREEN_DISP_DATA
 	UDWORD			frameNumber;		// last frame it was drawn
 	UDWORD			screenX, screenY;
 	UDWORD			screenR;
+	// MOD (17.11.): Bodenring der Auswahl (projizierter Kreis um die Fuesse: Mitte + zwei Halbachsen) und Oberkante des Modells (Balken)
+	int				modFootX = 0, modFootY = 0;
+	float			modAx = 0.f, modAy = 0.f, modBx = 0.f, modBy = 0.f;
+	int				modTopY = 0;
+	bool			modFootValid = false;
 };
 
 #endif // __INCLUDED_DISPLAYDEF_H__

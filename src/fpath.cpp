@@ -44,6 +44,7 @@
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modoil.h"
+#include "modterrain.h"
 #include "pathfinding_backend.h"
 #include "congestion_overlay.h"
 #include "profiling.h"
@@ -376,6 +377,12 @@ bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PR
 	if (propulsion != PROPULSION_TYPE_LIFT && (x < mapState.scroll.minX + 1 || y < mapState.scroll.minY + 1 || x >= mapState.scroll.maxX - 1 || y >= mapState.scroll.maxY - 1))
 	{
 		// coords off map - auto blocking tile
+		return true;
+	}
+	// MOD (17.11.): Krater und Schuetzenloecher sind fuer alle Fahrzeuge unbefahrbar (Infanterie darf hinein, Flieger darueber)
+	if ((propulsion == PROPULSION_TYPE_WHEELED || propulsion == PROPULSION_TYPE_TRACKED || propulsion == PROPULSION_TYPE_HALF_TRACKED
+	     || propulsion == PROPULSION_TYPE_HOVER) && modterrain::blocksVehicles(mapState, x, y))
+	{
 		return true;
 	}
 	unsigned aux = auxTile(mapState, x, y, mapIndex);

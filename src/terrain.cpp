@@ -356,6 +356,7 @@ static void getGridPos(const WorldMapState& mapState, Vector3i *result, int x, i
 		getGridPos(mapState, &c, x  , y + 1, false, water);
 		getGridPos(mapState, &d, x + 1, y + 1, false, water);
 		averagePos(result, &a, &b, &c, &d);
+		result->y -= modterrain::centerSink(mapState, x, y);   // MOD (17.11.): Krater = Trichter in genau einem Feld
 		return;
 	}
 	// NOTE: z is NEGATED - map space and world space differ by a z flip. Anything
@@ -540,6 +541,7 @@ static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
 #endif
 	info.decalNo = static_cast<int>(TileNumber_tile(texValue));
 	bool skipDecalDraw = !TILE_HAS_DECAL(tile);
+	bool classicWaterOnly = false;   // MOD (17.11.)
 	if (concreteTex >= 0)
 	{
 		skipDecalDraw = false;
@@ -550,10 +552,16 @@ static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
 		// MOD (16.11.): Klassik hat keinen Boden-Untergrund - JEDE Kachel ist dort ein Decal (sonst schwarzer Boden, sobald ein Mod
 		// eine eigene Decal-Liste mitbringt, die die "alles ist Decal"-Liste der Klassik-Grafik verdeckt)
 		skipDecalDraw = (isOnlyWater(mapState, i, j) && info.decalNo == 17); // Magic number hack, but decal # 17 is always the *water only* tile in the legacy terrain tilesets we ship // TODO: Figure out a better way of determining this from the tileset data?
+		classicWaterOnly = skipDecalDraw;
 	}
 	if (skipDecalDraw)
 	{
 		info.decalNo = -1;
+	}
+	// MOD (17.11.): Klassik - weicher Betonrand auf Nachbarfeldern und Wasserflaeche im Gelaendedurchgang (siehe modconcrete.h)
+	if (terrainShaderQuality == TerrainShaderQuality::CLASSIC && concreteTex < 0)
+	{
+		info.decalNo = modconcrete::classicDecal(mapState, i, j, info.decalNo, classicWaterOnly);
 	}
 
 	uint8_t groundsBytes[4];

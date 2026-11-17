@@ -318,9 +318,14 @@ static UDWORD calcDistToTile(UDWORD tileX, UDWORD tileY, Vector3i *pos)
 /// "popping" tiles
 void updateFogDistance(float distance)
 {
-	// MOD: Nebel deutlich weiter weg (Faktor 1,6), rein optisch; die gespeicherte Einstellung bleibt unveraendert
-	constexpr float MOD_FOG_SCALE = 1.6f;
-	pie_UpdateFogDistance((war_getFogStart() + (distance - war_GetMapZoom()) * FOG_ALTITUDE_COEFFICIENT) * MOD_FOG_SCALE, (war_getFogEnd() + (distance - war_GetMapZoom()) * FOG_ALTITUDE_COEFFICIENT) * MOD_FOG_SCALE);
+	// MOD (17.11., "Sichtweite massiv erweitern"): der gezeichnete Bereich reicht jetzt ~96 Felder weit (display3ddef.h). Der Nebel
+	// beginnt deutlich spaeter, wird beim Heranzoomen nicht mehr naeher gezogen und ist genau am Rand des gezeichneten Bereichs dicht
+	// (kein sichtbarer Abbruch). Rein optisch; die gespeicherte Einstellung bleibt unveraendert.
+	const float edge = static_cast<float>(world_coord(VISIBLE_XTILES / 2));
+	const float alt = std::max(0.f, distance - static_cast<float>(war_GetMapZoom())) * FOG_ALTITUDE_COEFFICIENT;
+	const float fogEnd = std::min(edge * 0.95f, static_cast<float>(war_getFogEnd()) * 1.5f + alt);
+	const float fogStart = std::min(fogEnd * 0.62f, static_cast<float>(war_getFogStart()) * 2.0f + alt);
+	pie_UpdateFogDistance(fogStart, fogEnd);
 }
 
 void setDefaultFogColour()

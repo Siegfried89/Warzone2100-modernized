@@ -42,6 +42,9 @@ namespace gfx_api
 void pie_TransColouredTriangle(const std::array<Vector3f, 3> &vrt, PIELIGHT c, const glm::mat4 &modelViewMatrix);
 
 void pie_SetViewingWindow(Vector3i *v, PIELIGHT colour);
+/// MOD (17.11.): Kameramarker der Minikarte als freie Dreiecksfolge (xy = 2 Werte je Punkt, rgba = 4 Bytes je Punkt).
+/// Ersetzt bis zum naechsten pie_SetViewingWindow das alte Sichtfenster.
+void pie_SetViewingMarker(const float *xy, const uint8_t *rgba, int count);
 void pie_DrawViewingWindow(const glm::mat4 &modelViewProjectionMatrix);
 void pie_ViewingWindow_Shutdown();
 

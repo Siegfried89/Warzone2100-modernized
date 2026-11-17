@@ -29,4 +29,12 @@ void footprintChanged(const STRUCTURE *psStruct, int tileX, int tileY, int sizeX
 
 /// Spielbeginn: Kachelliste neu lesen
 void reset();
+
+/// MOD (17.11., "Die Betontexturen laufen nirgends weich aus"): Grafikstufe "Klassisch" - Decal-Nummer fuer den Gelaende-Shader.
+/// Ein Feld neben Beton (Karten-Beton der Arizona-Kacheln 22/77 oder Beton unter Gebaeuden) bekommt eine Kennung, mit der der Shader
+/// den Beton vom gemeinsamen Rand aus weich und unregelmaessig auf das Feld auslaufen laesst; reine Wasserfelder bekommen eine Kennung
+/// fuer eine Wasserflaeche im Gelaendedurchgang (vorher blieben sie schwarz). Kodierung (alles ganzzahlig, siehe Shader modcLayer):
+///   decal = 1048576 * k + 4096 * Randmaske + eigene Kachel (4095 = keine), k = 1: Wasser, k >= 2: Beton (k - 2 = Feinraster + 2 * Betonkachel)
+/// decalNo = bisherige Decal-Nummer des Feldes (-1 = keine), waterOnly = reines Wasserfeld (wuerde sonst nicht gezeichnet).
+int classicDecal(WorldMapState &m, int x, int y, int decalNo, bool waterOnly);
 }

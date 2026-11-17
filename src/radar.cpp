@@ -59,6 +59,8 @@
 	#define GLM_ENABLE_EXPERIMENTAL
 #endif
 #include <glm/gtx/transform.hpp>
+#include <vector>
+#include <cmath>
 
 #define HIT_NOTIFICATION	(GAME_TICKS_PER_SEC * 2)
 #define RADAR_FRAME_SKIP	10
@@ -692,7 +694,7 @@ static void applyMinimapOverlay()
 }
 
 /** Rotate an array of 2d vectors about a given angle, also translates them after rotating. */
-static void RotateVector2D(Vector3i *Vector, Vector3i *TVector, Vector3i *Pos, int Angle, int Count)
+[[maybe_unused]] static void RotateVector2D(Vector3i *Vector, Vector3i *TVector, Vector3i *Pos, int Angle, int Count)
 {
 	int64_t Cos = iCos(Angle);
 	int64_t Sin = iSin(Angle);
@@ -717,14 +719,14 @@ static void RotateVector2D(Vector3i *Vector, Vector3i *TVector, Vector3i *Pos, i
 	}
 }
 
-static SDWORD getDistanceAdjust()
+[[maybe_unused]] static SDWORD getDistanceAdjust()
 {
 	int dif = std::max<int>(static_cast<int>(MAXDISTANCE - getViewDistance()), 0);
 
 	return dif / 100;
 }
 
-static SDWORD getLengthAdjust()
+[[maybe_unused]] static SDWORD getLengthAdjust()
 {
 	const int pitch = static_cast<int>(360 - (playerPos.r.x / DEG_1));
 
@@ -742,66 +744,82 @@ static SDWORD getLengthAdjust()
 }
 
 /** Draws a Myth/FF7 style viewing window */
+// MOD (17.11., Wunsch): Kameramarker auf der Minikarte - statt des weissen Sichtfenster-Trapezes ein dickes, rot leuchtendes QUADRAT
+// um den Blickpunkt (Groesse folgt dem Zoom) mit einem kleinen Pfeil an der Vorderkante, der die Blickrichtung zeigt.
+// Gezeichnet als eine Dreiecksfolge: weicher Schein aussen und innen, kraeftiger Rahmen, ganz leichte rote Fuellung, Pfeil.
 static void setViewingWindow(const WorldMapState& mapState)
 {
 	float pixSizeH, pixSizeV;
-	Vector3i v[4] = {{0, 0, 0}}, tv[4] = {{0, 0, 0}}, centre = {0, 0, 0};
-	int	shortX, longX, yDrop, yDropVar;
-	int	dif = getDistanceAdjust();
-	int	dif2 = getLengthAdjust();
-	PIELIGHT colour;
 	CalcRadarPixelSize(&pixSizeH, &pixSizeV);
-	int x = static_cast<int>(playerPos.p.x * pixSizeH / TILE_UNITS);
-	int y = static_cast<int>(playerPos.p.z * pixSizeV / TILE_UNITS);
+	const float cx = playerPos.p.x * pixSizeH / TILE_UNITS - mapState.scroll.minX * pixSizeH;
+	const float cy = playerPos.p.z * pixSizeV / TILE_UNITS - mapState.scroll.minY * pixSizeV;
+	const float halfWorld = std::max(900.f, std::min(3600.f, getViewDistance() * 0.55f + 640.f));
+	const float hx = std::max(6.f, halfWorld / TILE_UNITS * pixSizeH);
+	const float hy = std::max(6.f, halfWorld / TILE_UNITS * pixSizeV);
+	const float ang = static_cast<float>(playerPos.r.y) * (2.f * 3.14159265f / 65536.f);
+	const float c = std::cos(ang), sn = std::sin(ang);
+	const float pulse = 0.78f + 0.22f * std::sin(static_cast<float>(realTime % 1200u) * (2.f * 3.14159265f / 1200.f));
+	const float T = 2.6f;      // Rahmenstaerke (Pixel)
+	const float GLOW_OUT = 5.f, GLOW_IN = 3.f;
 
-	shortX = static_cast<int>(((visibleTiles.x / 4) - (dif / 6)) * pixSizeH);
-	longX = static_cast<int>(((visibleTiles.x / 2) - (dif / 4)) * pixSizeH);
-	yDropVar = static_cast<int>(((visibleTiles.y / 2) - (dif2 / 3)) * pixSizeV);
-	yDrop = static_cast<int>(((visibleTiles.y / 2) - dif2 / 3) * pixSizeV);
-
-	v[0].x = longX;
-	v[0].y = -yDropVar;
-
-	v[1].x = -longX;
-	v[1].y = -yDropVar;
-
-	v[2].x = shortX;
-	v[2].y = yDrop;
-
-	v[3].x = -shortX;
-	v[3].y = yDrop;
-
-	centre.x = static_cast<int>(x - mapState.scroll.minX * pixSizeH);
-	centre.y = static_cast<int>(y - mapState.scroll.minY * pixSizeV);
-
-	RotateVector2D(v, tv, &centre, playerPos.r.y, 4);
-
-	switch (getCampaignNumber())
+	std::vector<float> xy;
+	std::vector<uint8_t> rgba;
+	auto push = [&](float lx, float ly, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+		// gleiche Drehung wie das alte Sichtfenster (RotateVector2D)
+		xy.push_back(lx * c + ly * sn + cx);
+		xy.push_back(ly * c - lx * sn + cy);
+		rgba.push_back(r); rgba.push_back(g); rgba.push_back(b); rgba.push_back(a);
+	};
+	auto repeatLast = [&]() {
+		if (xy.empty()) { return; }
+		const size_t n = xy.size();
+		xy.push_back(xy[n - 2]); xy.push_back(xy[n - 1]);
+		const size_t m = rgba.size();
+		for (int k = 0; k < 4; ++k) { rgba.push_back(rgba[m - 4 + k]); }
+	};
+	static const float CX[5] = {-1.f, 1.f, 1.f, -1.f, -1.f};
+	static const float CY[5] = {-1.f, -1.f, 1.f, 1.f, -1.f};
+	// Ring zwischen zwei Quadraten (Abstand dA/dB zur Rahmenmitte, Pixel), je mit eigener Farbe/Deckkraft
+	auto ring = [&](float dA, uint8_t aA, float dB, uint8_t aB, uint8_t r, uint8_t g, uint8_t b) {
+		bool first = true;
+		for (int k = 0; k < 5; ++k)
+		{
+			const float bx = CX[k] * std::max(0.5f, hx + dB), by = CY[k] * std::max(0.5f, hy + dB);
+			const float ax = CX[k] * std::max(0.5f, hx + dA), ay = CY[k] * std::max(0.5f, hy + dA);
+			if (first && !xy.empty()) { repeatLast(); push(bx, by, r, g, b, aB); }   // Uebergang (entartete Dreiecke)
+			first = false;
+			push(bx, by, r, g, b, aB);
+			push(ax, ay, r, g, b, aA);
+		}
+	};
+	const uint8_t glowA = static_cast<uint8_t>(150.f * pulse);
+	// ganz leichte rote Fuellung
 	{
-	case 1:
-	case 2:
-		// white
-		colour.byte.r = UBYTE_MAX;
-		colour.byte.g = UBYTE_MAX;
-		colour.byte.b = UBYTE_MAX;
-		colour.byte.a = 0x3f;
-		break;
-	case 3:
-		// greenish
-		colour.byte.r = 0x3f;
-		colour.byte.g = UBYTE_MAX;
-		colour.byte.b = 0x3f;
-		colour.byte.a = 0x3f;
-		break;
-	default:
-		// black
-		colour.clear();
-		colour.byte.a = 0x3f;
-		break;
+		const float fx = std::max(0.5f, hx - T * 0.5f), fy = std::max(0.5f, hy - T * 0.5f);
+		push(-fx, -fy, 255, 40, 30, 22);
+		push(-fx, -fy, 255, 40, 30, 22);
+		push(fx, -fy, 255, 40, 30, 22);
+		push(-fx, fy, 255, 40, 30, 22);
+		push(fx, fy, 255, 40, 30, 22);
 	}
+	ring(T * 0.5f, glowA, T * 0.5f + GLOW_OUT, 0, 255, 50, 35);       // Schein aussen
+	ring(-T * 0.5f, glowA, -T * 0.5f - GLOW_IN, 0, 255, 50, 35);      // Schein innen
+	ring(-T * 0.5f, 245, T * 0.5f, 245, 255, 36, 24);                 // Rahmen
+	// Blickpfeil an der Vorderkante (vorn = -y vor der Drehung)
+	const float baseY = -(hy + T * 0.5f);
+	const float aw = 5.5f, al = 8.f;
+	repeatLast();
+	push(-aw - 2.5f, baseY + 1.f, 255, 60, 40, 0);
+	push(-aw - 2.5f, baseY + 1.f, 255, 60, 40, 0);
+	push(aw + 2.5f, baseY + 1.f, 255, 60, 40, 0);
+	push(0.f, baseY - al - 4.f, 255, 60, 40, glowA);
+	repeatLast();
+	push(-aw, baseY + 0.5f, 255, 70, 40, 250);
+	push(-aw, baseY + 0.5f, 255, 70, 40, 250);
+	push(aw, baseY + 0.5f, 255, 70, 40, 250);
+	push(0.f, baseY - al, 255, 120, 70, 255);
 
-	/* Send the four points to the draw routine and the clip box params */
-	pie_SetViewingWindow(tv, colour);
+	pie_SetViewingMarker(xy.data(), rgba.data(), static_cast<int>(xy.size() / 2));
 }
 
 static void DrawRadarExtras(const glm::mat4 &modelViewProjectionMatrix)

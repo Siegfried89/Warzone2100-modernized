@@ -6,9 +6,17 @@
 // ("Sink"). Die Hoehe einer Stelle = Gelaende minus Absenkung, die an den Kachelraendern nur auf einem schmalen Streifen (SINK_EDGE
 // Einheiten je Seite) uebergeht - fast senkrechte Waende. Die Originalhoehen werden nie veraendert; nur die Kacheltextur wird
 // fuer Krater getauscht und beim Zuschuetten wiederhergestellt.
+// 17.11. (Wunsch): "ganz hart ein 1-Feld-Krater", nur so tief wie ein Schuetzenloch, fuer ALLE Fahrzeuge unbefahrbar (Infanterie darf
+// hinein, Flieger darueber), verbrannte Kratertextur schwarz / schwarzbraun im Wechsel (Zusatzkacheln, mf/crater.txt). Im Klassik-Netz
+// ohne Unterteilung senkt der Krater nur den Mittelpunkt SEINES Feldes ab (Trichter) - die Nachbarfelder bleiben eben.
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
 #include "lib/framework/fixedpoint.h"
+#include "lib/framework/file.h"
+
+#include <physfs.h>
+#include <cstdio>
+#include <string>
 
 #include <algorithm>
 #include <cmath>
@@ -42,6 +50,8 @@ constexpr int SINK_EDGE = 14;          // Uebergangsbreite je Kachelseite (Weltm
 constexpr int MAX_CRATER_SINK = 64;    // tiefer werden Krater auch bei vielen Treffern nicht
 constexpr int MAX_SINK = 120;          // absolute Grenze (Graeben)
 constexpr int COVER_DEPTH = 10;        // ab dieser Tiefe gibt die Mulde Deckung
+constexpr int CRATER_DEPTH = 26;       // (17.11.) ein Krater = ein Schuetzenloch tief; weitere Treffer vertiefen nicht
+constexpr int VEHICLE_BLOCK_DEPTH = 8;  // ab dieser Tiefe kommt kein Fahrzeug mehr durch
 
 struct Cell
 {
@@ -65,10 +75,54 @@ uint64_t keyOf(int layer, int x, int y)
 	return (static_cast<uint64_t>(layer) << 48) | (static_cast<uint64_t>(static_cast<uint32_t>(x) & 0xffffff) << 24) | static_cast<uint64_t>(static_cast<uint32_t>(y) & 0xffffff);
 }
 
+unsigned s_version = 1;   // jede Aenderung an s_cells zaehlt hoch (Sperrkarte fuer Fahrzeuge neu aufbauen)
+struct BlockCache
+{
+	unsigned version = 0;
+	int w = 0, h = 0;
+	std::vector<uint8_t> grid;
+};
+std::unordered_map<int, BlockCache> s_blockCache;
+
+int cellDyn(int layer, int x, int y);
+int cellFixed(int layer, int x, int y);
+
+// Zusatzkacheln fuer die Kratertextur (mf/crater.txt: erste Nummer, Anzahl) - sonst die alte Schutt-Kachel
+int s_craterFirst = -2, s_craterCount = 0;
+void loadCraterTiles()
+{
+	if (s_craterFirst != -2) { return; }
+	s_craterFirst = -1;
+	s_craterCount = 0;
+	char *buf = nullptr;
+	UDWORD size = 0;
+	if (!PHYSFS_exists("mf/crater.txt") || !loadFile("mf/crater.txt", &buf, &size) || buf == nullptr) { return; }
+	const std::string txt(buf, size);
+	free(buf);
+	int first = 0, count = 0;
+	if (sscanf(txt.c_str(), "%d %d", &first, &count) == 2 && first >= 256 && count > 0 && first + count - 1 <= static_cast<int>(TILE_NUMMASK))
+	{
+		s_craterFirst = first;
+		s_craterCount = count;
+	}
+}
+
 int cellDepth(int layer, int x, int y)
 {
 	const auto it = s_cells.find(keyOf(layer, x, y));
 	return it == s_cells.end() ? 0 : it->second.depth();
+}
+
+int cellDyn(int layer, int x, int y)
+{
+	const auto it = s_cells.find(keyOf(layer, x, y));
+	return it == s_cells.end() ? 0 : std::max<int>(0, it->second.dyn);
+}
+
+int cellFixed(int layer, int x, int y)
+{
+	const auto it = s_cells.find(keyOf(layer, x, y));
+	return it == s_cells.end() ? 0 : std::max<int>(0, it->second.fixed);
 }
 
 bool tileOk(const WorldMapState &m, int x, int y)
@@ -88,6 +142,7 @@ bool tileOk(const WorldMapState &m, int x, int y)
 
 void dirtyAround(int x, int y)
 {
+	++s_version;
 	for (int dy = -1; dy <= 1; ++dy)
 	{
 		for (int dx = -1; dx <= 1; ++dx)
@@ -110,7 +165,10 @@ void swapTexture(Cell &c, int x, int y, bool crater)
 		// (Kachel-Viertelung: gleiche Drehung fuer alle Feinfelder einer Original-Kachel, sonst passen die Viertel nicht zusammen)
 		const int cx = x / (DIST_TILE / TILE_UNITS), cy = y / (DIST_TILE / TILE_UNITS);
 		const unsigned rot = static_cast<unsigned>(cx * 7 + cy * 13) & 3u;
-		t->texture = static_cast<uint16_t>((RUBBLE_TILE & TILE_NUMMASK) | (rot << TILE_ROTSHIFT));
+		loadCraterTiles();
+		// (17.11.) verbrannte Kratertextur: schwarz und schwarzbraun im Wechsel (Schachbrett nach Original-Kachel)
+		const int tileNo = (s_craterFirst >= 0) ? s_craterFirst + ((cx + cy) & 1) % s_craterCount : static_cast<int>(RUBBLE_TILE);
+		t->texture = static_cast<uint16_t>((static_cast<unsigned>(tileNo) & TILE_NUMMASK) | (rot << TILE_ROTSHIFT));
 		SET_TILE_DECAL(t);
 	}
 	else if (!crater && c.texSwapped)
@@ -246,13 +304,50 @@ int sinkAtCorner(const WorldMapState &mapState, int x, int y)
 		return 0;
 	}
 	const int layer = layerTag();
-	return std::max({cellDepth(layer, x - 1, y - 1), cellDepth(layer, x, y - 1), cellDepth(layer, x - 1, y), cellDepth(layer, x, y)});
+	// (17.11.) nur tiefe Graeben (Bauwerke) senken die Ecken; Krater/Schuetzenloecher nur den Feldmittelpunkt (centerSink)
+	return std::max({cellFixed(layer, x - 1, y - 1), cellFixed(layer, x, y - 1), cellFixed(layer, x - 1, y), cellFixed(layer, x, y)});
+}
+
+int centerSink(const WorldMapState &mapState, int x, int y)
+{
+	if (s_cells.empty() || &mapState != &gameWorld.map)
+	{
+		return 0;
+	}
+	const int layer = layerTag();
+	const int d = cellDyn(layer, x, y), f = cellFixed(layer, x, y);
+	return d > f ? d - f : 0;   // die Ecken sind um die Grabentiefe schon abgesenkt
+}
+
+bool blocksVehicles(const WorldMapState &mapState, int x, int y)
+{
+	if (s_cells.empty() || &mapState != &gameWorld.map || x < 0 || y < 0 || x >= mapState.width || y >= mapState.height)
+	{
+		return false;
+	}
+	const int layer = layerTag();
+	BlockCache &bc = s_blockCache[layer];
+	if (bc.version != s_version || bc.w != mapState.width || bc.h != mapState.height)
+	{
+		bc.version = s_version;
+		bc.w = mapState.width;
+		bc.h = mapState.height;
+		bc.grid.assign(static_cast<size_t>(bc.w) * static_cast<size_t>(bc.h), 0);
+		for (const auto &kv : s_cells)
+		{
+			if (static_cast<int>(kv.first >> 48) != layer || kv.second.dyn < VEHICLE_BLOCK_DEPTH) { continue; }
+			const int cx = static_cast<int>((kv.first >> 24) & 0xffffff), cy = static_cast<int>(kv.first & 0xffffff);
+			if (cx >= 0 && cy >= 0 && cx < bc.w && cy < bc.h) { bc.grid[static_cast<size_t>(cx) + static_cast<size_t>(cy) * bc.w] = 1; }
+		}
+	}
+	return bc.grid[static_cast<size_t>(x) + static_cast<size_t>(y) * bc.w] != 0;
 }
 
 bool addCrater(int worldX, int worldY, int size)
 {
 	WorldMapState &m = gameWorld.map;
 	size = std::clamp(size, 1, 3);
+	(void)size;   // (17.11.) alle Krater gleich gross/tief
 	if (!worldOnMap(m, worldX, worldY))
 	{
 		return false;
@@ -261,7 +356,8 @@ bool addCrater(int worldX, int worldY, int size)
 #if defined(WZ_MOD_FINE_GRID)
 	// MOD (Kachel-Viertelung): leichte Treffer = ein Feinfeld (Viertel-Kachel), mittlere/schwere = 2x2 Feinfelder (eine Original-Kachel,
 	// am Raster der Original-Kacheln ausgerichtet, damit die Kratertextur ganz zu sehen ist)
-	const int n = size >= 2 ? DIST_TILE / TILE_UNITS : 1;
+	// (17.11.) jeder Krater = genau eine Original-Kachel (2x2 Feinfelder), damit die Kratertextur ganz zu sehen ist
+	const int n = DIST_TILE / TILE_UNITS;
 	const int x0 = n > 1 ? tx - (tx % n) : tx, y0 = n > 1 ? ty - (ty % n) : ty;
 #else
 	const int n = 1;
@@ -276,8 +372,9 @@ bool addCrater(int worldX, int worldY, int size)
 			const uint64_t k = keyOf(layerTag(), xx, yy);
 			Cell &c = s_cells[k];
 			const int before = c.dyn;
-			const int add = c.dyn > 0 ? craterDepth(size) / 2 : craterDepth(size);   // weitere Treffer vertiefen nur noch halb so viel
-			c.dyn = static_cast<int16_t>(std::min(MAX_CRATER_SINK, std::max<int>(c.dyn, 0) + add));
+			(void)craterDepth;
+			// (17.11.) jeder Krater ist gleich: so tief wie ein Schuetzenloch; weitere Treffer vertiefen nicht
+			c.dyn = static_cast<int16_t>(std::max<int>(c.dyn, CRATER_DEPTH));
 			swapTexture(c, xx, yy, true);
 			if (c.dyn != before)
 			{
@@ -463,6 +560,9 @@ void reset()
 {
 	s_cells.clear();
 	s_pending.clear();
+	s_blockCache.clear();
+	++s_version;
+	s_craterFirst = -2;
 }
 
 void saveState(std::vector<int> &out)

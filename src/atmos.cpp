@@ -103,27 +103,27 @@ void atmosInitSystem()
 static void testParticleWrap(ATPART *psPart)
 {
 	/* Gone off left side */
-	if (psPart->position.x < playerPos.p.x - world_coord(visibleTiles.x) / 2)
+	if (psPart->position.x < playerPos.p.x - world_coord(VISIBLE_TILES_NEAR) / 2)
 	{
-		psPart->position.x += world_coord(visibleTiles.x);
+		psPart->position.x += world_coord(VISIBLE_TILES_NEAR);
 	}
 
 	/* Gone off right side */
-	else if (psPart->position.x > (playerPos.p.x + world_coord(visibleTiles.x) / 2))
+	else if (psPart->position.x > (playerPos.p.x + world_coord(VISIBLE_TILES_NEAR) / 2))
 	{
-		psPart->position.x -= world_coord(visibleTiles.x);
+		psPart->position.x -= world_coord(VISIBLE_TILES_NEAR);
 	}
 
 	/* Gone off top */
-	if (psPart->position.z < playerPos.p.z - world_coord(visibleTiles.y) / 2)
+	if (psPart->position.z < playerPos.p.z - world_coord(VISIBLE_TILES_NEAR) / 2)
 	{
-		psPart->position.z += world_coord(visibleTiles.y);
+		psPart->position.z += world_coord(VISIBLE_TILES_NEAR);
 	}
 
 	/* Gone off bottom */
-	else if (psPart->position.z > (playerPos.p.z + world_coord(visibleTiles.y) / 2))
+	else if (psPart->position.z > (playerPos.p.z + world_coord(VISIBLE_TILES_NEAR) / 2))
 	{
-		psPart->position.z -= world_coord(visibleTiles.y);
+		psPart->position.z -= world_coord(VISIBLE_TILES_NEAR);
 	}
 }
 
@@ -333,8 +333,8 @@ void atmosUpdateSystem(WorldMapState& mapState)
 		{
 			pos.x = playerPos.p.x;
 			pos.z = playerPos.p.z;
-			pos.x += world_coord(rand() % visibleTiles.x - visibleTiles.x / 2);
-			pos.z += world_coord(rand() % visibleTiles.x - visibleTiles.y / 2);
+			pos.x += world_coord(rand() % VISIBLE_TILES_NEAR - VISIBLE_TILES_NEAR / 2);
+			pos.z += world_coord(rand() % VISIBLE_TILES_NEAR - VISIBLE_TILES_NEAR / 2);
 			pos.y = 1000;
 			if (modActive && modStyle == AS_SAND) { pos.y = 90 + rand() % 420; }
 

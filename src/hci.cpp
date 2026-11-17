@@ -1105,6 +1105,11 @@ void intOpenDebugMenu(OBJECT_TYPE id)
 			{
 				continue;
 			}
+			// MOD (Wunsch 17.11.): keine vorgefertigten Combots (MFP_*) im Cheat-Menue - Combots werden aus Teilen zusammengesetzt
+			if (localTemplate.id.toUtf8().rfind("MFP_", 0) == 0)
+			{
+				continue;
+			}
 			apsTemplateList.push_back(&localTemplate);
 		}
 		ppsStatsList = (BASE_STATS **)apsTemplateList.data(); // FIXME Ugly cast, and is undefined behaviour (strict-aliasing violation) in C/C++.
@@ -1140,6 +1145,17 @@ void intOpenDebugMenu(OBJECT_TYPE id)
 	}
 }
 
+// Placing a droid from the debug menu: set up the flag. (This would probably be safe to do, even if we're placing something else.)
+static void intStartDebugDroidPlacement()
+{
+	FLAG_POSITION debugMenuDroidDeliveryPoint;
+	debugMenuDroidDeliveryPoint.factoryType = REPAIR_FLAG;
+	debugMenuDroidDeliveryPoint.factoryInc = 0;
+	debugMenuDroidDeliveryPoint.player = selectedPlayer;
+	debugMenuDroidDeliveryPoint.selected = false;
+	startDeliveryPosition(&debugMenuDroidDeliveryPoint);
+}
+
 /* Process return codes from the object placement stats screen */
 static void intProcessEditStats(UDWORD id)
 {
@@ -1149,13 +1165,7 @@ static void intProcessEditStats(UDWORD id)
 		psPositionStats = ppsStatsList[id - IDSTAT_START];
 		if (psPositionStats->hasType(STAT_TEMPLATE))
 		{
-			FLAG_POSITION debugMenuDroidDeliveryPoint;
-			// Placing a droid from the debug menu, set up the flag. (This would probably be safe to do, even if we're placing something else.)
-			debugMenuDroidDeliveryPoint.factoryType = REPAIR_FLAG;
-			debugMenuDroidDeliveryPoint.factoryInc = 0;
-			debugMenuDroidDeliveryPoint.player = selectedPlayer;
-			debugMenuDroidDeliveryPoint.selected = false;
-			startDeliveryPosition(&debugMenuDroidDeliveryPoint);
+			intStartDebugDroidPlacement();
 		}
 		else
 		{
@@ -1563,6 +1573,7 @@ INT_RETVAL intRunWidgets()
 
 			if (pos.x != INT32_MAX)
 			{
+				bool keepDroidPlacing = false;   // MOD (17.11.): Einheit per Shift-Klick mehrfach setzen (wie Gebaeude)
 				auto lb = calcLineBuild(size, type, pos, pos2);
 				for (int i = 0; i < lb.count; ++i)
 				{
@@ -1643,11 +1654,20 @@ INT_RETVAL intRunWidgets()
 						}
 						sendInGameSystemMessage(msg.c_str());
 						Cheated = true;
+						// MOD (Wunsch 17.11.): mit gehaltener Umschalt-/Strg-Taste bleibt die Einheit gewaehlt - weitere Klicks setzen weitere
+						if (ctrlShiftDown())
+						{
+							keepDroidPlacing = true;
+						}
 					}
-					if (!quickQueueMode)
+					if (!quickQueueMode && !keepDroidPlacing)
 					{
 						editPosMode = IED_NOPOS;
 					}
+				}
+				if (keepDroidPlacing && psPositionStats != nullptr && psPositionStats->hasType(STAT_TEMPLATE))
+				{
+					intStartDebugDroidPlacement();
 				}
 			}
 		}
