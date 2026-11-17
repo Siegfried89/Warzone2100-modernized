@@ -1081,7 +1081,7 @@ void logistics()
 
 // ---------------------------------------------------------------- tiefe Graeben: Gelaende absenken
 
-constexpr int TRENCH_DEPTH = 40;   // 16.11.: tiefer und mit harter Kante (modterrain: Kachel-Absenkung statt Eckpunkte)
+constexpr int TRENCH_DEPTH = 24;   // (17.11. 14:14) = Sohle der tiefen Modelle (trench.py); das Netz darunter senkt modterrain tiefer
 
 bool isDeepTrench(const STRUCTURE_STATS *st)
 {
@@ -1097,7 +1097,13 @@ void updateTerrain()
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s == nullptr || s->died || s->status != SS_BUILT || !isDeepTrench(s->pStructureType)) { continue; }
-			want.insert(std::make_pair(map_coord(s->pos.x), map_coord(s->pos.y)));
+			// (17.11.) alle Felder unter der Stellung (Feinraster: Block aus 2x2 Feldern)
+			constexpr int S = DIST_TILE / TILE_UNITS;
+			const int tx0 = map_coord(s->pos.x - (S * TILE_UNITS) / 2), ty0 = map_coord(s->pos.y - (S * TILE_UNITS) / 2);
+			for (int j = 0; j < S; ++j)
+			{
+				for (int i = 0; i < S; ++i) { want.insert(std::make_pair(tx0 + i, ty0 + j)); }
+			}
 		}
 	}
 	if (want.empty() && s_lowered.empty()) { return; }

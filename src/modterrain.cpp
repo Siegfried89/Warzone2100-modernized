@@ -86,6 +86,7 @@ std::unordered_map<int, BlockCache> s_blockCache;
 
 int cellDyn(int layer, int x, int y);
 int cellFixed(int layer, int x, int y);
+int visFixed(int fixed);
 
 // Zusatzkacheln fuer die Kratertextur (mf/crater.txt: erste Nummer, Anzahl) - sonst die alte Schutt-Kachel
 int s_craterFirst = -2, s_craterCount = 0;
@@ -123,6 +124,19 @@ int cellFixed(int layer, int x, int y)
 {
 	const auto it = s_cells.find(keyOf(layer, x, y));
 	return it == s_cells.end() ? 0 : std::max<int>(0, it->second.fixed);
+}
+
+/// (17.11. 14:14) Gelaendenetz unter tiefen Stellungen: tiefer als die Sohle des Modells (Faktor 5/2), damit das grobe Netz nirgends
+/// durch den Grabenboden stoesst; Spiellogik und Standhoehe der Einheiten bleiben bei der Sohlentiefe (fixed)
+int visFixed(int fixed)
+{
+	return fixed * 5 / 2;
+}
+
+int cellVisDepth(int layer, int x, int y)
+{
+	const auto it = s_cells.find(keyOf(layer, x, y));
+	return it == s_cells.end() ? 0 : std::max<int>({0, it->second.dyn, visFixed(it->second.fixed)});
 }
 
 bool tileOk(const WorldMapState &m, int x, int y)
@@ -271,12 +285,10 @@ int sinkAt(const WorldMapState &mapState, int worldX, int worldY)
 	return (sum + norm / 2) / norm;
 }
 
-float sinkAtF(const WorldMapState &mapState, float worldX, float worldY)
+namespace
 {
-	if (s_cells.empty() || &mapState != &gameWorld.map)
-	{
-		return 0.f;
-	}
+float sinkWeighted(float worldX, float worldY, bool visual)
+{
 	const int layer = layerTag();
 	const int tx = static_cast<int>(std::floor(worldX / TILE_UNITS)), ty = static_cast<int>(std::floor(worldY / TILE_UNITS));
 	float sum = 0.f;
@@ -288,11 +300,30 @@ float sinkAtF(const WorldMapState &mapState, float worldX, float worldY)
 		{
 			const float wx = overlapF(worldX, static_cast<float>((tx + dx) * TILE_UNITS));
 			if (wx <= 0.f) { continue; }
-			const int d = cellDepth(layer, tx + dx, ty + dy);
+			const int d = visual ? cellVisDepth(layer, tx + dx, ty + dy) : cellDepth(layer, tx + dx, ty + dy);
 			if (d != 0) { sum += static_cast<float>(d) * wx * wy; }
 		}
 	}
 	return sum / static_cast<float>(4 * SINK_EDGE * SINK_EDGE);
+}
+} // namespace
+
+float sinkAtF(const WorldMapState &mapState, float worldX, float worldY)
+{
+	if (s_cells.empty() || &mapState != &gameWorld.map)
+	{
+		return 0.f;
+	}
+	return sinkWeighted(worldX, worldY, true);
+}
+
+float sinkStandF(const WorldMapState &mapState, float worldX, float worldY)
+{
+	if (s_cells.empty() || &mapState != &gameWorld.map)
+	{
+		return 0.f;
+	}
+	return sinkWeighted(worldX, worldY, false);
 }
 
 int sinkAtCorner(const WorldMapState &mapState, int x, int y)
@@ -303,7 +334,7 @@ int sinkAtCorner(const WorldMapState &mapState, int x, int y)
 	}
 	const int layer = layerTag();
 	// (17.11.) nur tiefe Graeben (Bauwerke) senken die Ecken; Krater/Schuetzenloecher nur den Feldmittelpunkt (centerSink)
-	return std::max({cellFixed(layer, x - 1, y - 1), cellFixed(layer, x, y - 1), cellFixed(layer, x - 1, y), cellFixed(layer, x, y)});
+	return visFixed(std::max({cellFixed(layer, x - 1, y - 1), cellFixed(layer, x, y - 1), cellFixed(layer, x - 1, y), cellFixed(layer, x, y)}));
 }
 
 int centerSink(const WorldMapState &mapState, int x, int y)
@@ -313,7 +344,7 @@ int centerSink(const WorldMapState &mapState, int x, int y)
 		return 0;
 	}
 	const int layer = layerTag();
-	const int d = cellDyn(layer, x, y), f = cellFixed(layer, x, y);
+	const int d = cellDyn(layer, x, y), f = visFixed(cellFixed(layer, x, y));
 	return d > f ? d - f : 0;   // die Ecken sind um die Grabentiefe schon abgesenkt
 }
 

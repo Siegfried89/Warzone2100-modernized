@@ -840,3 +840,13 @@ bool OverrideRPTDirectory(const char *newPath)
 #endif
 	return true;
 }
+
+// MOD (17.11. 14:40): Ablauf-Protokoll (siehe exchndl_win.cpp)
+void modBreadcrumb(const char *step)
+{
+#if defined(WZ_OS_WIN) && !(defined(__GNUC__) && !defined(__clang__))
+	ExchndlBreadcrumb(step);
+#else
+	(void)step;
+#endif
+}

@@ -10,6 +10,7 @@
 #include "feature.h"
 #include "game_world.h"
 #include "map.h"
+#include "modfort.h"
 #include "modoil.h"
 #include "modterrain.h"
 #include "objmem.h"
@@ -65,11 +66,26 @@ int64_t dist2(int ax, int ay, int bx, int by)
 
 Vector2i slotPos(const Slot &s, int k)
 {
-	const int cx = world_coord(s.tx) + TILE_UNITS / 2, cy = world_coord(s.ty) + TILE_UNITS / 2;
-	const int off = std::min(OFFSET, TILE_UNITS / 4);
-	if (k == 0) { return Vector2i(cx - off, cy); }
-	if (k == 1) { return Vector2i(cx + off, cy); }
-	return Vector2i(cx, cy + ((k & 1) ? off : -off));
+	int cx = world_coord(s.tx) + TILE_UNITS / 2, cy = world_coord(s.ty) + TILE_UNITS / 2;
+	int off = std::min(OFFSET, TILE_UNITS / 4);
+	bool alongY = false;
+	if (s.kind == Kind::TRENCH)
+	{
+		// (17.11. 14:14) im Graben bleiben: Plaetze entlang des Gangs (offene Seiten), nicht in der Sandsackwand/auf dem Erdwall
+		const MAPTILE *t = mapTile(gameWorld.map, s.tx, s.ty);
+		if (t != nullptr && t->psObject != nullptr && t->psObject->type == OBJ_STRUCTURE)
+		{
+			const STRUCTURE *st = static_cast<const STRUCTURE *>(t->psObject);
+			cx = st->pos.x; cy = st->pos.y;   // Feinraster: Mitte des 2x2-Blocks
+			const uint8_t sd = modfort::sides(s.tx, s.ty);
+			const bool ns = (sd & 0x5) != 0, ew = (sd & 0xa) != 0;
+			if ((sd & 0x10) != 0 && ns && !ew) { alongY = true; }
+			if ((sd & 0x10) != 0 && !ns && !ew) { off = std::min(off, 12); }   // einzelnes Loch ohne Gaenge
+		}
+	}
+	if (k >= 2) { off = off / 2; alongY = !alongY; }
+	const int d = (k & 1) ? off : -off;
+	return alongY ? Vector2i(cx, cy + d) : Vector2i(cx + d, cy);
 }
 
 void sendTo(DROID *d, const Vector2i &p)

@@ -24,5 +24,7 @@
 void ExchndlSetup(const char *packageVersion, const std::string &writeDir, bool portable_mode);
 void ExchndlShutdown();
 void ResetRPTDirectory(wchar_t *newPath);
+// MOD (17.11. 14:40): Ablauf-Protokoll neben der Programmdatei (Start-/Beenden-Schritte + Absturzstelle als Modul+Versatz)
+void ExchndlBreadcrumb(const char *step);
 
 #endif // __INCLUDED_LIB_EXCEPTIONHANDLER_EXCHNDL_H__

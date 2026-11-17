@@ -395,6 +395,26 @@ const iIMDShape *displayModel(const STRUCTURE *psStructure)
 	return m;
 }
 
+bool isDeep(const STRUCTURE *psStructure)
+{
+	const std::string *key = familyOf(psStructure);
+	if (key == nullptr) { return false; }
+	return key->rfind("trd", 0) == 0 || (key->size() > 2 && key->compare(key->size() - 2, 2, "_d") == 0);
+}
+
+int displayHeight(const STRUCTURE *psStructure, int fallback)
+{
+	if (psStructure == nullptr || psStructure->status != SS_BUILT || !isDeep(psStructure)) { return fallback; }
+	const int half = DIST_TILE / 2;
+	const int x0 = map_coord(psStructure->pos.x - half), y0 = map_coord(psStructure->pos.y - half);
+	const int x1 = map_coord(psStructure->pos.x + half), y1 = map_coord(psStructure->pos.y + half);
+	if (x0 < 0 || y0 < 0 || x1 > gameWorld.map.width || y1 > gameWorld.map.height) { return fallback; }
+	// Eckpunkthoehen ohne Krater-/Grabenabsenkung (map_TileHeight liest die Kartenhoehe)
+	const int h = map_TileHeight(gameWorld.map, x0, y0) + map_TileHeight(gameWorld.map, x1, y0) + map_TileHeight(gameWorld.map, x0, y1)
+	              + map_TileHeight(gameWorld.map, x1, y1);
+	return (h + 2) / 4;
+}
+
 bool heavyCrosser(const DROID *psDroid)
 {
 	if (psDroid == nullptr) { return false; }

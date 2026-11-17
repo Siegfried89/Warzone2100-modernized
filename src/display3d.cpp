@@ -68,6 +68,8 @@
 #include "feature.h"
 #include "mapgrid.h"
 #include "modfort.h"
+#include "keybind.h"
+#include "main.h"
 #include "hci.h"
 #include "display.h"
 #include "intdisplay.h"
@@ -3252,7 +3254,7 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 	if (const iIMDShape *fortImd = modfort::displayModel(psStructure))
 	{
 		strImd = getFactionDisplayIMD(faction, fortImd);
-		modelMatrix = glm::translate(glm::vec3(dv));
+		modelMatrix = glm::translate(glm::vec3(dv.x, modfort::displayHeight(psStructure, dv.y), dv.z));   // tief: auf Originalboden
 	}
 	// If the structure is not truly visible, but we know there is something there, we will instead draw a blip
 	UBYTE visibilityAmount = psStructure->visibleForLocalDisplay();
@@ -3498,6 +3500,7 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 
 	// MOD (17.11.): Graeben im Stellungsnetz - Modell mit Gaengen zu den offenen Seiten (ohne Drehung, siehe modfort.h)
 	const iIMDShape *fortImd = modfort::displayModel(psStructure);
+	if (fortImd != nullptr) { dv.y = modfort::displayHeight(psStructure, dv.y); }   // (17.11. 14:14) tief: Modell auf Originalboden
 	const glm::mat4 modelMatrix = fortImd != nullptr ? glm::translate(glm::vec3(dv))
 	                              : glm::translate(glm::vec3(dv)) * glm::rotate(UNDEG(-psStructure->rot.direction), glm::vec3(0.f, 1.f, 0.f));
 
@@ -5612,6 +5615,17 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 		txtShowSamples_Que.render(pie_GetVideoBufferWidth() - width, height + 2, WZCOL_TEXT_BRIGHT);
 		txtShowSamples_Lst.render(pie_GetVideoBufferWidth() - width, height + 48, WZCOL_TEXT_BRIGHT);
 		txtShowSamples_Act.render(pie_GetVideoBufferWidth() - width, height + 59, WZCOL_TEXT_BRIGHT);
+	}
+	// MOD (17.11. 14:39): Zeitfaktor oben in der Mitte anzeigen, solange er nicht 100 % ist (Numblock * / -)
+	{
+		static WzText txtModTime;
+		const int tf = modTimeFactorPercent();
+		if (tf != 100 && GetGameMode() == GS_NORMAL)
+		{
+			txtModTime.setText(WzString::fromUtf8(astringf(_("Time factor: %d %%"), tf)), font_large);
+			const int tx = (static_cast<int>(pie_GetVideoBufferWidth()) - static_cast<int>(txtModTime.width())) / 2;
+			txtModTime.render(tx, 34 + static_cast<int>(txtModTime.lineSize()), tf == 0 ? WZCOL_RED : WZCOL_YELLOW);
+		}
 	}
 	if (showFPS)
 	{
