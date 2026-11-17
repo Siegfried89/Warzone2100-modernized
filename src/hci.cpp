@@ -87,6 +87,7 @@
 #include "modtankguns.h"
 #include "modimpostor.h"
 #include "modinertia.h"
+#include "modrocket.h"
 #include "modmines.h"
 #include "modbigmap.h"
 #include "modfuel.h"
@@ -774,6 +775,7 @@ void interfaceShutDown()
 	modai::reset();          // MOD
 	modpointdef::reset();    // MOD: Punktverteidigung
 	modoutpost::reset();     // MOD: Aussenposten-Teleport
+	modrocket::reset();      // MOD (17.11. 20:56): Raketensilo
 	modconcrete::reset();    // MOD: Betonboden unter Gebaeuden
 	modweather::reset();     // MOD
 	modinvade::reset();

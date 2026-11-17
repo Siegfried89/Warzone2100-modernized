@@ -575,6 +575,7 @@ bool hasAbility(const DROID *d, const char *ability)
 bool canFly(const DROID *d)
 {
 	if (d == nullptr) { return false; }
+	if (d->droidType == DROID_CYBORG_CONSTRUCT) { return true; }   // (Wunsch 17.11. 20:59) Cyborg-Pioniere mit Sprungduesen
 	const Part *t = partOfBody(d->getBodyStats());
 	if (t == nullptr) { return false; }
 	const Part *l = partOfPropulsion(d->getPropulsionStats());

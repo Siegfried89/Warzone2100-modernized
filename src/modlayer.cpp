@@ -2,6 +2,7 @@
 // MOD: Drei Ebenen-Knoepfe (Orbit / Oberflaeche / Untergrund) mit weicher Ueberblendung, siehe modlayer.h
 
 #include "modlayer.h"
+#include "modrocket.h"
 #include "lib/sound/tracklib.h"
 #include "modlayermap.h"
 #include "modui.h"
@@ -181,6 +182,7 @@ void flierTick()
 				const auto rq = s_flyReq.find(d->id);
 				if (rq == s_flyReq.end() || d->died != 0) { continue; }
 				if (layerOfId(d->id) == UNDERGROUND || layerOfId(d->id) == rq->second || s_trans.count(d->id)) { continue; }
+				if (rq->second == ORBIT && d->droidType == DROID_CYBORG_CONSTRUCT) { continue; }   // (20:59) hinauf nur mit der Rakete
 				s_trans[d->id] = Transition{rq->second, gameTime};
 				orderDroid(d, DORDER_STOP, ModeImmediate);
 				const unsigned it = gameTime - deltaGameTime / 2 + 1;
@@ -418,6 +420,7 @@ bool hiddenInView(const BASE_OBJECT *obj)
 {
 	// Ohne Zusatzkarten (Mod nicht geladen / Erzeugen fehlgeschlagen) bleibt alles sichtbar und waehlbar.
 	if (obj == nullptr || !modlayermap::worldsExist()) { return false; }
+	if (obj->type == OBJ_DROID && modrocket::aboard(static_cast<const DROID *>(obj))) { return true; }   // (17.11. 20:56) sitzt in der Rakete
 	// Oberflaechen-Ansicht und nichts ausserhalb der Oberflaeche: nichts zu verbergen
 	if (s_current == SURFACE && s_layerOf.empty()) { return false; }
 	if (obj->type == OBJ_STRUCTURE && isShaft(static_cast<const STRUCTURE *>(obj)->pStructureType)) { return false; }   // Schaechte in jeder Ebene sichtbar
@@ -550,6 +553,7 @@ void requestLayer(DROID *d, Layer target)
 {
 	if (d == nullptr || d->died || target == UNDERGROUND || !modlayermap::worldsExist() || !isFlier(d)) { return; }
 	if (layerOfId(d->id) == target || layerOfId(d->id) == UNDERGROUND || s_trans.count(d->id)) { return; }
+	if (target == ORBIT && d->droidType == DROID_CYBORG_CONSTRUCT) { return; }   // (20:59) Cyborg-Pioniere kommen nur mit der Rakete hinauf
 	s_trans[d->id] = Transition{target, gameTime};
 	orderDroid(d, DORDER_STOP, ModeImmediate);
 }
