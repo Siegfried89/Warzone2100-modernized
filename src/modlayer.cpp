@@ -334,6 +334,15 @@ void request(Layer target)
 	s_busy = true;
 }
 
+// MOD (Wunsch 14.11. Punkt 3): steht die Klangquelle (Infanterist) in einem besetzten Haus/Hochhaus? Nur Anzeige/Klang.
+static int soundInBuilding(const SIMPLE_OBJECT *psObj)
+{
+	if (psObj == nullptr || psObj->type != OBJ_DROID) { return 0; }
+	const DROID *d = static_cast<const DROID *>(psObj);
+	if (!modoil::isHouseOccupant(d)) { return 0; }
+	return modoil::tileHasHouse(gameWorld.map, map_coord(d->pos.x), map_coord(d->pos.y)) ? 1 : 0;
+}
+
 void setSuppressed(bool suppressed)
 {
 	s_suppressed = suppressed;
@@ -344,7 +353,9 @@ void tick()
 	if (!modcombot::ready()) { return; }   // nur wenn die Combot-Mod geladen ist
 	update();                              // vor dem Zeichnen: Ebene am Ueberblend-Mittelpunkt umschalten
 	modlayermap::tick();                   // aufgeschobenes Neuaufbauen des Gelaendes (nach Grabungen)
-	// MOD (Punkt 3): Umgebungshall - Untergrund = Hoehle, Stadt-Karten (Urban) an der Oberflaeche = Hall zwischen den Haeusern
+	// MOD (Punkt 3): Umgebung - Untergrund = still und gedaempft (kein Hall), Stadt-Karten (Urban) an der Oberflaeche = Hall zwischen
+	// den Haeusern; Infanterie in besetzten Gebaeuden = dumpf mit Treppenhaus-Hall (je Klangquelle, siehe soundInBuilding)
+	sound_SetSampleEnvironmentHook(&soundInBuilding);
 	sound_SetEnvironment(s_current == UNDERGROUND ? 2 : ((s_current == SURFACE && currentMapTileset == MAP_TILESET::URBAN) ? 1 : 0));
 	const bool want = !s_suppressed;
 	if (!want && !s_screen) { return; }

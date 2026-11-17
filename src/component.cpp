@@ -517,6 +517,21 @@ void drawMuzzleFlash(WEAPON sWeap, const iIMDShape *weaponImd, const iIMDShape *
 /* Assumes matrix context is already set */
 // this is able to handle multiple weapon graphics now
 // removed mountRotation,they get such stuff from psObj directly now
+// MOD (Wunsch 14.11. Punkt 4): Scav-MG-Schuetzen zielen beim Feuern ueber Kimme und Korn (Animation "<Name>-aim.pie" neben der
+// Schuss-Animation, vom Mod erzeugt). Das schwere MG (BabaHeavyMG) und alle anderen Waffen behalten die Animation aus der Huefte.
+static const iIMDBaseShape *modAimVariant(const DROID *psDroid, const iIMDBaseShape *fireShape)
+{
+	if (fireShape == nullptr || psDroid->numWeaps == 0) { return fireShape; }
+	const WEAPON_STATS *w = psDroid->getWeaponStats(0);
+	if (w == nullptr || w->weaponSubClass != WSC_MGUN || w->id.compare("BabaHeavyMG") == 0) { return fireShape; }
+	std::string name = fireShape->filename.toStdString();
+	const size_t dot = name.rfind(".pie");
+	if (dot == std::string::npos) { return fireShape; }
+	name.insert(dot, "-aim");
+	const iIMDBaseShape *aim = modelGet(WzString::fromUtf8(name));
+	return aim ? aim : fireShape;
+}
+
 static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& modelMatrix2, const glm::mat4 &viewMatrix)
 {
 	iIMDBaseShape *psMoveAnim, *psStillAnim;
@@ -649,7 +664,12 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		}
 		if (strImd->objanimpie[psDroid->animationEvent])
 		{
-			strImd = strImd->objanimpie[psDroid->animationEvent]->displayModel();
+			const iIMDBaseShape *evShape = strImd->objanimpie[psDroid->animationEvent];
+			if (psDroid->animationEvent == ANIM_EVENT_FIRING && psDroid->droidType == DROID_PERSON)
+			{
+				evShape = modAimVariant(psDroid, evShape);
+			}
+			strImd = evShape->displayModel();
 		}
 		// MOD: Rumpf-Wackeln nach Combot-Nahkampftreffern - nur der Rumpf kippt, Turm und Waffen bleiben ruhig
 		glm::mat4 bodyMatrix = modifiedModelMatrix;
@@ -1051,6 +1071,30 @@ void displayComponentButtonObject(const DROID *psDroid, const Vector3i *Rotation
 
 /* Assumes matrix context is already set */
 // multiple turrets display removed the pointless mountRotation
+// MOD (Wunsch 14.11. Punkt 2): Infanterie unter Beschuss duckt sich - Oberkoerper und Kopf nach vorn gebeugt und etwas tiefer, wie beim
+// Rennen in Deckung; bleibt nach dem letzten Treffer noch einige Sekunden so und richtet sich dann langsam wieder auf (nur Anzeige)
+static glm::mat4 modInfantryDuck(const DROID *psDroid)
+{
+	if (!(psDroid->droidType == DROID_PERSON || psDroid->isCyborg()) || modcombot::isModular(psDroid))
+	{
+		return glm::mat4(1.f);
+	}
+	if (psDroid->timeLastHit == UDWORD_MAX || psDroid->timeLastHit > graphicsTime)
+	{
+		return glm::mat4(1.f);
+	}
+	constexpr uint32_t DUCK_IN = 250, DUCK_HOLD = 7000, DUCK_OUT = 1200;
+	const uint32_t dt = graphicsTime - psDroid->timeLastHit;
+	float k;
+	if (dt < DUCK_IN) { k = static_cast<float>(dt) / DUCK_IN; }
+	else if (dt < DUCK_IN + DUCK_HOLD) { k = 1.f; }
+	else if (dt < DUCK_IN + DUCK_HOLD + DUCK_OUT) { k = 1.f - static_cast<float>(dt - DUCK_IN - DUCK_HOLD) / DUCK_OUT; }
+	else { return glm::mat4(1.f); }
+	k = k * k * (3.f - 2.f * k);
+	// Front der Modelle zeigt nach -z: negativer Winkel um x beugt nach vorn (um die Fuesse)
+	return glm::translate(glm::vec3(0.f, -3.f * k, 0.f)) * glm::rotate(glm::radians(-17.f * k), glm::vec3(1.f, 0.f, 0.f));
+}
+
 void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	Vector3i position, rotation;
@@ -1090,6 +1134,7 @@ void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix, const g
 	{
 		modelMatrix *= objectShimmy((BASE_OBJECT *) psDroid);
 	}
+	modelMatrix *= modInfantryDuck(psDroid);   // MOD: Ducken unter Beschuss
 
 	// now check if the projected circle is within the screen boundaries
 	if(!clipDroidOnScreen(psDroid, perspectiveViewMatrix * modelMatrix, (getIsCloseDistance()) ? 150 : 25))
