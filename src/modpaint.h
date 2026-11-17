@@ -10,6 +10,8 @@
 //    entlang der Linie Graeben aus.  Artilleriebasis: Baufahrzeuge bauen in der Mitte 4 Artilleriestellungen, einen Sensorturm und
 //    eine Mauer rundherum (die beste verfuegbare Ausstattung).  Artillerie: beschiesst das gezeichnete Gebiet (verteilt).
 //    Flieger: patrouillieren ueber dem Gebiet.  Combots: patrouillieren selbststaendig durch das Gebiet.
+// (17.11.) Dazu: Panzersperrenfeld (gruene Pyramiden, Schachbrettfeld aus Panzersperren), Minenfeld (Minen-Zeichen, verstreute Minen),
+// Offensivlinie (rot, Querstriche zum Feind): mehr Kampfeinheiten in zwei Reihen, die Gegner verfolgen, nur wenige kurze Graeben + 2 MG-Posten.
 // Alle Auftraege laufen als gewoehnliche Befehle (wie ein Mausklick) - also auch im Mehrspieler synchron. Die Zeichnung bleibt
 // einige Sekunden sichtbar und verblasst dann (nur Anzeige).
 #pragma once
