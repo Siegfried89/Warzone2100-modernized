@@ -29,6 +29,13 @@
 #include "multiplay.h"
 #include "modincoming.h"
 #include "modrecover.h"
+#include "modcrates.h"
+#include "modcontrol.h"
+#include "console.h"
+#include "feature.h"
+#include "featuredef.h"
+#include "mapgrid.h"
+#include "objmem.h"
 #include "order.h"
 #include "ordersource.h"
 #include "stats.h"
@@ -36,6 +43,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -68,7 +76,7 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Aircraft", "Aircraft: patrol over this area", "Aircraft: drag the patrol area (right click cancels)", 255, 235, 50, true },
 	{ "Combots", "Combot area: combots patrol and fight in this area on their own", "Combots: drag the combot area (right click cancels)", 190, 90, 255, true },
 	{ "Spread out", "Spread out: the selected units spread out evenly (against artillery and bombs)", "", 150, 200, 200, false },
-	{ "Recover", "Recover: the selected trucks / repair units collect lost turrets and bring them to the repair facility", "", 120, 220, 255, false },
+	{ "Salvage", "Salvage: drag a circle around parts, artefacts and wrecks - an armed, escorted salvage team gathers at the base first, then recovers everything in it (wrecks are towed to the repair facility by flatbed trucks)", "Salvage: drag a circle around the salvage (right click cancels)", 120, 220, 255, true },
 };
 
 constexpr int BTN_W = 66;
@@ -151,20 +159,6 @@ void ensureScreen()
 					for (DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d->selected) { sel.push_back(d); } }
 				}
 				modincoming::spreadUnits(sel);
-				s_mode = -1;
-				s_drawing = false;
-				s_cur.clear();
-				return;
-			}
-			if (m == M_RECOVER)
-			{
-				// MOD (16.11. Punkt 10): Bergen - gewaehlte Bau-/Reparatureinheiten holen liegende Turm-Teile
-				std::vector<DROID *> sel;
-				if (selectedPlayer < MAX_PLAYERS)
-				{
-					for (DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d->selected) { sel.push_back(d); } }
-				}
-				modrecover::recoverWithSelection(sel);
 				s_mode = -1;
 				s_drawing = false;
 				s_cur.clear();
@@ -345,11 +339,367 @@ STRUCTURE_STATS *bestArtyEmplacement()
 	return best;
 }
 
+// ------------------------------------------------------------------------------------------------- Bergetrupp (Wunsch 14.11. Punkt 25)
+// "Bergen": Kreis ziehen -> das Spiel stellt vollautomatisch einen bewaffneten, eskortierten Bergetrupp zusammen (freie Bau-/Reparatur-
+// fahrzeuge fuer Teile und Artefakte, Scav-Lkw mit Ladeflaeche fuer Wracks, Kampfeinheiten als Eskorte). Der Trupp sammelt sich zuerst
+// vollstaendig am Bereitstellungspunkt (Rand der eigenen Basis in Richtung Ziel), faehrt dann gemeinsam los, birgt alles im Kreis und
+// kehrt zurueck. Wracks bringt der Lkw zur Reparaturstation, dort werden sie wieder zu Fahrzeugen (modrecover).
+// Die Verwaltung laeuft beim befehlenden Spieler und gibt gewoehnliche Befehle (wie Mausklicks) - also auch im Mehrspieler synchron.
+// Nicht im Spielstand (nach dem Laden ist der Trupp aufgeloest, die Einheiten behalten ihren letzten Befehl).
+struct SalvageOp
+{
+	bool active = false;
+	int phase = 0;                  // 0 sammeln, 1 anfahren, 2 bergen
+	Vector2i c, deploy;
+	int r = 0;
+	unsigned phaseStart = 0, nextStep = 0, nextEscort = 0;
+	std::vector<uint32_t> collectors, towers, escorts;
+};
+SalvageOp s_op;
+
+// MOD (Wunsch 14.11. Punkt 12, Rest): "Kommen nach einer Zeit keine weiteren Befehle, nehmen sie wieder an den Oberbefehlen teil."
+// Jede Einheit merkt sich ihren letzten Schlachtplan-Auftrag (Bewegung, Sammeln, Angriff, Verteidigung, Combot-Gebiet). Hat der Spieler
+// sie einzeln woanders hingeschickt, ist sie fertig (kein Befehl mehr), die 45-s-Spielerkontrolle (modcontrol) ist vorbei und sie steht
+// weit weg vom Planziel, kehrt sie von selbst zu ihrem Planauftrag zurueck. Ein Planauftrag gilt 15 Minuten.
+struct PlanTask
+{
+	DroidOrder order = DroidOrder(DORDER_NONE);
+	Vector2i anchor;
+	unsigned born = 0;
+};
+std::map<uint32_t, PlanTask> s_plan;
+unsigned s_nextPlanCheck = 0;
+constexpr unsigned PLAN_LIFE = 15 * 60 * 1000;
+
+constexpr unsigned OP_STEP_MS = 1000;
+constexpr unsigned OP_GATHER_MAX = 75000;   // laenger wartet der Trupp nicht auf Nachzuegler
+constexpr unsigned OP_GO_MAX = 120000;
+constexpr unsigned OP_WORK_MAX = 300000;
+
+bool isSupportUnit(const DROID *d)
+{
+	return d->droidType == DROID_CONSTRUCT || d->droidType == DROID_CYBORG_CONSTRUCT || d->droidType == DROID_REPAIR || d->droidType == DROID_CYBORG_REPAIR;
+}
+bool idleUnit(const DROID *d)
+{
+	return (d->order.type == DORDER_NONE || d->order.type == DORDER_GUARD || d->order.type == DORDER_HOLD) && !modrecover::carrying(d) && modcrates::crates(d) == 0;
+}
+bool inOp(uint32_t id)
+{
+	if (!s_op.active) { return false; }
+	for (const auto *v : { &s_op.collectors, &s_op.towers, &s_op.escorts })
+	{
+		if (std::find(v->begin(), v->end(), id) != v->end()) { return true; }
+	}
+	return false;
+}
+DROID *opDroid(uint32_t id)
+{
+	if (selectedPlayer >= MAX_PLAYERS) { return nullptr; }
+	DROID *d = IdToDroid(gameWorld.objects, id, selectedPlayer);
+	return (d != nullptr && !d->died) ? d : nullptr;
+}
+
+/// bergbare Dinge im Kreis: Wracks (Abschlepp-Lkw) und Teile/Artefakte/Faesser (aufsammeln)
+void opItems(std::vector<FEATURE *> &wrecks, std::vector<FEATURE *> &pickups)
+{
+	wrecks.clear();
+	pickups.clear();
+	if (selectedPlayer >= MAX_PLAYERS) { return; }
+	for (BASE_OBJECT *o : gridStartIterate(s_op.c.x, s_op.c.y, s_op.r))
+	{
+		if (o->type != OBJ_FEATURE || o->died || !o->visible[selectedPlayer]) { continue; }
+		FEATURE *f = static_cast<FEATURE *>(o);
+		if (modrecover::isTowable(f)) { wrecks.push_back(f); continue; }
+		if (f->psStats->subType == FEAT_OIL_DRUM || f->psStats->subType == FEAT_GEN_ARTE) { pickups.push_back(f); }
+	}
+	auto byId = [](const FEATURE *a, const FEATURE *b) { return a->id < b->id; };
+	std::sort(wrecks.begin(), wrecks.end(), byId);
+	std::sort(pickups.begin(), pickups.end(), byId);
+}
+
+void opEnd(bool sendHome)
+{
+	if (sendHome)
+	{
+		size_t i = 0;
+		for (const auto *v : { &s_op.collectors, &s_op.escorts })
+		{
+			for (uint32_t id : *v)
+			{
+				DROID *d = opDroid(id);
+				if (d != nullptr && !modrecover::carrying(d)) { send(d, DroidOrder(DORDER_MOVE, spread(s_op.deploy, i++)), false); }
+			}
+		}
+	}
+	s_op = SalvageOp();
+}
+
+void startSalvage(const Vector2i &c, int r)
+{
+	if (selectedPlayer >= MAX_PLAYERS) { return; }
+	if (s_op.active) { opEnd(false); }
+	s_op.c = c;
+	s_op.r = r;
+	std::vector<FEATURE *> wrecks, pickups;
+	opItems(wrecks, pickups);
+	if (wrecks.empty() && pickups.empty())
+	{
+		addConsoleMessage(_("Salvage: nothing to recover in this area"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		return;
+	}
+	// Bereitstellungspunkt: am Rand der eigenen Basis (Gebaeude, das dem Ziel am naechsten liegt), 5 Felder in Richtung Ziel
+	const STRUCTURE *home = nullptr;
+	int64_t homeD = 0;
+	for (const STRUCTURE *st : gameWorld.objects.structures[selectedPlayer])
+	{
+		if (st->died || st->status != SS_BUILT) { continue; }
+		const int64_t d = dist2(st->pos.xy(), c);
+		if (home == nullptr || d < homeD) { home = st; homeD = d; }
+	}
+	const modlayer::Layer view = modlayer::current();
+	std::vector<DROID *> pool;
+	for (DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d->died || d->isTransporter() || isAir(d) || modlayer::layerOf(d) != view || !idleUnit(d)) { continue; }
+		pool.push_back(d);
+	}
+	Vector2i deploy = c;
+	if (home != nullptr)
+	{
+		const double dx = c.x - home->pos.x, dy = c.y - home->pos.y;
+		const double len = std::max(1.0, std::sqrt(dx * dx + dy * dy));
+		const double step = std::min(len * 0.5, 5.0 * DIST_TILE);
+		deploy = Vector2i(home->pos.x + static_cast<int>(dx / len * step), home->pos.y + static_cast<int>(dy / len * step));
+	}
+	else if (!pool.empty())
+	{
+		std::vector<Vector2i> ps;
+		for (const DROID *d : pool) { ps.push_back(d->pos.xy()); }
+		deploy = centroid(ps);
+	}
+	deploy.x = std::clamp(deploy.x, TILE_UNITS * 2, world_coord(gameWorld.map.width - 3));
+	deploy.y = std::clamp(deploy.y, TILE_UNITS * 2, world_coord(gameWorld.map.height - 3));
+	s_op.deploy = deploy;
+	std::sort(pool.begin(), pool.end(), [&deploy](const DROID *a, const DROID *b) {
+		const int64_t da = dist2(a->pos.xy(), deploy), db = dist2(b->pos.xy(), deploy);
+		return da != db ? da < db : a->id < b->id;
+	});
+	const size_t wantTow = std::min<size_t>(wrecks.size(), 3);
+	const size_t wantCol = pickups.empty() ? 0 : std::min<size_t>(2, (pickups.size() + 2) / 3);
+	for (DROID *d : pool)
+	{
+		if (modrecover::isTowTruck(d))
+		{
+			if (s_op.towers.size() < wantTow) { s_op.towers.push_back(d->id); }
+			else if (s_op.collectors.size() < wantCol) { s_op.collectors.push_back(d->id); }
+		}
+		else if (isSupportUnit(d) && s_op.collectors.size() < wantCol)
+		{
+			s_op.collectors.push_back(d->id);
+		}
+	}
+	if (s_op.towers.empty() && s_op.collectors.empty())
+	{
+		addConsoleMessage(wrecks.empty() ? _("Salvage: no free trucks or repair units for a salvage team")
+		                                 : _("Salvage: no free trucks - wrecks need a flatbed truck (scavenger truck with cargo bed)"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		s_op = SalvageOp();
+		return;
+	}
+	const size_t wantEsc = std::min<size_t>(6, 2 + s_op.towers.size() + s_op.collectors.size());
+	for (DROID *d : pool)
+	{
+		if (s_op.escorts.size() >= wantEsc) { break; }
+		if (isCombat(d) && !isArty(d) && d->droidType != DROID_PERSON && !inOp(d->id)) { s_op.escorts.push_back(d->id); }
+	}
+	for (DROID *d : pool)   // zur Not auch Infanterie als Eskorte
+	{
+		if (s_op.escorts.size() >= wantEsc) { break; }
+		if (isCombat(d) && !isArty(d) && !inOp(d->id)) { s_op.escorts.push_back(d->id); }
+	}
+	s_op.active = true;
+	s_op.phase = 0;
+	s_op.phaseStart = gameTime;
+	s_op.nextStep = gameTime + OP_STEP_MS;
+	size_t i = 0;
+	for (const auto *v : { &s_op.escorts, &s_op.collectors, &s_op.towers })
+	{
+		for (uint32_t id : *v)
+		{
+			DROID *d = opDroid(id);
+			if (d != nullptr) { send(d, DroidOrder(DORDER_MOVE, spread(deploy, i++)), false); }
+		}
+	}
+	char msg[200];
+	snprintf(msg, sizeof(msg), _("Salvage team: %u salvage units, %u escorts - gathering at the deployment point"),
+	         static_cast<unsigned>(s_op.towers.size() + s_op.collectors.size()), static_cast<unsigned>(s_op.escorts.size()));
+	addConsoleMessage(msg, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+}
+
+void opPrune(std::vector<uint32_t> &v, bool dropCarriers)
+{
+	v.erase(std::remove_if(v.begin(), v.end(), [dropCarriers](uint32_t id) {
+		DROID *d = opDroid(id);
+		return d == nullptr || (dropCarriers && modrecover::carrying(d));
+	}), v.end());
+}
+
+void rememberPlan(const DROID *d, const DroidOrder &o, const Vector2i &anchor)
+{
+	PlanTask t;
+	t.order = o;
+	t.anchor = anchor;
+	t.born = gameTime;
+	s_plan[d->id] = t;
+}
+
+void planTick()
+{
+	if (gameTime < s_nextPlanCheck || selectedPlayer >= MAX_PLAYERS) { return; }
+	s_nextPlanCheck = gameTime + 2000;
+	const int64_t far2 = static_cast<int64_t>(6 * DIST_TILE) * (6 * DIST_TILE);
+	for (auto it = s_plan.begin(); it != s_plan.end();)
+	{
+		DROID *d = IdToDroid(gameWorld.objects, it->first, selectedPlayer);
+		if (d == nullptr || d->died || gameTime - it->second.born > PLAN_LIFE) { it = s_plan.erase(it); continue; }
+		if (d->order.type == DORDER_NONE && !modcontrol::manual(d) && !inOp(d->id) && !modrecover::carrying(d)
+		    && dist2(d->pos.xy(), it->second.anchor) > far2)
+		{
+			send(d, it->second.order, false);   // zurueck zum Oberbefehl
+		}
+		++it;
+	}
+}
+
+void opTick()
+{
+	if (!s_op.active || gameTime < s_op.nextStep) { return; }
+	s_op.nextStep = gameTime + OP_STEP_MS;
+	opPrune(s_op.escorts, false);
+	opPrune(s_op.collectors, true);   // traegt ein Teil zur Werkstatt -> faellt aus dem Trupp
+	opPrune(s_op.towers, true);       // hat ein Wrack geladen -> faehrt zur Werkstatt
+	const unsigned age = gameTime - s_op.phaseStart;
+	if (s_op.phase == 0)
+	{
+		bool all = true;
+		const int64_t near2 = static_cast<int64_t>(5 * DIST_TILE) * (5 * DIST_TILE);
+		for (const auto *v : { &s_op.escorts, &s_op.collectors, &s_op.towers })
+		{
+			for (uint32_t id : *v) { DROID *d = opDroid(id); if (d != nullptr && dist2(d->pos.xy(), s_op.deploy) > near2) { all = false; } }
+		}
+		if (s_op.collectors.empty() && s_op.towers.empty()) { addConsoleMessage(_("Salvage team lost"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); opEnd(true); return; }
+		if (all || age >= OP_GATHER_MAX)
+		{
+			s_op.phase = 1;
+			s_op.phaseStart = gameTime;
+			size_t i = 0;
+			for (uint32_t id : s_op.escorts) { DROID *d = opDroid(id); if (d != nullptr) { send(d, DroidOrder(DORDER_SCOUT, spread(s_op.c, i++)), false); } }
+			for (const auto *v : { &s_op.collectors, &s_op.towers })
+			{
+				for (uint32_t id : *v) { DROID *d = opDroid(id); if (d != nullptr) { send(d, DroidOrder(DORDER_MOVE, spread(s_op.c, i++)), false); } }
+			}
+			addConsoleMessage(_("Salvage team assembled - moving out"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+		return;
+	}
+	std::vector<FEATURE *> wrecks, pickups;
+	opItems(wrecks, pickups);
+	if (s_op.phase == 1)
+	{
+		const int64_t arrive2 = static_cast<int64_t>(s_op.r + 2 * DIST_TILE) * (s_op.r + 2 * DIST_TILE);
+		bool arrived = false;
+		for (const auto *v : { &s_op.collectors, &s_op.towers })
+		{
+			for (uint32_t id : *v) { DROID *d = opDroid(id); if (d != nullptr && dist2(d->pos.xy(), s_op.c) <= arrive2) { arrived = true; } }
+		}
+		if (s_op.collectors.empty() && s_op.towers.empty()) { opEnd(true); return; }
+		if (!arrived && age < OP_GO_MAX) { return; }
+		s_op.phase = 2;
+		s_op.phaseStart = gameTime;
+	}
+	// Phase 2: bergen - jeder freie Berger holt das naechste noch nicht vergebene Ding
+	std::vector<uint32_t> taken;
+	auto busyWith = [](const DROID *d) -> uint32_t {
+		return (d->order.type == DORDER_RECOVER && d->order.psObj != nullptr && !d->order.psObj->died) ? d->order.psObj->id : 0u;
+	};
+	for (const auto *v : { &s_op.collectors, &s_op.towers })
+	{
+		for (uint32_t id : *v) { DROID *d = opDroid(id); if (d != nullptr) { const uint32_t f = busyWith(d); if (f != 0) { taken.push_back(f); } } }
+	}
+	auto assign = [&](std::vector<uint32_t> &units, std::vector<FEATURE *> &items) {
+		for (uint32_t id : units)
+		{
+			DROID *d = opDroid(id);
+			if (d == nullptr || busyWith(d) != 0) { continue; }
+			FEATURE *best = nullptr;
+			int64_t bestD = 0;
+			for (FEATURE *f : items)
+			{
+				if (std::find(taken.begin(), taken.end(), f->id) != taken.end()) { continue; }
+				const int64_t dd = dist2(d->pos.xy(), f->pos.xy());
+				if (best == nullptr || dd < bestD) { best = f; bestD = dd; }
+			}
+			if (best == nullptr) { continue; }
+			taken.push_back(best->id);
+			send(d, DroidOrder(DORDER_RECOVER, best), false);
+		}
+	};
+	assign(s_op.towers, wrecks);
+	assign(s_op.collectors, pickups);
+	if (s_op.collectors.empty() && !pickups.empty()) { assign(s_op.escorts, pickups); }   // keine Berger mehr: die Eskorte sammelt Beute/Artefakte
+	// Eskorte: sichert das Gebiet (alle 15 s ein neuer Punkt im Kreis)
+	if (gameTime >= s_op.nextEscort)
+	{
+		s_op.nextEscort = gameTime + 15000;
+		size_t i = 0;
+		for (uint32_t id : s_op.escorts)
+		{
+			DROID *d = opDroid(id);
+			if (d == nullptr || busyWith(d) != 0 || (d->order.type != DORDER_NONE && d->order.type != DORDER_SCOUT)) { ++i; continue; }
+			const uint16_t ang = static_cast<uint16_t>((gameTime / 15000u) * 9973u + i * 21011u);
+			const int rr = s_op.r * static_cast<int>(1 + (i * 37u + gameTime / 15000u) % 3u) / 4;
+			send(d, DroidOrder(DORDER_SCOUT, Vector2i(s_op.c.x + iSinR(ang, rr), s_op.c.y + iCosR(ang, rr))), false);
+			++i;
+		}
+	}
+	const bool workLeft = (!wrecks.empty() && !s_op.towers.empty()) || !pickups.empty();
+	bool anyBusy = false;
+	for (const auto *v : { &s_op.collectors, &s_op.towers, &s_op.escorts })
+	{
+		for (uint32_t id : *v) { DROID *d = opDroid(id); if (d != nullptr && busyWith(d) != 0) { anyBusy = true; } }
+	}
+	if ((!workLeft && !anyBusy) || (s_op.towers.empty() && s_op.collectors.empty() && pickups.empty()) || gameTime - s_op.phaseStart >= OP_WORK_MAX)
+	{
+		addConsoleMessage(_("Salvage complete - team returning"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		opEnd(true);
+	}
+}
+
+std::vector<Vector2i> circlePts(const Vector2i &c, int r, int n)
+{
+	std::vector<Vector2i> p;
+	for (int k = 0; k < n; ++k)
+	{
+		const uint16_t a = static_cast<uint16_t>(k * 65536 / n);
+		p.emplace_back(c.x + iSinR(a, r), c.y + iCosR(a, r));
+	}
+	return p;
+}
+
 // ------------------------------------------------------------------------------------------------- Auftraege
 
 void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 {
 	if (raw.empty()) { return; }
+	if (m == M_RECOVER)
+	{
+		const Vector2i c = centroid(raw);
+		int64_t far2 = 0;
+		for (const Vector2i &p : raw) { far2 = std::max(far2, dist2(p, c)); }
+		const int r = std::clamp(static_cast<int>(std::sqrt(static_cast<double>(far2))), 3 * DIST_TILE, 16 * DIST_TILE);
+		startSalvage(c, r);
+		return;
+	}
 	std::vector<DROID *> units = pickUnits(m, raw);
 	const Vector2i c = centroid(raw);
 	if (units.empty())
@@ -369,12 +719,13 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 			{
 				const Vector2i p = (k + 1 == wp.size()) ? spread(wp[k], i) : wp[k];
 				send(units[i], DroidOrder(ord, p), k > 1);
+				if (k + 1 == wp.size()) { rememberPlan(units[i], DroidOrder(ord, p), p); }
 			}
 		}
 		break;
 	}
 	case M_RALLY:
-		for (size_t i = 0; i < units.size(); ++i) { send(units[i], DroidOrder(DORDER_MOVE, spread(c, i)), false); }
+		for (size_t i = 0; i < units.size(); ++i) { send(units[i], DroidOrder(DORDER_MOVE, spread(c, i)), false); rememberPlan(units[i], DroidOrder(DORDER_MOVE, spread(c, i)), spread(c, i)); }
 		break;
 	case M_DEFEND:
 	{
@@ -382,7 +733,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		for (DROID *d : units) { (isBuilder(d) ? builders : fighters).push_back(d); }
 		// Kaempfer verteilen sich gleichmaessig auf der Linie
 		const std::vector<Vector2i> spots = resample(raw, std::max<size_t>(1, fighters.size()));
-		for (size_t i = 0; i < fighters.size(); ++i) { send(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), false); }
+		for (size_t i = 0; i < fighters.size(); ++i) { send(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), false); rememberPlan(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), spots[i]); }
 		// Bauer heben Graeben entlang der Linie aus (Abschnitte reihum verteilt)
 		STRUCTURE_STATS *trench = firstAvailable({ "A0BaBaTrench", "A0BaBaTrenchEarth", "A0BaBaSandbagWall" });
 		if (trench != nullptr && !builders.empty())
@@ -449,6 +800,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		{
 			send(units[i], DroidOrder(DORDER_SCOUT, spread(a, i)), false);
 			send(units[i], DroidOrder(DORDER_PATROL, spread(b, i)), true);
+			rememberPlan(units[i], DroidOrder(DORDER_SCOUT, spread(a, i)), spread(a, i));
 		}
 		break;
 	}
@@ -594,13 +946,15 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 void tick()
 {
 	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS;
-	if (!want && !s_screen) { return; }
+	if (!want && !s_screen) { opTick(); planTick(); return; }
 	ensureScreen();
 	if (!s_root) { return; }
 	s_root->show(want);
 	if (want) { layout(); }
 	if (!want) { s_mode = -1; s_drawing = false; s_cur.clear(); }
 	if (s_mode >= 0 && keyPressed(KEY_ESC)) { s_mode = -1; s_drawing = false; s_cur.clear(); }
+	opTick();   // Bergetrupp (laeuft auch, wenn die Knoepfe verborgen sind)
+	planTick(); // Oberbefehle wieder aufnehmen
 	// alte Zeichnungen entfernen
 	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [](const Stroke &st) { return realTime - st.born > SHOW_MS; }), s_done.end());
 }
@@ -657,6 +1011,13 @@ void drawOverlay(const glm::mat4 &m)
 		const int a = age >= SHOW_MS ? 0 : static_cast<int>(230 - 200 * static_cast<int64_t>(age) / static_cast<int64_t>(SHOW_MS));
 		if (a > 0) { drawStroke(st.pts, st.mode, a, m); }
 	}
+	if (s_op.active)
+	{
+		// Bergegebiet und Bereitstellungspunkt (pulsierend), solange der Trupp unterwegs ist
+		const int a = 150 + static_cast<int>(60.0 * std::sin(static_cast<double>(realTime) / 300.0));
+		drawStroke(circlePts(s_op.c, s_op.r, 36), M_RECOVER, a, m);
+		if (s_op.phase == 0) { drawStroke(circlePts(s_op.deploy, DIST_TILE * 3 / 2, 16), M_RECOVER, a, m); }
+	}
 	if (s_drawing && s_mode >= 0)
 	{
 		drawStroke(s_cur, s_mode, 255, m);
@@ -681,5 +1042,8 @@ void shutdown()
 	s_drawing = false;
 	s_cur.clear();
 	s_done.clear();
+	s_op = SalvageOp();
+	s_plan.clear();
+	s_nextPlanCheck = 0;
 }
 }

@@ -41,6 +41,16 @@ void reset();
 /// Knopf "Recover": die gewaehlten Einheiten bergen die naechstgelegenen liegenden Turm-Teile ihres Spielers (Befehle ueber das Netz)
 void recoverWithSelection(const std::vector<DROID *> &units);
 
+/// (17.11., Wunsch 25 "Bergen") Abschlepp-Lkw = Scav-Lkw mit Ladeflaeche (ScavBed1/2/3): Rechtsklick/Befehl "Bergen" auf ein Wrack laedt es auf,
+/// der Lkw faehrt es zur naechsten eigenen Reparaturstation; dort wird daraus wieder ein Fahrzeug (stark beschaedigt, wird gleich repariert).
+bool isTowTruck(const DROID *psDroid);
+/// kann dieses Feature abgeschleppt werden? (gelandetes Wrack mit Bauplan)
+bool isTowable(const FEATURE *psFeature);
+/// traegt die Einheit gerade ein Turm-Teil oder ein Wrack zur Werkstatt?
+bool carrying(const DROID *psDroid);
+/// Anzeige: Wrack-Modell, das dieser Lkw gerade geladen hat (nullptr = keins)
+const void *towedWreckStats(const DROID *psDroid);
+
 /// Anzeige: Waffe fuer ein liegendes Turm-Teil (0 = keins)
 unsigned partWeapon(const FEATURE *psFeature);
 bool isPartStats(const void *psFeatureStats);

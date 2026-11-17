@@ -50,6 +50,8 @@
 #include "modduel.h"
 #include "modrecoil.h"
 #include "modparts.h"
+#include "modrecover.h"
+#include "featuredef.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
 #endif
@@ -693,6 +695,20 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 			}
 			strImd = strImd->next.get();
 		}
+		// MOD (17.11., Wunsch 25 "Bergen"): Abschlepp-Lkw mit geladenem Wrack - das Wrack liegt verkleinert auf der Ladeflaeche (nur Anzeige)
+		if (!bButton)
+		{
+			const FEATURE_STATS *towed = static_cast<const FEATURE_STATS *>(modrecover::towedWreckStats(psDroid));
+			if (towed != nullptr && towed->psImd != nullptr)
+			{
+				const float back = static_cast<float>(psShapeBody->max.z) * 0.35f;
+				const glm::mat4 towMatrix = bodyMatrix * glm::translate(glm::vec3(0.f, static_cast<float>(psShapeBody->max.y) + 2.f, back)) * glm::scale(glm::vec3(0.62f));
+				if (pie_Draw3DShape(towed->psImd->displayModel(), 0, 0, brightness, pieFlag, 0, towMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+				{
+					didDrawSomething = true;
+				}
+			}
+		}
 	}
 
 	/* Render animation effects based on movement or lack thereof, if any */
@@ -1071,30 +1087,6 @@ void displayComponentButtonObject(const DROID *psDroid, const Vector3i *Rotation
 
 /* Assumes matrix context is already set */
 // multiple turrets display removed the pointless mountRotation
-// MOD (Wunsch 14.11. Punkt 2): Infanterie unter Beschuss duckt sich - Oberkoerper und Kopf nach vorn gebeugt und etwas tiefer, wie beim
-// Rennen in Deckung; bleibt nach dem letzten Treffer noch einige Sekunden so und richtet sich dann langsam wieder auf (nur Anzeige)
-static glm::mat4 modInfantryDuck(const DROID *psDroid)
-{
-	if (!(psDroid->droidType == DROID_PERSON || psDroid->isCyborg()) || modcombot::isModular(psDroid))
-	{
-		return glm::mat4(1.f);
-	}
-	if (psDroid->timeLastHit == UDWORD_MAX || psDroid->timeLastHit > graphicsTime)
-	{
-		return glm::mat4(1.f);
-	}
-	constexpr uint32_t DUCK_IN = 250, DUCK_HOLD = 7000, DUCK_OUT = 1200;
-	const uint32_t dt = graphicsTime - psDroid->timeLastHit;
-	float k;
-	if (dt < DUCK_IN) { k = static_cast<float>(dt) / DUCK_IN; }
-	else if (dt < DUCK_IN + DUCK_HOLD) { k = 1.f; }
-	else if (dt < DUCK_IN + DUCK_HOLD + DUCK_OUT) { k = 1.f - static_cast<float>(dt - DUCK_IN - DUCK_HOLD) / DUCK_OUT; }
-	else { return glm::mat4(1.f); }
-	k = k * k * (3.f - 2.f * k);
-	// Front der Modelle zeigt nach -z: negativer Winkel um x beugt nach vorn (um die Fuesse)
-	return glm::translate(glm::vec3(0.f, -3.f * k, 0.f)) * glm::rotate(glm::radians(-17.f * k), glm::vec3(1.f, 0.f, 0.f));
-}
-
 void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	Vector3i position, rotation;
@@ -1134,7 +1126,6 @@ void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix, const g
 	{
 		modelMatrix *= objectShimmy((BASE_OBJECT *) psDroid);
 	}
-	modelMatrix *= modInfantryDuck(psDroid);   // MOD: Ducken unter Beschuss
 
 	// now check if the projected circle is within the screen boundaries
 	if(!clipDroidOnScreen(psDroid, perspectiveViewMatrix * modelMatrix, (getIsCloseDistance()) ? 150 : 25))

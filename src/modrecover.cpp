@@ -2,7 +2,9 @@
 // MOD: Turm-Teile bergen und Reparatur mit Teil (siehe modrecover.h)
 
 #include "modcontrol.h"
+#include "modcrates.h"
 #include "modrecover.h"
+#include "modwreck.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/fixedpoint.h"
@@ -23,6 +25,8 @@
 #include "ordersource.h"
 #include "stats.h"
 #include "structure.h"
+#include "template.h"
+#include "console.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -66,6 +70,14 @@ struct Carry
 std::map<uint32_t, Part> s_parts;     // Feature-ID -> Teil
 std::map<uint32_t, Wait> s_wait;      // Fahrzeug-ID -> wartet auf seinen Turm
 std::map<uint32_t, Carry> s_carry;    // Traeger-ID -> traegt ein Teil
+struct Tow
+{
+	uint8_t player = 0;
+	modwreck::WreckInfo info;
+	unsigned nextOrder = 0;
+};
+std::map<uint32_t, Tow> s_tow;        // (17.11.) Abschlepp-Lkw-ID -> geladenes Wrack
+constexpr int TOW_REACH = DIST_TILE * 2;      // so nah muss der Lkw an das Wrack (das Wrack sperrt seine Kachel)
 unsigned s_nextTick = 0;
 FEATURE_STATS *s_partStats = nullptr;
 const FEATURE_STATS *s_statsBase = nullptr;
@@ -131,7 +143,77 @@ bool freeSpot(int x, int y)
 	MAPTILE *t = mapTile(gameWorld.map, tx, ty);
 	return t != nullptr && !TileIsOccupied(t) && terrainType(t) != TER_WATER && terrainType(t) != TER_CLIFFFACE;
 }
+bool towTruck(const DROID *d)
+{
+	if (d == nullptr || d->died || d->isVtol() || d->isTransporter()) { return false; }
+	const CONSTRUCT_STATS *cs = d->getConstructStats();
+	return cs != nullptr && cs->id.toUtf8().compare(0, 7, "ScavBed") == 0;
+}
+
+/// freier Platz neben der Werkstatt fuer das wiederhergestellte Fahrzeug
+bool spotNear(const STRUCTURE *s, uint32_t seed, Vector2i &out)
+{
+	for (int ring = 2; ring <= 4; ++ring)
+	{
+		for (int k = 0; k < 8; ++k)
+		{
+			const uint16_t dir = static_cast<uint16_t>(seed * 2654435761u + static_cast<unsigned>(k) * DEG(45));
+			const int x = s->pos.x + iSinR(dir, ring * DIST_TILE), y = s->pos.y + iCosR(dir, ring * DIST_TILE);
+			if (freeSpot(x, y)) { out = Vector2i(x, y); return true; }
+		}
+	}
+	return false;
+}
+
+/// Wrack an der Werkstatt abliefern: daraus wird wieder ein Fahrzeug fuer den Spieler, der es geborgen hat
+bool restoreWreck(const Tow &t, const DROID *truck)
+{
+	const STRUCTURE *fac = nearestFacility(t.player, truck->pos.xy());
+	if (fac == nullptr) { return false; }
+	DROID_TEMPLATE templ;
+	templ.name = WzString::fromUtf8("Salvaged vehicle");
+	for (int c = 0; c < DROID_MAXCOMP; ++c) { templ.asParts[c] = static_cast<uint8_t>(t.info.parts[c]); }
+	templ.numWeaps = static_cast<int8_t>(std::min<unsigned>(t.info.numWeaps, MAX_WEAPONS));
+	for (int i = 0; i < templ.numWeaps; ++i) { templ.asWeaps[i] = t.info.weaps[i]; }
+	templ.droidType = static_cast<DROID_TYPE>(t.info.droidType);
+	if (templ.asParts[COMP_BODY] >= asBodyStats.size() || templ.asParts[COMP_PROPULSION] >= asPropulsionStats.size()) { return false; }
+	Vector2i p;
+	if (!spotNear(fac, truck->id, p)) { p = Vector2i(fac->pos.x + DIST_TILE * 2, fac->pos.y + DIST_TILE * 2); }
+	DROID *nd = reallyBuildDroid(gameWorld, &templ, Position(p.x, p.y, 0), t.player, false, truck->rot);
+	if (nd == nullptr) { return false; }
+	addDroid(nd, gameWorld.objects.droids);
+	nd->body = std::max<unsigned>(1, nd->originalBody / 4);   // stark beschaedigt - die Werkstatt setzt es instand
+	orderDroid(nd, DORDER_RTR, ModeImmediate);
+	if (t.player == selectedPlayer)
+	{
+		addConsoleMessage(_("Salvaged wreck restored at the repair facility"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+	}
+	return true;
+}
 } // namespace
+
+bool isTowTruck(const DROID *psDroid)
+{
+	return towTruck(psDroid);
+}
+
+bool isTowable(const FEATURE *psFeature)
+{
+	modwreck::WreckInfo info;
+	return modwreck::wreckInfo(psFeature, info);
+}
+
+bool carrying(const DROID *psDroid)
+{
+	return psDroid != nullptr && (s_carry.count(psDroid->id) != 0 || s_tow.count(psDroid->id) != 0);
+}
+
+const void *towedWreckStats(const DROID *psDroid)
+{
+	if (psDroid == nullptr) { return nullptr; }
+	auto it = s_tow.find(psDroid->id);
+	return it == s_tow.end() ? nullptr : static_cast<const void *>(it->second.info.stats);
+}
 
 void onTurretLost(DROID *d, unsigned weaponStat)
 {
@@ -244,6 +326,39 @@ void tick()
 		++it;
 	}
 
+	// (17.11.) Abschlepp-Lkw: Wrack aufladen, wenn der Lkw mit dem Befehl "Bergen" nah genug dran ist
+	for (unsigned pl = 0; pl < MAX_PLAYERS; ++pl)
+	{
+		for (DROID *d : gameWorld.objects.droids[pl])
+		{
+			if (d->died || d->order.type != DORDER_RECOVER || d->order.psObj == nullptr || d->order.psObj->type != OBJ_FEATURE) { continue; }
+			if (!towTruck(d) || s_tow.count(d->id) != 0 || modcrates::crates(d) > 0) { continue; }
+			FEATURE *f = static_cast<FEATURE *>(d->order.psObj);
+			if (f->died || dist2(d->pos.xy(), f->pos.xy()) > static_cast<int64_t>(TOW_REACH) * TOW_REACH) { continue; }
+			Tow t;
+			t.player = static_cast<uint8_t>(d->player);
+			if (!modwreck::takeWreck(f, gameWorld, t.info)) { continue; }   // entfernt das Feature (Befehl endet von selbst)
+			t.nextOrder = gameTime + 8000;
+			s_tow[d->id] = t;
+			sendToFacility(d, d->player, d->pos.xy());
+		}
+	}
+	for (auto it = s_tow.begin(); it != s_tow.end();)
+	{
+		DROID *d = IdToDroid(gameWorld.objects, it->first, it->second.player);
+		if (d == nullptr || d->died) { it = s_tow.erase(it); continue; }   // Lkw zerstoert: Wrack verloren
+		if (nearFacility(it->second.player, d->pos.xy()))
+		{
+			if (restoreWreck(it->second, d)) { it = s_tow.erase(it); continue; }
+		}
+		else if (d->order.type == DORDER_NONE && gameTime >= it->second.nextOrder && !modcontrol::manual(d))
+		{
+			sendToFacility(d, d->player, d->pos.xy());   // steht herum: weiter zur Werkstatt
+			it->second.nextOrder = gameTime + 8000;
+		}
+		++it;
+	}
+
 	// wartende Fahrzeuge
 	for (auto it = s_wait.begin(); it != s_wait.end();)
 	{
@@ -307,6 +422,7 @@ void reset()
 	s_parts.clear();
 	s_wait.clear();
 	s_carry.clear();
+	s_tow.clear();
 	s_nextTick = 0;
 	s_statsBase = nullptr;
 	s_partStats = nullptr;
