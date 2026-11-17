@@ -283,7 +283,7 @@ void addDroidDeathAnimationEffect(DROID *psDroid)
 			{
 				// FIXME: change when adding submarines to the game
 //				modifiedModelMatrix *= glm::translate(glm::vec3(0.f, -world_coord(1) / 2.3f, 0.f));
-				position.y += static_cast<int>((1 * DIST_TILE) / 2.3f);
+				position.y += 9;   // MOD (17.11.): wie der geringe Tiefgang beim Zeichnen (component.cpp)
 			}
 
 			EFFECT_TYPE type = DROID_ANIMEVENT_DYING_NORMAL;

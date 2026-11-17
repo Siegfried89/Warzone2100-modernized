@@ -2725,6 +2725,35 @@ bool placeDroid(STRUCTURE *psStructure, const DROID_TEMPLATE * psTempl, UDWORD *
 
 	if (tiles.empty())
 	{
+		// MOD (17.11., NTW-Schiffe): Schiffe (Propellor) entstehen auf dem naechsten freien Wasserfeld in der Naehe der Fabrik
+		// (bis 12 Felder weit; Viertel-Raster entsprechend mehr Feinfelder) - eine Fabrik am Ufer kann so Schiffe bauen.
+		if (psTempl->getPropulsionStats()->propulsionType == PROPULSION_TYPE_PROPELLOR)
+		{
+			const int R = 12 * DIST_TILE / TILE_UNITS;
+			const int cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+			int best = -1, bx = 0, by = 0;
+			for (int y = std::max(0, cy - R); y <= std::min(gameWorld.map.height - 1, cy + R); ++y)
+			{
+				for (int x = std::max(0, cx - R); x <= std::min(gameWorld.map.width - 1, cx + R); ++x)
+				{
+					const int d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+					if (d > R * R || (best >= 0 && d >= best))
+					{
+						continue;
+					}
+					if (structClearTile(gameWorld, x, y, PROPULSION_TYPE_PROPELLOR))
+					{
+						best = d; bx = x; by = y;
+					}
+				}
+			}
+			if (best >= 0)
+			{
+				*droidX = world_coord(bx) + TILE_UNITS / 2;
+				*droidY = world_coord(by) + TILE_UNITS / 2;
+				return true;
+			}
+		}
 		return false;
 	}
 
