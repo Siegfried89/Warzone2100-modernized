@@ -41,6 +41,7 @@
 #include "modparts.h"
 #include "modfuel.h"
 #include "modoil.h"   // MOD
+#include "modtankguns.h"   // MOD
 #include "move.h"
 
 #include "objects.h"
@@ -2932,6 +2933,7 @@ void moveUpdateDroid(DROID *psDroid)
 	}
 	else
 	{
+		if (modtankguns::halted(psDroid)) { moveSpeed = 0; }   // MOD (17.11.): Feuerhalt der Panzer
 		moveUpdateGroundModel(psDroid, moveSpeed, moveDir);
 		if (psPropStats->hoverHeight > 0) { psDroid->pos.z += psPropStats->hoverHeight; }   // MOD: Balldrohne schwebt ueber dem Boden
 		if (psPropStats->propulsionType == PROPULSION_TYPE_LEGGED) { modduel::updateLeggedAnimation(psDroid, moveSpeed); } // MOD

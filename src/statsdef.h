@@ -329,7 +329,8 @@ struct COMPONENT_STATS : public BASE_STATS
 	iIMDBaseShape *pickIMD(unsigned objId) const
 	{
 		if (altIMDs.empty()) { return pIMD; }
-		const size_t k = objId % (altIMDs.size() + 1);
+		// MOD (17.11.): gestreut (Einheiten-Nummern laufen in Spieler-Schritten), damit alle Modelle gleich oft vorkommen
+		const size_t k = static_cast<size_t>(((objId * 2654435761u) >> 13) % static_cast<unsigned>(altIMDs.size() + 1));
 		return k == 0 ? pIMD : altIMDs[k - 1];
 	}
 	unsigned buildPower = 0;			/**< Power required to build the component */
