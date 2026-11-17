@@ -44,6 +44,7 @@
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modoil.h"
+#include "modfort.h"
 #include "modterrain.h"
 #include "pathfinding_backend.h"
 #include "congestion_overlay.h"
@@ -365,7 +366,7 @@ static uint8_t prop2bits(PROPULSION_TYPE propulsion)
 }
 
 // Check if the map tile at a location blocks a droid
-bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int mapIndex, FPATH_MOVETYPE moveType, bool houseAccess)
+bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PROPULSION_TYPE propulsion, int mapIndex, FPATH_MOVETYPE moveType, bool houseAccess, bool heavy)
 {
 	/* All tiles outside of the map and on map border are blocking. */
 	if (x < 1 || y < 1 || x > mapState.width - 1 || y > mapState.height - 1)
@@ -396,7 +397,9 @@ bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PR
 	}
 
 	unsigned unitbits = prop2bits(propulsion);  // TODO - cache prop2bits to psDroid, and pass in instead of propulsion type
-	if ((unitbits & FEATURE_BLOCKED) != 0 && (aux & auxMask) != 0)
+	// MOD (17.11.): schwere Kettenpanzer (mittlerer/schwerer Rumpf) ueberfahren Graeben und Gruben
+	const bool heavyOverFort = heavy && &mapState == &gameWorld.map && modfort::fortTile(x, y);
+	if ((unitbits & FEATURE_BLOCKED) != 0 && (aux & auxMask) != 0 && !heavyOverFort)
 	{
 		// MOD: Infanterie (Beine) darf Graeben und Gruben betreten
 		if (propulsion != PROPULSION_TYPE_LEGGED || !modoil::tilePassableForInfantry(mapState, x, y))
@@ -407,6 +410,10 @@ bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PR
 
 	// the MAX hack below is because blockTile() range does not include player-specific versions...
 	const unsigned blocked = blockTile(mapState, x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits;  // finally check if move is blocked by propulsion related factors
+	if (heavyOverFort && (blocked & ~static_cast<unsigned>(FEATURE_BLOCKED)) == 0)
+	{
+		return false;
+	}
 	// MOD: besetzbare Haeuser/Hochhaeuser: Infanterie (Beine) darf hinein, wenn nur das Feature (kein Gelaende) sperrt
 	if (blocked != 0 && (blocked & ~static_cast<unsigned>(FEATURE_BLOCKED)) == 0 && propulsion == PROPULSION_TYPE_LEGGED && modoil::tilePassableForInfantry(mapState, x, y) && (houseAccess || !modoil::tileHasHouse(mapState, x, y)))   // MOD: Cyborgs duerfen nicht in Haeuser (Graeben/Gruben ja)
 	{
@@ -417,7 +424,7 @@ bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PR
 
 bool fpathDroidBlockingTile(DROID *psDroid, const WorldMapState& mapState, int x, int y, FPATH_MOVETYPE moveType)
 {
-	return fpathBaseBlockingTile(mapState, x, y, modlayer::effectivePropulsion(psDroid, psDroid->getPropulsionStats()->propulsionType), psDroid->player, moveType, psDroid->droidType == DROID_PERSON);
+	return fpathBaseBlockingTile(mapState, x, y, modlayer::effectivePropulsion(psDroid, psDroid->getPropulsionStats()->propulsionType), psDroid->player, moveType, psDroid->droidType == DROID_PERSON, modfort::heavyCrosser(psDroid));
 }
 
 // Check if the map tile at a location blocks a droid
@@ -647,6 +654,7 @@ queuePathfinding:
 	job.dstStructure = dstStructure;
 	job.droidType = droidType;
 	job.houseAccess = (droidType == DROID_PERSON);   // MOD: nur echte Infanterie betritt Haeuser
+	job.heavy = (owner >= 0 && owner < MAX_PLAYERS) && modfort::heavyCrosser(IdToDroid(gameWorld.objects, id, owner));   // MOD (17.11.)
 	job.propulsion = propulsionType;
 	job.moveType = moveType;
 	job.owner = owner;

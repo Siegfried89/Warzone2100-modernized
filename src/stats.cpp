@@ -653,10 +653,18 @@ bool loadWeaponStats(WzConfig &ini)
 		int weaponSoundID, explosionSoundID;
 		WzString szWeaponWav = ini.value("weaponWav", "-1").toWzString();
 		WzString szExplosionWav = ini.value("explosionWav", "-1").toWzString();
-		bool result = statsGetAudioIDFromString(list[i], szWeaponWav, &weaponSoundID);
-		ASSERT_OR_RETURN(false, result, "Weapon sound %s not found for %s", szWeaponWav.toUtf8().c_str(), getStatsName(psStats));
-		result = statsGetAudioIDFromString(list[i], szExplosionWav, &explosionSoundID);
-		ASSERT_OR_RETURN(false, result, "Explosion sound %s not found for %s", szExplosionWav.toUtf8().c_str(), getStatsName(psStats));
+		// MOD (17.11.): fehlende Klaenge brechen das Laden nicht mehr ab (Mod-Klaenge sind beim Vorab-Laden fuer die Bauwerks-Grenzen
+		// im Spielraum noch nicht angemeldet -> "Unable to load limiter_data"); die Waffe bleibt dann nur stumm
+		if (!statsGetAudioIDFromString(list[i], szWeaponWav, &weaponSoundID))
+		{
+			debug(LOG_WZ, "Weapon sound %s not (yet) known for %s", szWeaponWav.toUtf8().c_str(), getStatsName(psStats));
+			weaponSoundID = NO_SOUND;
+		}
+		if (!statsGetAudioIDFromString(list[i], szExplosionWav, &explosionSoundID))
+		{
+			debug(LOG_WZ, "Explosion sound %s not (yet) known for %s", szExplosionWav.toUtf8().c_str(), getStatsName(psStats));
+			explosionSoundID = NO_SOUND;
+		}
 		psStats->iAudioFireID = weaponSoundID;
 		psStats->iAudioImpactID = explosionSoundID;
 		// MOD (16.11. Punkt 9): alternative Schussgeraeusche (Komma-Liste) - fehlende Dateien werden still uebergangen
@@ -1361,7 +1369,7 @@ static bool statsGetAudioIDFromString(const WzString &szStatName, const WzString
 			*piWavID = dynamicID;
 			return true;
 		}
-		debug(LOG_FATAL, "Could not get ID %d for sound %s", *piWavID, szWavName.toUtf8().c_str());
+		debug(LOG_WZ, "Could not get ID %d for sound %s", *piWavID, szWavName.toUtf8().c_str());   // MOD: kein "fatal" (siehe loadWeaponStats)
 		return false;
 	}
 	if ((*piWavID < 0 || *piWavID > ID_MAX_SOUND) && *piWavID != NO_SOUND)

@@ -67,6 +67,7 @@
 #include "edit3d.h"
 #include "feature.h"
 #include "mapgrid.h"
+#include "modfort.h"
 #include "hci.h"
 #include "display.h"
 #include "intdisplay.h"
@@ -3247,6 +3248,12 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 		renderWallSection(psStructure, viewMatrix, perspectiveViewMatrix);
 		return;
 	}
+	// MOD (17.11.): Gruben im Stellungsnetz - Modell mit Gaengen zu den offenen Seiten (ohne Drehung, siehe modfort.h)
+	if (const iIMDShape *fortImd = modfort::displayModel(psStructure))
+	{
+		strImd = getFactionDisplayIMD(faction, fortImd);
+		modelMatrix = glm::translate(glm::vec3(dv));
+	}
 	// If the structure is not truly visible, but we know there is something there, we will instead draw a blip
 	UBYTE visibilityAmount = psStructure->visibleForLocalDisplay();
 	if (visibilityAmount < UBYTE_MAX && visibilityAmount > 0)
@@ -3489,12 +3496,20 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 
 	dv.y -= gateCurrentOpenHeight(psStructure, graphicsTime, 1);  // Make gate stick out by 1 unit, so that the tops of ┼ gates can safely have heights differing by 1 unit.
 
-	const glm::mat4 modelMatrix = glm::translate(glm::vec3(dv)) * glm::rotate(UNDEG(-psStructure->rot.direction), glm::vec3(0.f, 1.f, 0.f));
+	// MOD (17.11.): Graeben im Stellungsnetz - Modell mit Gaengen zu den offenen Seiten (ohne Drehung, siehe modfort.h)
+	const iIMDShape *fortImd = modfort::displayModel(psStructure);
+	const glm::mat4 modelMatrix = fortImd != nullptr ? glm::translate(glm::vec3(dv))
+	                              : glm::translate(glm::vec3(dv)) * glm::rotate(UNDEG(-psStructure->rot.direction), glm::vec3(0.f, 1.f, 0.f));
 
 	/* Actually render it */
 	if (psStructure->status == SS_BEING_BUILT)
 	{
-		if (psStructure->sDisplay.imd)
+		if (fortImd != nullptr)
+		{
+			pie_Draw3DShape(getFactionDisplayIMD(faction, fortImd), 0, getPlayerColour(psStructure->player),
+							brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, static_cast<int>(structHeightScale(psStructure) * pie_RAISE_SCALE), modelMatrix, viewMatrix, stretch);
+		}
+		else if (psStructure->sDisplay.imd)
 		{
 			pie_Draw3DShape(getFactionDisplayIMD(faction, psStructure->sDisplay.imd->displayModel()), 0, getPlayerColour(psStructure->player),
 							brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, static_cast<int>(structHeightScale(psStructure) * pie_RAISE_SCALE), modelMatrix, viewMatrix, stretch);
@@ -3514,7 +3529,11 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 			pieFlagData = 0;
 		}
 		iIMDBaseShape *imd = psStructure->sDisplay.imd;
-		if (imd)
+		if (fortImd != nullptr)
+		{
+			pie_Draw3DShape(getFactionDisplayIMD(faction, fortImd), 0, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
+		}
+		else if (imd)
 		{
 			pie_Draw3DShape(getFactionDisplayIMD(faction, imd->displayModel()), 0, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
 		}
