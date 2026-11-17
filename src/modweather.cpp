@@ -63,6 +63,13 @@ const Def kDefs[M_COUNT] = {
 constexpr float NIGHT_AMB[3] = {0.40f, 0.48f, 0.80f};
 constexpr float NIGHT_DIF[3] = {0.20f, 0.26f, 0.52f};
 const char *const NIGHT_SKY_KEY = "sky-night";
+// (Wunsch 17.11. 20:21) "Den Nighttime-Mod auch reinnehmen": Sternenhimmel von Berg aus "wz2100 nighttime 3.2.3" (Mod-Paket nighttime.py);
+// statt abgedunkelter Texturen dunkelt die Engine das Licht ab (gilt so auch fuer alle Mod-Modelle). Einstellung "Tageszeit".
+const char *const NIGHT_PAGE = "texpages/page-305-sky-night.png";
+const char *const NIGHT_PAGE_OLD = "texpages/page-438-sky-night.png";
+int s_nightOpt = 2;            // 0 Tag (wie die Karte), 1 Nacht, 2 zufaellig (etwa jedes dritte Spiel)
+bool s_nightChecked = false;
+bool s_forceNight = false;
 const char *const THUNDER_CLIPS[] = {"wx_thunder_0.ogg", "wx_thunder_1.ogg", "wx_thunder_2.ogg", "wx_thunder_3.ogg", "wx_thunder_4.ogg", "wx_thunder_5.ogg"};
 const char *const BED_RAIN[] = {"wx_rain_0.ogg", "wx_rain_1.ogg", "wx_rain_2.ogg"};
 const char *const BED_WIND[] = {"wx_wind_0.ogg", "wx_wind_1.ogg", "wx_wind_2.ogg", "wx_wind_3.ogg"};
@@ -124,6 +131,17 @@ void playClip(const char *const *list, int n, int slotBase)
 bool skyExists(const char *page)
 {
 	return page != nullptr && PHYSFS_exists(page) != 0;
+}
+
+/// Nacht erzwingen: Sternenhimmel als Grundhimmel, Landschaft abdunkeln
+void forceNightSky()
+{
+	const char *page = skyExists(NIGHT_PAGE) ? NIGHT_PAGE : (skyExists(NIGHT_PAGE_OLD) ? NIGHT_PAGE_OLD : nullptr);
+	if (page == nullptr) { return; }
+	s_basePage = page;
+	s_curPage = page;
+	s_night = true;
+	modSwapSkyBox(page, 0.f);
 }
 
 /// Mode fuer die naechste Unwetterphase waehlen
@@ -249,6 +267,8 @@ void reset()
 	s_level = 0.f;
 	s_lastBase = -1;
 	s_night = false;
+	s_nightChecked = false;
+	s_forceNight = false;
 	s_flashN = 0;
 	s_flash = 0.f;
 	s_thunder.clear();
@@ -265,7 +285,18 @@ void onSkybox(const char *page)
 	s_basePage = page;
 	s_curPage = page;
 	s_night = std::strstr(page, NIGHT_SKY_KEY) != nullptr;
+	if (s_forceNight && !s_night) { forceNightSky(); }   // Einstellung "Nacht": auch spaeter gesetzte Himmel bleiben Nacht
 	if (!s_night) { applyLighting(s_level, 0.f); }
+}
+
+void setNightOption(int opt)
+{
+	s_nightOpt = std::max(0, std::min(2, opt));
+}
+
+int nightOption()
+{
+	return s_nightOpt;
 }
 
 const char *baseSkyPage(const char *current)
@@ -282,6 +313,13 @@ void tick()
 		s_rng ^= now * 2654435761u;
 		startIdle(now);
 		s_phaseLen = rndRange(60000, 240000);          // erste Unwetterphase nicht erst nach Ewigkeiten
+	}
+	if (!s_nightChecked && !s_basePage.empty())
+	{
+		// einmal je Spiel (sobald die Karte ihren Himmel gesetzt hat): Tageszeit nach der Einstellung
+		s_nightChecked = true;
+		s_forceNight = s_nightOpt == 1 || (s_nightOpt == 2 && rnd() % 100u < 35u);
+		if (s_forceNight && !s_night) { forceNightSky(); }
 	}
 	const bool layerOk = (modlayer::current() == modlayer::SURFACE);
 	if (!atmosGetWeatherEnabled() || !layerOk)
