@@ -134,6 +134,7 @@
 #include "modlava.h"
 #include "modammo.h"
 #include "modauto.h"
+#include "modcover.h"
 #include "modfuel.h"
 
 #include <numeric>
@@ -603,6 +604,7 @@ static void gameStateUpdate()
 	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
 	modammo::tick(gameWorld);    // MOD: Munition (Nachschub)
 	modauto::tick(gameWorld);    // MOD: "Fully autonomous" - Einheiten suchen sich selbst Gegner
+	modcover::tick();            // MOD (17.11.): Schussrichtung - Infanterie in Deckung blickt nach aussen / zum Gegner
 	modfuel::tick(gameWorld);    // MOD: Treibstoff (Verbrauch, Tankstelle, Selbstversorgung)
 	modparts::tick(gameWorld);   // MOD: Teile-Schaden (Turm / Laufwerk)
 	modmorale::tick();
