@@ -208,7 +208,7 @@ int takeCover(unsigned player)
 	{
 		for (int x = x0; x <= x1; ++x)
 		{
-			Kind k;
+			Kind k = Kind::TRENCH;
 			if (ownTrenchTile(player, x, y)) { k = Kind::TRENCH; }
 			else if (houseTile(x, y)) { k = Kind::HOUSE; }
 			else if (modterrain::tileGivesCover(x, y)) { k = Kind::CRATER; }
