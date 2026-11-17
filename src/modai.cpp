@@ -13,6 +13,8 @@
 #include "modbuild.h"
 #include "modfuel.h"
 #include "modlayer.h"
+#include "modlayermap.h"
+#include "modrocket.h"
 #include "multiplay.h"
 #include "objmem.h"
 #include "order.h"
@@ -271,6 +273,214 @@ void orbitStrike(GameWorld &w, unsigned p)
 		else { modlayer::requestLayer(d, modlayer::SURFACE); }
 	}
 }
+
+// ---------------------------------------------------------------- Stufe 3 (17.11. 22:57 "alles abarbeiten"; offen seit 16.11.: KI im
+// Untergrund / Solar im Orbit): die KI benutzt die Ebenen und die neuen Kraftwerke.
+//  - Wasserkraftwerk am Wasser (hoechstens 2), sobald erforscht
+//  - Schacht bei der Basis, ein Lkw faehrt hinunter und baut im Untergrund Uranbergwerke (hoechstens 2); mit Uran ein Atomkraftwerk an der
+//    Basis, spaeter den 2. Kuehlturm
+//  - Raketensilo, Cyborg-Pioniere (bei Bedarf in der Cyborg-Fabrik gebaut) steigen ein; im Orbit bauen sie Solarpaneele (hoechstens 8)
+//    und einen NASDA-Lasersatelliten
+// Alles nur mit untaetigen Einheiten, gameRand und Spielzustand (mehrspielersicher), hoechstens ein Auftrag je Bereich und Runde.
+unsigned s_nextHydro[MAX_PLAYERS] = {};
+unsigned s_nextDown[MAX_PLAYERS] = {};
+unsigned s_nextUp[MAX_PLAYERS] = {};
+
+bool idIs(const STRUCTURE *s, const char *prefix)
+{
+	return s->pStructureType->id.toUtf8().rfind(prefix, 0) == 0;
+}
+
+int countOwn(GameWorld &w, unsigned p, const char *prefix, bool builtOnly = false, int layer = -1)
+{
+	int n = 0;
+	for (const STRUCTURE *s : w.objects.structures[p])
+	{
+		if (s->died || !idIs(s, prefix) || (builtOnly && s->status != SS_BUILT)) { continue; }
+		if (layer >= 0 && static_cast<int>(modlayer::layerOf(s)) != layer) { continue; }
+		n++;
+	}
+	return n;
+}
+
+STRUCTURE *firstOwn(GameWorld &w, unsigned p, const char *prefix, bool builtOnly)
+{
+	for (STRUCTURE *s : w.objects.structures[p])
+	{
+		if (!s->died && idIs(s, prefix) && (!builtOnly || s->status == SS_BUILT)) { return s; }
+	}
+	return nullptr;
+}
+
+bool idleIn(const DROID *d, modlayer::Layer l)
+{
+	return !d->died && d->isConstructionDroid() && modlayer::layerOf(d) == l && !modlayer::inTransition(d) && !modrocket::aboard(d)
+	       && d->order.type == DORDER_NONE && d->action == DACTION_NONE && !modbuild::isInfantryBuilder(d);
+}
+
+bool affordable(unsigned p, const STRUCTURE_STATS *st, int reserve = 100)
+{
+	return getPower(p) >= static_cast<int>(st->powerToBuild) + reserve;
+}
+
+/// Bauplatz in der Karte einer anderen Ebene suchen
+bool findSpotIn(GameWorld &w, modlayer::Layer l, unsigned p, STRUCTURE_STATS *st, const Vector2i &center, int minR, int maxR, Vector2i &out)
+{
+	modlayermap::Scope sc(l);
+	return findSpot(w, p, st, center, minR, maxR, out);
+}
+
+bool tryHydro(GameWorld &w, unsigned p, const Vector2i &base)
+{
+	if (gameTime < s_nextHydro[p]) { return false; }
+	STRUCTURE_STATS *st = available(p, "A0HydroPlant");
+	if (st == nullptr || countOwn(w, p, "A0HydroPlant") >= 2 || !affordable(p, st)) { return false; }
+	DROID *t = idleTruck(w, p);
+	if (t == nullptr) { return false; }
+	Vector2i at;
+	if (!findSpot(w, p, st, base, 3, 24, at))
+	{
+		s_nextHydro[p] = gameTime + 180000;   // kein Wasser in der Naehe: erst in 3 min wieder suchen
+		return false;
+	}
+	orderDroidStatsLocDir(t, DORDER_BUILD, st, at.x, at.y, 0, ModeImmediate);
+	s_nextHydro[p] = gameTime + 60000;
+	return true;
+}
+
+bool tryUnderground(GameWorld &w, unsigned p, const Vector2i &base)
+{
+	if (gameTime < s_nextDown[p] || gameTime < 10 * 60000) { return false; }
+	STRUCTURE *shaft = firstOwn(w, p, "A0LayerShaft", false);
+	if (shaft == nullptr)
+	{
+		STRUCTURE_STATS *st = available(p, "A0LayerShaft");
+		if (st == nullptr || !affordable(p, st, 300)) { return false; }
+		DROID *t = idleTruck(w, p);
+		Vector2i at;
+		if (t == nullptr || !findSpot(w, p, st, base, 5, 12, at)) { return false; }
+		orderDroidStatsLocDir(t, DORDER_BUILD, st, at.x, at.y, 0, ModeImmediate);
+		s_nextDown[p] = gameTime + 60000;
+		return true;
+	}
+	if (shaft->status != SS_BUILT || modlayer::layerOf(shaft) != modlayer::SURFACE) { return false; }
+	int below = 0;
+	DROID *idleBelow = nullptr;
+	for (DROID *d : w.objects.droids[p])
+	{
+		if (d->died || !d->isConstructionDroid()) { continue; }
+		if (modlayer::layerOf(d) == modlayer::UNDERGROUND) { below++; if (idleBelow == nullptr && idleIn(d, modlayer::UNDERGROUND)) { idleBelow = d; } }
+		else if (d->order.type == DORDER_MOVE && iHypot(d->order.pos - shaft->pos.xy()) < TILE_UNITS) { below++; }   // schon unterwegs
+	}
+	if (below == 0)
+	{
+		int trucks = 0;
+		for (const DROID *d : w.objects.droids[p]) { if (!d->died && d->isConstructionDroid()) { trucks++; } }
+		DROID *t = trucks >= 3 ? idleTruck(w, p) : nullptr;
+		if (t == nullptr || !modlayer::isPortalTile(static_cast<int>(p), map_coord(shaft->pos.x), map_coord(shaft->pos.y))) { return false; }
+		orderDroidLoc(t, DORDER_MOVE, shaft->pos.x, shaft->pos.y, ModeImmediate);
+		s_nextDown[p] = gameTime + 40000;
+		return true;
+	}
+	if (idleBelow == nullptr) { return false; }
+	STRUCTURE_STATS *mine = available(p, "A0UraniumMine");
+	if (mine == nullptr || countOwn(w, p, "A0UraniumMine") >= 2 || !affordable(p, mine)) { return false; }
+	Vector2i at;
+	if (!findSpotIn(w, modlayer::UNDERGROUND, p, mine, idleBelow->pos.xy(), 2, 9, at)) { s_nextDown[p] = gameTime + 120000; return false; }
+	orderDroidStatsLocDir(idleBelow, DORDER_BUILD, mine, at.x, at.y, 0, ModeImmediate);
+	s_nextDown[p] = gameTime + 60000;
+	return true;
+}
+
+bool tryNuclear(GameWorld &w, unsigned p, const Vector2i &base)
+{
+	if (countOwn(w, p, "A0UraniumMine", true, modlayer::UNDERGROUND) == 0) { return false; }
+	STRUCTURE *plant = firstOwn(w, p, "A0NuclearPlant", false);
+	if (plant == nullptr)
+	{
+		STRUCTURE_STATS *st = available(p, "A0NuclearPlant");
+		if (st == nullptr || !affordable(p, st, 200)) { return false; }
+		DROID *t = idleTruck(w, p);
+		Vector2i at;
+		if (t == nullptr || !findSpot(w, p, st, base, 4, 14, at)) { return false; }
+		orderDroidStatsLocDir(t, DORDER_BUILD, st, at.x, at.y, 0, ModeImmediate);
+		return true;
+	}
+	// 2. Kuehlturm: Ausbau auf das fertige Kraftwerk setzen
+	if (plant->status != SS_BUILT || idIs(plant, "A0NuclearPlant2")) { return false; }
+	STRUCTURE_STATS *up = available(p, "A0NuclearPlant2");
+	if (up == nullptr || !affordable(p, up, 300)) { return false; }
+	DROID *t = idleTruck(w, p);
+	if (t == nullptr || !validLocation(w, up, plant->pos.xy(), 0, p, true)) { return false; }
+	orderDroidStatsLocDir(t, DORDER_BUILD, up, plant->pos.x, plant->pos.y, 0, ModeImmediate);
+	return true;
+}
+
+bool tryOrbitBase(GameWorld &w, unsigned p, const Vector2i &base)
+{
+	if (gameTime < s_nextUp[p] || gameTime < 14 * 60000) { return false; }
+	// Pioniere im Orbit: Solarpaneele, dann ein Lasersatellit
+	int crewUp = 0;
+	DROID *idleUp = nullptr;
+	for (DROID *d : w.objects.droids[p])
+	{
+		if (d->died || d->droidType != DROID_CYBORG_CONSTRUCT || modlayer::layerOf(d) != modlayer::ORBIT) { continue; }
+		crewUp++;
+		if (idleUp == nullptr && idleIn(d, modlayer::ORBIT)) { idleUp = d; }
+	}
+	if (idleUp != nullptr)
+	{
+		STRUCTURE_STATS *solar = available(p, "A0SolarPanel");
+		STRUCTURE_STATS *sat = available(p, "A0LaserSatellite");
+		STRUCTURE_STATS *st = nullptr;
+		if (solar != nullptr && countOwn(w, p, "A0SolarPanel", false, modlayer::ORBIT) < 8 && affordable(p, solar)) { st = solar; }
+		else if (sat != nullptr && countOwn(w, p, "A0LaserSatellite") == 0 && affordable(p, sat, 400)) { st = sat; }
+		Vector2i at;
+		if (st != nullptr && findSpotIn(w, modlayer::ORBIT, p, st, idleUp->pos.xy(), 1, 7, at))
+		{
+			orderDroidStatsLocDir(idleUp, DORDER_BUILD, st, at.x, at.y, 0, ModeImmediate);
+			s_nextUp[p] = gameTime + 30000;
+			return true;
+		}
+	}
+	// Raketensilo an der Basis
+	STRUCTURE *silo = firstOwn(w, p, "A0RocketSilo", false);
+	if (silo == nullptr)
+	{
+		STRUCTURE_STATS *st = available(p, "A0RocketSilo");
+		if (st == nullptr || !affordable(p, st, 400)) { return false; }
+		DROID *t = idleTruck(w, p);
+		Vector2i at;
+		if (t == nullptr || !findSpot(w, p, st, base, 5, 14, at)) { return false; }
+		orderDroidStatsLocDir(t, DORDER_BUILD, st, at.x, at.y, 0, ModeImmediate);
+		s_nextUp[p] = gameTime + 60000;
+		return true;
+	}
+	if (silo->status != SS_BUILT || crewUp >= 3) { return false; }
+	// untaetige Cyborg-Pioniere zum Silo schicken (sie steigen ein, sobald die Rakete bereitsteht)
+	int sent = 0;
+	for (DROID *d : w.objects.droids[p])
+	{
+		if (sent >= 2) { break; }
+		if (d->died || d->droidType != DROID_CYBORG_CONSTRUCT || !idleIn(d, modlayer::SURFACE)) { continue; }
+		orderDroidLoc(d, DORDER_MOVE, silo->pos.x + TILE_UNITS, silo->pos.y + TILE_UNITS, ModeImmediate);
+		sent++;
+	}
+	if (sent > 0) { s_nextUp[p] = gameTime + 40000; return true; }
+	// keine Pioniere: einen in einer untaetigen Cyborg-Fabrik bauen
+	int engineers = 0;
+	for (const DROID *d : w.objects.droids[p]) { if (!d->died && d->droidType == DROID_CYBORG_CONSTRUCT) { engineers++; } }
+	if (engineers >= 2) { return false; }
+	DROID_TEMPLATE *t = findTemplate(p, "Cyb-ComEng");
+	if (t == nullptr || !researchedTemplate(t, static_cast<int>(p), true) || getPower(p) < static_cast<int>(calcTemplatePower(t)) + 200) { return false; }
+	for (STRUCTURE *s : w.objects.structures[p])
+	{
+		if (s->died || s->status != SS_BUILT || !s->isFactory() || !s->isIdle() || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+		if (!validTemplateForFactory(t, s, false)) { continue; }
+		if (structSetManufacture(s, t, ModeImmediate)) { s_nextUp[p] = gameTime + 45000; return true; }
+	}
+	return false;
+}
 }
 
 void tick(GameWorld &world)
@@ -290,11 +500,13 @@ void tick(GameWorld &world)
 		}
 		orbitStrike(world, p);
 		tryCorpUnits(world, p);
+		// Stufe 3: je Runde hoechstens ein Bauauftrag fuer Kraftwerke/Ebenen
+		if (!tryHydro(world, p, base) && !tryNuclear(world, p, base) && !tryUnderground(world, p, base)) { tryOrbitBase(world, p, base); }
 	}
 }
 
 void reset()
 {
-	for (unsigned p = 0; p < MAX_PLAYERS; p++) { s_next[p] = s_nextFortify[p] = s_nextOrbit[p] = s_nextMF[p] = 0; }
+	for (unsigned p = 0; p < MAX_PLAYERS; p++) { s_next[p] = s_nextFortify[p] = s_nextOrbit[p] = s_nextMF[p] = s_nextHydro[p] = s_nextDown[p] = s_nextUp[p] = 0; }
 }
 }
