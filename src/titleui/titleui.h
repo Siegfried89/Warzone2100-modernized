@@ -97,4 +97,19 @@ private:
 
 #define WZ_MSGBOX_TUI_LEAVE 4597000
 
+// - modfleets.cpp - MOD (Wunsch 17.11.): Flotten im Hauptmenue (benannte Sammlungen gespeicherter Entwuerfe, fuer alle Spielarten)
+class WzFleetTitleUI: public WzTitleUI
+{
+public:
+	WzFleetTitleUI();
+	virtual void start() override;
+	virtual TITLECODE run() override;
+	virtual void render() override;
+private:
+	void build();
+	int selected = 0;
+	int page = 0;
+	bool dirty = false;
+};
+
 #endif

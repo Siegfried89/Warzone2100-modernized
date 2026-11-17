@@ -16,6 +16,9 @@
 #include "objmem.h"
 #include "order.h"
 #include "structure.h"
+#include "ai.h"
+#include "lib/gamelib/gtime.h"
+#include "lib/framework/fixedpoint.h"
 
 #include <algorithm>
 #include <cmath>
@@ -271,6 +274,61 @@ int takeCover(unsigned player)
 	}
 	return sent;
 }
+void tick()
+{
+	static unsigned s_next = 0;
+	if (gameTime < s_next && s_next - gameTime <= 1000) { return; }
+	s_next = gameTime + 1000;
+	constexpr int SEE = 9 * TILE_UNITS;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		if (gameWorld.objects.droids[p].empty()) { continue; }
+		int64_t hx = 0, hy = 0, n = 0;
+		bool baseDone = false;
+		for (DROID *d : gameWorld.objects.droids[p])
+		{
+			if (d->died || !modoil::isInfantry(d) || d->action != DACTION_NONE) { continue; }
+			if (d->order.type != DORDER_NONE && d->order.type != DORDER_GUARD && d->order.type != DORDER_HOLD) { continue; }
+			if (!(modoil::droidInTrench(d) || modterrain::droidInCover(d))) { continue; }
+			if (!baseDone)
+			{
+				baseDone = true;
+				for (const STRUCTURE *st : gameWorld.objects.structures[p])
+				{
+					if (st->died || st->pStructureType == nullptr || st->status != SS_BUILT) { continue; }
+					const STRUCTURE_TYPE t = st->pStructureType->type;
+					if (t == REF_HQ || t == REF_FACTORY || t == REF_CYBORG_FACTORY || t == REF_POWER_GEN || t == REF_RESEARCH) { hx += st->pos.x; hy += st->pos.y; ++n; }
+				}
+			}
+			// Ziel: naechster sichtbarer Gegner in der Naehe, sonst weg von der Basis
+			int tx = 0, ty = 0;
+			bool have = false;
+			int64_t best = static_cast<int64_t>(SEE) * SEE;
+			for (unsigned q = 0; q < MAX_PLAYERS; ++q)
+			{
+				if (q == p || aiCheckAlliances(p, q)) { continue; }
+				for (const DROID *e : gameWorld.objects.droids[q])
+				{
+					if (e->died || e->visible[p] < UBYTE_MAX) { continue; }
+					const int64_t dx = e->pos.x - d->pos.x, dy = e->pos.y - d->pos.y, dd = dx * dx + dy * dy;
+					if (dd < best) { best = dd; tx = static_cast<int>(dx); ty = static_cast<int>(dy); have = true; }
+				}
+			}
+			if (!have)
+			{
+				if (n == 0) { continue; }
+				tx = static_cast<int>(d->pos.x - hx / n); ty = static_cast<int>(d->pos.y - hy / n);
+				if (tx == 0 && ty == 0) { continue; }
+			}
+			const uint16_t want = iAtan2(tx, ty);
+			const int16_t diff = static_cast<int16_t>(want - d->rot.direction);
+			const int step = std::clamp<int>(diff, -DEG(60), DEG(60));
+			if (std::abs(step) < DEG(3)) { continue; }
+			d->rot.direction = static_cast<uint16_t>(d->rot.direction + step);
+		}
+	}
+}
+
 int leaveCover(unsigned player)
 {
 	if (player >= MAX_PLAYERS) { return 0; }

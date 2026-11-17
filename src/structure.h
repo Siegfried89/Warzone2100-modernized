@@ -148,6 +148,9 @@ bool isWall(STRUCTURE_TYPE type);                                    ///< Struct
 bool isBuildableOnWalls(STRUCTURE_TYPE type);                        ///< Structure can be built on walls. Not completely sure it handles all cases.
 
 void alignStructure(STRUCTURE *psBuilding, WorldMapState& mapState);
+/// MOD (17.11., Ebenen im Spielstand): ein geladenes Bauwerk aus der Oberflaechenkarte in die Karte seiner Ebene umtragen
+/// (Aufruf mit der Oberflaechenkarte in gameWorld.map, z. B. aus der Spielschleife)
+void modMoveStructureToLayerMap(STRUCTURE *psStruct, int layer);
 
 /* set the current number of structures of each type built */
 void setCurrentStructQuantity(const WorldObjectState& objState, bool displayError);

@@ -23,4 +23,8 @@ int takeCover(unsigned player);
 /// (17.11.) "Raus aus der Deckung": die gewaehlte Infanterie (sonst alle eigene Infanterie in Deckung) verlaesst Graeben, Gruben,
 /// Krater und Haeuser und sammelt sich gut zwei Felder dahinter (zur eigenen Basis hin). Gibt die Zahl der Infanteristen zurueck.
 int leaveCover(unsigned player);
+/// (Wunsch "Schussrichtung", 17.11.) jeden Spielschritt: Infanterie, die ruhig in einem Graben, einer Grube oder einem Krater liegt, dreht sich
+/// nach aussen (weg von der eigenen Basis) - mit Blick auf einen sichtbaren Gegner in der Naehe, wenn es einen gibt. Hoechstens 60 Grad je
+/// Sekunde, nur gameTime, feste Reihenfolge (auf allen Rechnern gleich).
+void tick();
 }

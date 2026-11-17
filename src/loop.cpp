@@ -134,6 +134,8 @@
 #include "modlava.h"
 #include "modammo.h"
 #include "modauto.h"
+#include "modcover.h"
+#include "modtankguns.h"
 #include "modfuel.h"
 
 #include <numeric>
@@ -581,6 +583,7 @@ static void gameStateUpdate()
 	sendQueuedDroidInfo();
 
 	modlayermap::ensureWorlds();   // MOD: Ebenen - Untergrund-/Orbit-Karte aus der Kartenkennung erzeugen (einmal, auf jedem Rechner gleich)
+	modlayer::applyLoadedState();  // MOD (17.11.): Ebenen aus dem Spielstand (Felder nachbohren, Objekte in die Karte ihrer Ebene umtragen)
 
 	sendPlayerGameTime();
 	NETflush();  // Make sure the game time tick message is really sent over the network.
@@ -602,6 +605,8 @@ static void gameStateUpdate()
 	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
 	modammo::tick(gameWorld);    // MOD: Munition (Nachschub)
 	modauto::tick(gameWorld);    // MOD: "Fully autonomous" - Einheiten suchen sich selbst Gegner
+	modcover::tick();            // MOD (17.11.): Schussrichtung - Infanterie in Deckung blickt nach aussen / zum Gegner
+	modtankguns::tick();         // MOD (17.11.): Rumpf-MG der Panzer (Sudden Strike)
 	modfuel::tick(gameWorld);    // MOD: Treibstoff (Verbrauch, Tankstelle, Selbstversorgung)
 	modparts::tick(gameWorld);   // MOD: Teile-Schaden (Turm / Laufwerk)
 	modmorale::tick();

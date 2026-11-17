@@ -583,10 +583,10 @@ bool canFly(const DROID *d)
 
 namespace
 {
-struct Air { float cur = 0.f; unsigned last = 0; unsigned nextPuff = 0; };
+struct Air { float cur = 0.f; unsigned last = 0; unsigned nextPuff = 0; bool want = false; unsigned since = 0; };   // since: Beginn von Abheben/Landen
 std::unordered_map<uint32_t, Air> s_air;
 constexpr float FLY_HEIGHT = 170.f;      // Flughoehe ueber dem Boden
-constexpr float FLY_RISE_MS = 700.f;     // so lange dauert Abheben / Landen
+constexpr float FLY_RISE_MS = 1200.f;    // so lange dauert Abheben / Landen (MOD 17.11.: passend zu den MF-Animationen, etwas schneller abgespielt)
 
 bool overVoid(const DROID *d)
 {
@@ -607,6 +607,7 @@ float flightOffset(const DROID *d)
 	}
 	Air &a = s_air[d->id];
 	const unsigned now = graphicsTime;
+	if (want != a.want) { a.want = want; a.since = now; }
 	const float dt = a.last == 0 || now < a.last ? 0.f : static_cast<float>(std::min(now - a.last, 200u));
 	a.last = now;
 	const float step = dt / FLY_RISE_MS;
@@ -914,6 +915,10 @@ void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVa
 		break;
 	case ANIM_FIRE: an = attackAnim(lo); centerMean = false; break;
 	case ANIM_DIE: an = baseAnim(50 + (dieVariant % 5 + 5) % 5); loop = false; centerMean = false; break;
+	// MOD (Wunsch 17.11. 15:46 Punkt 10): MF-Jetpack-Animationen - Abheben (aus der Ruhehaltung), Schweben (Schleife), Landen
+	case ANIM_FLY_UP: an = fileAnim("JetPack", 2); loop = false; centerMean = false; break;
+	case ANIM_FLY: an = fileAnim("JetPack", 0); centerMean = false; break;
+	case ANIM_FLY_DOWN: an = fileAnim("JetPack", 3); loop = false; centerMean = false; break;
 	default: an = baseAnim(30); break;
 	}
 	if (an == nullptr) { an = baseAnim(30); }
@@ -929,7 +934,7 @@ void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVa
 		elapsedMs = (cycle - (elapsedMs % cycle)) % cycle;
 	}
 	sample(*an, elapsedMs, loop, ang, root, centerMean);
-	if (kind == ANIM_FIRE)
+	if (kind == ANIM_FIRE || kind == ANIM_FLY_UP || kind == ANIM_FLY || kind == ANIM_FLY_DOWN)
 	{
 		// MOD (17.11., "waehrend des Angreifens gleitet er schraeg zur Seite weg"): die Angriffsanimationen enthalten einen Ausfallschritt
 		// (bis ~15 MF-Einheiten schraeg) - der Combot bleibt am Platz der Einheit, nur das Heben/Senken bleibt
@@ -1006,7 +1011,32 @@ bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view,
 		}
 	}
 	unsigned elapsed = bButton ? graphicsTime : (graphicsTime > d->timeAnimationStarted ? graphicsTime - d->timeAnimationStarted : 0u);
-	if (!bButton && kind == ANIM_WALK && s_air.count(d->id) && airborne(d)) { kind = ANIM_IDLE; }   // fliegt: Beine laufen nicht
+	if (!bButton && kind != ANIM_DIE && kind != ANIM_FIRE)
+	{
+		// MOD (17.11. Punkt 10): Flug-Phasen mit den MF-Jetpack-Animationen (Abheben / Schweben / Landen); vorher nur Ruhehaltung
+		const auto ait = s_air.find(d->id);
+		if (ait != s_air.end() && (ait->second.cur > 0.f || ait->second.want))
+		{
+			const Air &a = ait->second;
+			const unsigned dt = graphicsTime > a.since ? graphicsTime - a.since : 0u;
+			if (a.want && a.cur < 1.f && fileAnim("JetPack", 2) != nullptr)
+			{
+				kind = ANIM_FLY_UP; elapsed = static_cast<unsigned>(static_cast<float>(dt) * 2000.f / FLY_RISE_MS);
+			}
+			else if (!a.want && fileAnim("JetPack", 3) != nullptr)
+			{
+				kind = ANIM_FLY_DOWN; elapsed = static_cast<unsigned>(static_cast<float>(dt) * 2333.f / FLY_RISE_MS);
+			}
+			else if (a.want && fileAnim("JetPack", 0) != nullptr)
+			{
+				kind = ANIM_FLY; elapsed = graphicsTime + d->id * 97u;
+			}
+			else if (kind == ANIM_WALK && airborne(d))
+			{
+				kind = ANIM_IDLE;   // alte Pakete ohne Fluganimation: Beine laufen nicht
+			}
+		}
+	}
 	if (!bButton && kind == ANIM_WALK) { elapsed = walkPhaseMs(d); }   // MOD: Schrittfolge passend zur Geschwindigkeit
 	bool drew = false;
 	const float stretch = -(static_cast<float>(d->heightAboveMap));

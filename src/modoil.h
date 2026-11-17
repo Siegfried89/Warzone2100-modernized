@@ -41,6 +41,8 @@ bool tilePassableForInfantry(const WorldMapState &mapState, int tileX, int tileY
 bool trenchForInfantry(const BASE_OBJECT *obj, const DROID *dominantSelected);
 /// steht die Infanterie (Beine) im Graben / in der Grube? (Schadensminderung)
 bool droidInTrench(const DROID *psDroid);
+/// (Wunsch "Container-Mauern bemannbar", 17.11.) Infanterie auf einer Container-Mauer steht auf dem Dach: Hoehe ueber dem Boden, sonst 0
+int roofHeight(const DROID *psDroid);
 /// ist das ein Lkw im Fass-Autopilot? (Ebenen-Schaechte duerfen ihn nicht umschalten)
 bool isCargo(uint32_t droidId);
 /// faehrt der Lkw gerade Oel (Auftrag laeuft oder Faesser geladen)?

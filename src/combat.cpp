@@ -36,6 +36,7 @@
 #include "lib/sound/audio_id.h"
 
 #include "action.h"
+#include "modtankguns.h"   // MOD
 #include "combat.h"
 #include "difficulty.h"
 #include "geometry.h"
@@ -267,11 +268,16 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	{
 		return false;	// Can't fire while moving
 	}
+	if (psAttacker->type == OBJ_DROID && !modtankguns::readyToFire((DROID *)psAttacker, psStats))
+	{
+		return false;   // MOD (17.11.): Panzer halten zum Feuern an (Sudden Strike)
+	}
 
 	/* -------!!! From that point we are sure that we are firing !!!------- */
 
 	/* note when the weapon fired */
 	psWeap->lastFired = fireTime;
+	if (psAttacker->type == OBJ_DROID) { modtankguns::afterFire((DROID *)psAttacker, psStats); }   // MOD: kurz stehen bleiben
 	if (psAttacker->type == OBJ_DROID)
 	{
 		modammo::onShot(static_cast<const DROID *>(psAttacker));   // MOD: Munition
