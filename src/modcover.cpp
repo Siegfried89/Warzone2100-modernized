@@ -279,7 +279,7 @@ void tick()
 	static unsigned s_next = 0;
 	if (gameTime < s_next && s_next - gameTime <= 1000) { return; }
 	s_next = gameTime + 1000;
-	constexpr int SEE = 9 * TILE_UNITS;
+	constexpr int SEE = 9 * DIST_TILE;   // Weltmass (auch im feinen Raster gleich weit)
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
 		if (gameWorld.objects.droids[p].empty()) { continue; }
