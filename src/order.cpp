@@ -39,6 +39,7 @@
 #include "modlayermap.h"
 #include "modgroundfire.h"
 #include "modcrates.h"
+#include "modrecover.h"
 #include "modbuild.h"
 #include "modlayerdig.h"
 #include "modinvade.h"
@@ -2852,6 +2853,11 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 	if (psObj->type == OBJ_DROID && ((DROID*)psObj)->isTransporter() && psObj->player == psDroid->player)
 	{
 		order = DroidOrder(DORDER_EMBARK, psObj);
+	}
+	// MOD (17.11., Wunsch 25): Abschlepp-Lkw (Scav-Lkw mit Ladeflaeche) + Wrack = aufladen und zur Werkstatt bringen
+	else if (psObj->type == OBJ_FEATURE && modrecover::isTowTruck(psDroid) && modrecover::isTowable(static_cast<FEATURE *>(psObj)))
+	{
+		order = DroidOrder(DORDER_RECOVER, psObj);
 	}
 	// go to recover an artifact/oil drum - don't allow VTOL's to get this order
 	else if (psObj->type == OBJ_FEATURE &&

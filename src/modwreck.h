@@ -26,4 +26,19 @@ bool onDroidDestroyed(const DROID *psDel, GameWorld &world);
 void tick(GameWorld &world);
 /// beim Spielende / Ladevorgang
 void reset();
+
+/// (17.11., Wunsch 25 "Bergen") Bauplan des zerstoerten Fahrzeugs, das im Wrack steckt - ein Abschlepp-Lkw kann es zur Reparaturstation
+/// bringen, dort wird daraus wieder ein (stark beschaedigtes) Fahrzeug fuer den Spieler, der es geborgen hat.
+struct WreckInfo
+{
+	uint8_t droidType = 0;
+	uint8_t numWeaps = 0;
+	uint32_t parts[16] = {};     // Bauteile je COMP_* (wie DROID::asBits, DROID_MAXCOMP Eintraege)
+	uint32_t weaps[8] = {};      // Waffen (MAX_WEAPONS)
+	const FEATURE_STATS *stats = nullptr;   // Wrack-Modell (Anzeige auf dem Abschlepp-Lkw)
+};
+/// gelandetes Wrack mit bekanntem Bauplan? (Wracks aus alten Spielstaenden haben keinen)
+bool wreckInfo(const FEATURE *f, WreckInfo &out);
+/// Wrack wird aufgeladen: Bauplan holen, Kachel-Sperre aufheben, Feature entfernen. false = kein bergbares Wrack
+bool takeWreck(FEATURE *f, GameWorld &world, WreckInfo &out);
 }

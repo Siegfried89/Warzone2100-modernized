@@ -50,6 +50,9 @@ struct Wreck
 	int halfH, halfW;  // halbe Modellhoehe / -breite (Lage der Drehachse)
 	bool blockDone = false;   // Sperre der Kachel schon geprueft/gesetzt (Wrack ist gelandet)
 	bool ownBlock = false;    // diese Sperre stammt von uns und wird beim Entfernen wieder aufgehoben
+	// (17.11.) Bauplan fuer das Bergen
+	modwreck::WreckInfo info;
+	bool hasInfo = false;
 	// nur Anzeige (beeinflusst den Spielzustand nicht)
 	bool startFx = false;
 	bool crashPlayed = false;
@@ -307,6 +310,14 @@ bool onDroidDestroyed(const DROID *psDel, GameWorld &world)
 	const int ground = map_Height(world.map, xe, ye);
 	const int lift = std::abs(iCosR(static_cast<uint16_t>(finalRoll), w.halfH)) + std::abs(iSinR(static_cast<uint16_t>(finalRoll), w.halfW)) + 1;
 	featureSetWreckPose(f, psDel->rot.direction, finalRoll, ground + lift);
+	// Bauplan merken (Bergen: Abschlepp-Lkw bringt das Wrack zur Reparaturstation)
+	static_assert(DROID_MAXCOMP <= 16 && MAX_WEAPONS <= 8, "WreckInfo zu klein");
+	w.info.droidType = static_cast<uint8_t>(psDel->droidType);
+	w.info.numWeaps = static_cast<uint8_t>(std::min<unsigned>(psDel->numWeaps, MAX_WEAPONS));
+	for (int c = 0; c < DROID_MAXCOMP; ++c) { w.info.parts[c] = psDel->asBits[c]; }
+	for (unsigned i = 0; i < w.info.numWeaps; ++i) { w.info.weaps[i] = psDel->asWeaps[i].nStat; }
+	w.info.stats = stat;
+	w.hasInfo = true;
 	s_wrecks.push_back(w);
 	return true;
 }
@@ -413,6 +424,35 @@ void tick(GameWorld &world)
 		}
 		++w;
 	}
+}
+
+bool wreckInfo(const FEATURE *f, WreckInfo &out)
+{
+	if (f == nullptr || f->died) { return false; }
+	for (const Wreck &w : s_wrecks)
+	{
+		if (w.id != f->id) { continue; }
+		if (!w.hasInfo || gameTime - w.born < w.dur) { return false; }   // noch in der Todesanimation
+		out = w.info;
+		return true;
+	}
+	return false;
+}
+
+bool takeWreck(FEATURE *f, GameWorld &world, WreckInfo &out)
+{
+	if (f == nullptr || f->died) { return false; }
+	for (auto w = s_wrecks.begin(); w != s_wrecks.end(); ++w)
+	{
+		if (w->id != f->id) { continue; }
+		if (!w->hasInfo || gameTime - w->born < w->dur) { return false; }
+		out = w->info;
+		releaseBlock(world, *w);
+		s_wrecks.erase(w);
+		removeFeature(f, world);
+		return true;
+	}
+	return false;
 }
 
 void reset()
