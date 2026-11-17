@@ -153,13 +153,13 @@ modui::Img cmdImage(Cmd c, bool on)
 	case C_STAY: return on ? modui::STAY_ON : modui::STAY_OFF;
 	case C_TETHER: return on ? modui::TETHER_ON : modui::TETHER_OFF;
 	case C_PURSUE: return on ? modui::PURSUE_ON : modui::PURSUE_OFF;
-	case C_GUARD: return modui::B_GUARD;
-	case C_ATTACK: return modui::B_ATTACK;
-	case C_MOVE: return modui::B_MOVE;
-	case C_PATROL: return modui::B_PATROL;
-	case C_RETFIRE: return modui::B_RETFIRE;
-	default: return modui::B_STOP;
+	default: break;
 	}
+	// Befehlstasten: aktive Fassung (WZ-Stil, heller) falls das Mod-Paket sie hat
+	static const modui::Img up[6] = { modui::B_GUARD, modui::B_ATTACK, modui::B_MOVE, modui::B_PATROL, modui::B_RETFIRE, modui::B_STOP };
+	static const modui::Img dn[6] = { modui::B_GUARD_ON, modui::B_ATTACK_ON, modui::B_MOVE_ON, modui::B_PATROL_ON, modui::B_RETFIRE_ON, modui::B_STOP_ON };
+	const int k = std::clamp(static_cast<int>(c) - static_cast<int>(C_GUARD), 0, 5);
+	return (on && modui::has(dn[k])) ? dn[k] : up[k];
 }
 
 const char *cmdTip(Cmd c)
@@ -197,9 +197,9 @@ void drawCmdButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const modui::Img img = cmdImage(c, on);
 	const int w = static_cast<int>(modui::imgWidth(img) * s), h = static_cast<int>(modui::imgHeight(img) * s);
 	modui::drawSized(img, x0, y0 + (down ? 1 : 0), w, h, down ? 200 : 255);
-	if (c >= C_GUARD)
+	if (c >= C_GUARD && on && img < modui::B_GUARD_ON)
 	{
-		if (on) { iV_Box(x0 + 1, y0 + 1, x0 + w - 2, y0 + h - 2, modui::cyan(230)); }
+		iV_Box(x0 + 1, y0 + 1, x0 + w - 2, y0 + h - 2, modui::cyan(230));   // altes Paket ohne aktive Fassung
 	}
 	if (hl) { iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, pal_RGBA(255, 255, 255, 160)); }
 }

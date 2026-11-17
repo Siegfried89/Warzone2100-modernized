@@ -60,6 +60,11 @@ void shutdown()
 	s_tried = false;
 }
 
+bool has(Img id)
+{
+	return ready() && static_cast<size_t>(id) < s_img->numImages();
+}
+
 int imgWidth(Img id)
 {
 	return ready() ? static_cast<int>(iV_GetImageWidth(s_img, static_cast<UWORD>(id))) : 0;
