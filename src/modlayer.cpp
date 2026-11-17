@@ -3,6 +3,7 @@
 
 #include "modlayer.h"
 #include "modrocket.h"
+#include "modapc.h"
 #include "lib/sound/tracklib.h"
 #include "modlayermap.h"
 #include "modui.h"
@@ -392,6 +393,7 @@ bool active()
 
 bool canInteract(const SIMPLE_OBJECT *a, const SIMPLE_OBJECT *b)
 {
+	if (modapc::aboard(a) || modapc::aboard(b)) { return false; }   // (21:01) Insassen eines Schuetzenpanzers: kein Zusammenstoss, kein Beschuss
 	if (s_layerOf.empty()) { return true; }
 	return layerOf(a) == layerOf(b);
 }
@@ -400,6 +402,7 @@ bool projectileCanHit(const PROJECTILE *proj, const SIMPLE_OBJECT *target)
 {
 	// Ebenen-Sonderwaffe: wirkt nur in ihrer Zielebene (auch wenn sonst nichts ausserhalb der Oberflaeche existiert)
 	if (proj != nullptr && proj->psWStats != nullptr && proj->psWStats->crossLayer >= 0) { return static_cast<int>(layerOf(target)) == proj->psWStats->crossLayer; }
+	if (modapc::aboard(target)) { return false; }
 	if (s_layerOf.empty() || proj == nullptr) { return true; }
 	const SIMPLE_OBJECT *ref = proj->psSource != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psSource)
 	                           : (proj->psDest != nullptr ? static_cast<const SIMPLE_OBJECT *>(proj->psDest) : nullptr);
