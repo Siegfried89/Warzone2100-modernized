@@ -46,7 +46,7 @@ int mgStat()
 	if (s_mgStat == -2)
 	{
 		s_mgStat = -1;
-		for (const char *id : {"MG2Mk1", "MG1Mk1", "BabaMG"})
+		for (const char *id : {"TankHullMG", "MG2Mk1", "MG1Mk1", "BabaMG"})   // TankHullMG: tiefer Ton (hullmg.py)
 		{
 			const int i = getCompFromID(COMP_WEAPON, WzString::fromUtf8(id));
 			if (i >= 0) { s_mgStat = i; break; }
