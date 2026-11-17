@@ -345,6 +345,7 @@ bool addCrater(int worldX, int worldY, int size)
 {
 	WorldMapState &m = gameWorld.map;
 	size = std::clamp(size, 1, 3);
+	(void)size;   // (17.11.) alle Krater gleich gross/tief
 	if (!worldOnMap(m, worldX, worldY))
 	{
 		return false;
