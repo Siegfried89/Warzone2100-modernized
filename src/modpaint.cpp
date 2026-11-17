@@ -105,6 +105,10 @@ int s_mode = -1;                 // aktiver Zeichenmodus (-1 = keiner)
 bool s_drawing = false;
 std::vector<Vector2i> s_cur;     // Linie, die gerade gezeichnet wird
 std::vector<Stroke> s_done;      // fertige Zeichnungen (verblassen)
+// MOD (Wunsch 14.11., Infanterie baut): eigener WZ-Knopf direkt ueber der Rosette, sobald Infanterie mit Spaten gewaehlt ist -> oeffnet das WZ-Baumenue
+std::shared_ptr<W_SCREEN> s_infScreen;
+std::shared_ptr<W_CLICKFORM> s_infRoot;
+std::shared_ptr<W_BUTTON> s_infBtn;
 
 // ------------------------------------------------------------------------------------------------- Anzeige der Knoepfe
 
@@ -173,6 +177,64 @@ void ensureScreen()
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
 	s_screen = screen;
 	s_root = root;
+}
+
+void drawInfButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	const float sc = modui::uiScale();
+	const W_BUTTON *b = static_cast<const W_BUTTON *>(psWidget);
+	const int x0 = static_cast<int>(xOffset) + psWidget->x();
+	const int y0 = static_cast<int>(yOffset) + psWidget->y();
+	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
+	const bool down = (b->getState() & WBUT_DOWN) != 0;
+	const PIELIGHT accent = pal_RGBA(230, 190, 90, 255);
+	modui::wzButton(x0, y0, psWidget->width(), psWidget->height(), _("Infantry: build"), intMode == INT_STAT, hl, down, modui::sizeClassFor(sc), &accent);
+}
+
+bool infantryBuilderSelected()
+{
+	if (selectedPlayer >= MAX_PLAYERS) { return false; }
+	for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d->selected && !d->died && modbuild::isInfantryBuilder(d)) { return true; }
+	}
+	return false;
+}
+
+void ensureInfButton()
+{
+	if (s_infScreen) { return; }
+	auto screen = W_SCREEN::make();
+	screen->psForm->hide();   // durchlaessig fuer Mausklicks
+	auto root = std::make_shared<W_CLICKFORM>();
+	screen->psForm->attach(root);
+	auto b = std::make_shared<W_BUTTON>();
+	root->attach(b);
+	b->displayFunction = drawInfButton;
+	b->setTip(_("Open the build menu for the selected infantry (trenches, sandbags, MG nests, ammo crates)"));
+	b->addOnClickHandler([](W_BUTTON &) { widgScheduleTask([]() {
+		if (!infantryBuilderSelected()) { return; }
+		intResetScreen(true);
+		intShowWidget(RETBUT_BUILD);
+	}); });
+	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
+	s_infScreen = screen;
+	s_infRoot = root;
+	s_infBtn = b;
+}
+
+void infButtonTick(bool want)
+{
+	const bool show = want && infantryBuilderSelected() && (intMode == INT_NORMAL || intMode == INT_OBJECT || intMode == INT_STAT);
+	if (!show && !s_infScreen) { return; }
+	ensureInfButton();
+	s_infRoot->show(show);
+	if (!show) { return; }
+	const float sc = modui::uiScale();
+	const int w = static_cast<int>(RET_FORMWIDTH), h = static_cast<int>(22 * sc);
+	const int y = std::max(0, static_cast<int>(RET_Y) - h - 4);
+	s_infRoot->setGeometry(RET_X, y, w, h);
+	s_infBtn->setGeometry(0, 0, w, h);
 }
 
 void layout()
@@ -946,6 +1008,7 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 void tick()
 {
 	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS;
+	infButtonTick(want);
 	if (!want && !s_screen) { opTick(); planTick(); return; }
 	ensureScreen();
 	if (!s_root) { return; }
@@ -1035,6 +1098,13 @@ void shutdown()
 	{
 		widgRemoveOverlayScreen(s_screen);
 	}
+	if (s_infScreen)
+	{
+		widgRemoveOverlayScreen(s_infScreen);
+	}
+	s_infScreen = nullptr;
+	s_infRoot = nullptr;
+	s_infBtn = nullptr;
 	s_screen = nullptr;
 	s_root = nullptr;
 	s_buttons.clear();
