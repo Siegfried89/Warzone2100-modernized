@@ -114,56 +114,63 @@ bool sideUsable(int x, int y)
 	return !TileHasStructure(t);
 }
 
+// Eine Stellung belegt S x S Felder (S = 1; Zweig viertel: 2 Feinfelder je Original-Kachel)
+constexpr int S = DIST_TILE / TILE_UNITS;
+
+struct Block
+{
+	int tx0, ty0, player;
+	uint32_t id;
+	uint8_t conn = 0, entry = 0;
+};
+
 void rebuild()
 {
 	s_w = gameWorld.map.width;
 	s_h = gameWorld.map.height;
-	s_grid.assign(static_cast<size_t>(s_w) * static_cast<size_t>(s_h), 0);
+	s_grid.clear();
 	s_open.clear();
 	loadTable();
 	if (s_family.empty() || s_w <= 0 || s_h <= 0 || !surfaceResident()) { return; }
-	std::vector<int16_t> owner(s_grid.size(), -1);
-	std::vector<uint32_t> sid(s_grid.size(), 0);
-	bool any = false;
+	std::vector<Block> blocks;
+	std::map<std::pair<int, int>, size_t> at;
 	for (int p = 0; p < MAX_PLAYERS; ++p)
 	{
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->died || familyOf(s) == nullptr || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
-			const int x = map_coord(s->pos.x), y = map_coord(s->pos.y);
-			if (x < 0 || y < 0 || x >= s_w || y >= s_h) { continue; }
-			const size_t i = static_cast<size_t>(x) + static_cast<size_t>(y) * s_w;
-			owner[i] = static_cast<int16_t>(p);
-			sid[i] = s->id;
-			any = true;
+			const int tx0 = map_coord(s->pos.x - (S * TILE_UNITS) / 2), ty0 = map_coord(s->pos.y - (S * TILE_UNITS) / 2);
+			if (tx0 < 0 || ty0 < 0 || tx0 + S > s_w || ty0 + S > s_h) { continue; }
+			if (at.count({tx0, ty0}) != 0) { continue; }
+			at[{tx0, ty0}] = blocks.size();
+			Block b;
+			b.tx0 = tx0; b.ty0 = ty0; b.player = p; b.id = s->id;
+			blocks.push_back(b);
 		}
 	}
-	if (!any) { s_grid.clear(); return; }
-	std::vector<uint8_t> conn(s_grid.size(), 0), entry(s_grid.size(), 0);
-	for (int y = 0; y < s_h; ++y)
+	if (blocks.empty()) { return; }
+	auto blockAt = [&](int tx0, int ty0) -> int {
+		const auto it = at.find({tx0, ty0});
+		return it == at.end() ? -1 : static_cast<int>(it->second);
+	};
+	for (Block &b : blocks)
 	{
-		for (int x = 0; x < s_w; ++x)
+		for (int k = 0; k < 4; ++k)
 		{
-			const size_t i = static_cast<size_t>(x) + static_cast<size_t>(y) * s_w;
-			if (owner[i] < 0) { continue; }
-			for (int k = 0; k < 4; ++k)
-			{
-				const int nx = x + DX[k], ny = y + DY[k];
-				if (nx < 0 || ny < 0 || nx >= s_w || ny >= s_h) { continue; }
-				if (owner[static_cast<size_t>(nx) + static_cast<size_t>(ny) * s_w] == owner[i]) { conn[i] |= static_cast<uint8_t>(BIT[k]); }
-			}
+			const int n = blockAt(b.tx0 + S * DX[k], b.ty0 + S * DY[k]);
+			if (n >= 0 && blocks[static_cast<size_t>(n)].player == b.player) { b.conn |= static_cast<uint8_t>(BIT[k]); }
 		}
 	}
 	// zusammenhaengende Netze je Spieler; Oeffnungen zur eigenen Basis hin
 	int64_t homeX[MAX_PLAYERS], homeY[MAX_PLAYERS];
 	bool haveHome[MAX_PLAYERS];
 	for (int p = 0; p < MAX_PLAYERS; ++p) { haveHome[p] = homeOf(p, homeX[p], homeY[p]); }
-	std::vector<uint8_t> seen(s_grid.size(), 0);
+	std::vector<uint8_t> seen(blocks.size(), 0);
 	std::vector<size_t> comp, stack;
-	for (size_t start = 0; start < s_grid.size(); ++start)
+	for (size_t start = 0; start < blocks.size(); ++start)
 	{
-		if (owner[start] < 0 || seen[start]) { continue; }
-		const int p = owner[start];
+		if (seen[start]) { continue; }
+		const int p = blocks[start].player;
 		comp.clear();
 		stack.assign(1, start);
 		seen[start] = 1;
@@ -172,50 +179,67 @@ void rebuild()
 			const size_t i = stack.back();
 			stack.pop_back();
 			comp.push_back(i);
-			const int x = static_cast<int>(i % s_w), y = static_cast<int>(i / s_w);
 			for (int k = 0; k < 4; ++k)
 			{
-				if (!(conn[i] & BIT[k])) { continue; }
-				const size_t j = static_cast<size_t>(x + DX[k]) + static_cast<size_t>(y + DY[k]) * s_w;
-				if (!seen[j]) { seen[j] = 1; stack.push_back(j); }
+				if (!(blocks[i].conn & BIT[k])) { continue; }
+				const int j = blockAt(blocks[i].tx0 + S * DX[k], blocks[i].ty0 + S * DY[k]);
+				if (j >= 0 && !seen[static_cast<size_t>(j)]) { seen[static_cast<size_t>(j)] = 1; stack.push_back(static_cast<size_t>(j)); }
 			}
 		}
 		const int64_t hx = haveHome[p] ? homeX[p] : world_coord(s_w / 2), hy = haveHome[p] ? homeY[p] : world_coord(s_h / 2);
+		auto centre = [&](size_t i, int64_t &cx, int64_t &cy) {
+			cx = world_coord(blocks[i].tx0) + (S * TILE_UNITS) / 2;
+			cy = world_coord(blocks[i].ty0) + (S * TILE_UNITS) / 2;
+		};
 		auto d2 = [&](size_t i) {
-			const int64_t cx = world_coord(static_cast<int>(i % s_w)) + TILE_UNITS / 2 - hx;
-			const int64_t cy = world_coord(static_cast<int>(i / s_w)) + TILE_UNITS / 2 - hy;
-			return cx * cx + cy * cy;
+			int64_t cx, cy;
+			centre(i, cx, cy);
+			return (cx - hx) * (cx - hx) + (cy - hy) * (cy - hy);
 		};
 		std::sort(comp.begin(), comp.end(), [&](size_t a, size_t b) { const int64_t da = d2(a), db = d2(b); return da != db ? da < db : a < b; });
-		std::vector<size_t> entries;
+		auto usable = [&](const Block &b, int k) {
+			for (int t = 0; t < S; ++t)
+			{
+				int x, y;
+				switch (k)
+				{
+				case 0: x = b.tx0 + t; y = b.ty0 - 1; break;
+				case 1: x = b.tx0 + S; y = b.ty0 + t; break;
+				case 2: x = b.tx0 + t; y = b.ty0 + S; break;
+				default: x = b.tx0 - 1; y = b.ty0 + t; break;
+				}
+				if (!sideUsable(x, y)) { return false; }
+			}
+			return true;
+		};
 		auto bestSide = [&](size_t i, bool needFacing) {
-			const int x = static_cast<int>(i % s_w), y = static_cast<int>(i / s_w);
-			const int64_t vx = hx - (world_coord(x) + TILE_UNITS / 2), vy = hy - (world_coord(y) + TILE_UNITS / 2);
+			int64_t cx, cy;
+			centre(i, cx, cy);
+			const int64_t vx = hx - cx, vy = hy - cy;
 			int best = -1;
 			int64_t bestDot = 0;
 			for (int k = 0; k < 4; ++k)
 			{
-				if (conn[i] & BIT[k]) { continue; }
-				if (!sideUsable(x + DX[k], y + DY[k])) { continue; }
+				if (blocks[i].conn & BIT[k]) { continue; }
+				if (!usable(blocks[i], k)) { continue; }
 				const int64_t dot = vx * DX[k] + vy * DY[k];
 				if (needFacing && dot <= 0) { continue; }
 				if (best < 0 || dot > bestDot) { best = k; bestDot = dot; }
 			}
 			return best;
 		};
+		std::vector<size_t> entries;
 		for (size_t i : comp)
 		{
 			bool farEnough = true;
 			for (size_t e : entries)
 			{
-				const int ex = static_cast<int>(e % s_w), ey = static_cast<int>(e / s_w);
-				const int x = static_cast<int>(i % s_w), y = static_cast<int>(i / s_w);
-				if (std::max(std::abs(ex - x), std::abs(ey - y)) < ENTRY_SPACING) { farEnough = false; break; }
+				if (std::max(std::abs(blocks[e].tx0 - blocks[i].tx0), std::abs(blocks[e].ty0 - blocks[i].ty0)) < ENTRY_SPACING * S) { farEnough = false; break; }
 			}
 			if (!farEnough) { continue; }
 			const int k = bestSide(i, true);
 			if (k < 0) { continue; }
-			entry[i] |= static_cast<uint8_t>(BIT[k]);
+			blocks[i].entry |= static_cast<uint8_t>(BIT[k]);
 			entries.push_back(i);
 		}
 		if (entries.empty())
@@ -223,16 +247,28 @@ void rebuild()
 			for (size_t i : comp)
 			{
 				const int k = bestSide(i, false);
-				if (k >= 0) { entry[i] |= static_cast<uint8_t>(BIT[k]); break; }
+				if (k >= 0) { blocks[i].entry |= static_cast<uint8_t>(BIT[k]); break; }
 			}
 		}
 	}
-	for (size_t i = 0; i < s_grid.size(); ++i)
+	// Raster fuer die Wegsuche: jedes Feld eines Blocks - innen offen, an den Blockkanten nur die offenen Seiten
+	s_grid.assign(static_cast<size_t>(s_w) * static_cast<size_t>(s_h), 0);
+	for (const Block &b : blocks)
 	{
-		if (owner[i] < 0) { continue; }
-		const uint8_t open = static_cast<uint8_t>((conn[i] | entry[i]) & 15);
-		s_grid[i] = static_cast<uint8_t>(0x10 | open);
-		s_open[sid[i]] = open;
+		const uint8_t open = static_cast<uint8_t>((b.conn | b.entry) & 15);
+		s_open[b.id] = open;
+		for (int j = 0; j < S; ++j)
+		{
+			for (int i = 0; i < S; ++i)
+			{
+				uint8_t m = 0x10;
+				if (j > 0 || (open & 1)) { m |= 1; }
+				if (i < S - 1 || (open & 2)) { m |= 2; }
+				if (j < S - 1 || (open & 4)) { m |= 4; }
+				if (i > 0 || (open & 8)) { m |= 8; }
+				s_grid[static_cast<size_t>(b.tx0 + i) + static_cast<size_t>(b.ty0 + j) * s_w] = m;
+			}
+		}
 	}
 }
 } // namespace
