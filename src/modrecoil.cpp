@@ -8,6 +8,7 @@
 
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
+#include "lib/gamelib/gtime.h"
 #include "droid.h"
 #include "stats.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
@@ -26,6 +27,8 @@ struct Shake
 {
 	Osc hull, prop;
 	unsigned last = 0;
+	unsigned rumbleStart = 0, rumbleLen = 0;   // Motor-Anlassen: Zittern des Rumpfes (Spielzeit)
+	float rumbleAmp = 0.f;
 };
 std::unordered_map<unsigned, Shake> s_shake;
 
@@ -96,6 +99,21 @@ void onShot(const DROID *d, const WEAPON_STATS *st, int weaponDir)
 	s.prop.vr = std::clamp(s.prop.vr, -vmaxP, vmaxP);
 }
 
+void engineStart(const DROID *d, int cls)
+{
+	if (d == nullptr || cls <= 0) { return; }
+	if (s_shake.size() > 600) { s_shake.clear(); }
+	Shake &s = s_shake[d->id];
+	s.rumbleStart = gameTime;
+	s.rumbleLen = cls == 1 ? 520u : (cls == 2 ? 760u : 900u);
+	s.rumbleAmp = cls == 1 ? 0.55f : (cls == 2 ? 0.75f : 0.85f);
+	// der Motor faengt an: Drehmoment-Ruck kippt den Rumpf kurz zur Seite und den Bug etwas hoch, die Ketten bleiben fast ruhig
+	const float kick = cls == 1 ? 0.9f : (cls == 2 ? 1.2f : 1.35f);
+	s.hull.vr += kick * W_HULL;
+	s.hull.vp += 0.45f * kick * W_HULL;
+	s.prop.vr -= 0.12f * kick * W_PROP;
+}
+
 bool shake(const DROID *d, unsigned renderTime, glm::mat4 &hull, glm::mat4 &prop)
 {
 	if (d == nullptr || s_shake.empty()) { return false; }
@@ -109,13 +127,31 @@ bool shake(const DROID *d, unsigned renderTime, glm::mat4 &hull, glm::mat4 &prop
 		step(s.prop, W_PROP, Z_PROP, dt);
 	}
 	s.last = renderTime;
-	if (settled(s.hull) && settled(s.prop))
+	// Motor-Anlassen: kurzes Zittern (schnell ansteigend, dann ausklingend); Ketten nur ein Fuenftel davon
+	float rp = 0.f, rr = 0.f;
+	bool rumbling = false;
+	if (s.rumbleLen != 0)
+	{
+		const int since = static_cast<int>(renderTime) - static_cast<int>(s.rumbleStart);
+		if (since >= static_cast<int>(s.rumbleLen) || since < -200) { s.rumbleLen = 0; }
+		else if (since >= 0)
+		{
+			rumbling = true;
+			const float t = static_cast<float>(since) / 1000.f;
+			const float x = static_cast<float>(since) / static_cast<float>(s.rumbleLen);
+			const float env = std::min(1.f, x * 8.f) * (1.f - x) * (1.f - x);
+			rr = s.rumbleAmp * env * std::sin(t * 2.f * 3.1415927f * 11.f);
+			rp = 0.6f * s.rumbleAmp * env * std::sin(t * 2.f * 3.1415927f * 14.5f + 1.3f);
+		}
+		else { rumbling = true; }
+	}
+	if (!rumbling && settled(s.hull) && settled(s.prop))
 	{
 		s_shake.erase(it);
 		return false;
 	}
-	hull = glm::rotate(glm::radians(s.hull.p), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(s.hull.r), glm::vec3(0.f, 0.f, 1.f));
-	prop = glm::rotate(glm::radians(s.prop.p), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(s.prop.r), glm::vec3(0.f, 0.f, 1.f));
+	hull = glm::rotate(glm::radians(s.hull.p + rp), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(s.hull.r + rr), glm::vec3(0.f, 0.f, 1.f));
+	prop = glm::rotate(glm::radians(s.prop.p + 0.2f * rp), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(s.prop.r + 0.2f * rr), glm::vec3(0.f, 0.f, 1.f));
 	return true;
 }
 

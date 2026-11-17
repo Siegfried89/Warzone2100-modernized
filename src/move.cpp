@@ -42,6 +42,7 @@
 #include "modfuel.h"
 #include "modoil.h"   // MOD
 #include "modtankguns.h"   // MOD
+#include "modinertia.h"    // MOD (17.11. 19:45): Anlassen + Traegheit
 #include "move.h"
 
 #include "objects.h"
@@ -2044,7 +2045,10 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 
 	moveUpdateDroidDirection(psDroid, &speed, direction, spinAngle, spinSpeed, turnSpeed, &iDroidDir);
 
-	fNormalSpeed = moveCalcNormalSpeed(psDroid, speed, iDroidDir, psPropStats->acceleration, psPropStats->deceleration);
+	// MOD (17.11. 19:45): Traegheit - mittlere Panzer beschleunigen/bremsen etwas, schwere deutlich langsamer
+	const SDWORD modAccel = std::max<SDWORD>(1, psPropStats->acceleration * modinertia::accelPercent(psDroid) / 100);
+	const SDWORD modDecel = std::max<SDWORD>(1, psPropStats->deceleration * modinertia::decelPercent(psDroid) / 100);
+	fNormalSpeed = moveCalcNormalSpeed(psDroid, speed, iDroidDir, modAccel, modDecel);
 	fPerpSpeed   = moveCalcPerpSpeed(psDroid, iDroidDir, psPropStats->skidDeceleration);
 
 	moveCombineNormalAndPerpSpeeds(psDroid, fNormalSpeed, fPerpSpeed, iDroidDir);
@@ -2883,6 +2887,15 @@ void moveUpdateDroid(DROID *psDroid)
 		moveSpeed = corridorQueueSpeed(gameWorld, psDroid, moveSpeed);
 	}
 
+	// MOD (17.11. 19:45): Panzer lassen erst den Motor an (Startgeraeusch, Rumpf schuettelt sich) und fahren dann los
+	bool modEngineStarting = false;
+	if (psDroid->droidType != DROID_PERSON && !psDroid->isCyborg() && psPropStats->propulsionType != PROPULSION_TYPE_LIFT
+	    && modinertia::holdStart(psDroid, bStarted))
+	{
+		modEngineStarting = true;
+		moveSpeed = 0;
+	}
+
 	// The blocked watchdog only runs from a bump, which a droid held still by the turn-rate limiter never
 	// gets. Start a bump clock for a droid moving to work that has made no progress for STILL_BUMP_TIME.
 	if (pathfindingStillBumpEnabled() && psDroid->sMove.Status == MOVEPOINTTOPOINT && moveSpeed > 0
@@ -2934,8 +2947,8 @@ void moveUpdateDroid(DROID *psDroid)
 	else
 	{
 		if (modtankguns::halted(psDroid)) { moveSpeed = 0; }   // MOD (17.11.): Feuerhalt der Panzer
-		moveUpdateGroundModel(psDroid, moveSpeed, moveDir);
-		if (psPropStats->hoverHeight > 0) { psDroid->pos.z += psPropStats->hoverHeight; }   // MOD: Balldrohne schwebt ueber dem Boden
+		if (!modEngineStarting) { moveUpdateGroundModel(psDroid, moveSpeed, moveDir); }   // MOD: waehrend des Anlassens steht er still
+		if (!modEngineStarting && psPropStats->hoverHeight > 0) { psDroid->pos.z += psPropStats->hoverHeight; }   // MOD: Balldrohne schwebt ueber dem Boden
 		if (psPropStats->propulsionType == PROPULSION_TYPE_LEGGED) { modduel::updateLeggedAnimation(psDroid, moveSpeed); } // MOD
 	}
 
