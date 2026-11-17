@@ -214,7 +214,7 @@ struct PendingCrater
 };
 std::vector<PendingCrater> s_pending;   // Reihenfolge = Einschlagsreihenfolge (auf allen Rechnern gleich)
 
-int craterDepth(int size)
+[[maybe_unused]] int craterDepth(int size)
 {
 	switch (size)
 	{
@@ -372,7 +372,6 @@ bool addCrater(int worldX, int worldY, int size)
 			const uint64_t k = keyOf(layerTag(), xx, yy);
 			Cell &c = s_cells[k];
 			const int before = c.dyn;
-			(void)craterDepth;
 			// (17.11.) jeder Krater ist gleich: so tief wie ein Schuetzenloch; weitere Treffer vertiefen nicht
 			c.dyn = static_cast<int16_t>(std::max<int>(c.dyn, CRATER_DEPTH));
 			swapTexture(c, xx, yy, true);
