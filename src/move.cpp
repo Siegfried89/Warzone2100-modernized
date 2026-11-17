@@ -40,6 +40,7 @@
 #include "modsalvage.h"
 #include "modparts.h"
 #include "modfuel.h"
+#include "modoil.h"   // MOD
 #include "move.h"
 
 #include "objects.h"
@@ -2127,6 +2128,7 @@ static void moveUpdatePersonModel(DROID *psDroid, SDWORD speed, uint16_t directi
 
 	//set the droid height here so other routines can use it
 	psDroid->pos.z = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);//jps 21july96
+	psDroid->pos.z += modoil::roofHeight(psDroid);   // MOD (17.11.): Infanterie auf dem Containerdach
 
 	/* update anim if moving */
 	if (psDroid->droidType == DROID_PERSON && speed != 0 && (psDroid->animationEvent != ANIM_EVENT_ACTIVE && psDroid->animationEvent != ANIM_EVENT_DYING))

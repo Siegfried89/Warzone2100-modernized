@@ -506,6 +506,16 @@ bool droidInTrench(const DROID *d)
 	return tilePassableForInfantry(gameWorld.map, map_coord(d->pos.x), map_coord(d->pos.y));
 }
 
+int roofHeight(const DROID *d)
+{
+	if (d == nullptr || d->droidType != DROID_PERSON || !isInfantry(d)) { return 0; }
+	const MAPTILE *t = mapTile(gameWorld.map, map_coord(d->pos.x), map_coord(d->pos.y));
+	if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_STRUCTURE) { return 0; }
+	const STRUCTURE *s = static_cast<const STRUCTURE *>(t->psObject);
+	if (s->pStructureType == nullptr || s->status != SS_BUILT || !s->pStructureType->infantryPassable) { return 0; }
+	return s->pStructureType->id.startsWith("A0BaBaContainer") ? 54 : 0;   // Containerdach (55 hoch)
+}
+
 bool isCargo(uint32_t droidId)
 {
 	return s_cargo.find(droidId) != s_cargo.end();
