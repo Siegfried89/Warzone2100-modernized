@@ -81,7 +81,7 @@ struct IslandModel
 	float scale = 1.f;
 };
 const std::vector<IslandModel> &orbitIslandModels();
-/// MOD (16.11. 18:06): Orbit-Abstandsfeld fuer den Terrain-Shader (lightmap.a): 0 = Leere, sonst 1 + Abstand zum Inselrand (Felder) * 42.
-/// true, wenn gerade die Orbit-Karte in gameWorld.map liegt und das Feld berechnet ist; level dann gesetzt.
-bool islandLevel(int x, int y, uint8_t &level);
+/// MOD (17.11.): Farbe des Planetenbodens unter dem Orbit (Oberflaechenkarte, je Feld, mit Relief). true, wenn gerade die
+/// Orbit-Karte in gameWorld.map liegt; rgb dann gesetzt.
+bool orbitFloorColour(int x, int y, uint8_t rgb[3]);
 }

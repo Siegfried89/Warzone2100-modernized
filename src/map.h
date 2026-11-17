@@ -319,9 +319,9 @@ static inline bool TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(MAPTILE *pTile)
 
 extern UBYTE terrainTypes[MAX_TILE_TEXTURES];
 
-/// MOD: Zusatzkacheln (MF-Inseln): 256 = Leere (Wolkenmeer, blockiert), 257 = Inselfels (nur Shader), 258.. = Inselboden
+/// MOD: Zusatzkacheln: 256 = Orbit-Leere (blockiert, darunter der Planetenboden), 257 frei (frueher Shader-Fels),
+/// 258.. = Plattform der MF-Asteroiden, danach Betonkacheln (mf/concrete.txt)
 #define MOD_TILE_VOID		256
-#define MOD_TILE_ROCK		257
 #define MOD_TILE_ISLAND0	258
 #define MOD_TILE_MAX		2048
 
