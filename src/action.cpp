@@ -766,25 +766,25 @@ static void modJetPass(DROID *psDroid, const BASE_OBJECT *psTarget)
 	if (psTarget == nullptr) { return; }
 	const Vector2i here = psDroid->pos.xy();
 	const bool stopped = DROID_STOPPED(psDroid);
-	if (!stopped && iHypot(psDroid->sMove.destination - here) > TILE_UNITS * 3 / 2) { return; }   // noch unterwegs zum Wegpunkt
+	if (!stopped && iHypot(psDroid->sMove.destination - here) > DIST_TILE * 3 / 2) { return; }   // noch unterwegs zum Wegpunkt
 	const Vector2i tgt = psTarget->pos.xy();
 	const Vector2i d = tgt - here;
 	const int dist = std::max(1, iHypot(d));
 	const int side = (psDroid->id & 1) ? 1 : -1;
 	Vector2i way;
-	if (dist > TILE_UNITS * 3)
+	if (dist > DIST_TILE * 3)
 	{
 		// Anflug: ueber das Ziel hinweg, gut drei Felder dahinter, etwas seitlich versetzt
-		way = tgt + Vector2i(d.x * (TILE_UNITS * 7 / 2) / dist - side * d.y * TILE_UNITS / dist, d.y * (TILE_UNITS * 7 / 2) / dist + side * d.x * TILE_UNITS / dist);
+		way = tgt + Vector2i(d.x * (DIST_TILE * 7 / 2) / dist - side * d.y * DIST_TILE / dist, d.y * (DIST_TILE * 7 / 2) / dist + side * d.x * DIST_TILE / dist);
 	}
 	else
 	{
 		// zu nah: abdrehen (60 Grad zur Seite, sechs Felder weit), danach neuer Anflug
 		const uint16_t dir = static_cast<uint16_t>(psDroid->rot.direction + side * DEG(60));
-		way = here + Vector2i(iSinR(dir, TILE_UNITS * 6), iCosR(dir, TILE_UNITS * 6));
+		way = here + Vector2i(iSinR(dir, DIST_TILE * 6), iCosR(dir, DIST_TILE * 6));
 	}
-	way.x = std::clamp(way.x, TILE_UNITS * 2, world_coord(gameWorld.map.width - 3));
-	way.y = std::clamp(way.y, TILE_UNITS * 2, world_coord(gameWorld.map.height - 3));
+	way.x = std::clamp(way.x, DIST_TILE * 2, world_coord(gameWorld.map.width - 3));
+	way.y = std::clamp(way.y, DIST_TILE * 2, world_coord(gameWorld.map.height - 3));
 	turnOffMultiMsg(true);
 	moveDroidTo(psDroid, way.x, way.y);
 	turnOffMultiMsg(false);
