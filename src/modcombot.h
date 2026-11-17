@@ -69,7 +69,7 @@ struct Loadout
 	unsigned severed = 0;           // Severed-Bits
 };
 
-enum AnimKind { ANIM_IDLE = 0, ANIM_WALK = 1, ANIM_FIRE = 2, ANIM_DIE = 3 };
+enum AnimKind { ANIM_IDLE = 0, ANIM_WALK = 1, ANIM_FIRE = 2, ANIM_DIE = 3, ANIM_FLY_UP = 4, ANIM_FLY = 5, ANIM_FLY_DOWN = 6 };   // MOD (17.11.): Jetpack-Flug
 
 /// Daten laden (einmalig). false = keine modularen Combot-Daten vorhanden.
 bool ready();
