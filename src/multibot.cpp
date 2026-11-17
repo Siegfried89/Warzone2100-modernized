@@ -646,6 +646,7 @@ static uint32_t secondaryStateMask(SECONDARY_ORDER sec)
 	case DSO_CIRCLE: return DSS_CIRCLE_MASK;
 	case DSO_ACCEPT_RETREP: return DSS_ACCREP_MASK;
 	case DSO_ARTILLERY: return DSS_ARTY_MASK;   // MOD
+	case DSO_FULLAUTO: return DSS_FULLAUTO_MASK;   // MOD
 	case DSO_UNUSED: break;
 	}
 	return 0;

@@ -46,7 +46,8 @@ enum OBJECT_TYPE
 
 struct TILEPOS
 {
-	UBYTE x, y, type;
+	uint16_t x, y;   // MOD: Karten > 256 Felder (vorher 8 Bit: Sicht auf falschen Feldern abgebaut)
+	UBYTE type;
 };
 
 /*

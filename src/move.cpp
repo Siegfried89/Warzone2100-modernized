@@ -424,6 +424,13 @@ void moveTurnDroid(DROID *psDroid, UDWORD x, UDWORD y)
 	}
 }
 
+// MOD (17.11.): Wegschieben abgeschaltet (siehe Aufruf in moveCalcDroidCollision); als Funktion, damit kein Compiler "konstante Bedingung" meldet
+static bool modAllowShuffle()
+{
+	static volatile bool s_allow = false;
+	return s_allow;
+}
+
 // Tell a droid to move out the way for a shuffle
 static void moveShuffleDroid(DROID *psDroid, Vector2i s)
 {
@@ -1494,7 +1501,9 @@ static void moveCalcDroidSlide(DROID *psDroid, int *pmx, int *pmy)
 
 					const bool sameSide = psObst->player == psDroid->player || aiCheckAlliances(psObst->player, psDroid->player);
 
-					if (sameSide
+					// MOD (Wunsch 17.11. 15:46): kein Wegschieben mehr - stehende Einheiten (auch bewegungsunfaehige Panzer) bleiben, wo sie
+					// sind, und koennen eine Strasse blockieren ("Das ist der Sinn der Sache. Es soll Blockierung moeglich sein.")
+					if (modAllowShuffle() && sameSide
 					    && psShuffleDroid->action != DACTION_WAITDURINGREARM
 					    && psShuffleDroid->sMove.Status == MOVEINACTIVE)
 					{

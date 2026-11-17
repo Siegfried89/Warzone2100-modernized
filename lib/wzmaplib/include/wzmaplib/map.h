@@ -39,9 +39,9 @@ using nonstd::nullopt;
 
 // MARK: - Various defines needed by both maplib and the game's map-handling code
 
-#define MAP_MAXWIDTH	512   // MOD: geviertelte Karten (256 Original-Kacheln = 512 Feinfelder)
-#define MAP_MAXHEIGHT	512
-#define MAP_MAXAREA		(512*512)
+#define MAP_MAXWIDTH	1024   // MOD: geviertelte Karten (bis 512 Original-Kacheln = 1024 Feinfelder; Wunsch 17.11.: Karten bis 500 x 500)
+#define MAP_MAXHEIGHT	1024
+#define MAP_MAXAREA		(1024*1024)
 
 // Multiplier for the tile height - used for older map formats (which stored tile height as a byte)
 #define ELEVATION_SCALE	2

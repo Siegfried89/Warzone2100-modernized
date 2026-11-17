@@ -87,6 +87,7 @@
 #include "gamehistorylogger.h"
 #include "hci/quickchat.h"
 #include "screens/guidescreen.h"
+#include "modfactech.h"   // MOD
 
 #include <list>
 #include <cmath>
@@ -1956,7 +1957,8 @@ static int get_first_available_component(int player, int capacity, const wzapi::
 		{
 			int status = apCompLists[player][componentType][componentIndex];
 			if ((status == AVAILABLE || status == REDUNDANT || !strict)
-				&& (componentType != COMP_BODY || asBodyStats[componentIndex].size <= capacity))
+				&& (componentType != COMP_BODY || asBodyStats[componentIndex].size <= capacity)
+				&& (componentType != COMP_BODY || !strict || modfactech::bodyAllowed(static_cast<unsigned>(player), &asBodyStats[componentIndex])))   // MOD: Fraktions-Ruempfe
 			{
 				return componentIndex; // found one!
 			}
@@ -2235,6 +2237,10 @@ bool wzapi::componentAvailable(WZAPI_PARAMS(std::string componentType, optional<
 	COMPONENT_STATS *psComp = getCompStatsFromName(WzString::fromUtf8(componentName.c_str()));
 	SCRIPT_ASSERT(false, context, psComp, "No such component: %s", componentName.c_str());
 	int status = apCompLists[player][psComp->compType][psComp->index];
+	if (psComp->compType == COMP_BODY && !modfactech::bodyAllowed(static_cast<unsigned>(player), static_cast<const BODY_STATS *>(psComp)))
+	{
+		return false;   // MOD: Rumpf einer anderen Fraktion (modfactech)
+	}
 	return status == AVAILABLE || status == REDUNDANT;
 }
 

@@ -133,6 +133,7 @@
 #include "modinvade.h"
 #include "modlava.h"
 #include "modammo.h"
+#include "modauto.h"
 #include "modfuel.h"
 
 #include <numeric>
@@ -600,6 +601,7 @@ static void gameStateUpdate()
 	modoil::tick();     // MOD: Oelkreislauf (Explosionen, Lkw-Autopilot, Pipeline, Kraftwerk-Laufzeit)
 	modwreck::tick(gameWorld);   // MOD: Wracks (Todesanimation, Qualm, Ablauf)
 	modammo::tick(gameWorld);    // MOD: Munition (Nachschub)
+	modauto::tick(gameWorld);    // MOD: "Fully autonomous" - Einheiten suchen sich selbst Gegner
 	modfuel::tick(gameWorld);    // MOD: Treibstoff (Verbrauch, Tankstelle, Selbstversorgung)
 	modparts::tick(gameWorld);   // MOD: Teile-Schaden (Turm / Laufwerk)
 	modmorale::tick();

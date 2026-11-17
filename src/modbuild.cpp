@@ -25,9 +25,11 @@
 #include "statsdef.h"
 #include "structure.h"
 #include "action.h"
+#include "random.h"
 #include "ai.h"
 
 #include <algorithm>
+#include <string>
 #include <cmath>
 #include <cstdlib>
 #include <deque>
@@ -83,7 +85,7 @@ enum class Role
 const char *const *namesOf(Role r, int &count)
 {
 	static const char *const dragon[] = {"A0TankTrapHeavy", "A0TankTrap"};
-	static const char *const hedge[] = {"A0BaBaHedgehog", "A0TankTrap", "A0TankTrapHeavy"};   // MOD 16.11.: echte 3D-Igel zuerst
+	static const char *const hedge[] = {"A0TankTrap", "A0BaBaHedgehog", "A0TankTrapHeavy"};   // MOD 17.11. 15:55: wieder die Original-Sprite-Igel zuerst ("sieht immer noch am besten aus"; die 3D-Igel waren zu fett)
 	static const char *const bunker[] = {"A0BaBaBunker", "PillBox1", "PillBox4"};
 	static const char *const flame[] = {"A0BaBaFlameTower", "PillBox5", "Emplacement-Rocket06-IDF"};
 	static const char *const wall[] = {"A0BaBaSandbagWall", "A0HardcreteMk1Wall", "A0BaBaHorizontalWall"};
@@ -563,6 +565,7 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
 	const bool nest = id.rfind("A0BaBaMGNest", 0) == 0;
 	const bool pit = id.rfind("A0BaBaPit", 0) == 0;
 	if (!nest && !pit) { return; }   // nur Kern-Stellungen loesen einen Komplex aus (Graeben/Kisten nicht)
+	if (id.find("Post") != std::string::npos) { return; }   // (17.11. 16:10) einzelnes MG am Graben: kein eigener Komplex
 	const unsigned player = psDroid->player;
 	if (player >= MAX_PLAYERS) { return; }
 	(void)queued;
@@ -587,9 +590,47 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
 		return nullptr;
 	};
 	STRUCTURE_STATS *trench = stat("A0BaBaTrench", "A0BaBaTrenchEarth");
-	STRUCTURE_STATS *pitA = stat(nest ? "A0BaBaPitSquare" : "A0BaBaMGNestSquare", "A0BaBaPitHex");
-	STRUCTURE_STATS *pitB = stat(nest ? "A0BaBaPitHex" : "A0BaBaMGNestHex", "A0BaBaPitSquare");
 	STRUCTURE_STATS *box = stat("A0BaBaAmmoBox", nullptr);
+	// MOD (Wunsch 17.11. 16:10): "Die Sandsackstellungen ... haben ab und zu - je nach Bewaffnung der Infanterie - die Scav-Raketenstellung,
+	// oder die Scav-Panzerabwehrstellung, oder das Scav-MG (mit Schuetze) ... Pro Netzwerk mindestens 2, manchmal 3 Verteidigungswaffen."
+	// Die Gruben des Komplexes sind quadratisch, sechseckig oder rund (Zufall, gameRand in fester Reihenfolge -> auf allen Rechnern gleich).
+	// Bewaffnung nach der Waffe des Bauenden: Raketen -> Raketenstellung, Panzerabwehr (Rakete/Kanone) -> AT-Raketenstellung, sonst MG.
+	// Das MG darf auch ohne Grube direkt neben dem Verbindungsgraben stehen (A0BaBaMGNestPost).
+	enum ModArm { ARM_MG, ARM_ROCKET, ARM_AT };
+	ModArm arm = ARM_MG;
+	if (psDroid->numWeaps > 0 && psDroid->asWeaps[0].nStat > 0)
+	{
+		const WEAPON_STATS &ws = asWeaponStats[psDroid->asWeaps[0].nStat];
+		const bool rocket = ws.weaponSubClass == WSC_ROCKET || ws.weaponSubClass == WSC_MISSILE || ws.weaponSubClass == WSC_SLOWROCKET
+		                    || ws.weaponSubClass == WSC_SLOWMISSILE;
+		if (rocket) { arm = ws.weaponEffect == WE_ANTI_TANK ? ARM_AT : ARM_ROCKET; }
+		else if (ws.weaponSubClass == WSC_CANNON) { arm = ARM_AT; }
+	}
+	static const char *const SHAPE[3] = {"Square", "Hex", "Round"};
+	auto pitStat = [&](int shape, bool armed) -> STRUCTURE_STATS * {
+		std::string n = armed ? (arm == ARM_MG ? std::string("A0BaBaMGNest") + SHAPE[shape]
+		                                       : std::string("A0BaBaPit") + SHAPE[shape] + (arm == ARM_AT ? "AT" : "Rkt"))
+		                      : std::string("A0BaBaPit") + SHAPE[shape];
+		STRUCTURE_STATS *st = stat(n.c_str(), nullptr);
+		if (st == nullptr && armed) { st = stat(arm == ARM_MG ? "A0BaBaMGNestSquare" : (arm == ARM_AT ? "A0BaBaPitSquareAT" : "A0BaBaPitSquareRkt"), "A0BaBaMGNestHex"); }
+		if (st == nullptr) { st = stat("A0BaBaPitSquare", "A0BaBaPitHex"); }
+		return st;
+	};
+	const bool coreArmed = nest || (id.size() > 3 && (id.compare(id.size() - 2, 2, "AT") == 0 || id.compare(id.size() - 3, 3, "Rkt") == 0));
+	const int total = 2 + (gameRand(3) == 0 ? 1 : 0);
+	int need = std::max(0, total - (coreArmed ? 1 : 0));
+	STRUCTURE_STATS *post = nullptr;
+	if (arm == ARM_MG && need > 0 && gameRand(2) == 0)
+	{
+		post = stat("A0BaBaMGNestPost", nullptr);
+		if (post != nullptr) { --need; }
+	}
+	bool armedSlot[3] = {false, false, false};   // links, rechts, hinten
+	if (need >= 2) { armedSlot[0] = armedSlot[1] = true; }
+	else if (need == 1) { armedSlot[gameRand(2)] = true; }
+	if (need >= 3) { armedSlot[2] = true; }
+	STRUCTURE_STATS *slotStat[3];
+	for (int k = 0; k < 3; ++k) { slotStat[k] = pitStat(static_cast<int>(gameRand(3)), armedSlot[k]); }
 	// MOD (Wunsch 16.11. 17:14 + 17:54): Graben-Komplex, dynamisch um Hindernisse herum.
 	//      [A]==[=][=]( K )[=][=]==[B]      vorne (Front)
 	//                  [=]
@@ -674,9 +715,29 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
 		return cells;
 	};
 
-	chain(coreT, { tileAt(-1, 0), tileAt(-2, 0) }, pitA, tileAt(-3, 0));
-	chain(coreT, { tileAt(1, 0), tileAt(2, 0) }, pitB, tileAt(3, 0));
-	const std::vector<Vector2i> back = chain(coreT, { tileAt(0, -1), tileAt(0, -2), tileAt(0, -3), tileAt(1, -3), tileAt(2, -3) }, pitA, tileAt(3, -3));
+	chain(coreT, { tileAt(-1, 0), tileAt(-2, 0) }, slotStat[0], tileAt(-3, 0));
+	chain(coreT, { tileAt(1, 0), tileAt(2, 0) }, slotStat[1], tileAt(3, 0));
+	const std::vector<Vector2i> back = chain(coreT, { tileAt(0, -1), tileAt(0, -2), tileAt(0, -3), tileAt(1, -3), tileAt(2, -3) }, slotStat[2], tileAt(3, -3));
+	// (17.11. 16:10) einzelnes MG mit Schuetze direkt am Verbindungsgraben (seitlich, Wunschfeld neben dem 3. Grabenfeld)
+	if (post != nullptr && !back.empty())
+	{
+		static const int D4[4][2] = { {-1, 0}, {1, 0}, {0, 1}, {0, -1} };
+		bool placed = false;
+		const size_t n = back.size(), start = std::min<size_t>(2, n - 1);
+		for (size_t j = 0; j < n && !placed; ++j)
+		{
+			const Vector2i &t = back[(start + j) % n];
+			for (const auto &d : D4)
+			{
+				const Vector2i cand(t.x + d[0], t.y + d[1]);
+				if (!inWindow(cand) || !freeFor(player, post, cand, dir, used)) { continue; }
+				used.insert(keyOf(cand));
+				issueOne(post, cand);
+				placed = true;
+				break;
+			}
+		}
+	}
 	// Munitionskiste direkt am Verbindungsgraben (Wunschfeld neben dem 2. Grabenfeld, sonst ein freies Nachbarfeld des Grabens)
 	if (box != nullptr)
 	{

@@ -22,6 +22,7 @@
 #include "intimage.h"
 #include "keybind.h"
 #include "modarty.h"
+#include "modauto.h"
 #include "modbuild.h"
 #include "modcover.h"
 #include "moddesigner.h"
@@ -47,7 +48,7 @@ namespace
 {
 // Bilder in images/modrosette.img (Reihenfolge wie rosette.py): 7 Sechsecke (normal, gedrueckt), dann 14 Befehlsknoepfe (normal, gedrueckt)
 enum Hex { H_CENTER = 0, H_PLAN, H_FORMATION, H_FIRE, H_RINGS, H_INFANTRY, H_LAYERS, H_COUNT };
-enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_COUNT };
+enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_AUTO, C_COUNT };
 int hexImg(int h, bool down) { return h * 2 + (down ? 1 : 0); }
 int cmdImg(int c, bool down) { return H_COUNT * 2 + c * 2 + (down ? 1 : 0); }
 
@@ -78,7 +79,7 @@ bool imagesReady()
 		s_tried = true;
 		if (PHYSFS_exists("images/modrosette.img")) { s_img = iV_LoadImageFile("images/modrosette.img"); }
 	}
-	return s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_COUNT - 1, true) + 1);
+	return s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_LEAVE, true) + 1);   // C_AUTO (17.11.) ist optional
 }
 
 void drawImg(int id, int x, int y, int w, int h, unsigned char alpha = 255)
@@ -209,6 +210,26 @@ std::vector<Item> itemsFor(int hex)
 		};
 		arty.isOn = []() { return allSelected(DSO_ARTILLERY, DSS_ARTY_SET); };
 		v.push_back(arty);
+		// (Wunsch 17.11. 15:46) "Fully autonomous": die gewaehlten Einheiten suchen sich selbst Gegner und ziehen sich bei Schaden zurueck
+		Item aut; aut.img = C_AUTO; aut.tip = _("Fully autonomous on/off: idle units hunt the nearest visible enemy on their own and retreat for repairs when badly damaged (your own orders still come first)");
+		aut.action = []() {
+			const std::vector<DROID *> sel = selection();
+			bool any = false, allOn = true;
+			for (DROID *d : sel)
+			{
+				if (!modauto::supported(d)) { continue; }
+				any = true;
+				if (!modauto::isOn(d)) { allOn = false; }
+			}
+			if (!any) { addConsoleMessage(_("Fully autonomous: select armed ground units"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); return; }
+			for (DROID *d : sel)
+			{
+				if (modauto::supported(d)) { secondarySetState(d, gameWorld.objects, DSO_FULLAUTO, allOn ? static_cast<SECONDARY_STATE>(0) : DSS_FULLAUTO_SET); }
+			}
+			addConsoleMessage(allOn ? _("Fully autonomous: off") : _("Fully autonomous: on"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		};
+		aut.isOn = []() { return allSelected(DSO_FULLAUTO, DSS_FULLAUTO_SET); };
+		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_AUTO, true) + 1)) { v.push_back(aut); }   // aelteres Mod-Paket: ohne Bild kein Knopf
 		break;
 	}
 	case H_LAYERS:

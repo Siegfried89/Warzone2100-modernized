@@ -70,8 +70,8 @@ static WZ_SEMAPHORE *dangerSemaphore = nullptr;
 static WZ_SEMAPHORE *dangerDoneSemaphore = nullptr;
 struct floodtile
 {
-	uint8_t x;
-	uint8_t y;
+	uint16_t x;   // MOD: Karten > 256 Felder
+	uint16_t y;
 };
 static struct floodtile *floodbucket = nullptr;
 static int bucketcounter;
@@ -1354,6 +1354,11 @@ LoadingTask<> mapLoadFromWzMapData(ResourceLoadingController& controller, std::s
 	{
 		width *= SPLIT;
 		height *= SPLIT;
+	}
+	if (width > MAP_MAXWIDTH || height > MAP_MAXHEIGHT)   // MOD: Kartendatei hoechstens 512 Original-Kacheln
+	{
+		debug(LOG_ERROR, "Map too large for the fine grid (%u x %u)", width, height);
+		co_return mapLoadFail(mapState);
 	}
 #endif
 
