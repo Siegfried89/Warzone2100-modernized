@@ -41,6 +41,7 @@ struct SCREEN_DISP_DATA
 	float			modAx = 0.f, modAy = 0.f, modBx = 0.f, modBy = 0.f;
 	int				modTopY = 0;
 	bool			modFootValid = false;
+	int				modPickR = 0;          // MOD (17.11.): Anklick-Radius = echte Bildgroesse (screenR ist fuer die Balken begrenzt)
 };
 
 #endif // __INCLUDED_DISPLAYDEF_H__

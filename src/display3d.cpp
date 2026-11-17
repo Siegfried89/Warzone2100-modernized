@@ -4526,6 +4526,28 @@ void calcScreenCoords(DROID *psDroid, const glm::mat4 &perspectiveViewMatrix)
 	}
 	// MOD: einheitliche Balkenlaenge/Auswahlgroesse, unabhaengig von Modellgroesse und Zoom (leicht anklickbar, Balken immer kurz)
 	psDroid->sDisplay.screenR = static_cast<UDWORD>(std::min(16.0f, std::max(9.0f, static_cast<float>(radius))));
+	// MOD (Wunsch 17.11.): grosse Einheiten (Anhaenger, Feuerwehr, schwere Panzer) mit ihrer echten Bildgroesse anklickbar
+	psDroid->sDisplay.modPickR = static_cast<int>(std::min(180.0f, std::max(9.0f, static_cast<float>(radius))));
+}
+
+// MOD (Wunsch 17.11. "select hitbox bei groesseren Einheiten sehr klein"): Trefferflaeche = Kasten um den Mittelpunkt mit der echten
+// Bildgroesse, erweitert bis zur Modell-Oberkante und ueber den Bodenring (auch in der Seitenansicht gut zu treffen)
+bool modDroidHit(const DROID *psDroid, int mx, int my)
+{
+	const SCREEN_DISP_DATA &s = psDroid->sDisplay;
+	const int r = std::max(static_cast<int>(s.screenR), s.modPickR);
+	const int cx = static_cast<int>(s.screenX), cy = static_cast<int>(s.screenY);
+	int x0 = cx - r, x1 = cx + r, y0 = cy - r, y1 = cy + r;
+	if (s.modFootValid)
+	{
+		const int ex = static_cast<int>((std::abs(s.modAx) + std::abs(s.modBx)) * 0.7f);
+		const int ey = static_cast<int>((std::abs(s.modAy) + std::abs(s.modBy)) * 0.7f);
+		x0 = std::min(x0, s.modFootX - ex);
+		x1 = std::max(x1, s.modFootX + ex);
+		y0 = std::min({y0, s.modTopY, s.modFootY - ey});
+		y1 = std::max(y1, s.modFootY + ey);
+	}
+	return mx >= x0 && mx <= x1 && my >= y0 && my <= y1;
 }
 
 void screenCoordToWorld(Vector2i screenCoord, Vector2i &worldCoord, SDWORD &tileX, SDWORD &tileY)
