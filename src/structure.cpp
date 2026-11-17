@@ -103,6 +103,7 @@
 #include <unordered_map>
 #include "modgrid.h"
 #include "modsat.h"
+#include "modnuke.h"
 #include "modrocket.h"
 
 //Maximium slope of the terrain for building a structure
@@ -4348,7 +4349,7 @@ int modBuildCategory(const STRUCTURE_STATS *st)
 	case REF_WALL: case REF_WALLCORNER: case REF_GATE: return has("Pipeline") ? 0 : 3;
 	default: break;
 	}
-	if (has("Refinery") || has("Pipeline") || has("PowerPole") || has("Substation") || has("EnergyBank") || has("Solar") || has("OilStore") || has("Storage") || has("WaterTower") || has("NuclearPlant") || has("UraniumMine")) { return 0; }
+	if (has("Refinery") || has("Pipeline") || has("PowerPole") || has("Substation") || has("EnergyBank") || has("Solar") || has("OilStore") || has("Storage") || has("WaterTower") || has("NuclearPlant") || has("UraniumMine") || has("HydroPlant")) { return 0; }
 	if (has("Cryo") || has("Crane") || has("LayerShaft") || has("Gantry") || has("Assembly") || has("Factory") || has("Research")) { return 1; }
 	if (has("Ammo") || has("Container") || has("Outpost") || has("ATC") || has("Beacon") || has("Relay") || has("Radar") || has("Uplink") || has("RocketSilo") || has("LaserSatellite")) { return 2; }
 	if (has("Trench") || has("Sandbag") || has("Hedgehog") || has("TankTrap") || has("DragonTeeth") || has("Wall")) { return 3; }
@@ -4582,7 +4583,7 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 				else if (id.find("Substation") != std::string::npos) { eco = 6; }   // (20:35) Umspannwerk direkt nach dem Kraftwerk
 				else if (id.find("PowerPole") != std::string::npos) { eco = 7; }
 				else if (id.find("Solar") != std::string::npos) { eco = 8; }
-				else if (id.find("NuclearPlant") != std::string::npos || id.find("UraniumMine") != std::string::npos) { eco = 9; }   // (21:13) Tier 3 nach Solar
+				else if (id.find("NuclearPlant") != std::string::npos || id.find("UraniumMine") != std::string::npos || id.find("HydroPlant") != std::string::npos) { eco = 9; }   // (21:13) Tier 3 nach Solar
 				else { eco = 10; }
 			}
 			return cat * 100 + eco * 2 + (scav ? 0 : 1);
@@ -4703,6 +4704,10 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 		STRUCTURE const *psSilo = getTileStructure(world.map, map_coord(pos.x), map_coord(pos.y));
 		return psSilo != nullptr && modrocket::isSilo(psSilo->pStructureType) && psSilo->status == SS_BUILT && psSilo->player == player
 		       && nextModuleToBuild(psSilo, -1) > 0;
+	}
+	if (psBuilding != nullptr && modnuke::isHydro(psBuilding) && !modnuke::waterNear(world.map, b.map.x, b.map.y, b.size.x, b.size.y))
+	{
+		return false;   // MOD (22:42): Wasserkraftwerk nur am Wasser
 	}
 	if (psBuilding != nullptr && modsat::isSatellite(psBuilding) && &world == &gameWorld && modlayermap::resident() != modlayer::ORBIT)
 	{

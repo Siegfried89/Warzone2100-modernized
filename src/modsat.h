@@ -35,7 +35,7 @@ int moduleStatIndex();
 /// die Rakete mit dem Satelliten ist oben angekommen
 void addSatellite(int player);
 /// (21:55) der Laser wurde abgefeuert: die Satelliten des Spielers gluehen am Orbit-Himmel (Linsenring)
-void fired(int player);
+void fired(int player, int targetX, int targetY);
 /// jeden Spielschritt aus der Spielschleife (nach modrocket::tick)
 void tick();
 /// Start von der Orbit-Insel, Satelliten am Orbit-Himmel

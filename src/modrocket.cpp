@@ -47,8 +47,8 @@ constexpr unsigned COUNTDOWN_MS = 8000;
 // (Wunsch 17.11. 22:13) Ankunft im Orbit: die Rakete taucht aus der verschwommenen Planetenebene auf, wirft gleich die Boosterstufe ab
 // (faellt nach unten weg), gleitet langsam fast bis an die Insel, die Spitze oeffnet sich und die Pioniere schweben hinauf auf die Insel.
 constexpr unsigned ARRIVE_START_MS = 5000;   // Beginn der Ankunft (nach dem Start an der Oberflaeche)
-constexpr unsigned EMERGE_MS = 2500;         // Auftauchen bis zur Boostertrennung
-constexpr unsigned GLIDE_MS = 8500;          // langsames Heranschweben an die Insel
+constexpr unsigned EMERGE_MS = 7000;         // (22:42) "taucht sehr langsam auf, fast realistisch langsam, dauert einige Sekunden"
+constexpr unsigned GLIDE_MS = 9000;          // langsames Heranschweben an die Insel
 constexpr unsigned NOSE_MS = 1500;           // Spitze oeffnet sich
 constexpr unsigned EXIT_MS = 1000;           // dann steigen die Pioniere aus (bzw. der Satellit schwebt hinaus)
 constexpr unsigned SINK_MS = 6000;           // leere Rakete sinkt zurueck in die Tiefe

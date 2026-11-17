@@ -217,6 +217,71 @@ void placeLandfills(GameWorld &world)
 	debug(LOG_INFO, "MOD: %d Landfill-Kulissen verteilt", placed);
 }
 
+/// (Wunsch 17.11. 21:53/22:42) Schlachtfeld-Deko wie im WZ-Intro: kleine Gruppen aus Strassenlaternen-Reihen bzw. schraegem Wrack mit
+/// Truemmern, abseits von Basen und Oelquellen (nur Gefecht/Mehrspieler, deterministisch ueber gameRand)
+void placeIntroDeco(GameWorld &world)
+{
+	FEATURE_STATS *lamp = nullptr, *wreck = nullptr, *rubble = nullptr;
+	for (FEATURE_STATS &fs : asFeatureStats)
+	{
+		if (fs.id.compare("IntroDecoLamp") == 0) { lamp = &fs; }
+		else if (fs.id.compare("IntroDecoWreck") == 0) { wreck = &fs; }
+		else if (fs.id.compare("IntroDecoRubble") == 0) { rubble = &fs; }
+	}
+	if (lamp == nullptr || rubble == nullptr) { return; }
+	for (const FEATURE *f : world.objects.features[0])
+	{
+		if (f->psStats != nullptr && f->psStats->id.startsWith("IntroDeco")) { return; }   // Spielstand hat sie schon
+	}
+	const int w = world.map.width, h = world.map.height;
+	if (w < 32 || h < 32) { return; }
+	const int groups = std::clamp(w * h / 2500, 3, 14);
+	std::vector<Vector2i> done;
+	int placed = 0;
+	auto freeHere = [&](int tx, int ty) -> bool {
+		if (tx < 4 || ty < 4 || tx >= w - 4 || ty >= h - 4 || !flatFree(world.map, tx, ty, 1, 1)) { return false; }
+		const int wx = world_coord(tx) + TILE_UNITS / 2, wy = world_coord(ty) + TILE_UNITS / 2;
+		if (nearAnyStructure(world, wx, wy)) { return false; }
+		for (const FEATURE *f : world.objects.features[0])
+		{
+			if (f->psStats != nullptr && f->psStats->subType == FEAT_OIL_RESOURCE && iHypot(f->pos.x - wx, f->pos.y - wy) < 5 * DIST_TILE) { return false; }
+		}
+		return true;
+	};
+	auto put = [&](FEATURE_STATS *fs, int tx, int ty) {
+		if (fs == nullptr || !freeHere(tx, ty)) { return; }
+		if (buildFeature(world, fs, static_cast<UDWORD>(world_coord(tx) + TILE_UNITS / 2), static_cast<UDWORD>(world_coord(ty) + TILE_UNITS / 2), false) != nullptr) { placed++; }
+	};
+	for (int g = 0, attempt = 0; g < groups && attempt < groups * 60; ++attempt)
+	{
+		const int tx = 6 + static_cast<int>(gameRand(static_cast<uint32_t>(w - 12)));
+		const int ty = 6 + static_cast<int>(gameRand(static_cast<uint32_t>(h - 12)));
+		if (!freeHere(tx, ty)) { continue; }
+		const int wx = world_coord(tx), wy = world_coord(ty);
+		bool clash = false;
+		for (const Vector2i &o : done) { if (iHypot(o.x - wx, o.y - wy) < 12 * DIST_TILE) { clash = true; break; } }
+		if (clash) { continue; }
+		done.push_back(Vector2i(wx, wy));
+		++g;
+		if (gameRand(2) == 0)
+		{
+			// Laternenreihe (wie am Rand der Intro-Strasse): 3-4 Laternen im Abstand von 3 Feldern
+			const bool alongX = gameRand(2) == 0;
+			const int n = 3 + static_cast<int>(gameRand(2));
+			for (int k = 0; k < n; ++k) { put(lamp, tx + (alongX ? k * 3 : 0), ty + (alongX ? 0 : k * 3)); }
+		}
+		else
+		{
+			// schraeges Wrack mit Truemmern drumherum
+			put(wreck != nullptr ? wreck : rubble, tx, ty);
+			put(rubble, tx + 1, ty + 1);
+			put(rubble, tx - 1, ty + 2);
+			if (gameRand(2) == 0) { put(lamp, tx + 3, ty - 1); }
+		}
+	}
+	debug(LOG_INFO, "MOD: Intro-Deko: %d Teile in %d Gruppen verteilt", placed, static_cast<int>(done.size()));
+}
+
 FEATURE *nearestLava(GameWorld &world, const DROID *d)
 {
 	FEATURE *best = nullptr;
@@ -295,7 +360,7 @@ void tick(GameWorld &world)
 	if (!s_landfill && gameTime >= 3000)
 	{
 		s_landfill = true;
-		if (game.type != LEVEL_TYPE::CAMPAIGN) { placeLandfills(world); }
+		if (game.type != LEVEL_TYPE::CAMPAIGN) { placeLandfills(world); placeIntroDeco(world); }
 	}
 
 	// Untergrund-Lavafelder: beim ersten fertigen Schacht

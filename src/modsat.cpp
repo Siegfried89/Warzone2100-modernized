@@ -43,6 +43,11 @@ constexpr unsigned SHOW_RISE_MS = 4000;         // so lange sieht man ihn aufste
 
 int s_sats[MAX_PLAYERS] = {};
 unsigned s_firedAt[MAX_PLAYERS] = {};       // Spielzeit des letzten Laserschusses (nur fuer die Anzeige)
+struct Beam { int x, y; unsigned t0; };
+std::vector<Beam> s_beams;                   // (22:42) gruener Laserstrahl vom Himmel am Einschlagort (nur Anzeige)
+// (22:42) rote blinkende Lichter am Satelliten (Modellpunkte, Satellitenmitte = Ursprung, wie satellite.py)
+const glm::vec4 BLINK_PTS[] = {{-17.f, 30.f, -15.5f, 1.f}, {17.f, 30.f, -15.5f, 1.f}, {-17.f, 30.f, 15.5f, 1.f}, {17.f, 30.f, 15.5f, 1.f},
+                               {-66.f, 31.5f, 0.f, 1.f}, {66.f, 31.5f, 0.f, 1.f}, {0.f, 26.f, 62.f, 1.f}};
 std::set<uint32_t> s_remove;                    // eingeladene / gestartete Satelliten-Bauwerke (im naechsten Schritt entfernen)
 std::map<uint32_t, unsigned> s_launchAt;        // Satellit auf der Orbit-Insel -> Startzeit
 std::set<uint32_t> s_told;
@@ -131,9 +136,10 @@ void addSatellite(int player)
 	}
 }
 
-void fired(int player)
+void fired(int player, int targetX, int targetY)
 {
 	if (player >= 0 && player < MAX_PLAYERS) { s_firedAt[player] = std::max(1u, gameTime); }
+	s_beams.push_back({targetX, targetY, gameTime + 3800});   // der Strahl kommt mit dem Countdown (4 s) herunter
 }
 
 void tick()
@@ -184,19 +190,88 @@ void tick()
 	}
 }
 
+namespace
+{
+const iIMDBaseShape *s_glowShape = nullptr, *s_beamShape = nullptr;
+
+/// rote Blinklichter an einem Satelliten (m = Satellitenmitte), versetzt blinkend
+void drawBlink(const glm::mat4 &m, const glm::mat4 &viewMatrix, unsigned seed, float scale)
+{
+	if (s_glowShape == nullptr) { return; }
+	const glm::mat4 bill(glm::transpose(glm::mat3(viewMatrix)));
+	for (size_t i = 0; i < sizeof(BLINK_PTS) / sizeof(BLINK_PTS[0]); ++i)
+	{
+		const unsigned ph = (graphicsTime + seed * 337u + static_cast<unsigned>(i) * 171u) % 1300u;
+		if (ph > 360u) { continue; }   // kurz an, lange aus
+		const glm::vec3 wp = glm::vec3(m * BLINK_PTS[i]);
+		const glm::mat4 gm = glm::translate(glm::mat4(1.f), wp) * glm::mat4(bill) * glm::scale(glm::mat4(1.f), glm::vec3(0.55f * scale));
+		pie_Draw3DShape(s_glowShape->displayModel(), 0, 0, pal_RGBA(255, 30, 20, 255), pie_ADDITIVE, 240, gm, viewMatrix, 0.f, true);
+	}
+}
+
+/// gruener Laserstrahl vom Himmel (senkrechter Leuchtzylinder, additiv)
+void drawBeams(const glm::mat4 &viewMatrix)
+{
+	for (auto it = s_beams.begin(); it != s_beams.end();)
+	{
+		const int el = static_cast<int>(graphicsTime) - static_cast<int>(it->t0);
+		if (el > 1800) { it = s_beams.erase(it); continue; }
+		if (el >= 0 && s_beamShape != nullptr)
+		{
+			const float k = el < 250 ? static_cast<float>(el) / 250.f : 1.f - static_cast<float>(el - 250) / 1550.f;
+			const float ground = static_cast<float>(map_Height(gameWorld.map, it->x, it->y));
+			for (int layer = 0; layer < 2; ++layer)
+			{
+				const float rad = (layer == 0 ? 34.f : 14.f) * (0.7f + 0.3f * k);
+				const glm::mat4 bm = glm::translate(glm::mat4(1.f), glm::vec3(static_cast<float>(it->x), ground, static_cast<float>(-it->y)))
+				                     * glm::scale(glm::mat4(1.f), glm::vec3(rad, 2600.f, rad));
+				pie_Draw3DShape(s_beamShape->displayModel(), 0, 0, layer == 0 ? pal_RGBA(60, 255, 110, 255) : pal_RGBA(230, 255, 235, 255), pie_ADDITIVE,
+				                static_cast<int>((layer == 0 ? 150.f : 230.f) * k), bm, viewMatrix, 0.f, true);
+			}
+			LIGHT lt;
+			lt.position = Vector3i(it->x, static_cast<int>(ground) + 60, it->y);
+			lt.range = 1100;
+			lt.colour = pal_Colour(60, 255, 110);
+			lt.intensity = 3.5f * k;
+			getCurrentLightingData().lights.push_back(lt);
+		}
+		++it;
+	}
+}
+}
+
 void draw3D(const glm::mat4 &viewMatrix)
 {
 	const modlayer::Layer view = modlayer::current();
-	if (view != modlayer::ORBIT) { return; }
 	static const iIMDBaseShape *s_model = nullptr;
 	static bool s_tried = false;
 	if (!s_tried)
 	{
 		s_tried = true;
 		s_model = modelGet(WzString::fromUtf8("modsatellite.pie"));
+		s_glowShape = modelGet(WzString::fromUtf8("modnightlight.pie"));
+		s_beamShape = modelGet(WzString::fromUtf8("modlaserbeam.pie"));
 	}
+	if (view == modlayer::SURFACE) { drawBeams(viewMatrix); }
+	// Satelliten als Bauwerk (Orbit-Insel) und als Modul am Raketensilo blinken rot
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s->died || s->status != SS_BUILT || modlayer::layerOf(s) != view || !s->visibleForLocalDisplay()) { continue; }
+			const bool sat = isSatellite(s->pStructureType);
+			const bool silo = !sat && s->capacity > 0 && moduleStatIndex() >= 0 && s->pStructureType->id.startsWith("A0RocketSilo");
+			if (!sat && !silo) { continue; }
+			const glm::mat4 sm = glm::translate(glm::mat4(1.f), glm::vec3(static_cast<float>(s->pos.x), static_cast<float>(s->pos.z), static_cast<float>(-s->pos.y)))
+			                     * glm::rotate(glm::mat4(1.f), UNDEG(-s->rot.direction), glm::vec3(0.f, 1.f, 0.f));
+			const glm::mat4 m = sat ? sm * glm::translate(glm::mat4(1.f), glm::vec3(0.f, 50.f, 0.f))
+			                        : sm * glm::translate(glm::mat4(1.f), glm::vec3(36.f, 85.4f, 36.f)) * glm::scale(glm::mat4(1.f), glm::vec3(0.6f));
+			drawBlink(m, viewMatrix, s->id, sat ? 1.f : 0.7f);
+		}
+	}
+	if (view != modlayer::ORBIT) { return; }
 	if (s_model == nullptr) { return; }
-	static const iIMDBaseShape *s_glow = modelGet(WzString::fromUtf8("modnightlight.pie"));
+	const iIMDBaseShape *s_glow = s_glowShape;
 	const iIMDShape *shape = s_model->displayModel();
 	static unsigned s_nextPuff = 0;
 	const bool puff = graphicsTime >= s_nextPuff;
@@ -250,6 +325,7 @@ void draw3D(const glm::mat4 &viewMatrix)
 			const glm::mat4 m = glm::translate(glm::mat4(1.f), pos) * glm::rotate(glm::mat4(1.f), -a, glm::vec3(0.f, 1.f, 0.f))
 			                    * glm::scale(glm::mat4(1.f), glm::vec3(1.8f));
 			pie_Draw3DShape(shape, 0, getPlayerColour(p), WZCOL_WHITE, 0, 0, m, viewMatrix, 0.f);
+			drawBlink(m, viewMatrix, static_cast<unsigned>(k + 1), 1.8f);
 			// (21:55) feuernder Satellit: die 10 Linsen des Emitterrings gluehen rosa-rot, rotes Licht
 			const unsigned since = gameTime - s_firedAt[p];
 			if (s_firedAt[p] != 0 && since < 5000u && s_glow != nullptr)
@@ -280,6 +356,7 @@ void reset()
 {
 	std::fill(std::begin(s_sats), std::end(s_sats), 0);
 	std::fill(std::begin(s_firedAt), std::end(s_firedAt), 0u);
+	s_beams.clear();
 	s_remove.clear();
 	s_launchAt.clear();
 	s_told.clear();

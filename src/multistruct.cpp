@@ -279,7 +279,7 @@ bool recvLasSat(NETQUEUE queue)
 		proj_SendProjectile(&psStruct->asWeaps[0], nullptr, player, psObj->pos, psObj, true, 0);
 		psStruct->asWeaps[0].lastFired = gameTime;
 		psStruct->asWeaps[0].ammo = 1; // abducting this field for keeping track of triggers
-		modsat::fired(player);   // MOD (21:55): Linsenring der Satelliten glueht
+		modsat::fired(player, psObj->pos.x, psObj->pos.y);   // MOD (21:55/22:42): Linsenring glueht, gruener Strahl vom Himmel
 
 		// Play 5 second countdown message
 		audio_QueueTrackPos(ID_SOUND_LAS_SAT_COUNTDOWN, psObj->pos.x, psObj->pos.y, psObj->pos.z);

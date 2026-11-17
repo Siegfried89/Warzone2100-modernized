@@ -121,6 +121,7 @@
 #include "modvoice.h"
 #include "moddesigner.h"
 #include "modfleetdesigner.h"
+#include "modunitstats.h"
 #include "qtscript.h"
 #include "chat.h"
 #include "radar.h"
@@ -753,6 +754,7 @@ void interfaceShutDown()
 	modpaint::shutdown();    // MOD
 	modbigmap::shutdown();   // MOD (17.11.): strategische Karte
 	modrosette::shutdown();  // MOD (17.11.)
+	modunitstats::shutdown(); // MOD (17.11. 22:42)
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
@@ -1242,6 +1244,7 @@ INT_RETVAL intRunWidgets()
 	modpaint::tick();      // MOD: Schlachtplan (Frei malen)
 	modbigmap::tick();     // MOD (17.11.): strategische Karte, Knoepfe an der Minikarte
 	modrosette::tick();    // MOD (17.11.): Mod-Rosette im WZ-Stil
+	modunitstats::tick();  // MOD (17.11. 22:42): Werteleiste der gewaehlten Einheit
 	moddesigner::tick();   // MOD: Combot-Designer
 	modfleetdesigner::tick();   // MOD (17.11. 21:48): Einheiteneditor aus dem Flotten-Menue
 
