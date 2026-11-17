@@ -11,6 +11,12 @@
 #include "modfuel.h"
 #include "modoil.h"
 #include "modterrain.h"
+#include "modwreck.h"
+#include "modrecover.h"
+#include "featuredef.h"
+#include "feature.h"
+#include "game_world.h"
+#include "stats.h"
 
 #include <vector>
 
@@ -19,6 +25,78 @@ namespace modsave
 namespace
 {
 std::string s_pending;
+
+// (17.11.) Bauplan eines Wracks als Namen (robust gegen geaenderte Datenreihenfolge)
+const COMPONENT_STATS *compStats(int type, uint32_t idx)
+{
+	switch (type)
+	{
+	case COMP_BODY: return idx < asBodyStats.size() ? &asBodyStats[idx] : nullptr;
+	case COMP_BRAIN: return idx < asBrainStats.size() ? &asBrainStats[idx] : nullptr;
+	case COMP_PROPULSION: return idx < asPropulsionStats.size() ? &asPropulsionStats[idx] : nullptr;
+	case COMP_REPAIRUNIT: return idx < asRepairStats.size() ? &asRepairStats[idx] : nullptr;
+	case COMP_ECM: return idx < asECMStats.size() ? &asECMStats[idx] : nullptr;
+	case COMP_SENSOR: return idx < asSensorStats.size() ? &asSensorStats[idx] : nullptr;
+	case COMP_CONSTRUCT: return idx < asConstructStats.size() ? &asConstructStats[idx] : nullptr;
+	case COMP_WEAPON: return idx < asWeaponStats.size() ? &asWeaponStats[idx] : nullptr;
+	default: return nullptr;
+	}
+}
+
+nlohmann::json infoToJson(const modwreck::WreckInfo &in)
+{
+	nlohmann::json j = nlohmann::json::object();
+	j["type"] = in.droidType;
+	nlohmann::json parts = nlohmann::json::array();
+	for (int c = 0; c < DROID_MAXCOMP; ++c)
+	{
+		const COMPONENT_STATS *s = compStats(c, in.parts[c]);
+		parts.push_back(s != nullptr ? s->id.toUtf8() : std::string());
+	}
+	j["parts"] = parts;
+	nlohmann::json weaps = nlohmann::json::array();
+	for (unsigned i = 0; i < in.numWeaps && i < MAX_WEAPONS; ++i)
+	{
+		const COMPONENT_STATS *s = compStats(COMP_WEAPON, in.weaps[i]);
+		weaps.push_back(s != nullptr ? s->id.toUtf8() : std::string());
+	}
+	j["weapons"] = weaps;
+	j["model"] = in.stats != nullptr ? in.stats->id.toUtf8() : std::string();
+	return j;
+}
+
+bool infoFromJson(const nlohmann::json &j, modwreck::WreckInfo &out)
+{
+	if (!j.is_object()) { return false; }
+	out = modwreck::WreckInfo();
+	out.droidType = static_cast<uint8_t>(j.value("type", 0));
+	const auto parts = j.find("parts");
+	if (parts == j.end() || !parts->is_array()) { return false; }
+	for (int c = 0; c < DROID_MAXCOMP && c < static_cast<int>(parts->size()); ++c)
+	{
+		const std::string nm = (*parts)[c].is_string() ? (*parts)[c].get<std::string>() : std::string();
+		const int idx = nm.empty() ? 0 : getCompFromName(static_cast<COMPONENT_TYPE>(c), WzString::fromUtf8(nm));
+		out.parts[c] = static_cast<uint32_t>(std::max(0, idx));
+	}
+	if (out.parts[COMP_BODY] == 0 && parts->size() > 0 && (*parts)[0].is_string() && !(*parts)[0].get<std::string>().empty())
+	{
+		const int idx = getCompFromName(COMP_BODY, WzString::fromUtf8((*parts)[0].get<std::string>()));
+		if (idx < 0) { return false; }   // Rumpf gibt es nicht mehr
+	}
+	const auto weaps = j.find("weapons");
+	if (weaps != j.end() && weaps->is_array())
+	{
+		for (const auto &w : *weaps)
+		{
+			if (out.numWeaps >= MAX_WEAPONS || !w.is_string()) { break; }
+			const int idx = getCompFromName(COMP_WEAPON, WzString::fromUtf8(w.get<std::string>()));
+			if (idx > 0) { out.weaps[out.numWeaps++] = static_cast<uint32_t>(idx); }
+		}
+	}
+	const std::string model = j.value("model", std::string());
+	for (const FEATURE_STATS &fs : asFeatureStats) { if (fs.id.toUtf8() == model) { out.stats = &fs; break; } }
+	return true;
+}
 
 template<typename T> void readArray(const nlohmann::json &j, const char *key, std::vector<T> &out)
 {
@@ -46,6 +124,26 @@ void write(const std::string &folder)
 		j["craters"] = terrain;
 		j["fuel"] = fuel;
 		j["oil"] = oil;
+		// (17.11.) Wracks (Alter, Lage, Bauplan) und Abschlepp-Lkw mit Ladung - nach dem Laden bergbar
+		nlohmann::json wr = nlohmann::json::array();
+		for (const modwreck::SavedWreck &w : modwreck::saveState())
+		{
+			nlohmann::json e = nlohmann::json::object();
+			e["id"] = w.featureId; e["age"] = w.age; e["x"] = w.xe; e["y"] = w.ye;
+			e["hh"] = w.halfH; e["hw"] = w.halfW; e["roll"] = w.rollTotal;
+			if (w.hasInfo) { e["info"] = infoToJson(w.info); }
+			wr.push_back(e);
+		}
+		j["wrecks"] = wr;
+		nlohmann::json tw = nlohmann::json::array();
+		for (const auto &t : modrecover::saveTows())
+		{
+			nlohmann::json e = nlohmann::json::object();
+			e["droid"] = t.first;
+			e["info"] = infoToJson(t.second);
+			tw.push_back(e);
+		}
+		j["tows"] = tw;
 		const std::string path = folder + "/modstate.json";
 		const std::string text = j.dump();
 		if (!saveFile(path.c_str(), text.c_str(), text.size()))
@@ -82,6 +180,36 @@ void applyPending()
 		modterrain::loadState(terrain);
 		modfuel::loadState(fuel);
 		modoil::loadState(oil);
+		std::vector<modwreck::SavedWreck> wrecks;
+		const auto wr = j->find("wrecks");
+		if (wr != j->end() && wr->is_array())
+		{
+			for (const auto &e : *wr)
+			{
+				if (!e.is_object()) { continue; }
+				modwreck::SavedWreck w;
+				w.featureId = e.value("id", 0u);
+				w.age = e.value("age", 0u);
+				w.xe = e.value("x", 0); w.ye = e.value("y", 0);
+				w.halfH = e.value("hh", 12); w.halfW = e.value("hw", 12); w.rollTotal = e.value("roll", 90);
+				const auto in = e.find("info");
+				w.hasInfo = in != e.end() && infoFromJson(*in, w.info);
+				wrecks.push_back(w);
+			}
+		}
+		modwreck::loadState(wrecks, gameWorld);
+		std::vector<std::pair<uint32_t, modwreck::WreckInfo>> tows;
+		const auto tw = j->find("tows");
+		if (tw != j->end() && tw->is_array())
+		{
+			for (const auto &e : *tw)
+			{
+				modwreck::WreckInfo info;
+				const auto in = e.is_object() ? e.find("info") : e.end();
+				if (e.is_object() && in != e.end() && infoFromJson(*in, info)) { tows.emplace_back(e.value("droid", 0u), info); }
+			}
+		}
+		modrecover::loadTows(tows);
 		debug(LOG_INFO, "MOD: Mod-Zustand geladen (%zu Krater, %zu Tankfuellungen)", terrain.size() / 6, fuel.size() / 2);
 	}
 	catch (const std::exception &e)

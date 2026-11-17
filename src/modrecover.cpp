@@ -203,6 +203,31 @@ bool isTowable(const FEATURE *psFeature)
 	return modwreck::wreckInfo(psFeature, info);
 }
 
+std::vector<std::pair<uint32_t, modwreck::WreckInfo>> saveTows()
+{
+	std::vector<std::pair<uint32_t, modwreck::WreckInfo>> out;
+	for (const auto &kv : s_tow) { out.emplace_back(kv.first, kv.second.info); }
+	return out;
+}
+
+void loadTows(const std::vector<std::pair<uint32_t, modwreck::WreckInfo>> &tows)
+{
+	for (const auto &t : tows)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			DROID *d = IdToDroid(gameWorld.objects, t.first, p);
+			if (d == nullptr || d->died) { continue; }
+			Tow tw;
+			tw.player = static_cast<uint8_t>(p);
+			tw.info = t.second;
+			tw.nextOrder = gameTime + 2000;
+			s_tow[d->id] = tw;
+			break;
+		}
+	}
+}
+
 bool carrying(const DROID *psDroid)
 {
 	return psDroid != nullptr && (s_carry.count(psDroid->id) != 0 || s_tow.count(psDroid->id) != 0);

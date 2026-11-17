@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
+#include <vector>
 
 struct DROID;
 struct FEATURE;
@@ -41,4 +42,16 @@ struct WreckInfo
 bool wreckInfo(const FEATURE *f, WreckInfo &out);
 /// Wrack wird aufgeladen: Bauplan holen, Kachel-Sperre aufheben, Feature entfernen. false = kein bergbares Wrack
 bool takeWreck(FEATURE *f, GameWorld &world, WreckInfo &out);
+
+/// (17.11.) Spielstand (modsave): Wracks mit Alter, Lage und Bauplan; nach dem Laden laufen Lebensdauer/Qualm weiter und sie bleiben bergbar
+struct SavedWreck
+{
+	uint32_t featureId = 0;
+	unsigned age = 0;
+	int xe = 0, ye = 0, halfH = 12, halfW = 12, rollTotal = 90;
+	bool hasInfo = false;
+	WreckInfo info;
+};
+std::vector<SavedWreck> saveState();
+void loadState(const std::vector<SavedWreck> &wrecks, GameWorld &world);
 }
