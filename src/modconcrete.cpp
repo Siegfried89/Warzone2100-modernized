@@ -82,13 +82,19 @@ bool wants(const STRUCTURE *psStruct)
 	case REF_CYBORG_FACTORY:
 	case REF_VTOL_FACTORY:
 	case REF_POWER_GEN:
+	case REF_HQ:                 // (Wunsch 17.11. 22:13) "grundsaetzlich alles, was auf Beton steht" - die grossen Basisgebaeude
+	case REF_RESEARCH:
+	case REF_REPAIR_FACILITY:
+	case REF_COMMAND_CONTROL:
+	case REF_SAT_UPLINK:
+	case REF_LASSAT:
 		return true;
 	default:
 		break;
 	}
 	const WzString &id = psStruct->pStructureType->id;
 	return id.compare("A0BaBaATC") == 0 || id.compare("A0BaBaCrane") == 0 || id.compare("A0BaBaRefinery") == 0
-	       || id.startsWith("A0NuclearPlant");   // (Wunsch 17.11. 21:34) Atomkraftwerk auf Beton mit weich auslaufendem Rand
+	       || id.startsWith("A0NuclearPlant") || id.startsWith("A0RocketSilo") || id.startsWith("A0Substation");   // (Wunsch 17.11. 21:34) Atomkraftwerk auf Beton mit weich auslaufendem Rand
 }
 
 int overrideTexture(WorldMapState &m, int x, int y, bool classic)
