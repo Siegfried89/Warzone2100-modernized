@@ -27,4 +27,9 @@ bool isPoweredDown(const STRUCTURE *psStruct);
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
 /// beim Spielende / Ladevorgang
 void reset();
+/// (Wunsch 17.11. 20:35) Umspannwerk (Kennung beginnt mit "A0Substation"): zentraler Knoten - gespeist von Solarpaneelen und/oder
+/// Kraftwerken ueber die Masten; ab dem ersten Umspannwerk laufen nur Gebaeude im Netz eines gespeisten Umspannwerks
+bool isSubstation(const STRUCTURE_STATS *psStats);
+/// Kraftwerk in Bereitschaft: der Solarstrom seines Netzes reicht, es verbraucht kein Oel (das Oel geht an die Tankstellen)
+bool generatorStandby(const STRUCTURE *psGen);
 }

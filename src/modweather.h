@@ -4,8 +4,8 @@
 //  - Sandsturm: waagerechte Sandschlieren dicht ueber dem Boden, ockerfarbener Dunst und Himmel (Wuestenkarten)
 //  - Schneesturm: dichter, schraeger Schnee, weisser Dunst (Schneekarten); Regen und Schnee wie bisher bei ruhigem Wetter
 //  - ziehende Wolken: der Himmel dreht sich bei Unwetter schneller; passende umgefaerbte Himmelstexturen (page-436..439)
-//  - Nacht: setzt eine Karte/ein Skript einen "...sky-night.png"-Himmel, wird die Landschaft entsprechend abgedunkelt; (20:21) dazu die
-//    Einstellung "Tageszeit" (Tag / Nacht / zufaellig) mit dem Sternenhimmel aus dem Nighttime-Mod
+//  - Nacht: setzt eine Karte/ein Skript einen "...sky-night.png"-Himmel, wird die Landschaft entsprechend abgedunkelt; (20:36) dazu ein
+//    Tag/Nacht-Wechsel (70 % Tag, 30 % Nacht, Sternenhimmel aus dem Nighttime-Mod)
 // Das Wetter wechselt zufaellig (ruhige Phasen und Unwetter mit weichen Uebergaengen). Karten mit Skript-Wetter (Regen/Schnee) bekommen
 // zusaetzlich Gewitter bzw. Schneesturm. Wird die Wettereinstellung des Spielers ausgeschaltet, bleibt alles still.
 #pragma once
@@ -22,7 +22,11 @@ void onSkybox(const char *page);
 const char *baseSkyPage(const char *current);
 /// bei neuem Spiel / Laden
 void reset();
-/// (17.11. 20:21) Einstellung Tageszeit: 0 Tag (wie die Karte), 1 Nacht, 2 zufaellig (etwa jedes dritte Spiel bei Nacht)
-void setNightOption(int opt);
-int nightOption();
+/// (17.11. 20:36) Tag/Nacht-Wechsel: 20 Minuten Spielzeit je Tag, davon 30 % Nacht, Daemmerung 1 Minute. Reine Funktionen der Spielzeit
+/// (auf allen Rechnern gleich). 0 = Tag, 1 = Nacht (Anzeige mit weicher Daemmerung)
+float nightFactor(unsigned gameTimeMs);
+/// ist es Nacht? (Spiellogik: Solarpaneele an der Oberflaeche liefern nachts nichts)
+bool isNight(unsigned gameTimeMs);
+/// wie dunkel ist es gerade sichtbar (0 Tag .. 1 Nacht, mit Daemmerung; Nachtkarten = 1) - fuer Nachtlichter
+float visualNight();
 }
