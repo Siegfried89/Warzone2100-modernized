@@ -50,6 +50,7 @@
 #include "modcrates.h"
 #include "modoil.h"
 #include "modconcrete.h"
+#include "modnestcrew.h"
 #include "research.h"
 #include "hci.h"
 #include "power.h"
@@ -952,6 +953,10 @@ int32_t structureDamage(GameWorld& world, STRUCTURE *psStructure, PROJECTILE *ps
 	{
 		// Survived
 		CHECK_STRUCTURE(psStructure);
+		if (relativeDamage > 0)
+		{
+			modnestcrew::onDamaged(psStructure);   // MOD: MG-Schuetze kann fallen (Stellung schweigt, Infanterie besetzt neu)
+		}
 	}
 
 	return relativeDamage;
@@ -3293,6 +3298,11 @@ static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 
 	// MOD: PowerDown (MF) - ohne Strom arbeitet das Gebaeude nicht (Fabrik/Forschung auf Halt, kein Feuer)
 	if (!isMission && psStructure->status == SS_BUILT && modgrid::powerDownGate(psStructure))
+	{
+		return;
+	}
+	// MOD: MG-Stellung ohne Schuetze schweigt, bis Infanterie sie neu besetzt (modnestcrew)
+	if (!isMission && modnestcrew::unmanned(psStructure))
 	{
 		return;
 	}
