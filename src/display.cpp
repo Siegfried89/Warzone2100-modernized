@@ -72,6 +72,7 @@
 #include "intimage.h"
 #include "mechanics.h"
 #include "modoil.h"
+#include "modcover.h"   // MOD 17.11.
 #include "modlava.h"
 #include "modgroundfire.h"
 #include "modrally.h"
@@ -2367,6 +2368,12 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 	// MOD: Infanterie auf einen eigenen Graben/eine Grube klicken = dort einruecken (bemannen)
 	if (psDominantSelected != nullptr && modoil::trenchForInfantry(psStructure, psDominantSelected))
 	{
+		// MOD (Wunsch 17.11.): mit Shift verteilt sich die gewaehlte Infanterie auf das ganze Grabennetz
+		if (ctrlShiftDown() && modcover::distributeOnNetwork(selectedPlayer, psStructure))
+		{
+			FeedbackOrderGiven();
+			return;
+		}
 		orderSelectedLoc(selectedPlayer, psStructure->pos.x, psStructure->pos.y, ctrlShiftDown());
 		FeedbackOrderGiven();
 		return;
