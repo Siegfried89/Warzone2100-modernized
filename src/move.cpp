@@ -42,7 +42,8 @@
 #include "modfuel.h"
 #include "modoil.h"   // MOD
 #include "modtankguns.h"   // MOD
-#include "modinertia.h"    // MOD (17.11. 19:45): Anlassen + Traegheit
+#include "modinertia.h"
+#include "modmines.h"      // MOD: Minenraeumer    // MOD (17.11. 19:45): Anlassen + Traegheit
 #include "move.h"
 
 #include "objects.h"
@@ -2947,6 +2948,7 @@ void moveUpdateDroid(DROID *psDroid)
 	else
 	{
 		if (modtankguns::halted(psDroid)) { moveSpeed = 0; }   // MOD (17.11.): Feuerhalt der Panzer
+		if (modmines::flailing(psDroid)) { moveSpeed = moveSpeed * 7 / 10; }   // MOD (17.11. 20:06): mit drehender Walze nur langsam
 		if (!modEngineStarting) { moveUpdateGroundModel(psDroid, moveSpeed, moveDir); }   // MOD: waehrend des Anlassens steht er still
 		if (!modEngineStarting && psPropStats->hoverHeight > 0) { psDroid->pos.z += psPropStats->hoverHeight; }   // MOD: Balldrohne schwebt ueber dem Boden
 		if (psPropStats->propulsionType == PROPULSION_TYPE_LEGGED) { modduel::updateLeggedAnimation(psDroid, moveSpeed); } // MOD

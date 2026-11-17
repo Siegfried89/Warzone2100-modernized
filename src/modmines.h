@@ -12,6 +12,8 @@
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
 
+struct DROID;
+
 namespace modmines
 {
 /// jeden Spielschritt direkt nach processVisibility(): Minen verstecken, Ausloeser pruefen
@@ -21,5 +23,10 @@ void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
 void reset();
 /// (Wunsch 17.11. 19:36) Faehigkeit "Minen raeumen": gewaehlte Infanterie (sonst alle) geht zu den bekannten feindlichen Minen und
 /// entschaerft sie (Befehle laufen ueber ModeQueue = Mehrspieler-synchron); Rueckgabe: Anzahl losgeschickter Infanteristen
+/// (20:06) gewaehlte Minenraeumer schalten dabei ihre Walze an/aus (Zweitbefehl DSO_MINECLEAR)
 int clearMines(unsigned player);
+/// Einheit traegt den Systemturm "MineFlail" (Minenraeumer-Walze vor dem Bug)
+bool isFlail(const DROID *psDroid);
+/// Minenraeumer mit drehender Walze (synchron: Zweitbefehl DSO_MINECLEAR) - schlaegt Minen vor dem Bug ab, faehrt langsamer
+bool flailing(const DROID *psDroid);
 }
