@@ -1988,6 +1988,19 @@ static void moveUpdateDroidPos(DROID *psDroid, int32_t dx, int32_t dy)
 	CHECK_DROID(psDroid);
 }
 
+// MOD (Wunsch 17.11. 15:34): "Einheiten wie alle Kettenfahrzeuge (und Bagger) sollen auf der Stelle drehen koennen."
+// Kettenfahrzeuge und Bagger (Kettenmodell, auch wenn der Antrieb als Raeder gefuehrt wird) halten bei einer Richtungsaenderung ueber 25 Grad
+// an und drehen auf der Stelle (gegenlaeufige Ketten), statt einen weiten Bogen zu fahren; Drehtempo mindestens 40 Grad/s.
+static bool modPivotTurn(const DROID *psDroid, const PROPULSION_STATS *psPropStats)
+{
+	if (psPropStats != nullptr && psPropStats->propulsionType == PROPULSION_TYPE_TRACKED)
+	{
+		return true;
+	}
+	const BODY_STATS *psBody = psDroid->getBodyStats();
+	return psBody != nullptr && psBody->id.startsWith("B2crane");
+}
+
 /* Update a tracked droids position and speed given target values */
 static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t direction)
 {
@@ -2009,6 +2022,12 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	spinSpeed = psDroid->baseSpeed * psPropStats->spinSpeed;
 	turnSpeed = psDroid->baseSpeed * psPropStats->turnSpeed;
 	spinAngle = DEG(psPropStats->spinAngle);
+	if (modPivotTurn(psDroid, psPropStats))   // MOD: auf der Stelle drehen
+	{
+		spinAngle = std::min<int32_t>(spinAngle, DEG(25));
+		spinSpeed = std::max<int32_t>(spinSpeed, DEG(40));
+		turnSpeed = std::min<int32_t>(turnSpeed, spinSpeed);
+	}
 
 	moveCheckFinalWaypoint(psDroid, &speed);
 
@@ -2297,6 +2316,42 @@ bool moveCheckDroidMovingAndVisible(void *psObj)
 }
 
 
+// MOD (Wunsch 17.11. 15:34): "Motor- und Kettengeraeusche bei mittleren und schweren Panzern ... gilt fuer alle mittleren und schweren
+// Ruempfe." Ketten-/Halbkettenfahrzeuge mit mittlerem oder schwerem Rumpf spielen statt des duennen tread.ogg eigene Toene (tanksnd.py:
+// Diesel aus echten Aufnahmen + Kettenrasseln): Anlassen, Fahrschleife, Auslaufen. Fehlen die Dateien, bleibt alles wie im Original.
+enum ModTankSnd { MTS_MOVE, MTS_START, MTS_STOP };
+static int modTankTrack(const DROID *psDroid, ModTankSnd kind)
+{
+	const PROPULSION_STATS *psProp = psDroid->getPropulsionStats();
+	const BODY_STATS *psBody = psDroid->getBodyStats();
+	if (psProp == nullptr || psBody == nullptr || psDroid->isTransporter() || psDroid->isVtol() || psDroid->isCyborg()
+	    || psDroid->droidType == DROID_PERSON || psBody->size < SIZE_MEDIUM || psBody->size >= SIZE_NUM)
+	{
+		return NO_SOUND;
+	}
+	const bool trk = psProp->propulsionType == PROPULSION_TYPE_TRACKED;
+	if (!trk && psProp->propulsionType != PROPULSION_TYPE_HALF_TRACKED)
+	{
+		return NO_SOUND;
+	}
+	const int heavy = psBody->size >= SIZE_HEAVY ? 1 : 0;
+	static int s_ids[2][4] = {{-2, -2, -2, -2}, {-2, -2, -2, -2}};   // [mittel/schwer][Fahrt Ketten, Fahrt Halbketten, Start, Stopp]
+	const int slot = kind == MTS_MOVE ? (trk ? 0 : 1) : (kind == MTS_START ? 2 : 3);
+	int &id = s_ids[heavy][slot];
+	if (id == -2)
+	{
+		static const char *const kSuffix[4] = {"trk_move", "ht_move", "start", "stop"};
+		char fn[40];
+		snprintf(fn, sizeof(fn), "tank_%s_%s.ogg", heavy ? "h" : "m", kSuffix[slot]);
+		id = audio_GetTrackID(fn);
+		if (id < 0)
+		{
+			id = -1;
+		}
+	}
+	return id >= 0 ? id : NO_SOUND;
+}
+
 static void movePlayDroidMoveAudio(DROID *psDroid)
 {
 	SDWORD				iAudioID = NO_SOUND;
@@ -2314,7 +2369,11 @@ static void movePlayDroidMoveAudio(DROID *psDroid)
 		psPropType = &asPropulsionTypes[iPropType];
 
 		/* play specific wheeled and transporter or stats-specified noises */
-		if (iPropType == PROPULSION_TYPE_WHEELED && psDroid->droidType != DROID_CONSTRUCT)
+		if (modTankTrack(psDroid, MTS_MOVE) != NO_SOUND)   // MOD: Motor + Ketten (mittlere/schwere Ruempfe)
+		{
+			iAudioID = modTankTrack(psDroid, MTS_MOVE);
+		}
+		else if (iPropType == PROPULSION_TYPE_WHEELED && psDroid->droidType != DROID_CONSTRUCT)
 		{
 			iAudioID = ID_SOUND_TREAD;
 		}
@@ -2376,7 +2435,17 @@ static void movePlayAudio(DROID *psDroid, bool bStarted, bool bStoppedBefore, SD
 	/* get current droid motion status */
 	bStoppedNow = moveDroidStopped(psDroid, iMoveSpeed);
 
-	if (bStarted)
+	if (bStarted && modTankTrack(psDroid, MTS_START) != NO_SOUND)
+	{
+		// MOD: Panzer lassen den Motor an, danach laeuft die Fahrschleife (Rueckruf wie bei den Original-Starttoenen)
+		iAudioID = modTankTrack(psDroid, MTS_START);
+		pAudioCallback = moveDroidStartCallback;
+	}
+	else if (!bStarted && !bStoppedBefore && bStoppedNow && modTankTrack(psDroid, MTS_STOP) != NO_SOUND)
+	{
+		iAudioID = modTankTrack(psDroid, MTS_STOP);   // MOD: Motor laeuft aus
+	}
+	else if (bStarted)
 	{
 		/* play start audio */
 		if ((propType == PROPULSION_TYPE_WHEELED && psDroid->droidType != DROID_CONSTRUCT)
