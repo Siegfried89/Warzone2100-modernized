@@ -150,7 +150,9 @@ WZE_SetfFn wze_alEffectf = nullptr, wze_alAuxiliaryEffectSlotf = nullptr, wze_al
 bool s_efxTried = false;
 bool s_efxOk = false;
 ALuint s_envEffect = 0, s_envSlot = 0, s_envLowpass = 0;
+ALuint s_bldEffect = 0, s_bldSlot = 0, s_bldLowpass = 0;   // (17.11.) Treppenhaus-Hall fuer Einheiten in Gebaeuden
 int s_env = 0;
+int (*s_sampleEnvHook)(const SIMPLE_OBJECT *) = nullptr;
 
 bool efxInit()
 {
@@ -178,9 +180,29 @@ bool efxInit()
 	wze_alGenEffects(1, &s_envEffect);
 	wze_alGenAuxiliaryEffectSlots(1, &s_envSlot);
 	wze_alGenFilters(1, &s_envLowpass);
+	wze_alGenEffects(1, &s_bldEffect);
+	wze_alGenAuxiliaryEffectSlots(1, &s_bldSlot);
+	wze_alGenFilters(1, &s_bldLowpass);
 	if (alGetError() != AL_NO_ERROR) { return false; }
 	wze_alEffecti(s_envEffect, WZE_EFFECT_TYPE, WZE_EFFECT_REVERB);
 	wze_alFilteri(s_envLowpass, WZE_FILTER_TYPE, WZE_FILTER_LOWPASS);
+	// in Gebaeuden: dumpf wie hinter Waenden, dazu der Hall eines leeren Treppenhauses / Hochhausflurs
+	wze_alEffecti(s_bldEffect, WZE_EFFECT_TYPE, WZE_EFFECT_REVERB);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_DENSITY, 1.0f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_DIFFUSION, 0.85f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_GAIN, 0.40f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_GAINHF, 0.55f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_DECAY_TIME, 2.2f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_DECAY_HFRATIO, 0.55f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_REFLECTIONS_GAIN, 0.70f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_REFLECTIONS_DELAY, 0.008f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_LATE_REVERB_GAIN, 1.2f);
+	wze_alEffectf(s_bldEffect, WZE_REVERB_LATE_REVERB_DELAY, 0.012f);
+	wze_alAuxiliaryEffectSloti(s_bldSlot, WZE_EFFECTSLOT_EFFECT, static_cast<ALint>(s_bldEffect));
+	wze_alAuxiliaryEffectSlotf(s_bldSlot, WZE_EFFECTSLOT_GAIN, 1.0f);
+	wze_alFilteri(s_bldLowpass, WZE_FILTER_TYPE, WZE_FILTER_LOWPASS);
+	wze_alFilterf(s_bldLowpass, WZE_LOWPASS_GAIN, 0.80f);
+	wze_alFilterf(s_bldLowpass, WZE_LOWPASS_GAINHF, 0.30f);
 	s_efxOk = (alGetError() == AL_NO_ERROR);
 	debug(LOG_SOUND, "MOD: EFX-Umgebungshall %s", s_efxOk ? "aktiv" : "nicht verfuegbar");
 	return s_efxOk;
@@ -193,20 +215,38 @@ void efxShutdown()
 		wze_alDeleteAuxiliaryEffectSlots(1, &s_envSlot);
 		wze_alDeleteEffects(1, &s_envEffect);
 		wze_alDeleteFilters(1, &s_envLowpass);
+		wze_alDeleteAuxiliaryEffectSlots(1, &s_bldSlot);
+		wze_alDeleteEffects(1, &s_bldEffect);
+		wze_alDeleteFilters(1, &s_bldLowpass);
 	}
 	s_efxTried = false;
 	s_efxOk = false;
 	s_envEffect = s_envSlot = s_envLowpass = 0;
+	s_bldEffect = s_bldSlot = s_bldLowpass = 0;
 	s_env = 0;
 }
 
-void efxApply(ALuint src)
+void efxApply(ALuint src, const SIMPLE_OBJECT *psObj)
 {
+	if (psObj != nullptr && s_sampleEnvHook != nullptr && s_sampleEnvHook(psObj) == 1 && efxInit())
+	{
+		// Einheit steht in einem Gebaeude: gedaempft + Treppenhaus-Hall (auch an der Oberflaeche ausserhalb der Stadt)
+		alSource3i(src, WZE_AUXILIARY_SEND_FILTER, static_cast<ALint>(s_bldSlot), 0, WZE_FILTER_NULL);
+		alSourcei(src, WZE_DIRECT_FILTER, static_cast<ALint>(s_bldLowpass));
+		alGetError();
+		return;
+	}
 	if (!s_efxOk || s_env == 0) { return; }
-	alSource3i(src, WZE_AUXILIARY_SEND_FILTER, static_cast<ALint>(s_envSlot), 0, WZE_FILTER_NULL);
+	// Untergrund (2): kein Hall - still, ruhig und gedaempft wie in einem schallgedaempften Raum; nur der Tiefpass
+	if (s_env != 2) { alSource3i(src, WZE_AUXILIARY_SEND_FILTER, static_cast<ALint>(s_envSlot), 0, WZE_FILTER_NULL); }
 	if (s_env == 2) { alSourcei(src, WZE_DIRECT_FILTER, static_cast<ALint>(s_envLowpass)); }
 	alGetError();   // fehlende Sende-Kanaele sind kein Fehler fuer den Klang selbst
 }
+}
+
+void sound_SetSampleEnvironmentHook(int (*hook)(const SIMPLE_OBJECT *))
+{
+	s_sampleEnvHook = hook;
 }
 
 void sound_SetEnvironment(int env)
@@ -231,19 +271,11 @@ void sound_SetEnvironment(int env)
 	}
 	else if (env == 2)
 	{
-		// Untergrund: langer Hoehlenhall, dumpfe Hoehen
-		wze_alEffectf(s_envEffect, WZE_REVERB_DENSITY, 1.0f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_DIFFUSION, 1.0f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_GAIN, 0.45f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_GAINHF, 0.35f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_DECAY_TIME, 2.9f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_DECAY_HFRATIO, 0.40f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_REFLECTIONS_GAIN, 0.60f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_REFLECTIONS_DELAY, 0.020f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_LATE_REVERB_GAIN, 1.4f);
-		wze_alEffectf(s_envEffect, WZE_REVERB_LATE_REVERB_DELAY, 0.030f);
-		wze_alFilterf(s_envLowpass, WZE_LOWPASS_GAIN, 0.85f);
-		wze_alFilterf(s_envLowpass, WZE_LOWPASS_GAINHF, 0.35f);
+		// Untergrund (Wunsch 14.11. Punkt 3, 17.11.): KEIN Hall - still, ruhig und gedaempft wie in einem schallgedaempften Raum,
+		// damit nach dem hektischen Kampf an der Oberflaeche Ruhe einkehrt. Nur ein kraeftiger Tiefpass, leiser.
+		wze_alEffectf(s_envEffect, WZE_REVERB_GAIN, 0.0f);
+		wze_alFilterf(s_envLowpass, WZE_LOWPASS_GAIN, 0.70f);
+		wze_alFilterf(s_envLowpass, WZE_LOWPASS_GAINHF, 0.15f);
 	}
 	if (env != 0)
 	{
@@ -983,7 +1015,7 @@ bool sound_Play3DSample(TRACK *psTrack, AUDIO_SAMPLE *psSample)
 	alSourcefv(psSample->iSample, AL_VELOCITY, zero);
 	alSourcei(psSample->iSample, AL_BUFFER, psTrack->iBufferName);
 	alSourcei(psSample->iSample, AL_LOOPING, (sound_SetupChannel(psSample)) ? AL_TRUE : AL_FALSE);
-	efxApply(psSample->iSample);   // MOD: Umgebungshall (Stadt / Untergrund)
+	efxApply(psSample->iSample, psSample->psObj);   // MOD: Umgebungshall (Stadt / Untergrund / Gebaeude)
 
 	// NOTE: this is only useful for debugging.
 #ifdef DEBUG
