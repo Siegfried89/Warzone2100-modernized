@@ -15,6 +15,7 @@ struct DROID;
 struct FEATURE;
 struct FEATURE_STATS;
 struct GameWorld;
+struct STRUCTURE;
 struct WEAPON_STATS;
 
 namespace modgroundfire
@@ -47,6 +48,13 @@ void updatePreview(bool wanted, const Vector2i &worldPos);
 /// Beschriftung am Mauszeiger, solange der rote Streukreis zu sehen ist (sonst nullptr): "Area Bombardment: Attack Area"
 const char *activeLabel();
 
+/// (Wunsch 13.11. "Gebaeude mit Waffen sollen auch gezielt auf Boden feuern"): Turm/Stellung beschiesst 40 s lang einen Punkt
+/// (aus der Netzwerk-Nachricht STRUCTUREINFO_MOD_GROUNDFIRE, also auf allen Rechnern gleich)
+void structureFireAt(STRUCTURE *psStruct, const Vector2i &pos);
+/// aktueller Bodenziel-Punkt des Bauwerks (nullptr = keiner/abgelaufen) - aiUpdateStructure nimmt dann diesen statt eines Gegners
+BASE_OBJECT *structureGroundTarget(const STRUCTURE *psStruct);
+/// kann das Bauwerk auf Boden feuern (Waffe, die Bodenziele trifft, kein Laser-Satellit)?
+bool canStructureFireOnGround(const STRUCTURE *psStruct);
 /// jeden Spielschritt: nicht mehr gebrauchte Zielpunkte entfernen
 void tick(GameWorld &world);
 /// bei neuem Spiel

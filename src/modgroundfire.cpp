@@ -24,6 +24,9 @@
 #include "random.h"
 #include "range_rings.h"
 #include "stats.h"
+#include "structure.h"
+#include "multiplay.h"
+#include "lib/netplay/sync_debug.h"
 #include "statsdef.h"
 #include "modlayermap.h"
 
@@ -73,8 +76,21 @@ bool referencedByDroid(const DROID *d, const BASE_OBJECT *marker)
 	return false;
 }
 
+struct StructGround
+{
+	uint32_t structId = 0;
+	FEATURE *marker = nullptr;
+	uint32_t until = 0;
+};
+std::vector<StructGround> s_structGround;
+constexpr uint32_t STRUCT_GROUND_MS = 40000;   // so lange beschiesst ein Turm den befohlenen Punkt
+
 bool isReferenced(const GameWorld &world, const BASE_OBJECT *marker)
 {
+	for (const StructGround &g : s_structGround)
+	{
+		if (g.marker == marker && gameTime < g.until) { return true; }
+	}
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
 		for (const DROID *d : world.objects.droids[p])
@@ -148,6 +164,38 @@ Vector2i scatterPoint(const Vector2i &center, int radius)
 	return Vector2i(center.x + dx, center.y + dy);
 }
 
+bool canStructureFireOnGround(const STRUCTURE *psStruct)
+{
+	if (psStruct == nullptr || psStruct->died || psStruct->status != SS_BUILT || psStruct->numWeaps == 0 || psStruct->asWeaps[0].nStat == 0) { return false; }
+	const WEAPON_STATS *ws = psStruct->getWeaponStats(0);
+	if (ws == nullptr || ws->weaponSubClass == WSC_ELECTRONIC || ws->weaponSubClass == WSC_LAS_SAT) { return false; }
+	return (ws->surfaceToAir & SHOOT_ON_GROUND) != 0;
+}
+
+void structureFireAt(STRUCTURE *psStruct, const Vector2i &pos)
+{
+	if (!canStructureFireOnGround(psStruct)) { return; }
+	FEATURE *m = markerAt(pos, psStruct->player, static_cast<int>(modlayer::layerOf(psStruct)));
+	if (m == nullptr) { return; }
+	s_structGround.erase(std::remove_if(s_structGround.begin(), s_structGround.end(), [psStruct](const StructGround &g) { return g.structId == psStruct->id; }), s_structGround.end());
+	StructGround g;
+	g.structId = psStruct->id;
+	g.marker = m;
+	g.until = gameTime + STRUCT_GROUND_MS;
+	s_structGround.push_back(g);
+	syncDebug("structGround s%u (%d,%d)", psStruct->id, pos.x, pos.y);
+}
+
+BASE_OBJECT *structureGroundTarget(const STRUCTURE *psStruct)
+{
+	if (s_structGround.empty() || psStruct == nullptr) { return nullptr; }
+	for (const StructGround &g : s_structGround)
+	{
+		if (g.structId == psStruct->id && gameTime < g.until && g.marker != nullptr && !g.marker->died) { return g.marker; }
+	}
+	return nullptr;
+}
+
 bool orderSelected(unsigned player, int worldX, int worldY)
 {
 	if (player >= MAX_PLAYERS || markerStats() == nullptr) { return false; }
@@ -166,6 +214,16 @@ bool orderSelected(unsigned player, int worldX, int worldY)
 		DroidOrder sOrder(DORDER_ATTACKGROUND, Vector2i(worldX, worldY));
 		sendDroidInfo(d, sOrder, false, currentOrderSource());
 		any = true;
+	}
+	// MOD: gewaehlte Tuerme/Stellungen feuern ebenfalls auf den Punkt (nur an der Oberflaeche)
+	if (surfaceView)
+	{
+		for (STRUCTURE *s : gameWorld.objects.structures[player])
+		{
+			if (s == nullptr || !s->selected || !canStructureFireOnGround(s)) { continue; }
+			sendStructureGroundFire(s, worldX, worldY, currentOrderSource());
+			any = true;
+		}
 	}
 	return any;
 }
@@ -187,6 +245,13 @@ void updatePreview(bool wanted, const Vector2i &worldPos)
 			if (d != nullptr && d->selected && canFireOnGround(d))
 			{
 				radius = std::max(radius, scatterRadius(*d->getWeaponStats(0)));
+			}
+		}
+		for (const STRUCTURE *s : gameWorld.objects.structures[selectedPlayer])
+		{
+			if (s != nullptr && s->selected && canStructureFireOnGround(s))
+			{
+				radius = std::max(radius, scatterRadius(*s->getWeaponStats(0)));
 			}
 		}
 	}
@@ -213,6 +278,7 @@ void tick(GameWorld &world)
 	s_nextClean = gameTime + CLEAN_INTERVAL;
 	FEATURE_STATS *st = markerStats();
 	if (st == nullptr) { return; }
+	s_structGround.erase(std::remove_if(s_structGround.begin(), s_structGround.end(), [](const StructGround &g) { return gameTime >= g.until || g.marker == nullptr || g.marker->died; }), s_structGround.end());
 	std::vector<FEATURE *> doomed;
 	for (FEATURE *f : world.objects.features[0])
 	{
@@ -230,6 +296,7 @@ void tick(GameWorld &world)
 
 void reset()
 {
+	s_structGround.clear();
 	s_stats = nullptr;
 	s_cachedNum = static_cast<size_t>(-1);
 	s_cachedData = nullptr;

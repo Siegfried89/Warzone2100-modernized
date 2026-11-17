@@ -181,7 +181,8 @@ enum STRUCTURE_INFO
 	STRUCTUREINFO_HOLDPRODUCTION,
 	STRUCTUREINFO_RELEASEPRODUCTION,
 	STRUCTUREINFO_HOLDRESEARCH,
-	STRUCTUREINFO_RELEASERESEARCH
+	STRUCTUREINFO_RELEASERESEARCH,
+	STRUCTUREINFO_MOD_GROUNDFIRE   // MOD: Turm/Stellung beschiesst einen Bodenpunkt (x, y)
 };
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -305,6 +306,7 @@ bool SendDestroyStructure(const STRUCTURE *s);
 bool SendBuildFinished(const STRUCTURE *psStruct);
 bool sendLasSat(UBYTE player, const STRUCTURE *psStruct, const BASE_OBJECT *psObj);
 void sendStructureInfo(const STRUCTURE *psStruct, STRUCTURE_INFO structureInfo, const DROID_TEMPLATE *psTempl, const OrderSource &source);
+void sendStructureGroundFire(const STRUCTURE *psStruct, int32_t worldX, int32_t worldY, const OrderSource &source);   // MOD
 
 // features . multiplay
 bool SendDestroyFeature(const FEATURE *psFeature);
