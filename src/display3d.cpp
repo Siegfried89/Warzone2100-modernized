@@ -3459,6 +3459,22 @@ void renderDeliveryPoint(FLAG_POSITION *psPosition, bool blueprint, const glm::m
 		pie_Draw3DShape(psIMD->displayModel(), 0, 0, colour, pieFlag, pieFlagData, modelMatrix, viewMatrix);
 	}
 
+	// MOD (Wunsch 14.11. Punkt 8 / 17.11. 15:46): Scavengers bekommen am Sammelpunkt eine kleine rot-gelbe Flagge (scavflag.py); die
+	// Nummer am Boden bleibt. Die Flagge weht leicht (kleine Pendelbewegung, nur Anzeige).
+	if (!blueprint && psPosition->factoryType != REPAIR_FLAG && psPosition->player < MAX_PLAYERS
+	    && getPlayerFaction(static_cast<uint8_t>(psPosition->player)) == getFactionByID(FACTION_NORMAL))
+	{
+		static const iIMDBaseShape *s_flag = nullptr;
+		static bool s_tried = false;
+		if (!s_tried) { s_tried = true; s_flag = modelGet(WzString::fromUtf8("scavflag.pie")); }
+		if (s_flag != nullptr)
+		{
+			const float sway = 4.f * std::sin(static_cast<float>(graphicsTime % 3000u) / 3000.f * 6.2831853f);
+			const glm::mat4 fm = glm::translate(glm::vec3(dv) + glm::vec3(-22.f, 0.f, 22.f)) * glm::rotate(glm::radians(sway), glm::vec3(0, 1, 0));
+			pie_Draw3DShape(s_flag->displayModel(), 0, psPosition->player, colour, pie_FORCE_FOG, 0, fm, viewMatrix);
+		}
+	}
+
 	// MOD (16.11. 23:30): Reparatur-Sammelpunkt = stark leuchtendes, hellgruen blinkendes Leuchtfeuer - ein einzelner Punkt wie ein
 	// Landezonen-Licht (Lichthof zur Kamera gedreht, im Takt hell/dunkel, dazu gruenes Licht auf dem Boden)
 	if (!blueprint && psPosition->factoryType == REPAIR_FLAG)

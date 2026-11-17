@@ -35,6 +35,7 @@
 #include "objects.h"
 #include "order.h"
 #include "modarty.h"
+#include "modauto.h"
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modgroundfire.h"
@@ -2745,6 +2746,12 @@ void orderSelectedLoc(uint32_t player, uint32_t x, uint32_t y, bool add)
 	// note that an order list graphic needs to be displayed
 	bOrderEffectDisplayed = false;
 
+	// MOD (Wunsch 17.11. 15:46): "Es sollen auf einem Tile mehrere Einheiten Platz nehmen duerfen, solange es die Kollision zulaesst.
+	// Infanterie sollte im 5er-Wuerfel-Schema auf ein Tile passen." Bei einem Marschbefehl fuer mehrere Einheiten bekommt jede einen eigenen
+	// Zielpunkt: je Feld fuenf Punkte wie die Fuenf auf dem Wuerfel (Mitte + vier Ecken), vom Zielpunkt aus nach aussen; ein Punkt ist frei,
+	// wenn die Einheit dort mit ihrem Kollisionsradius neben den schon vergebenen Punkten Platz hat und das Feld fuer ihren Antrieb befahrbar
+	// ist (Infanterie: 5 je Feld, mittlere Panzer weniger). Wer zuerst am Ziel ist (naechste Einheit), bekommt den Punkt in der Mitte.
+	std::vector<std::pair<DROID *, DROID_ORDER>> todo;
 	for (DROID* psCurr : gameWorld.objects.droids[player])
 	{
 		if (psCurr->selected)
@@ -2758,12 +2765,91 @@ void orderSelectedLoc(uint32_t player, uint32_t x, uint32_t y, bool add)
 			}
 
 			order = chooseOrderLoc(psCurr, x, y, specialOrderKeyDown());
-			// see if the order can be added to the list
-			if (order != DORDER_NONE && !(add && orderDroidLocAdd(psCurr, order, x, y)))
+			if (order != DORDER_NONE)
 			{
-				// if not just do it straight off
-				orderDroidLoc(psCurr, order, x, y, ModeQueue);
+				todo.emplace_back(psCurr, order);
 			}
+		}
+	}
+	std::vector<Vector2i> dest(todo.size(), Vector2i(x, y));
+	{
+		std::vector<size_t> movers;
+		for (size_t i = 0; i < todo.size(); ++i)
+		{
+			const DROID *d = todo[i].first;
+			if ((todo[i].second == DORDER_MOVE || todo[i].second == DORDER_SCOUT) && !d->isVtol() && !d->isTransporter())
+			{
+				movers.push_back(i);
+			}
+		}
+		if (movers.size() > 1)
+		{
+			const Vector2i target(x, y);
+			std::stable_sort(movers.begin(), movers.end(), [&](size_t a, size_t b) {
+				const Vector2i da = todo[a].first->pos.xy() - target, db = todo[b].first->pos.xy() - target;
+				return int64_t(da.x) * da.x + int64_t(da.y) * da.y < int64_t(db.x) * db.x + int64_t(db.y) * db.y;
+			});
+			// Kandidaten: Wuerfel-Fuenf je Feld (DIST_TILE = Original-Kachel), Felder ringfoermig um das Zielfeld
+			const int cx = static_cast<int>(x) / DIST_TILE, cy = static_cast<int>(y) / DIST_TILE;
+			const int off = DIST_TILE * 27 / 100;
+			std::vector<Vector2i> cand;
+			for (int ring = 0; ring <= 8 && cand.size() < movers.size() * 6 + 10; ++ring)
+			{
+				for (int ty = cy - ring; ty <= cy + ring; ++ty)
+				{
+					for (int tx = cx - ring; tx <= cx + ring; ++tx)
+					{
+						if (std::max(std::abs(tx - cx), std::abs(ty - cy)) != ring) { continue; }
+						const int mx = tx * DIST_TILE + DIST_TILE / 2, my = ty * DIST_TILE + DIST_TILE / 2;
+						static const int K[5][2] = {{0, 0}, {-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
+						for (const auto &k : K)
+						{
+							const int px = mx + k[0] * off, py = my + k[1] * off;
+							if (px > 0 && py > 0 && px < world_coord(gameWorld.map.width) && py < world_coord(gameWorld.map.height)) { cand.emplace_back(px, py); }
+						}
+					}
+				}
+			}
+			std::stable_sort(cand.begin(), cand.end(), [&](const Vector2i &a, const Vector2i &b) {
+				const Vector2i da = a - target, db = b - target;
+				return int64_t(da.x) * da.x + int64_t(da.y) * da.y < int64_t(db.x) * db.x + int64_t(db.y) * db.y;
+			});
+			std::vector<std::pair<Vector2i, int>> used;   // Punkt, Radius
+			for (size_t i : movers)
+			{
+				const DROID *d = todo[i].first;
+				const int rad = std::max(6, moveObjRadius(d));
+				const PROPULSION_TYPE prop = d->getPropulsionStats()->propulsionType;
+				for (const Vector2i &c : cand)
+				{
+					if (fpathBlockingTile(gameWorld.map, map_coord(c.x), map_coord(c.y), prop)) { continue; }
+					bool free = true;
+					for (const auto &u : used)
+					{
+						const Vector2i dd = c - u.first;
+						const int64_t need = rad + u.second + 2;
+						if (int64_t(dd.x) * dd.x + int64_t(dd.y) * dd.y < need * need) { free = false; break; }
+					}
+					if (free)
+					{
+						dest[i] = c;
+						used.emplace_back(c, rad);
+						break;
+					}
+				}
+			}
+		}
+	}
+	for (size_t i = 0; i < todo.size(); ++i)
+	{
+		DROID *psCurr = todo[i].first;
+		order = todo[i].second;
+		const uint32_t ox = static_cast<uint32_t>(dest[i].x), oy = static_cast<uint32_t>(dest[i].y);
+		// see if the order can be added to the list
+		if (!(add && orderDroidLocAdd(psCurr, order, ox, oy)))
+		{
+			// if not just do it straight off
+			orderDroidLoc(psCurr, order, ox, oy, ModeQueue);
 		}
 	}
 }
@@ -3372,6 +3458,10 @@ bool secondarySupported(const DROID *psDroid, SECONDARY_ORDER sec)
 		supported = modarty::supported(psDroid);
 		break;
 
+	case DSO_FULLAUTO:   // MOD: bewaffnete Einheiten (keine Transporter)
+		supported = modauto::supported(psDroid);
+		break;
+
 	case DSO_REPAIR_LEVEL:
 	case DSO_PATROL:
 	case DSO_HALTTYPE:
@@ -3437,6 +3527,9 @@ SECONDARY_STATE secondaryGetState(const DROID *psDroid, SECONDARY_ORDER sec, QUE
 		break;
 	case DSO_ARTILLERY:   // MOD
 		return (SECONDARY_STATE)(state & DSS_ARTY_MASK);
+		break;
+	case DSO_FULLAUTO:   // MOD
+		return (SECONDARY_STATE)(state & DSS_FULLAUTO_MASK);
 		break;
 	case DSO_HALTTYPE:
 		if (psDroid->order.type == DORDER_HOLD)
@@ -3857,6 +3950,10 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 		secondaryMask = DSS_ARTY_MASK;
 		secondarySet = State & DSS_ARTY_MASK;
 		break;
+	case DSO_FULLAUTO:   // MOD
+		secondaryMask = DSS_FULLAUTO_MASK;
+		secondarySet = State & DSS_FULLAUTO_MASK;
+		break;
 	case DSO_UNUSED:
 	case DSO_FIRE_DESIGNATOR:
 		// Do nothing.
@@ -4076,6 +4173,13 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 	case DSO_ARTILLERY:   // MOD: Waffen zwischen Kanone und Artillerie-Fassung umschalten
 		CurrState = (CurrState & ~DSS_ARTY_MASK) | (State & DSS_ARTY_MASK);
 		modarty::apply(psDroid, (State & DSS_ARTY_MASK) != 0);
+		break;
+	case DSO_FULLAUTO:   // MOD: voll autonom (modauto); beim Einschalten zieht sich die Einheit bei schwerem Schaden selbst zurueck
+		CurrState = (CurrState & ~DSS_FULLAUTO_MASK) | (State & DSS_FULLAUTO_MASK);
+		if ((State & DSS_FULLAUTO_MASK) != 0 && (CurrState & DSS_REPLEV_MASK) == 0)
+		{
+			CurrState = (CurrState & ~DSS_REPLEV_MASK) | DSS_REPLEV_LOW;
+		}
 		break;
 	case DSO_PATROL:
 		if (State & DSS_PATROL_SET)

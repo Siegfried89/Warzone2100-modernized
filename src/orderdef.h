@@ -106,7 +106,8 @@ enum SECONDARY_ORDER
 	DSO_ASSIGN_VTOL_PRODUCTION,     /**< Assigns a vtol factory to a command droid - the state is given by the factory number. */
 	DSO_CIRCLE,                     /**< circling target position and engage. */
 	DSO_ACCEPT_RETREP,				/**< Whether droids should retreat to this repair droid. */
-	DSO_ARTILLERY					/**< MOD: Artillerie-Modus fuer Kanonen-Panzer (modarty). Used with DSS_ARTY_SET. */
+	DSO_ARTILLERY,					/**< MOD: Artillerie-Modus fuer Kanonen-Panzer (modarty). Used with DSS_ARTY_SET. */
+	DSO_FULLAUTO					/**< MOD (17.11.): "Fully autonomous" (modauto). Used with DSS_FULLAUTO_SET. */
 };
 
 /** All associated secondary states of the secondary orders. */
@@ -137,6 +138,7 @@ enum SECONDARY_STATE
 	DSS_CIRCLE_SET      = 0x400100,	/**< state referred to secondary order DSO_CIRCLE. If set, the droid is set to circle. */
 	DSS_FIREDES_SET     = 0x800000,	/**< state referred to secondary order DSO_FIRE_DESIGNATOR. If set, the droid is set as a fire designator. */
 	DSS_ARTY_SET        = 0x20000000,	/**< MOD: state referred to secondary order DSO_ARTILLERY. If set, the cannons fire as artillery (modarty). */
+	DSS_FULLAUTO_SET    = 0x40000000,	/**< MOD: state referred to secondary order DSO_FULLAUTO. If set, the unit acts fully on its own (modauto). */
 };
 
 /** masks for the secondary order state. */
@@ -158,6 +160,7 @@ enum SECONDARY_STATE
 #define DSS_CIRCLE_MASK             0x400100
 #define DSS_ACCREP_MASK             0x000400
 #define DSS_ARTY_MASK               0x20000000   // MOD: Artillerie-Modus (modarty)
+#define DSS_FULLAUTO_MASK           0x40000000   // MOD: voll autonom (modauto)
 
 struct STRUCTURE_STATS;
 

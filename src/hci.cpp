@@ -83,6 +83,7 @@
 #include "modbuild.h"
 #include "modhelp.h"
 #include "modammo.h"
+#include "modauto.h"
 #include "modfuel.h"
 #include "modai.h"
 #include "modpointdef.h"
@@ -758,6 +759,7 @@ void interfaceShutDown()
 	modbuild::reset();       // MOD
 	modhelp::reset();        // MOD
 	modammo::reset();        // MOD
+	modauto::reset();        // MOD: Fully autonomous
 	modfuel::reset();        // MOD
 	modai::reset();          // MOD
 	modpointdef::reset();    // MOD: Punktverteidigung
