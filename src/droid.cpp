@@ -51,6 +51,7 @@
 #include "modterrain.h"
 #include "modhelp.h"
 #include "modsalvage.h"
+#include "moddrama.h"
 #include "modvoice.h"
 #include "modbuild.h"
 #include "modwreck.h"
@@ -357,6 +358,7 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 	if (relativeDamage != 0)
 	{
 		modvoice::onDroidDamaged(psDroid, psProjectile, relativeDamage < 0);   // MOD: Schlachtruf (nur Ton)
+		moddrama::onHit(psDroid, psProjectile);   // MOD: dramatische Rufe bei Gefechten (nur Ton)
 		modlayer::onUnderAttack(psDroid);   // MOD: Warnung, wenn ein eigenes Objekt in einer anderen Ebene getroffen wird
 	}
 

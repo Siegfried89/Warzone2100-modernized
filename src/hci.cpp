@@ -118,6 +118,7 @@
 #include "modgroundfire.h"
 #include "modradio.h"
 #include "modsalvage.h"
+#include "moddrama.h"
 #include "modvoice.h"
 #include "moddesigner.h"
 #include "modfleetdesigner.h"
@@ -791,6 +792,7 @@ void interfaceShutDown()
 	modlava::reset();      // MOD
 	modradio::reset();       // MOD
 	modvoice::reset();       // MOD
+	moddrama::reset();       // MOD
 	modsalvage::reset();     // MOD
 	modgrid::reset();        // MOD
 	intRemoveIntelMapNoAnim(); // always call to ensure overlay screen is destroyed
