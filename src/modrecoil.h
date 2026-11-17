@@ -13,6 +13,8 @@ namespace modrecoil
 {
 /// aus combFire(): ein Schuss wurde abgegeben (weaponDir = Turmrichtung relativ zum Rumpf, 16-Bit-Winkel)
 void onShot(const DROID *psDroid, const WEAPON_STATS *psStats, int weaponDir);
+/// MOD (17.11. 19:45): Motor springt an - der Rumpf schuettelt sich kurz, die Ketten kaum (cls 1 mittel, 2 schwer, 3 superschwer)
+void engineStart(const DROID *psDroid, int cls);
 /// Anzeige: liefert false, wenn das Fahrzeug ruhig steht. Sonst die Zusatzdrehung fuer Rumpf+Turm und fuer die Ketten/Beine.
 bool shake(const DROID *psDroid, unsigned renderTime, glm::mat4 &hull, glm::mat4 &prop);
 /// Anzeige: Infanterie unter Beschuss laeuft geduckt (Oberkoerper nach vorn, etwas kleiner) und richtet sich nach ein paar Sekunden wieder auf
