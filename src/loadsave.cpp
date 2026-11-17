@@ -391,7 +391,8 @@ bool addLoadSave(LOADSAVE_MODE savemode, const char *title)
 
 	std::vector<SaveGameNamesAndTimes> saveGameNamesAndTimes;
 	auto latestTagResult = version_extractVersionNumberFromTag(version_getLatestTag());
-	ASSERT(latestTagResult.has_value(), "No extractable latest tag?? - Please try re-downloading the latest official source bundle");
+	// MOD: der eigene Build hat keinen offiziellen Versions-Tag - das ist kein Fehler (sonst bei jedem Speichern/Laden eine Assert-Zeile im Log)
+	if (!latestTagResult.has_value()) { debug(LOG_WZ, "No extractable latest tag (mod build)"); }
 	const TagVer buildTagVer = latestTagResult.value_or(TagVer());
 	WZ_PHYSFS_enumerateFolders(NewSaveGamePath, [NewSaveGamePath, &buildTagVer, &saveGameNamesAndTimes](const char* dirName){
 		if (strcmp(dirName, "auto") == 0)

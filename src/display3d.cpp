@@ -2512,7 +2512,8 @@ static void displayOrbitAsteroids(const glm::mat4 &viewMatrix)
 	static std::map<std::string, const iIMDShape *> cache;
 	for (const modlayermap::IslandModel &m : modlayermap::orbitIslandModels())
 	{
-		if (!quickClipXYToMaximumTilesFromCurrentPosition(m.worldX, m.worldY)) { continue; }
+		// (17.11.) kein Entfernungs-Abschnitt: die Plattform-Felder der Insel zeichnet das Gelaende auch in der Ferne - ohne den
+		// Asteroiden darunter sahen ferne Inseln wie flache Flecken aus (es sind nur wenige Modelle)
 		auto it = cache.find(m.model);
 		if (it == cache.end())
 		{

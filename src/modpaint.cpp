@@ -36,6 +36,7 @@
 #include "featuredef.h"
 #include "mapgrid.h"
 #include "objmem.h"
+#include "radar.h"
 #include "order.h"
 #include "ordersource.h"
 #include "stats.h"
@@ -241,7 +242,16 @@ void layout()
 {
 	const float s = modui::uiScale();
 	const int w = static_cast<int>(TOTAL_W * s), h = static_cast<int>(TOTAL_H * s);
-	s_root->setGeometry(static_cast<int>(screenWidth) - w - 4, static_cast<int>(screenHeight) - h - 64, w, h);
+	// (17.11.) nicht ueber der Karte unten rechts (Radar): links daneben, unten buendig
+	int x = static_cast<int>(screenWidth) - w - 4;
+	int y = static_cast<int>(screenHeight) - h - 64;
+	const std::shared_ptr<WIDGET> radar = getRadarWidget();
+	if (radar && radar->visible() && radar->width() > 0)
+	{
+		x = std::max(4, radar->x() - w - 6);
+		y = std::max(4, static_cast<int>(screenHeight) - h - 8);
+	}
+	s_root->setGeometry(x, y, w, h);
 	for (size_t i = 0; i < s_buttons.size(); ++i)
 	{
 		const int col = static_cast<int>(i) % COLS, row = static_cast<int>(i) / COLS;
