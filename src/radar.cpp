@@ -830,6 +830,11 @@ bool CoordInRadar(int x, int y)
 	return true;
 }
 
+PIELIGHT radarTileColour(UDWORD tileNumber)   // MOD 17.11.: Kachelfarbe (Mittelwert) fuer den Orbit-Planetenboden
+{
+	return tileColours[tileNumber < MAX_TILES ? tileNumber : 0];
+}
+
 void radarColour(UDWORD tileNumber, uint8_t r, uint8_t g, uint8_t b)
 {
 	ASSERT_OR_RETURN(, tileNumber < MAX_TILES, "Invalid tile number: %u", tileNumber);

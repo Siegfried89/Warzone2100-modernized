@@ -335,12 +335,12 @@ bool texLoad(const char *fileName)
 				if (has_sm && has_auxillary_texture_info) { tile_sm_filepaths.push_back(WzString()); }
 				if (has_hm && has_auxillary_texture_info) { tile_hm_filepaths.push_back(WzString()); }
 			}
-			// MOD: Orbit-Boden (Kachel 256) und Sockelgestein (257) je Tileset: Arizona = tile-256/257.png (Wueste), Urban/Rockies = tile-256/257-urban/-rockies.png, falls vorhanden
+			// MOD: Kachel 256 (Orbit-Leere) je Tileset: tile-256.png bzw. tile-256-urban/-rockies.png, falls vorhanden
 			const char *voidVariant = (currentMapTileset == MAP_TILESET::URBAN) ? "urban" : ((currentMapTileset == MAP_TILESET::ROCKIES) ? "rockies" : nullptr);
 			for (k = 0; k < modExtTileCount; ++k)
 			{
 				std::string extPath = astringf("texpages/modisland-%d/tile-%d.png", extSize, 256 + k);
-				if (k <= 1 && voidVariant != nullptr)   // MOD 16.11. 21:00: Boden (256) und Inselsockel-Gestein (257) je Tileset
+				if (k == 0 && voidVariant != nullptr)   // MOD: Orbit-Leere (256) je Tileset
 				{
 					const std::string altPath = astringf("texpages/modisland-%d/tile-%d-%s.png", extSize, 256 + k, voidVariant);
 					if (PHYSFS_exists(altPath.c_str())) { extPath = altPath; }

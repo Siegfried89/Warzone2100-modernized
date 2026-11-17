@@ -17,6 +17,7 @@
 #include "lighting.h"
 #include "map.h"
 #include "multiplay.h"
+#include "radar.h"
 #include "terrain.h"
 
 #include <algorithm>
@@ -344,8 +345,6 @@ const std::vector<IslandShape> &islandLibrary()
 	return lib;
 }
 
-void genOrbitGridRandom(Grid &g, Rng &r);
-
 // Setzt zufaellig ausgewaehlte Original-Inseln auf die Karte (ohne Ueberlappung, mit Abstand). false = Bibliothek fehlt/passt nicht.
 bool genOrbitGridMF(Grid &g, Rng &r)
 {
@@ -416,46 +415,13 @@ void genOrbitGrid(Grid &g, Rng &r)
 	s_islandModels.clear();
 	if (!genOrbitGridMF(g, r))
 	{
-		debug(LOG_INFO, "modlayermap: MF-Inseln NICHT verwendet (Bibliothek %d Formen, Zusatzkacheln %d) - Notloesung mit Tileset-Kacheln", static_cast<int>(islandLibrary().size()), modExtTileCount);
-		genOrbitGridRandom(g, r);
+		// ohne die MF-Asteroiden-Daten (mf/islands.txt) gibt es keine Inseln - der Orbit ist dann nur Leere
+		debug(LOG_ERROR, "modlayermap: MF-Asteroiden fehlen (Bibliothek %d Formen, Zusatzkacheln %d) - Orbit ohne Inseln", static_cast<int>(islandLibrary().size()), modExtTileCount);
+		g.tid.assign(static_cast<size_t>(g.W) * static_cast<size_t>(g.H), -1);
 	}
 	else
 	{
 		debug(LOG_INFO, "modlayermap: MF-Inseln verwendet (Bibliothek %d Formen, Zusatzkacheln %d)", static_cast<int>(islandLibrary().size()), modExtTileCount);
-	}
-}
-
-// Notloesung ohne Bibliothek: Zufallswachstum ab einem Mittelpunkt (nur Ganzzahlen)
-void genOrbitGridRandom(Grid &g, Rng &r)
-{
-	const int W = g.W, H = g.H;
-	const int nIs = std::max(3, (W * H) / 1800);
-	for (int i = 0; i < nIs; ++i)
-	{
-		const int rad = 5 + r.range(6) + ((W * H > 40000) ? 3 : 0);
-		const int cx = MARGIN + rad + 1 + r.range(std::max(1, W - 2 * (MARGIN + rad + 1)));
-		const int cy = MARGIN + rad + 1 + r.range(std::max(1, H - 2 * (MARGIN + rad + 1)));
-		const int target = (rad * rad * 3);
-		std::vector<Pt> frontier;
-		frontier.push_back({ cx, cy });
-		g.set(cx, cy);
-		int area = 1;
-		int guard = target * 40;
-		while (area < target && !frontier.empty() && guard-- > 0)
-		{
-			const size_t idx = static_cast<size_t>(r.range(static_cast<int>(frontier.size())));
-			const Pt p = frontier[idx];
-			static const int DX[4] = { 1, -1, 0, 0 };
-			static const int DY[4] = { 0, 0, 1, -1 };
-			const int d = r.range(4);
-			const int nx = p.x + DX[d], ny = p.y + DY[d];
-			if (nx < MARGIN || ny < MARGIN || nx >= W - MARGIN || ny >= H - MARGIN) { continue; }
-			if (std::abs(nx - cx) > rad + 3 || std::abs(ny - cy) > rad + 3) { continue; }
-			if (g.at(nx, ny)) { continue; }
-			g.set(nx, ny);
-			frontier.push_back({ nx, ny });
-			++area;
-		}
 	}
 }
 
@@ -480,8 +446,8 @@ std::unique_ptr<MAPTILE[]> makeTiles(Layer layer, const Grid &g, const Palette &
 			}
 			else
 			{
-				// Orbit wie in MF: Inseln und Leere liegen auf derselben Hoehe (eben, keine Rampen zum Boden). Dass die Inseln frei
-				// schweben, zeichnet der Terrain-Shader: unter der Leere-Kachel (256) erscheinen Inselflanken und tief unten der Boden.
+				// Orbit wie in MF: Inseln und Leere liegen auf derselben Hoehe (eben, keine Rampen zum Boden). Unter der Leere-Kachel
+				// (256) zeichnen die Terrain-Shader tief unten den Planetenboden; die Inseln selbst sind die MF-Asteroiden (display3d).
 				(void)low;
 				t.height = 1040;
 			}
@@ -503,50 +469,37 @@ std::unique_ptr<MAPTILE[]> makeTiles(Layer layer, const Grid &g, const Palette &
 	return tiles;
 }
 
-// MOD (16.11. 18:06): Abstandsfeld der Orbit-Inseln (Abstand Feldmitte -> naechste Leere-Feldmitte, Fasen-Abstand 1 / 1.414)
-std::vector<uint8_t> s_islandLevel;
-int s_islandW = 0;
-int s_islandH = 0;
+// MOD (17.11.): Orbit-Planetenboden wie in MF - die echte Oberflaeche tief unten, verschwommen und durchgehend (keine Kacheln).
+// Je Feld die mittlere Farbe der Oberflaechen-Kachel mit etwas Relief-Schattierung; terrain.cpp schreibt sie im Orbit in die
+// Lichtkarte (rgb), die Terrain-Shader lesen sie unter der Leere am Bodenpunkt weich (bilinear + Weichzeichnung) aus.
+std::vector<uint8_t> s_floorRgb;
+int s_floorW = 0;
+int s_floorH = 0;
 
-void computeIslandLevels(const Grid &g)
+void computeOrbitFloor()
 {
-	const int W = g.W, H = g.H;
-	s_islandW = W; s_islandH = H;
-	std::vector<float> d(static_cast<size_t>(W) * static_cast<size_t>(H), 0.f);
-	auto at = [&](int x, int y) -> float & { return d[static_cast<size_t>(x) + static_cast<size_t>(y) * W]; };
-	const float INF = 1e9f;
+	const WorldMapState &m = gameWorld.map;   // hier noch die Oberflaechenkarte (ensureWorlds)
+	const int W = m.width, H = m.height;
+	s_floorW = W; s_floorH = H;
+	s_floorRgb.assign(static_cast<size_t>(W) * static_cast<size_t>(H) * 3, 0);
+	auto hgt = [&](int x, int y) -> int {
+		x = std::clamp(x, 0, W - 1); y = std::clamp(y, 0, H - 1);
+		return m.tiles[static_cast<size_t>(x) + static_cast<size_t>(y) * W].height;
+	};
 	for (int y = 0; y < H; ++y)
 	{
 		for (int x = 0; x < W; ++x)
 		{
-			const bool island = !g.tid.empty() ? (g.tid[static_cast<size_t>(x) + static_cast<size_t>(y) * W] >= 0) : g.at(x, y);
-			// Kartenrand zaehlt als Leere
-			at(x, y) = (!island || x == 0 || y == 0 || x == W - 1 || y == H - 1) ? 0.f : INF;
+			const MAPTILE &t = m.tiles[static_cast<size_t>(x) + static_cast<size_t>(y) * W];
+			const PIELIGHT c = radarTileColour(TileNumber_tile(t.texture));
+			// Licht von links oben: Hang zur Sonne heller, abgewandt dunkler (wie auf einem Satellitenbild)
+			const float slope = static_cast<float>(hgt(x - 1, y - 1) - hgt(x + 1, y + 1)) / static_cast<float>(2 * TILE_UNITS);
+			const float k = std::clamp(1.f + slope * 0.9f, 0.6f, 1.35f);
+			uint8_t *o = &s_floorRgb[(static_cast<size_t>(x) + static_cast<size_t>(y) * W) * 3];
+			o[0] = static_cast<uint8_t>(std::clamp(static_cast<float>(c.byte.r) * k, 0.f, 255.f));
+			o[1] = static_cast<uint8_t>(std::clamp(static_cast<float>(c.byte.g) * k, 0.f, 255.f));
+			o[2] = static_cast<uint8_t>(std::clamp(static_cast<float>(c.byte.b) * k, 0.f, 255.f));
 		}
-	}
-	const float D1 = 1.f, D2 = 1.41421356f;
-	for (int y = 1; y < H; ++y)
-	{
-		for (int x = 1; x < W - 1; ++x)
-		{
-			float &v = at(x, y);
-			v = std::min({v, at(x - 1, y) + D1, at(x, y - 1) + D1, at(x - 1, y - 1) + D2, at(x + 1, y - 1) + D2});
-		}
-	}
-	for (int y = H - 2; y >= 0; --y)
-	{
-		for (int x = W - 2; x >= 1; --x)
-		{
-			float &v = at(x, y);
-			v = std::min({v, at(x + 1, y) + D1, at(x, y + 1) + D1, at(x + 1, y + 1) + D2, at(x - 1, y + 1) + D2});
-		}
-	}
-	s_islandLevel.assign(d.size(), 0);
-	for (size_t i = 0; i < d.size(); ++i)
-	{
-		if (d[i] <= 0.f) { continue; }
-		const float c = std::min(d[i], 6.f);
-		s_islandLevel[i] = static_cast<uint8_t>(std::min(253, 1 + static_cast<int>(c * 42.f + 0.5f)));
 	}
 }
 
@@ -555,7 +508,7 @@ bool buildLayer(Layer layer, const Palette &pal, uint32_t seed)
 	const int W = s_w, H = s_h;
 	Rng r(seed ^ (layer == modlayer::UNDERGROUND ? 0xA5A5A5A5u : 0x5A5A5A5Au));
 	Grid g(W, H);
-	if (layer == modlayer::UNDERGROUND) { genUndergroundGrid(g, r); } else { genOrbitGrid(g, r); computeIslandLevels(g); }
+	if (layer == modlayer::UNDERGROUND) { genUndergroundGrid(g, r); } else { genOrbitGrid(g, r); computeOrbitFloor(); }
 
 	WorldMapState tmp;
 	tmp.width = W;
@@ -889,11 +842,13 @@ const std::vector<IslandModel> &orbitIslandModels()
 	return s_islandModels;
 }
 
-bool islandLevel(int x, int y, uint8_t &level)
+bool orbitFloorColour(int x, int y, uint8_t rgb[3])
 {
-	if (resident() != modlayer::ORBIT || s_islandLevel.empty()) { return false; }
-	if (x < 0 || y < 0 || x >= s_islandW || y >= s_islandH) { level = 0; return true; }
-	level = s_islandLevel[static_cast<size_t>(x) + static_cast<size_t>(y) * s_islandW];
+	if (resident() != modlayer::ORBIT || s_floorRgb.empty()) { return false; }
+	x = std::clamp(x, 0, s_floorW - 1);
+	y = std::clamp(y, 0, s_floorH - 1);
+	const uint8_t *c = &s_floorRgb[(static_cast<size_t>(x) + static_cast<size_t>(y) * s_floorW) * 3];
+	rgb[0] = c[0]; rgb[1] = c[1]; rgb[2] = c[2];
 	return true;
 }
 
@@ -909,9 +864,9 @@ void reset()
 		mapDangerSerializeEnd(true);
 		s_parked = false;
 	}
-	s_islandLevel.clear();   // MOD 16.11.
+	s_floorRgb.clear();      // MOD 17.11.
 	s_islandModels.clear();  // MOD 16.11. 22:58
-	s_islandW = s_islandH = 0;
+	s_floorW = s_floorH = 0;
 	freeSlots();
 	s_built = false;
 	s_failed = false;

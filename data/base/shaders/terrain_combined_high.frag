@@ -82,64 +82,43 @@ out vec4 FragColor;
 #include "light.glsl"
 #ifdef NEWGL
 
-// MOD: Orbit wie in Metal Fatigue (Ueberarbeitung 16.11. 21:00 nach den MF-Bildern des Nutzers): flache Inseln auf einem dicken,
-// unten rund eingezogenen Felssockel; tief darunter verschwommen der Planetenboden (Kachel 256, je Tileset: Wueste/Stadt/Gebirge).
-//  - lightmap.a traegt im Orbit ein Abstandsfeld: 0 = Leere, Inselkacheln = Abstand zum Rand in Feldern (1..6, kodiert 1 + d*42),
-//    gesetzt in src/terrain.cpp updateLightMap / modlayermap::islandLevel. Bilinear gelesen ergibt es eine weiche Umrisslinie.
-//  - Unter der Leere: Strahl nach unten -> erst der Felssockel einer Insel (Gestein Kachel 257, Licht aus der Sonnenrichtung),
-//    sonst tief unten der Boden mit den Inselschatten. Die Schrittweite richtet sich nach dem Blickwinkel (keine Zacken/Treppen bei
-//    flacher Kamera), Ferne geht in Dunst ueber, Texturen mit passender Mip-Stufe (kein Flimmern beim Drehen/Neigen der Kamera).
+// MOD: Orbit wie in Metal Fatigue (17.11.): die Inseln sind die echten MF-Asteroiden-Modelle (Engine, display3d); unter der
+// Leere-Kachel (256) liegt tief unten verschwommen die echte Planetenoberflaeche. Ihre Farbe je Feld (Oberflaechenkarte mit Relief)
+// steht im Orbit in lightmap.rgb (src/terrain.cpp updateLightMap, modlayermap::orbitFloorColour) und wird hier am Bodenpunkt
+// bilinear gelesen und weichgezeichnet - durchgehend, ohne Kachelraender.
 const int MODV_TILE = 256;
 const float MODV_DEPTH = 4600.0;         // so tief liegt der Boden unter den Inseln
-const float MODV_FLOOR_REPEAT = 2048.0;  // Wiederholung der Bodentextur (Welteinheiten)
-
-// Feldgroesse in Welteinheiten aus der Lichtkarten-Matrix (1 / (Feldgroesse * Lichtkartenbreite)) - gilt fuer jedes Raster (128 oder 64)
-
-
-// weiches Abstandsfeld (in Feldern) an einer Stelle (Modellkoordinaten x/z)
-
-
-
-
-// Schwelle des Sockels in der Tiefe d (oben 0.5 = Umrisslinie): oben fast senkrecht, unten rund eingezogen (wie in MF), unregelmaessig
 
 vec3 modvLight()
 {
 	return clamp(ambientLight.rgb * 0.55 + diffuseLight.rgb * 0.55, vec3(0.3), vec3(1.2));
 }
 
-// Mip-Stufe fuer eine Textur, die sich alle 'repeat' Einheiten wiederholt, in Entfernung 'dist' unter dem Blickwinkel cosI
-float modvLod(float dist, float cosI, float repeatUnits)
+// Planetenboden am Punkt g (Modellkoordinaten), weichgezeichnet ueber etwa 'spread' Felder
+vec3 modvFloor(vec3 g, float spread)
 {
-	float pix = 1.2 / float(max(viewportHeight, 1));                  // Blickwinkel je Bildpunkt (Bogenmass, ungefaehr)
-	float foot = dist * pix / sqrt(max(cosI, 0.02));                   // Flaeche eines Bildpunkts auf der Oberflaeche (Einheiten)
-	float texels = foot * float(textureSize(decalTex, 0).x) / repeatUnits;
-	return max(log2(max(texels, 0.0001)), 0.0);
+	vec2 uv = (ModelUVLightmapMatrix * vec4(g, 1.0)).xy;
+	vec2 px = spread / vec2(textureSize(lightmap_tex, 0));
+	vec3 c = texture(lightmap_tex, uv).rgb * 0.36;
+	c += texture(lightmap_tex, uv + vec2( 0.8,  0.3) * px).rgb * 0.16;
+	c += texture(lightmap_tex, uv + vec2(-0.8, -0.3) * px).rgb * 0.16;
+	c += texture(lightmap_tex, uv + vec2(-0.3,  0.8) * px).rgb * 0.16;
+	c += texture(lightmap_tex, uv + vec2( 0.3, -0.8) * px).rgb * 0.16;
+	if (linearLighting != 0) { c = wzSrgbToLinear(c); }
+	return c;
 }
-
-// Dunst in der Ferne: Mittelwert des Bodens (kleinste Mip-Stufe) mit etwas Himmelsgrau
-vec3 modvHaze(vec3 lightC)
-{
-	vec3 avg = textureLod(decalTex, vec3(0.5, 0.5, float(MODV_TILE)), 14.0).rgb;
-	return mix(avg, vec3(0.70, 0.72, 0.76), 0.45) * lightC;
-}
-
 
 vec3 modvColor(vec3 P)
 {
-	// MOD (Wunsch 16.11. 23:13): Orbit wie in MF - unter der Leere nur der verschwommene Planetenboden tief unten. Die Inseln sind die
-	// echten MF-Asteroiden-Modelle (Engine, display3d). Der fruehere nachgebaute Felssockel samt Inselrand ist komplett entfernt.
 	vec3 V = P - cameraPos.xyz;
 	float lenV = max(length(V), 1.0);
 	float down = max(-V.y, 0.02 * lenV);
 	vec3 dir = V / down;                 // Weg je Einheit Abstieg
-	float cosI = down / lenV;            // Steilheit des Blicks (1 = senkrecht)
 	vec3 lightC = modvLight();
-	vec3 haze = modvHaze(lightC);
 	vec3 g = P + dir * MODV_DEPTH;
 	float distG = lenV + length(dir) * MODV_DEPTH;
-	vec2 uvg = vec2(g.x, -g.z) / MODV_FLOOR_REPEAT;
-	vec3 col = textureLod(decalTex, vec3(fract(uvg), float(MODV_TILE)), modvLod(distG, cosI, MODV_FLOOR_REPEAT) + 2.5).rgb;
+	vec3 col = modvFloor(g, 1.6);
+	vec3 haze = mix(modvFloor(g, 9.0), vec3(0.70, 0.72, 0.76), 0.45) * lightC;
 	return mix(col * lightC, haze, 0.15 + 0.85 * smoothstep(9000.0, 32000.0, distG));
 }
 #endif

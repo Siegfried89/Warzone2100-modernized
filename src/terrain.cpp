@@ -1816,6 +1816,14 @@ static void updateLightMap(WorldMapState& mapState, const LightMap& lightmap)
 			MAPTILE *psTile = mapTile(mapState, i, j);
 			PIELIGHT colour = lightmap(i, j);
 			UBYTE level = static_cast<UBYTE>(psTile->level);
+			// MOD (17.11.): im Orbit traegt lightmap.rgb den Planetenboden (Oberflaechenkarte); die Shader lesen ihn unter der Leere
+			uint8_t modFloor[3];
+			if (orbitView && modlayermap::orbitFloorColour(i, j, modFloor))
+			{
+				colour.byte.r = modFloor[0];
+				colour.byte.g = modFloor[1];
+				colour.byte.b = modFloor[2];
+			}
 
 			if (psTile->tileInfoBits & BITS_GATEWAY && showGateways)
 			{
@@ -1848,7 +1856,7 @@ static void updateLightMap(WorldMapState& mapState, const LightMap& lightmap)
 			// (For more, see avUpdateTiles() and getTileIllumination())
 			lightMapWritePtr[(i + j * lightmapWidth) * lightmapChannels + 3] = level;
 
-			if (!pie_GetFogStatus() && !orbitView)   // MOD: im Orbit nicht abdunkeln (lightmap.a ist dort das Inselfeld)
+			if (!pie_GetFogStatus() && !orbitView)   // MOD: im Orbit nicht abdunkeln (lightmap.rgb ist dort der Planetenboden)
 			{
 				// fade to black at the edges of the visible terrain area
 				const float playerX = map_coordf(playerPos.p.x);

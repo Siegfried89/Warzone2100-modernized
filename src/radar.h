@@ -33,7 +33,8 @@
 struct GameWorld;
 struct WorldMapState;
 
-void radarColour(UDWORD tileNumber, uint8_t r, uint8_t g, uint8_t b);	///< Set radar colour for given terrain type.
+void radarColour(UDWORD tileNumber, uint8_t r, uint8_t g, uint8_t b);
+PIELIGHT radarTileColour(UDWORD tileNumber);   ///< MOD: Kachelfarbe (Mittelwert der Kacheltextur)	///< Set radar colour for given terrain type.
 
 #define MAX_RADARZOOM		(64)
 #define MIN_RADARZOOM		(8)
