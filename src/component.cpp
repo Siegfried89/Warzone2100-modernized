@@ -33,6 +33,7 @@
 #include "action.h"
 #include "component.h"
 #include "modimpostor.h"
+#include "modtactical.h"
 #include "display3d.h"
 #include "lib/ivis_opengl/pielighting.h"
 #include "warzoneconfig.h"
@@ -647,6 +648,12 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		return modcombot::draw(const_cast<DROID *>(psDroid), bButton, modifiedModelMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, iPieData);
 	}
 
+	// MOD (Wunsch 17.11. 18:48): taktische Symbole eingeschaltet und weit genug herausgezoomt - statt des Modells zeichnet modtactical
+	// das Symbol ueber das Bild
+	if (!bButton && modtactical::active())
+	{
+		return true;
+	}
 	// MOD (Wunsch 17.11. 18:02): weit herausgezoomt erscheinen alle Einheiten als Sprite (Detailstufe wie in Rome Total War)
 	if (!bButton && !(pieFlag & pie_TRANSLUCENT) && modimpostor::draw(psDroid, modifiedModelMatrix, viewMatrix, static_cast<int>(colour), brightness))
 	{
