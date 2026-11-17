@@ -46,6 +46,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -1068,8 +1069,11 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 
 // ------------------------------------------------------------------------------------------------- Zeichnen im 3D-Bild
 
+std::function<bool(const Vector2i &, Vector2i &)> s_proj;   // (17.11.) grosse Karte: Weltpunkt -> Bildschirmpunkt statt 3D-Projektion
+
 bool project(const Vector2i &w, const glm::mat4 &m, Vector2i &out)
 {
+	if (s_proj) { return s_proj(w, out); }
 	const int wx = std::clamp(w.x, 0, world_coord(gameWorld.map.width) - 1);
 	const int wy = std::clamp(w.y, 0, world_coord(gameWorld.map.height) - 1);
 	const Vector3i pos(wx, map_Height(gameWorld.map, wx, wy) + 10, -wy);
@@ -1431,6 +1435,13 @@ void selectMode(const char *label)
 	{
 		if (label != nullptr && strcmp(kModes[m].label, label) == 0) { s_mode = m; s_drawing = false; s_cur.clear(); return; }
 	}
+}
+
+void drawOnMap(const std::function<bool(const Vector2i &, Vector2i &)> &toScreen)
+{
+	s_proj = toScreen;
+	drawOverlay(glm::mat4(1.f));
+	s_proj = nullptr;
 }
 
 const char *activeLabel()

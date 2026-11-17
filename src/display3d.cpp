@@ -102,6 +102,9 @@
 #include "modgrid.h"
 #include "modpaint.h"
 #include "modferry.h"
+#include "modmines.h"
+#include "modtactical.h"
+#include "modbigmap.h"
 #include "modoil.h"
 #include "modrecover.h"
 #include "modnestcrew.h"
@@ -1179,7 +1182,7 @@ void draw3DScene()
 
 	pie_Begin3DScene();
 	/* Set 3D world origins */
-	pie_SetGeometricOffset(rendSurface.width / 2, geoOffset);
+	pie_SetGeometricOffset(modbigmap::viewCenterX(rendSurface.width), geoOffset);   // MOD: geteilter Bildschirm - 3D-Mitte rechts
 
 	updateFogDistance(distance);
 
@@ -5637,7 +5640,10 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 	modgrid::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Stromkabel / Stromnetz-Anzeige
 	modpaint::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: Schlachtplan-Zeichnungen
 	modferry::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: blinkende Transport-Leuchtfeuer
+	modtactical::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD (17.11. 18:48): taktische Symbole statt Modelle
+	modmines::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD (17.11. 18:48): Shift = gelbe Minen-Zeichen
 	drawDroidAndStructureSelections();
+	modbigmap::draw();   // MOD (17.11. 18:48): strategische Karte (ganzer Bildschirm oder linke Haelfte)
 
 	pie_SetFogStatus(false);
 	iV_SetTextColour(WZCOL_TEXT_BRIGHT);

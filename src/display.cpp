@@ -44,6 +44,7 @@
 #include "modsound.h"
 #include "modlayer.h"
 #include "modpaint.h"
+#include "modbigmap.h"
 #include "uiobjectrefs.h"
 #include "ordersource.h"
 #include "droid.h"
@@ -904,6 +905,10 @@ void processMouseClickInput()
 		                    || buildState != BUILD3D_NONE || intBuildSelectMode();
 		modgroundfire::updatePreview(!overUi && !gestureActive && modgroundfire::keysForGroundFire() && mouseTarget() == nullptr, mousePos);
 		modbuild::updatePreview(!overUi && !gestureActive && mouseTarget() == nullptr, mousePos);   // MOD: Befestigungsbau (Strg + Baufahrzeug)
+		if (!gestureActive && modbigmap::processMouse(overUi))   // MOD (17.11.): strategische Karte - Auswahl, Befehle, Zeichnen auf der Karte
+		{
+			return;
+		}
 		if (!gestureActive && modpaint::processMouse(overUi, mousePos))   // MOD: "Frei malen" (Schlachtplan) - die Maus gehoert dem Zeichnen
 		{
 			return;
