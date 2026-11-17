@@ -104,6 +104,7 @@
 #include "modferry.h"
 #include "modnightlights.h"
 #include "modrocket.h"
+#include "modnuke.h"
 #include "modmines.h"
 #include "modtactical.h"
 #include "modbigmap.h"
@@ -1548,6 +1549,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	displayDelivPoints(viewMatrix, perspectiveViewMatrix);
 	modferry::draw3D(viewMatrix);   // MOD (17.11. 18:18): Landezonen-Lichter rot / blau / gruen
 	modnightlights::draw3D(viewMatrix);
+	modnuke::draw3D(viewMatrix);     // MOD (17.11. 21:13): Dampf ueber den Kuehltuermen laufender Atomkraftwerke
 	modrocket::draw3D(viewMatrix);   // MOD (17.11. 20:56): Raketen im Silo, Countdown-Dampf, Start   // MOD (17.11. 20:44): warmweisse Nachtlichter an Masten, Kraenen, Tuermen, Gebaeuden
 	display3DProjectiles(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
 	wzPerfEnd(PERF_MODEL_INIT);

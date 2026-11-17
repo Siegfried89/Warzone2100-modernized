@@ -41,6 +41,7 @@
 #include "modgrid.h"
 #include "modcrates.h"
 #include "modfuel.h"
+#include "modnuke.h"
 
 namespace modoil
 {
@@ -1184,8 +1185,8 @@ void ledgerReport()
 			continue;
 		}
 		const int64_t delta = now - s_ledgerPower[p];
-		const int64_t known = s_ledger[p][INC_BARRELS] + s_ledger[p][INC_SOLAR] + s_ledger[p][INC_LAVA] + s_ledger[p][INC_SALVAGE];
-		int derricks = 0, linked = 0, barrels = 0, gens = 0, fuelled = 0, standby = 0, refs = 0, trucks = 0, tankers = 0;
+		const int64_t known = s_ledger[p][INC_BARRELS] + s_ledger[p][INC_SOLAR] + s_ledger[p][INC_LAVA] + s_ledger[p][INC_SALVAGE] + s_ledger[p][INC_NUCLEAR];
+		int derricks = 0, linked = 0, barrels = 0, gens = 0, fuelled = 0, standby = 0, refs = 0, trucks = 0, tankers = 0, nukes = 0, nukesOn = 0;
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->died || s->status != SS_BUILT) { continue; }
@@ -1204,16 +1205,17 @@ void ledgerReport()
 				if (modgrid::generatorStandby(s)) { standby++; }
 			}
 			else if (isRefinery(st)) { refs++; }
+			else if (modnuke::isPlant(st)) { nukes++; if (modnuke::running(s)) { nukesOn++; } }
 		}
 		for (const auto &kv : s_cargo)
 		{
 			if (kv.second.player != p) { continue; }
 			if (kv.second.tank) { tankers++; } else { trucks++; }
 		}
-		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Faesser %lld, Solar %lld, Lava %lld, Bergung %lld, sonstige %lld) | Fass-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (mit Brennstoff %d, Bereitschaft %d) | Raffinerien %d | Lkw %d, Tanker %d",
+		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Faesser %lld, Solar %lld, Lava %lld, Bergung %lld, Atom %lld, sonstige %lld) | Fass-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (mit Brennstoff %d, Bereitschaft %d) | Raffinerien %d | Lkw %d, Tanker %d | Atomkraftwerke %d (laufend %d), Uran %d",
 		      p, static_cast<long long>(now), static_cast<long long>(delta), static_cast<long long>(s_ledger[p][INC_BARRELS]), static_cast<long long>(s_ledger[p][INC_SOLAR]),
-		      static_cast<long long>(s_ledger[p][INC_LAVA]), static_cast<long long>(s_ledger[p][INC_SALVAGE]), static_cast<long long>(delta - known),
-		      manages(p) ? "ja" : "NEIN", derricks, linked, barrels, gens, fuelled, standby, refs, trucks, tankers);
+		      static_cast<long long>(s_ledger[p][INC_LAVA]), static_cast<long long>(s_ledger[p][INC_SALVAGE]), static_cast<long long>(s_ledger[p][INC_NUCLEAR]), static_cast<long long>(delta - known),
+		      manages(p) ? "ja" : "NEIN", derricks, linked, barrels, gens, fuelled, standby, refs, trucks, tankers, nukes, nukesOn, modnuke::uranium(p));
 		s_ledgerPower[p] = now;
 		for (int k = 0; k < INC_COUNT; k++) { s_ledger[p][k] = 0; }
 	}

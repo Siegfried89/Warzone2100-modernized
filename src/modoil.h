@@ -24,7 +24,7 @@ namespace modoil
 /// gilt die Fass-Wirtschaft fuer diesen Spieler?
 bool manages(int player);
 /// (17.11. 20:35) Einnahmen-Buch: jede Spielminute steht im Log, woher die Energie kam ("MOD-Wirtschaft ...")
-enum IncomeKind { INC_BARRELS = 0, INC_SOLAR, INC_LAVA, INC_SALVAGE, INC_COUNT };
+enum IncomeKind { INC_BARRELS = 0, INC_SOLAR, INC_LAVA, INC_SALVAGE, INC_NUCLEAR, INC_COUNT };
 void noteIncome(int player, int kind, int amount);
 /// (17.11. 20:35) Gebaeude fertig gebaut: Kraftwerk -> ein Oeltanker und ein Fracht-Lkw stehen sofort daneben, Raffinerie -> ein Fracht-Lkw
 void onBuilt(STRUCTURE *psStruct);

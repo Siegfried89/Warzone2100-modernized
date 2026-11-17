@@ -89,6 +89,7 @@
 #include "modinertia.h"
 #include "modrocket.h"
 #include "modapc.h"
+#include "modnuke.h"
 #include "modmines.h"
 #include "modbigmap.h"
 #include "modfuel.h"
@@ -778,6 +779,7 @@ void interfaceShutDown()
 	modoutpost::reset();     // MOD: Aussenposten-Teleport
 	modrocket::reset();      // MOD (17.11. 20:56): Raketensilo
 	modapc::reset();         // MOD (17.11. 21:01): Schuetzenpanzer
+	modnuke::reset();        // MOD (17.11. 21:13): Atomkraftwerk
 	modconcrete::reset();    // MOD: Betonboden unter Gebaeuden
 	modweather::reset();     // MOD
 	modinvade::reset();
