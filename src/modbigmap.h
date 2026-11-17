@@ -10,6 +10,8 @@
 //  - Mausrad zoomt um den Mauszeiger, mittlere Maustaste verschiebt. Linksklick waehlt eine Einheit (Umschalt = dazu), Ziehen = Rahmen-
 //    auswahl, Doppelklick = Kamera dorthin; Rechtsklick = Befehl an die Auswahl (auf Gegner: Angriff, sonst Bewegung; Umschalt = anhaengen).
 //  - Schlachtplan-Zeichnen (modpaint) funktioniert auch auf der grossen Karte.
+//  - (17.11. 19:42) Anzeigearten wie in Supreme Commander (Knopf "View"): Gelaende, kartografisch (Papierkarte mit Hoehenlinien),
+//    Hoehen (Hoehenschichtfarben mit Hoehenlinien), strategisch (dunkles Relief); Knopf "Resources" blendet die Oelquellen ein.
 // Knoepfe "Map" und "Symbols" ueber der Minikarte (Symbols = taktische Symbole im 3D-Bild ein/aus).
 #pragma once
 

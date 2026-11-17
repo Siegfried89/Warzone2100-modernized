@@ -22,6 +22,8 @@
 #include "component.h"
 #include "display.h"
 #include "display3d.h"
+#include "feature.h"
+#include "featuredef.h"
 #include "droid.h"
 #include "game_world.h"
 #include "hci.h"
@@ -49,6 +51,12 @@ int s_mode = 0;                  // 0 zu, 1 ganzer Bildschirm, 2 geteilt (Karte 
 float s_cx = 0.f, s_cy = 0.f;    // Weltmitte der Kartenansicht
 float s_wpp = 16.f;              // Welteinheiten je Bildpunkt
 float s_fit = 16.f;
+// (Wunsch 17.11. 19:42) Anzeigearten wie in Supreme Commander: Gelaende, kartografisch (Papierkarte mit Hoehenlinien), Hoehen
+// (Hoehenschichtfarben), strategisch (dunkel, nur Relief) - dazu die Einblendung der Rohstoffe (Oelquellen)
+enum View { V_TERRAIN = 0, V_CARTO, V_ELEV, V_STRAT, V_COUNT };
+int s_view = V_TERRAIN;
+bool s_res = true;
+int s_texView = -1;
 GFX *s_gfx = nullptr;
 iV_Image s_img;
 int s_texW = 0, s_texH = 0;
@@ -61,7 +69,7 @@ Vector2i s_lastClickPos(0, 0);
 // Knoepfe
 std::shared_ptr<W_SCREEN> s_screen;
 std::vector<std::shared_ptr<W_BUTTON>> s_btn;
-enum Btn { B_MAP = 0, B_SYM, B_SPLIT, B_CLOSE, B_COUNT };
+enum Btn { B_MAP = 0, B_SYM, B_SPLIT, B_CLOSE, B_VIEW, B_RES, B_COUNT };
 
 struct Rect { float x0, y0, x1, y1; };
 
@@ -127,26 +135,83 @@ void rebuildTexture()
 		s_texW = tw; s_texH = th;
 	}
 	std::vector<float> rgb(static_cast<size_t>(mw) * mh * 3, 0.f);
+	std::vector<float> hgt(static_cast<size_t>(mw) * mh, 0.f);
+	std::vector<unsigned char> wat(static_cast<size_t>(mw) * mh, 0), see(static_cast<size_t>(mw) * mh, 0);
+	float hMin = 1e9f, hMax = -1e9f;
 	for (int y = 0; y < mh; ++y)
 	{
 		for (int x = 0; x < mw; ++x)
 		{
-			MAPTILE *t = mapTile(gameWorld.map, x, y);
-			const PIELIGHT c = radarTileColour(TileNumber_tile(t->texture));
-			// Licht von Nordwest: Hoehenunterschied zum Nachbarn
-			const int hn = mapTile(gameWorld.map, std::max(0, x - 1), std::max(0, y - 1))->height;
-			const float shade = std::clamp(1.f + static_cast<float>(t->height - hn) / 260.f, 0.55f, 1.45f);
-			const bool seen = selectedPlayer >= MAX_PLAYERS || TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(t);
-			// leicht entsaettigt und abgedunkelt (strategische Karte), Unerforschtes fast schwarz
-			const float lum = (c.byte.r * 0.3f + c.byte.g * 0.59f + c.byte.b * 0.11f);
-			const float k = (seen ? 0.78f : 0.16f) * shade;
-			float *o = &rgb[(static_cast<size_t>(y) * mw + x) * 3];
-			o[0] = (c.byte.r * 0.7f + lum * 0.3f) * k;
-			o[1] = (c.byte.g * 0.7f + lum * 0.3f) * k;
-			o[2] = (c.byte.b * 0.7f + lum * 0.3f) * k + (seen ? 6.f : 3.f);
-			if (terrainType(t) == TER_WATER) { o[0] = 30.f * k; o[1] = 70.f * k; o[2] = 120.f * k + 10.f; }
+			const MAPTILE *t = mapTile(gameWorld.map, x, y);
+			const size_t i = static_cast<size_t>(y) * mw + x;
+			hgt[i] = static_cast<float>(t->height);
+			wat[i] = terrainType(t) == TER_WATER ? 1 : 0;
+			see[i] = (selectedPlayer >= MAX_PLAYERS || TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(const_cast<MAPTILE *>(t))) ? 1 : 0;
+			hMin = std::min(hMin, hgt[i]); hMax = std::max(hMax, hgt[i]);
 		}
 	}
+	const float hRange = std::max(1.f, hMax - hMin);
+	for (int y = 0; y < mh; ++y)
+	{
+		for (int x = 0; x < mw; ++x)
+		{
+			const size_t i = static_cast<size_t>(y) * mw + x;
+			MAPTILE *t = mapTile(gameWorld.map, x, y);
+			// Licht von Nordwest: Hoehenunterschied zum Nachbarn
+			const float hn = hgt[static_cast<size_t>(std::max(0, y - 1)) * mw + std::max(0, x - 1)];
+			const float shade = std::clamp(1.f + (hgt[i] - hn) / 260.f, 0.55f, 1.45f);
+			const bool seen = see[i] != 0;
+			const float e = (hgt[i] - hMin) / hRange;   // 0 tief .. 1 hoch
+			float *o = &rgb[i * 3];
+			switch (s_view)
+			{
+			case V_CARTO:
+			{
+				// Papierkarte: helles Beige, mit der Hoehe etwas dunkler/braeunlicher, Wasser hellblau (Hoehenlinien kommen unten dazu)
+				const float sh = 1.f + (shade - 1.f) * 0.45f;
+				o[0] = (236.f - 30.f * e) * sh; o[1] = (226.f - 42.f * e) * sh; o[2] = (196.f - 58.f * e) * sh;
+				if (wat[i]) { o[0] = 168.f; o[1] = 206.f; o[2] = 232.f; }
+				if (!seen) { o[0] *= 0.55f; o[1] *= 0.55f; o[2] *= 0.6f; }
+				break;
+			}
+			case V_ELEV:
+			{
+				// Hoehenschichten: dunkelgruen - hellgruen - gelb - braun - grau/weiss
+				static const float stops[6][3] = { { 40, 110, 60 }, { 110, 170, 80 }, { 215, 205, 110 }, { 175, 120, 70 }, { 135, 110, 100 }, { 235, 235, 235 } };
+				const float f = std::clamp(e, 0.f, 1.f) * 5.f;
+				const int k = std::min(4, static_cast<int>(f));
+				const float a = f - static_cast<float>(k);
+				for (int c = 0; c < 3; ++c) { o[c] = (stops[k][c] * (1.f - a) + stops[k + 1][c] * a) * shade; }
+				if (wat[i]) { o[0] = 40.f; o[1] = 90.f; o[2] = 170.f; }
+				if (!seen) { o[0] *= 0.35f; o[1] *= 0.35f; o[2] *= 0.4f; }
+				break;
+			}
+			case V_STRAT:
+			{
+				// strategisch: tiefes Blau, nur das Relief, Wasser etwas heller
+				const float sh = std::clamp(shade, 0.7f, 1.3f);
+				o[0] = 14.f * sh + 10.f * e; o[1] = 24.f * sh + 14.f * e; o[2] = 44.f * sh + 18.f * e;
+				if (wat[i]) { o[0] = 10.f; o[1] = 36.f; o[2] = 70.f; }
+				if (!seen) { o[0] *= 0.5f; o[1] *= 0.5f; o[2] *= 0.5f; }
+				break;
+			}
+			default:
+			{
+				const PIELIGHT c = radarTileColour(TileNumber_tile(t->texture));
+				// leicht entsaettigt und abgedunkelt (strategische Karte), Unerforschtes fast schwarz
+				const float lum = (c.byte.r * 0.3f + c.byte.g * 0.59f + c.byte.b * 0.11f);
+				const float k = (seen ? 0.78f : 0.16f) * shade;
+				o[0] = (c.byte.r * 0.7f + lum * 0.3f) * k;
+				o[1] = (c.byte.g * 0.7f + lum * 0.3f) * k;
+				o[2] = (c.byte.b * 0.7f + lum * 0.3f) * k + (seen ? 6.f : 3.f);
+				if (wat[i]) { o[0] = 30.f * k; o[1] = 70.f * k; o[2] = 120.f * k + 10.f; }
+				break;
+			}
+			}
+		}
+	}
+	// Hoehe je Texel (fuer Hoehenlinien)
+	std::vector<float> th2(static_cast<size_t>(tw) * th, 0.f);
 	unsigned char *dst = s_img.bmp_w();
 	for (int y = 0; y < th; ++y)
 	{
@@ -165,10 +230,48 @@ void rebuildTexture()
 				p[ch] = static_cast<unsigned char>(std::clamp(a * (1 - ay) + b * ay, 0.f, 255.f));
 			}
 			p[3] = 255;
+			const float ha = hgt[static_cast<size_t>(y0) * mw + x0] * (1 - ax) + hgt[static_cast<size_t>(y0) * mw + x1] * ax;
+			const float hb = hgt[static_cast<size_t>(y1) * mw + x0] * (1 - ax) + hgt[static_cast<size_t>(y1) * mw + x1] * ax;
+			th2[static_cast<size_t>(y) * tw + x] = ha * (1 - ay) + hb * ay;
+		}
+	}
+	// Hoehenlinien (kartografisch: braun, jede fuenfte kraeftiger; Hoehen/strategisch: zart)
+	if (s_view != V_TERRAIN)
+	{
+		const float iv = std::max(12.f, hRange / 14.f);
+		for (int y = 0; y + 1 < th; ++y)
+		{
+			for (int x = 0; x + 1 < tw; ++x)
+			{
+				const float h0 = th2[static_cast<size_t>(y) * tw + x];
+				const int c0 = static_cast<int>(std::floor((h0 - hMin) / iv));
+				const int cr = static_cast<int>(std::floor((th2[static_cast<size_t>(y) * tw + x + 1] - hMin) / iv));
+				const int cd = static_cast<int>(std::floor((th2[static_cast<size_t>(y + 1) * tw + x] - hMin) / iv));
+				if (c0 == cr && c0 == cd) { continue; }
+				const bool index = (std::max({ c0, cr, cd }) % 5) == 0;
+				unsigned char *p = dst + (static_cast<size_t>(y) * tw + x) * 4;
+				if (wat[static_cast<size_t>(std::min(mh - 1, y / 2)) * mw + std::min(mw - 1, x / 2)]) { continue; }
+				if (s_view == V_CARTO)
+				{
+					const float k = index ? 0.55f : 0.75f;
+					p[0] = static_cast<unsigned char>(p[0] * k * 0.95f); p[1] = static_cast<unsigned char>(p[1] * k * 0.8f); p[2] = static_cast<unsigned char>(p[2] * k * 0.65f);
+				}
+				else if (s_view == V_STRAT)
+				{
+					const int add = index ? 46 : 24;
+					p[0] = static_cast<unsigned char>(std::min(255, p[0] + add / 2)); p[1] = static_cast<unsigned char>(std::min(255, p[1] + add)); p[2] = static_cast<unsigned char>(std::min(255, p[2] + add + 10));
+				}
+				else
+				{
+					const float k = index ? 0.6f : 0.82f;
+					p[0] = static_cast<unsigned char>(p[0] * k); p[1] = static_cast<unsigned char>(p[1] * k); p[2] = static_cast<unsigned char>(p[2] * k);
+				}
+			}
 		}
 	}
 	s_gfx->updateTexture(s_img);
 	s_texAt = realTime;
+	s_texView = s_view;
 }
 
 void drawTerrain()
@@ -247,6 +350,9 @@ const char *btnLabel(int b)
 	case B_SYM: return modtactical::enabled() ? "Symbols: on" : "Symbols";
 	case B_SPLIT: return s_mode == 2 ? "Full" : "Split";
 	case B_CLOSE: return "Close";
+	case B_VIEW:
+		switch (s_view) { case V_CARTO: return "View: Cartographic"; case V_ELEV: return "View: Elevation"; case V_STRAT: return "View: Strategic"; default: return "View: Terrain"; }
+	case B_RES: return s_res ? "Resources: on" : "Resources";
 	default: return "";
 	}
 }
@@ -256,7 +362,7 @@ void drawBtn(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int b = static_cast<int>(psWidget->UserData);
 	const W_BUTTON *wb = static_cast<const W_BUTTON *>(psWidget);
 	const float s = modui::uiScale();
-	const bool on = (b == B_MAP && s_mode != 0) || (b == B_SYM && modtactical::enabled()) || (b == B_SPLIT && s_mode == 2);
+	const bool on = (b == B_MAP && s_mode != 0) || (b == B_SYM && modtactical::enabled()) || (b == B_SPLIT && s_mode == 2) || (b == B_RES && s_res);
 	static const PIELIGHT accent = pal_RGBA(110, 200, 255, 255);
 	modui::wzButton(static_cast<int>(xOffset) + psWidget->x(), static_cast<int>(yOffset) + psWidget->y(), psWidget->width(), psWidget->height(),
 	                btnLabel(b), on, (wb->getState() & WBUT_HIGHLIGHT) != 0, (wb->getState() & WBUT_DOWN) != 0, modui::sizeClassFor(s), &accent);
@@ -285,7 +391,9 @@ void ensureScreen()
 		"Strategic map (like Supreme Commander) - also opens with a click on the minimap",
 		"Tactical symbols: at medium and far zoom the units are shown as military map symbols instead of models/sprites",
 		"Split screen: strategic map on the left, normal view on the right",
-		"Close the strategic map" };
+		"Close the strategic map",
+		"Display mode like in Supreme Commander: terrain / cartographic (paper map with contour lines) / elevation (height colours) / strategic (dark relief)",
+		"Show the resources (oil resources and derricks) on the strategic map" };
 	for (int b = 0; b < B_COUNT; ++b)
 	{
 		auto w = std::make_shared<W_BUTTON>();
@@ -300,6 +408,8 @@ void ensureScreen()
 			case B_SYM: modtactical::toggle(); break;
 			case B_SPLIT: open(s_mode == 2 ? 1 : 2); break;
 			case B_CLOSE: open(0); break;
+			case B_VIEW: s_view = (s_view + 1) % V_COUNT; s_texAt = 0; break;
+			case B_RES: s_res = !s_res; break;
 			default: break;
 			}
 		}); });
@@ -329,8 +439,13 @@ void layout()
 	const int by = static_cast<int>(p.y0 + (barH() - static_cast<float>(bh)) * 0.5f);
 	s_btn[B_CLOSE]->setGeometry(static_cast<int>(p.x1) - bw - gap * 2, by, bw, bh);
 	s_btn[B_SPLIT]->setGeometry(static_cast<int>(p.x1) - 2 * bw - gap * 3, by, bw, bh);
+	const int vw = static_cast<int>(120 * s), rw = static_cast<int>(84 * s);
+	s_btn[B_VIEW]->setGeometry(static_cast<int>(p.x0) + static_cast<int>(130 * s), by, vw, bh);
+	s_btn[B_RES]->setGeometry(static_cast<int>(p.x0) + static_cast<int>(130 * s) + vw + gap, by, rw, bh);
 	s_btn[B_SPLIT]->show(s_mode != 0);
 	s_btn[B_CLOSE]->show(s_mode != 0);
+	s_btn[B_VIEW]->show(s_mode != 0);
+	s_btn[B_RES]->show(s_mode != 0);
 }
 } // namespace
 
@@ -340,7 +455,7 @@ void tick()
 	ensureScreen();
 	if (s_btn.size() != B_COUNT) { return; }
 	layout();
-	if (s_mode != 0 && (s_texAt == 0 || realTime - s_texAt > 3000u)) { rebuildTexture(); }
+	if (s_mode != 0 && (s_texAt == 0 || s_texView != s_view || realTime - s_texAt > 3000u)) { rebuildTexture(); }
 }
 
 int viewCenterX(int screenW)
@@ -451,23 +566,43 @@ void draw()
 	pie_BoxFill_alpha(static_cast<int>(p.x0), static_cast<int>(p.y0), static_cast<int>(p.x1), static_cast<int>(p.y1), pal_RGBA(8, 12, 22, 255));
 	if (s_gfx == nullptr) { rebuildTexture(); }
 	drawTerrain();
-	// strategischer Blauschleier + Gitter (alle 16 Felder)
-	pie_BoxFill_alpha(static_cast<int>(a.x0), static_cast<int>(a.y0), static_cast<int>(a.x1), static_cast<int>(a.y1), pal_RGBA(10, 30, 70, 50));
+	// strategischer Blauschleier (nur Gelaende-Ansicht) + Gitter (alle 16 Felder)
+	if (s_view == V_TERRAIN)
+	{
+		pie_BoxFill_alpha(static_cast<int>(a.x0), static_cast<int>(a.y0), static_cast<int>(a.x1), static_cast<int>(a.y1), pal_RGBA(10, 30, 70, 50));
+	}
+	const PIELIGHT gridCol = s_view == V_CARTO ? pal_RGBA(90, 70, 50, 45) : pal_RGBA(150, 200, 255, 38);
 	const float step = static_cast<float>(world_coord(16));
 	for (float gx = 0.f; gx <= worldW(); gx += step)
 	{
 		const glm::vec2 s0 = toScreen(gx, 0.f), s1 = toScreen(gx, worldH());
 		if (s0.x < a.x0 || s0.x > a.x1) { continue; }
-		line(glm::vec2(s0.x, std::max(a.y0, s0.y)), glm::vec2(s1.x, std::min(a.y1, s1.y)), 1.f, pal_RGBA(150, 200, 255, 38));
+		line(glm::vec2(s0.x, std::max(a.y0, s0.y)), glm::vec2(s1.x, std::min(a.y1, s1.y)), 1.f, gridCol);
 	}
 	for (float gy = 0.f; gy <= worldH(); gy += step)
 	{
 		const glm::vec2 s0 = toScreen(0.f, gy), s1 = toScreen(worldW(), gy);
 		if (s0.y < a.y0 || s0.y > a.y1) { continue; }
-		line(glm::vec2(std::max(a.x0, s0.x), s0.y), glm::vec2(std::min(a.x1, s1.x), s1.y), 1.f, pal_RGBA(150, 200, 255, 38));
+		line(glm::vec2(std::max(a.x0, s0.x), s0.y), glm::vec2(std::min(a.x1, s1.x), s1.y), 1.f, gridCol);
 	}
 	const modlayer::Layer view = modlayer::current();
 	const float ss = symbolScale();
+	// Rohstoffe (wie die Massepunkte in Supreme Commander): freie Oelquellen als leuchtende Ringe, Bohrtuerme mit Punkt
+	if (s_res)
+	{
+		const float r = std::clamp(5.5f * sc * (s_fit / std::max(1.f, s_wpp)) * 0.5f, 3.5f * sc, 9.f * sc);
+		for (const FEATURE *f : gameWorld.objects.features[0])
+		{
+			if (f == nullptr || f->died || f->psStats == nullptr || f->psStats->subType != FEAT_OIL_RESOURCE) { continue; }
+			if (selectedPlayer < MAX_PLAYERS && !TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(mapTile(gameWorld.map, map_coord(f->pos.x), map_coord(f->pos.y)))) { continue; }
+			const glm::vec2 c = toScreen(static_cast<float>(f->pos.x), static_cast<float>(f->pos.y));
+			if (!inRect(a, c.x, c.y)) { continue; }
+			pie_DrawSoftRoundedBox(c.x - r * 1.8f, c.y - r * 1.8f, c.x + r * 1.8f, c.y + r * 1.8f, pal_RGBA(120, 255, 90, 50), r * 1.8f, r);
+			pie_DrawSoftRoundedBox(c.x - r, c.y - r, c.x + r, c.y + r, pal_RGBA(20, 40, 10, 230), r, 1.f);
+			pie_DrawSoftRoundedBox(c.x - r + 1.5f * sc, c.y - r + 1.5f * sc, c.x + r - 1.5f * sc, c.y + r - 1.5f * sc, pal_RGBA(130, 255, 90, 255), r, 1.f);
+			pie_DrawSoftRoundedBox(c.x - r * 0.45f, c.y - r * 0.45f, c.x + r * 0.45f, c.y + r * 0.45f, pal_RGBA(20, 40, 10, 255), r * 0.45f, 1.f);
+		}
+	}
 	// Bauwerke: kleine Flaechen in Spielerfarbe, wichtige als Symbol
 	for (unsigned pl = 0; pl < MAX_PLAYERS; ++pl)
 	{

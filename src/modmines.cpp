@@ -26,8 +26,14 @@
 #include "stats.h"
 #include "structure.h"
 #include "modui.h"
+#include "modoil.h"
+#include "console.h"
+#include "order.h"
+#include "lib/framework/fixedpoint.h"
+#include "lib/framework/trig.h"
 
 #include <cmath>
+#include <map>
 #include <vector>
 
 namespace modmines
@@ -42,6 +48,26 @@ constexpr int BLAST_R = DIST_TILE * 9 / 10;       // Wirkung
 constexpr int SPOT_R = DIST_TILE * 3 / 2;         // direkt davor sieht man sie
 constexpr int SWEEP_R = DIST_TILE * 4;            // Sensor-Fahrzeug: Minensuche
 constexpr unsigned BLAST_DMG = 340;
+// (Wunsch 17.11. 19:36) Minen raeumen: Infanterie sieht Minen weiter (2,5 Felder) und loest die Panzerminen nicht aus; steht sie
+// 3 Sekunden direkt an einer feindlichen Mine, ist die Mine entschaerft. Minenraeumer-Panzer (Turm "MineFlail") schlagen Minen vor
+// dem Bug zur Explosion (der Raeumer nimmt kaum Schaden).
+constexpr int INF_SPOT_R = DIST_TILE * 5 / 2;
+constexpr int DISARM_R = DIST_TILE * 6 / 10;
+constexpr unsigned DISARM_MS = 3000;
+constexpr int FLAIL_R = DIST_TILE * 17 / 10;
+constexpr int FLAIL_NEAR_R = DIST_TILE * 9 / 10;
+int s_flail = -2;                                   // ECM-Bauteil "MineFlail" (-1 = gibt es nicht)
+struct Disarm { uint32_t droid = 0; unsigned start = 0; };
+std::map<uint32_t, Disarm> s_disarm;                // Mine -> wer gerade entschaerft
+
+bool isFlail(const DROID *d)
+{
+	if (s_flail == -2)
+	{
+		s_flail = getCompFromID(COMP_ECM, WzString::fromUtf8("MineFlail"));
+	}
+	return s_flail >= 0 && d != nullptr && static_cast<int>(d->asBits[COMP_ECM]) == s_flail;
+}
 
 const STRUCTURE_STATS *mineStats()
 {
@@ -106,7 +132,8 @@ void tick()
 {
 	const STRUCTURE_STATS *ms = mineStats();
 	if (ms == nullptr) { return; }
-	std::vector<STRUCTURE *> boom;
+	std::vector<STRUCTURE *> boom, disarmed;
+	std::vector<std::pair<STRUCTURE *, uint32_t>> flailHits;
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
 		for (STRUCTURE *s : gameWorld.objects.structures[p])
@@ -114,15 +141,42 @@ void tick()
 			if (s == nullptr || s->died || s->pStructureType != ms) { continue; }
 			bool spotted[MAX_PLAYERS] = {};
 			bool trigger = false;
+			const DROID *flail = nullptr;
+			const DROID *sapper = nullptr;
 			for (BASE_OBJECT *o : gridStartIterate(s->pos.x, s->pos.y, static_cast<uint32_t>(SWEEP_R)))
 			{
 				if (o == nullptr || o->died || o->type != OBJ_DROID || o->player >= MAX_PLAYERS || aiCheckAlliances(o->player, p)) { continue; }
 				const DROID *d = static_cast<const DROID *>(o);
 				if (!modlayer::canInteract(s, d)) { continue; }
 				const int dist = iHypot(Vector2i(d->pos.x - s->pos.x, d->pos.y - s->pos.y));
-				if (dist <= SPOT_R || (d->droidType == DROID_SENSOR && dist <= SWEEP_R)) { spotted[d->player] = true; }
-				if (s->status == SS_BUILT && dist <= TRIGGER_R && groundUnit(d)) { trigger = true; }
+				const bool inf = modoil::isInfantry(d);
+				const bool fl = isFlail(d);
+				if (dist <= SPOT_R || (d->droidType == DROID_SENSOR && dist <= SWEEP_R) || (inf && dist <= INF_SPOT_R) || (fl && dist <= SWEEP_R)) { spotted[d->player] = true; }
+				if (s->status != SS_BUILT || !groundUnit(d)) { continue; }
+				if (fl && flail == nullptr)
+				{
+					// Raeumer: Mine vor dem Bug (oder ganz nah) wird zur Explosion gebracht
+					const int64_t fx = iSinR(d->rot.direction, 1024), fy = iCosR(d->rot.direction, 1024);
+					const int64_t dx = s->pos.x - d->pos.x, dy = s->pos.y - d->pos.y;
+					const bool ahead = (fx * dx + fy * dy) * 10 >= static_cast<int64_t>(dist) * 1024 * 2;   // innerhalb etwa +-78 Grad
+					if (dist <= FLAIL_NEAR_R || (dist <= FLAIL_R && ahead)) { flail = d; }
+					continue;
+				}
+				if (inf)
+				{
+					if (dist <= DISARM_R && (sapper == nullptr || d->id < sapper->id)) { sapper = d; }
+					continue;   // Panzerminen: Infanterie loest sie nicht aus
+				}
+				if (dist <= TRIGGER_R) { trigger = true; }
 			}
+			if (flail != nullptr) { flailHits.emplace_back(s, flail->id); s_disarm.erase(s->id); }
+			else if (!trigger && sapper != nullptr)
+			{
+				Disarm &dz = s_disarm[s->id];
+				if (dz.droid != sapper->id) { dz.droid = sapper->id; dz.start = gameTime; }
+				else if (gameTime - dz.start >= DISARM_MS) { disarmed.push_back(s); }
+			}
+			else { s_disarm.erase(s->id); }
 			// fuer fremde Spieler verstecken (Verbuendete sehen die Minen ihrer Partner)
 			for (unsigned q = 0; q < MAX_PLAYERS; ++q)
 			{
@@ -136,6 +190,88 @@ void tick()
 	{
 		if (!s->died) { blast(s); }
 	}
+	// Raeumer: Explosion mit Effekt, aber nur leichter Schaden am Raeumer selbst (die Kette faengt ihn ab)
+	for (const auto &fh : flailHits)
+	{
+		STRUCTURE *s = fh.first;
+		if (s->died) { continue; }
+		const unsigned it = gameTime - deltaGameTime / 2 + 1;
+		const int z = map_Height(gameWorld.map, s->pos.x, s->pos.y);
+		Vector3i c(s->pos.x, z + 8, s->pos.y);
+		addEffect(&c, EFFECT_EXPLOSION, EXPLOSION_TYPE_LARGE, false, nullptr, 0, it);
+		Vector3i sp(s->pos.x, z + 24, s->pos.y);
+		addEffect(&sp, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_HIGH, false, nullptr, 0, it);
+		audio_PlayStaticTrack(s->pos.x, s->pos.y, ID_SOUND_EXPLOSION);
+		for (unsigned q = 0; q < MAX_PLAYERS; ++q)
+		{
+			for (DROID *d : gameWorld.objects.droids[q])
+			{
+				if (d->id == fh.second && !d->died) { droidDamage(gameWorld, d, nullptr, BLAST_DMG / 16u, WC_KINETIC, WSC_BOMB, it, false, 0, false); }
+			}
+		}
+		if (!s->died) { destroyStruct(s, it, gameWorld); }
+	}
+	// Infanterie: Mine entschaerft (verschwindet ohne Explosion, kleine Staubwolke)
+	for (STRUCTURE *s : disarmed)
+	{
+		if (s->died) { continue; }
+		Vector3i c(s->pos.x, map_Height(gameWorld.map, s->pos.x, s->pos.y) + 6, s->pos.y);
+		addEffect(&c, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING, false, nullptr, 0, gameTime - deltaGameTime / 2 + 1);
+		s_disarm.erase(s->id);
+		removeStruct(s, true, gameWorld);
+	}
+	if (s_disarm.size() > 512) { s_disarm.clear(); }
+}
+
+int clearMines(unsigned player)
+{
+	if (player >= MAX_PLAYERS) { return 0; }
+	const STRUCTURE_STATS *ms = mineStats();
+	// bekannte feindliche Minen (fuer diesen Spieler sichtbar)
+	std::vector<const STRUCTURE *> mines;
+	if (ms != nullptr)
+	{
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			if (p == player || aiCheckAlliances(p, player)) { continue; }
+			for (const STRUCTURE *s : gameWorld.objects.structures[p])
+			{
+				if (s != nullptr && !s->died && s->pStructureType == ms && s->visible[player] > 0) { mines.push_back(s); }
+			}
+		}
+	}
+	bool anySelected = false;
+	for (const DROID *d : gameWorld.objects.droids[player]) { if (d->selected && !d->died && modoil::isInfantry(d)) { anySelected = true; break; } }
+	std::vector<DROID *> crew;
+	for (DROID *d : gameWorld.objects.droids[player])
+	{
+		if (!d->died && modoil::isInfantry(d) && (!anySelected || d->selected)) { crew.push_back(d); }
+	}
+	if (crew.empty()) { return 0; }
+	if (mines.empty())
+	{
+		if (player == selectedPlayer) { addConsoleMessage(_("Clear mines: no known mines nearby - infantry spots mines within 2.5 tiles and does not set off anti-tank mines"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+		return 0;
+	}
+	// jede Mine an den naechsten freien Infanteristen (hoechstens 30 Felder entfernt)
+	int sent = 0;
+	std::vector<bool> used(crew.size(), false);
+	for (const STRUCTURE *m : mines)
+	{
+		int best = -1;
+		int64_t bestD = static_cast<int64_t>(DIST_TILE * 30) * (DIST_TILE * 30);
+		for (size_t i = 0; i < crew.size(); ++i)
+		{
+			if (used[i]) { continue; }
+			const int64_t dx = crew[i]->pos.x - m->pos.x, dy = crew[i]->pos.y - m->pos.y;
+			if (dx * dx + dy * dy < bestD) { bestD = dx * dx + dy * dy; best = static_cast<int>(i); }
+		}
+		if (best < 0) { continue; }
+		used[static_cast<size_t>(best)] = true;
+		orderDroidLoc(crew[static_cast<size_t>(best)], DORDER_MOVE, m->pos.x, m->pos.y, ModeQueue);
+		++sent;
+	}
+	return sent;
 }
 
 void drawOverlay(const glm::mat4 &m)
@@ -173,6 +309,8 @@ void drawOverlay(const glm::mat4 &m)
 
 void reset()
 {
+	s_disarm.clear();
+	s_flail = -2;
 	s_mine = nullptr;
 	s_looked = false;
 }

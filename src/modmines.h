@@ -19,4 +19,7 @@ void tick();
 /// (Wunsch 17.11. 18:48) "Mit Shift sieht man alle Minen besser, weil sie ein gelbes Icon bekommen" - nur Anzeige
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
 void reset();
+/// (Wunsch 17.11. 19:36) Faehigkeit "Minen raeumen": gewaehlte Infanterie (sonst alle) geht zu den bekannten feindlichen Minen und
+/// entschaerft sie (Befehle laufen ueber ModeQueue = Mehrspieler-synchron); Rueckgabe: Anzahl losgeschickter Infanteristen
+int clearMines(unsigned player);
 }

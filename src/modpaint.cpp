@@ -39,6 +39,7 @@
 #include "objmem.h"
 #include "radar.h"
 #include "modcover.h"   // MOD 17.11.: Take cover
+#include "modmines.h"   // MOD 17.11.: Minen raeumen
 #include "order.h"
 #include "ordersource.h"
 #include "stats.h"
@@ -58,7 +59,7 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -87,6 +88,8 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Minefield", "Minefield: drag an area - builders lay hidden mines in it; they blow up enemy ground units that drive over them", "Minefield: drag the area (right click cancels)", 255, 90, 40, true },
 	// MOD (Wunsch 17.11. 18:37): Offensivlinie (rot) - wie die Verteidigungslinie, aber auf Angriff ausgerichtet
 	{ "Offense", "Offensive line: many combat units mass on the line in two ranks, ready to push forward (they pursue enemies); builders add only a few short trenches and MG posts", "Offense: drag the offensive line (right click cancels)", 240, 45, 45, false },
+	// MOD (Wunsch 17.11. 19:36): Faehigkeit der Infanterie - Minen raeumen (Sofort-Befehl)
+	{ "Clear mines", "Clear mines: the selected infantry (or all infantry) walks to the known enemy mines and disarms them (3 s each). Infantry spots mines within 2.5 tiles and does not set off anti-tank mines", "", 230, 200, 60, false },
 };
 
 constexpr int BTN_W = 66;
@@ -94,7 +97,7 @@ constexpr int BTN_H = 20;
 constexpr int GAP = 3;
 constexpr int PAD = 4;
 constexpr int COLS = 2;
-constexpr int ROWS = 7;   // (17.11.) + "Take cover", + Panzersperren / Minenfeld
+constexpr int ROWS = 8;   // (17.11.) + "Take cover", + Panzersperren / Minenfeld / Offensive, + Minen raeumen
 constexpr int TOTAL_W = COLS * BTN_W + (COLS - 1) * GAP + 2 * PAD;
 constexpr int TOTAL_H = ROWS * BTN_H + (ROWS - 1) * GAP + 2 * PAD + 12;   // + Titelzeile
 constexpr unsigned SHOW_MS = 25000;   // so lange bleibt eine Zeichnung sichtbar
@@ -166,6 +169,14 @@ void ensureScreen()
 		b->UserData = static_cast<UDWORD>(m);
 		b->setTip(kModes[m].tip);
 		b->addOnClickHandler([m](W_BUTTON &) { widgScheduleTask([m]() {
+			if (m == M_CLEARMINES)
+			{
+				if (selectedPlayer < MAX_PLAYERS) { modmines::clearMines(selectedPlayer); }
+				s_mode = -1;
+				s_drawing = false;
+				s_cur.clear();
+				return;
+			}
 			if (m == M_COVER)
 			{
 				// MOD (Wunsch 17.11.): Sofort-Befehl "Take cover" - Infanterie bemannt Graeben/Gruben/Haeuser in der Naehe
