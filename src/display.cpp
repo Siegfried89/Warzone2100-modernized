@@ -818,7 +818,7 @@ static void updateGamepadCursorMagnet()
 	{
 		for (DROID* psDroid : gameWorld.objects.droids[player])
 		{
-			const float screenRadius = (psDroid->sDisplay.screenR > 0) ? (float)psDroid->sDisplay.screenR : fallbackScreenRadius;
+			const float screenRadius = (psDroid->sDisplay.screenR > 0) ? (float)std::max<int>(psDroid->sDisplay.screenR, psDroid->sDisplay.modPickR) : fallbackScreenRadius;   // MOD (17.11.)
 			considerObject(psDroid, screenRadius, 0.f);
 		}
 	}
@@ -1764,7 +1764,6 @@ bool DrawnInLastFrame(int32_t frame)
 BASE_OBJECT *mouseTarget()
 {
 	BASE_OBJECT *psReturn = nullptr;
-	int dispX, dispY, dispR;
 
 	if (mouseTileX < 0 || mouseTileY < 0 || mouseTileX > gameWorld.map.width - 1 || mouseTileY > gameWorld.map.height - 1)
 	{
@@ -1776,14 +1775,11 @@ BASE_OBJECT *mouseTarget()
 	{
 		for (DROID *psDroid : gameWorld.objects.droids[i])
 		{
-			dispX = psDroid->sDisplay.screenX;
-			dispY = psDroid->sDisplay.screenY;
-			dispR = psDroid->sDisplay.screenR;
 
 			// Has the droid been drawn since the start of the last frame
 			if (psDroid->visibleForLocalDisplay() && DrawnInLastFrame(psDroid->sDisplay.frameNumber))
 			{
-				if (mouseInBox(dispX - dispR, dispY - dispR, dispX + dispR, dispY + dispR))
+				if (modDroidHit(psDroid, mouseX(), mouseY()))   // MOD (17.11.): echte Bildgroesse
 				{
 					/* We HAVE clicked on droid! */
 					psReturn = (BASE_OBJECT *) psDroid;
@@ -2911,7 +2907,6 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 	UDWORD		i;
 	MOUSE_TARGET retVal;
 	BASE_OBJECT	 *psNotDroid;
-	UDWORD		dispX, dispY, dispR;
 	STRUCTURE	*psStructure;
 
 	*ppObjectUnderMouse = nullptr;
@@ -2930,13 +2925,10 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 	{
 		for (DROID* psDroid : gameWorld.objects.droids[i])
 		{
-			dispX = psDroid->sDisplay.screenX;
-			dispY = psDroid->sDisplay.screenY;
-			dispR = psDroid->sDisplay.screenR;
 			/* Only check droids that're on screen */
 			if (psDroid->sDisplay.frameNumber + 1 == currentFrame && psDroid->visibleForLocalDisplay())
 			{
-				if (mouseInBox(dispX - dispR, dispY - dispR, dispX + dispR, dispY + dispR))
+				if (modDroidHit(psDroid, mouseX(), mouseY()))   // MOD (17.11.): echte Bildgroesse
 				{
 					/* We HAVE clicked on droid! */
 					if (selectedPlayer < MAX_PLAYERS && aiCheckAlliances(psDroid->player, selectedPlayer))

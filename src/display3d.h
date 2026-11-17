@@ -96,6 +96,8 @@ bool doWeDrawProximitys();
 void setProximityDraw(bool val);
 
 bool	clipXY(SDWORD x, SDWORD y);
+/// MOD (17.11.): liegt der Bildpunkt auf der Einheit? (Trefferflaeche nach echter Bildgroesse, siehe display3d.cpp)
+bool modDroidHit(const DROID *psDroid, int mx, int my);
 inline bool clipShapeOnScreen(const iIMDShape *pIMD, const glm::mat4 &perspectiveViewModelMatrix, int overdrawScreenPoints = 10);
 bool clipDroidOnScreen(DROID *psDroid, const glm::mat4 &perspectiveViewModelMatrix, int overdrawScreenPoints = 25);
 bool clipStructureOnScreen(STRUCTURE *psStructure);
