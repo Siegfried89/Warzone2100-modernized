@@ -26,6 +26,7 @@
 #include "moddesigner.h"
 #include "modlayer.h"
 #include "modui.h"
+#include "modrosette.h"
 #include "multiplay.h"
 #include "modincoming.h"
 #include "modrecover.h"
@@ -1028,8 +1029,9 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 
 void tick()
 {
-	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS;
-	infButtonTick(want);
+	// (17.11. 14:14) Mod-Rosette: der Schlachtplan-Knopf blendet die Leiste ein/aus; "Infantry: build" liegt jetzt in der Rosette
+	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS && modrosette::planOpen();
+	infButtonTick(false);
 	if (!want && !s_screen) { opTick(); planTick(); return; }
 	ensureScreen();
 	if (!s_root) { return; }
@@ -1105,6 +1107,14 @@ void drawOverlay(const glm::mat4 &m)
 	if (s_drawing && s_mode >= 0)
 	{
 		drawStroke(s_cur, s_mode, 255, m);
+	}
+}
+
+void selectMode(const char *label)
+{
+	for (int m = 0; m < M_COUNT; ++m)
+	{
+		if (label != nullptr && strcmp(kModes[m].label, label) == 0) { s_mode = m; s_drawing = false; s_cur.clear(); return; }
 	}
 }
 

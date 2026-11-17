@@ -554,6 +554,36 @@ bool dig(int tileX, int tileY, int depth, int bermHeight, unsigned dirAngle)
 	return true;
 }
 
+void craterPiles(std::vector<CraterPile> &out)
+{
+	out.clear();
+	if (s_cells.empty()) { return; }
+	const uint64_t layer = static_cast<uint64_t>(layerTag());
+	constexpr int N = DIST_TILE / TILE_UNITS;   // ein Krater = N x N Felder (Feinraster 2x2)
+	static const int DX[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+	static const int DY[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+	for (const auto &kv : s_cells)
+	{
+		if ((kv.first >> 48) != layer || kv.second.dyn <= 0) { continue; }
+		const int x = static_cast<int>((kv.first >> 24) & 0xffffff), y = static_cast<int>(kv.first & 0xffffff);
+		// je Krater nur ein Haufen: das Feld links oben des Blocks (links und oben kein Krater)
+		if (N > 1 && (cellDyn(static_cast<int>(layer), x - 1, y) > 0 || cellDyn(static_cast<int>(layer), x, y - 1) > 0)) { continue; }
+		const unsigned h = static_cast<unsigned>(x) * 73856093u ^ static_cast<unsigned>(y) * 19349663u;
+		const int d = static_cast<int>(h % 8u);
+		const float diag = (DX[d] != 0 && DY[d] != 0) ? 0.7071f : 1.f;
+		const float cx = static_cast<float>(world_coord(x)) + static_cast<float>(N * TILE_UNITS) * 0.5f;
+		const float cy = static_cast<float>(world_coord(y)) + static_cast<float>(N * TILE_UNITS) * 0.5f;
+		const float off = static_cast<float>(DIST_TILE) * 0.47f * diag;
+		CraterPile p;
+		p.worldX = static_cast<int>(cx + static_cast<float>(DX[d]) * off);
+		p.worldY = static_cast<int>(cy + static_cast<float>(DY[d]) * off);
+		const float depth = static_cast<float>(kv.second.dyn) / static_cast<float>(CRATER_DEPTH);
+		p.scale = std::clamp(depth, 0.f, 1.f) * (0.78f + 0.32f * static_cast<float>((h >> 8) % 100u) / 100.f);
+		p.rotDeg = static_cast<int>((h >> 16) % 360u);
+		if (p.scale >= 0.08f) { out.push_back(p); }
+	}
+}
+
 void setStructureSink(int tileX, int tileY, int depth)
 {
 	const uint64_t k = keyOf(layerTag(), tileX, tileY);

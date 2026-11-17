@@ -27,6 +27,8 @@ bool processMouse(bool overUi, const Vector2i &worldPos);
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
 /// Beschriftung am Mauszeiger, solange ein Zeichenmodus aktiv ist (sonst nullptr)
 const char *activeLabel();
+/// (17.11.) Zeichenmodus nach Beschriftung waehlen (z. B. "Salvage" aus der Mod-Rosette)
+void selectMode(const char *label);
 /// beim Beenden der Oberflaeche
 void shutdown();
 }

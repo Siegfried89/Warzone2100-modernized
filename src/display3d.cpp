@@ -68,6 +68,7 @@
 #include "feature.h"
 #include "mapgrid.h"
 #include "modfort.h"
+#include "modterrain.h"
 #include "keybind.h"
 #include "main.h"
 #include "hci.h"
@@ -132,6 +133,7 @@ static void displayProximityMsgs(const glm::mat4& viewMatrix, const glm::mat4 &p
 static void displayDynamicObjects(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix);
 static void displayStaticObjects(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix);
 static void displayFeatures(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix);
+static void displayCraterPiles(const glm::mat4 &viewMatrix);
 static void displayOrbitAsteroids(const glm::mat4 &viewMatrix);
 static UDWORD	getTargettingGfx();
 static void	drawGroupNumber(BASE_OBJECT *psObject);
@@ -1532,6 +1534,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	displayStaticObjects(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
 	displayFeatures(viewMatrix, perspectiveViewMatrix);
 	displayOrbitAsteroids(viewMatrix);   // MOD: echte MF-Asteroiden unter den Orbit-Inseln
+	displayCraterPiles(viewMatrix);      // MOD (17.11. 14:14): Erdhaufen am Kraterrand
 	displayDynamicObjects(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
 	if (doWeDrawProximitys())
 	{
@@ -2530,6 +2533,36 @@ static void displayOrbitAsteroids(const glm::mat4 &viewMatrix)
 			* glm::rotate(UNDEG(DEG(90 * m.rot)), glm::vec3(0.f, 1.f, 0.f))
 			* glm::scale(glm::vec3(m.scale));
 		pie_Draw3DShape(it->second, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, modelMatrix, viewMatrix);
+	}
+}
+
+// MOD (17.11. 14:14) "Beim Krater sieht man einen kegelfoermigen Erdhaufen. Den schuettet der Bagger dann hinein.": je Krater ein
+// Erdkegel (effects/craterpile.pie, Mod-Daten craterpile.py) am Rand, Groesse nach Resttiefe - beim Zuschaufeln schrumpft er.
+static void displayCraterPiles(const glm::mat4 &viewMatrix)
+{
+	static const iIMDShape *pile = nullptr;
+	static bool tried = false;
+	if (!tried)
+	{
+		tried = true;
+		const iIMDBaseShape *b = modelGet("craterpile.pie");
+		pile = b != nullptr ? b->displayModel() : nullptr;
+	}
+	if (pile == nullptr || selectedPlayer >= MAX_PLAYERS) { return; }
+	static std::vector<modterrain::CraterPile> piles;
+	modterrain::craterPiles(piles);
+	for (const modterrain::CraterPile &p : piles)
+	{
+		if (!quickClipXYToMaximumTilesFromCurrentPosition(p.worldX, p.worldY)) { continue; }
+		if (!worldOnMap(gameWorld.map, p.worldX, p.worldY)) { continue; }
+		MAPTILE *t = worldTile(gameWorld.map, p.worldX, p.worldY);
+		if (t == nullptr || !TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(t)) { continue; }
+		// Boden etwas weiter draussen (ausserhalb der Mulde) als Fusshoehe
+		const int gx = std::clamp(p.worldX + (p.worldX % 7) - 3, 0, world_coord(gameWorld.map.width) - 1);
+		const int h = std::max(map_Height(gameWorld.map, p.worldX, p.worldY), map_Height(gameWorld.map, gx, p.worldY)) - 2;
+		const glm::mat4 modelMatrix = glm::translate(glm::vec3(static_cast<float>(p.worldX), static_cast<float>(h), -static_cast<float>(p.worldY)))
+			* glm::rotate(UNDEG(DEG(p.rotDeg)), glm::vec3(0.f, 1.f, 0.f)) * glm::scale(glm::vec3(p.scale, std::max(0.35f, p.scale), p.scale));
+		pie_Draw3DShape(pile, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, modelMatrix, viewMatrix);
 	}
 }
 
