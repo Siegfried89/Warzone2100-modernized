@@ -54,6 +54,7 @@
 #include "lib/framework/wzapp.h"
 #include "display3d.h" // for building animation speed
 #include "atmos.h"
+#include "modweather.h"   // MOD: Tageszeit
 #include "display.h"
 #include "keybind.h" // for MAP_ZOOM_RATE_STEP
 #include "loadsave.h" // for autosaveEnabled
@@ -446,6 +447,7 @@ bool loadConfig()
 	}
 	setShakeStatus(iniGetBool("shake", false).value());
 	atmosSetWeatherEnabled(iniGetBool("weather", true).value());
+	modweather::setNightOption(iniGetInteger("nightMode", 2).value());   // MOD: Tageszeit (Standard: zufaellig)
 	war_setGroupsMenuEnabled(iniGetBool("groupmenu", true).value());
 	setGroupButtonEnabled(war_getGroupsMenuEnabled());
 	war_setOptionsButtonVisibility(iniGetInteger("optionsButtonVisibility", war_getOptionsButtonVisibility()).value());
@@ -1077,6 +1079,7 @@ bool saveConfig()
 	iniSetBool("cameraAccel", getCameraAccel());		// camera acceleration
 	iniSetInteger("shake", (int)getShakeStatus());		// screenshake
 	iniSetBool("weather", atmosGetWeatherEnabled());
+	iniSetInteger("nightMode", modweather::nightOption());   // MOD
 	iniSetInteger("groupmenu", (int)war_getGroupsMenuEnabled());		// groups menu
 	iniSetInteger("optionsButtonVisibility", (int)war_getOptionsButtonVisibility());
 	iniSetInteger("mouseflip", (int)(getInvertMouseStatus()));	// flipmouse

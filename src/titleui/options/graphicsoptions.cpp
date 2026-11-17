@@ -24,6 +24,7 @@
 
 #include "optionsforms.h"
 
+#include "../../modweather.h"   // MOD: Tageszeit
 #include "../../warzoneconfig.h"
 #include "../../terrain.h"
 #include "../../atmos.h"
@@ -575,6 +576,27 @@ std::shared_ptr<OptionsForm> makeGraphicsOptionsForm()
 			},
 			[](const auto& newValue) -> bool {
 				atmosSetWeatherEnabled(newValue);
+				return true;
+			}, false
+		);
+		result->addOption(optionInfo, valueChanger, true);
+	}
+	{
+		// MOD (17.11. 20:21): Nighttime-Mod - Schlachten bei Nacht (Sternenhimmel, abgedunkelte Landschaft)
+		auto optionInfo = OptionInfo("gfx.nightMode", N_("Time of Day"), N_("Night battles: starry sky and a darkened landscape. Random = about every third game at night."));
+		auto valueChanger = OptionsDropdown<int>::make(
+			[]() {
+				OptionChoices<int> result;
+				result.choices = {
+					{ _("Day"), "", 0 },
+					{ _("Night"), "", 1 },
+					{ _("Random"), "", 2 },
+				};
+				result.setCurrentIdxForValue(modweather::nightOption());
+				return result;
+			},
+			[](const auto& newValue) -> bool {
+				modweather::setNightOption(newValue);
 				return true;
 			}, false
 		);

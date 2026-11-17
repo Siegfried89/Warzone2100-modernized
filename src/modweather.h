@@ -4,7 +4,8 @@
 //  - Sandsturm: waagerechte Sandschlieren dicht ueber dem Boden, ockerfarbener Dunst und Himmel (Wuestenkarten)
 //  - Schneesturm: dichter, schraeger Schnee, weisser Dunst (Schneekarten); Regen und Schnee wie bisher bei ruhigem Wetter
 //  - ziehende Wolken: der Himmel dreht sich bei Unwetter schneller; passende umgefaerbte Himmelstexturen (page-436..439)
-//  - Nacht: setzt eine Karte/ein Skript den Himmel "page-438-sky-night.png", wird die Landschaft entsprechend abgedunkelt
+//  - Nacht: setzt eine Karte/ein Skript einen "...sky-night.png"-Himmel, wird die Landschaft entsprechend abgedunkelt; (20:21) dazu die
+//    Einstellung "Tageszeit" (Tag / Nacht / zufaellig) mit dem Sternenhimmel aus dem Nighttime-Mod
 // Das Wetter wechselt zufaellig (ruhige Phasen und Unwetter mit weichen Uebergaengen). Karten mit Skript-Wetter (Regen/Schnee) bekommen
 // zusaetzlich Gewitter bzw. Schneesturm. Wird die Wettereinstellung des Spielers ausgeschaltet, bleibt alles still.
 #pragma once
@@ -21,4 +22,7 @@ void onSkybox(const char *page);
 const char *baseSkyPage(const char *current);
 /// bei neuem Spiel / Laden
 void reset();
+/// (17.11. 20:21) Einstellung Tageszeit: 0 Tag (wie die Karte), 1 Nacht, 2 zufaellig (etwa jedes dritte Spiel bei Nacht)
+void setNightOption(int opt);
+int nightOption();
 }
