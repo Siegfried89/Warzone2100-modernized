@@ -60,6 +60,7 @@
 #include "modcolour.h"
 #include "modfactech.h"
 #include "modfaction.h"
+#include "modfleetdesigner.h"
 #include "frontend.h"
 #include "group.h"
 #include "hci.h"
@@ -370,6 +371,12 @@ void runContinue()
 
 bool runTitleMenu()
 {
+	// MOD (17.11. 21:48): zurueck aus dem Einheiteneditor -> direkt ins Flotten-Menue
+	if (modfleetdesigner::titleReturn())
+	{
+		changeTitleUI(std::make_shared<WzFleetTitleUI>());
+		return true;
+	}
 	// MOD (16.11. 18:00): waehrend das grosse Fraktionssymbol laeuft, ist das Menue ausgeblendet; ein Klick oder Esc beendet es sofort
 	if (modfaction::splashActive())
 	{

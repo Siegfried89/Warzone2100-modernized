@@ -282,7 +282,7 @@ void update()
 				// (Wunsch 17.11. 21:13) Atomkraftwerk: stetige Quelle wie die Sonne, aber viel staerker (Tag und Nacht, solange Uran da ist)
 				s_hasGen[p] = true;
 				panels.push_back({s->id, s->pos.x, s->pos.y, s->pos.z});
-				panelCap.push_back(modnuke::running(s) ? modnuke::GRID_CAPACITY : 0);
+				panelCap.push_back(modnuke::gridCapacity(s));
 				panelNuke.push_back(1);
 			}
 			if (st->requiresPower)

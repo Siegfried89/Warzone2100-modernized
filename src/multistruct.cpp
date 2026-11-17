@@ -55,6 +55,7 @@
 #include "qtscript.h"
 #include "combat.h"
 #include "ordersource_wire.h"
+#include "modsat.h"
 
 // ////////////////////////////////////////////////////////////////////////////
 // structures
@@ -254,6 +255,12 @@ bool recvLasSat(NETQUEUE queue)
 
 	if (psStruct && psObj && isLasSat(psStruct->pStructureType) && psStruct->status == SS_BUILT)
 	{
+		// MOD (Wunsch 17.11. 21:34): die Uplink-Zentrale feuert nur mit NASDA-Satelliten in der Umlaufbahn (und nach deren Nachladezeit)
+		if (!modsat::canFire(psStruct))
+		{
+			modsat::denied(psStruct);
+			return true;
+		}
 		// Lassats have just one weapon
 		unsigned firePause = weaponFirePause(*psStruct->getWeaponStats(0), player);
 
@@ -272,6 +279,7 @@ bool recvLasSat(NETQUEUE queue)
 		proj_SendProjectile(&psStruct->asWeaps[0], nullptr, player, psObj->pos, psObj, true, 0);
 		psStruct->asWeaps[0].lastFired = gameTime;
 		psStruct->asWeaps[0].ammo = 1; // abducting this field for keeping track of triggers
+		modsat::fired(player);   // MOD (21:55): Linsenring der Satelliten glueht
 
 		// Play 5 second countdown message
 		audio_QueueTrackPos(ID_SOUND_LAS_SAT_COUNTDOWN, psObj->pos.x, psObj->pos.y, psObj->pos.z);

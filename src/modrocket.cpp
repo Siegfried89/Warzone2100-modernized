@@ -26,6 +26,7 @@
 #include "modgrid.h"
 #include "modlayer.h"
 #include "modlayermap.h"
+#include "modsat.h"
 #include "order.h"
 #include "power.h"
 #include "structure.h"
@@ -57,6 +58,7 @@ struct Silo
 	unsigned t0 = 0;
 	std::vector<uint32_t> crew;
 	bool told = false;
+	bool sat = false;     // (21:34) Nutzlast ist ein NASDA-Lasersatellit statt Pionieren (modsat)
 };
 std::map<uint32_t, Silo> s_silo;
 std::map<uint32_t, uint32_t> s_aboard;    // Einheit -> Silo
@@ -139,10 +141,17 @@ void tick()
 			case ST_READY:
 			case ST_COUNTDOWN:
 			{
+				// (Wunsch 21:34) fertiger NASDA-Satellit in der Naehe: wird eingeladen, die Rakete bringt ihn in die Umlaufbahn
+				if (S.stage == ST_READY && S.crew.empty() && !S.sat && modsat::loadOnto(s))
+				{
+					S.sat = true;
+					S.stage = ST_COUNTDOWN;
+					S.t0 = gameTime;
+				}
 				// Einsteigen: Cyborg-Pioniere am Silo (ohne anderen Auftrag oder mit dem Silo als Ziel)
 				for (DROID *d : gameWorld.objects.droids[p])
 				{
-					if (S.crew.size() >= CAPACITY) { break; }
+					if (S.sat || S.crew.size() >= CAPACITY) { break; }
 					if (d->died || d->droidType != DROID_CYBORG_CONSTRUCT || aboard(d) || modlayer::layerOf(d) != modlayer::SURFACE || modlayer::inTransition(d)) { continue; }
 					if (iHypot(d->pos.xy() - s->pos.xy()) > BOARD_R) { continue; }
 					const bool idle = d->order.type == DORDER_NONE;
@@ -176,7 +185,8 @@ void tick()
 			case ST_LAUNCH:
 				if (gameTime - S.t0 >= LAUNCH_MS)
 				{
-					landCrew(S, p);
+					if (S.sat) { modsat::addSatellite(static_cast<int>(p)); }
+					else { landCrew(S, p); }
 					S = Silo();   // naechste Rakete
 				}
 				break;
