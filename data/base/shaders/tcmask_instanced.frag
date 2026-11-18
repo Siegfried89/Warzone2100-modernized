@@ -47,6 +47,7 @@ FRAGMENT_INPUT vec3 uvLightmap; // uvLightmap in .xy, heightAboveTerrain in .z
 // For Shadows
 FRAGMENT_INPUT vec3 posModelSpace;
 FRAGMENT_INPUT vec3 posViewSpace;
+FRAGMENT_INPUT vec3 posLocal; // MOD: Punkt im Modell (Wuestentarn)
 
 #ifdef NEWGL
 out vec4 FragColor;
@@ -62,6 +63,10 @@ out vec4 FragColor;
 #include "tangentspace.glsl"
 #include "distance_fog.glsl"
 #include "srgb.glsl"
+#if defined(GL_ES) && (__VERSION__ < 300)
+#define MODCAMO_NO_DERIVATIVES
+#endif
+#include "modcamo.glsl"
 
 float random(vec2 uv)
 {
@@ -171,17 +176,19 @@ void main()
 	{
 		// Get mask for team colors from texture
 		float maskAlpha = texture(TextureTcmask, texCoord, WZ_MIP_LOAD_BIAS).r;
+		// MOD (18.11.): Spielerfarbe Wuestentarn - Tarnmuster statt fester Teamfarbe (modcamo.glsl)
+		vec4 tc = modCamoActive(teamcolour) ? modCamoColour(posLocal) : teamcolour;
 
 		// Apply color using grain merge with tcmask
 		if (linearLighting != 0)
 		{
 			// Grain merge (neutral at 0.5) and the color multiply also run in display space, as tuned
-			vec4 blended = vec4(wzLinearToSrgb(light.rgb), light.a) + (teamcolour - 0.5) * maskAlpha;
+			vec4 blended = vec4(wzLinearToSrgb(light.rgb), light.a) + (tc - 0.5) * maskAlpha;
 			fragColour = vec4(wzSrgbToLinear(max(blended.rgb, vec3(0.0)) * wzLinearToSrgb(colour.rgb)), blended.a * colour.a);
 		}
 		else
 		{
-			vec4 blended = light + (teamcolour - 0.5) * maskAlpha;
+			vec4 blended = light + (tc - 0.5) * maskAlpha;
 			fragColour = blended * colour;
 		}
 	}

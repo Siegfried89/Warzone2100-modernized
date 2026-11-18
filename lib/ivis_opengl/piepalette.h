@@ -137,6 +137,11 @@ void pal_Init();
 void pal_ShutDown();
 PIELIGHT pal_GetTeamColour(int team);
 
+// MOD (18.11. 19:20): zusaetzliche Spielerfarbe "Wuestentarn" (digitales Wuestentarnmuster wie die Hosen der NP-Soldaten).
+// Oberflaeche/Karte: Sandfarbe; Modelle: Tarnmuster im Shader (modcamo.glsl), gemeldet mit Teamfarbe-Alpha 1/255.
+#define MOD_COLOUR_DESERT_CAMO 16
+#define MOD_NUM_PLAYER_COLOURS 17
+
 static inline PIELIGHT WZ_DECL_PURE pal_Colour(UBYTE r, UBYTE g, UBYTE b)
 {
 	return { r, g, b, UBYTE_MAX };

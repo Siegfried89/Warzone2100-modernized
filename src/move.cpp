@@ -3076,8 +3076,16 @@ void moveUpdateDroid(DROID *psDroid)
 	}
 	else if (psDroid->isCyborg())
 	{
-		if (modgdiart::halted(psDroid)) { moveSpeed = 0; }   // MOD (18.11.): GDI-Artillerie verankert / faehrt ein
-		moveUpdateCyborgModel(psDroid, moveSpeed, moveDir, oldStatus);
+		if (modgdiart::halted(psDroid))
+		{
+			// MOD (18.11.): GDI Juggernaut verankert / faehrt ein - steht still, Beine in Ruhe (kein Laufen auf der Stelle)
+			psDroid->sMove.speed = 0;
+			if (psDroid->animationEvent == ANIM_EVENT_ACTIVE) { resetObjectAnimationState(psDroid); }
+		}
+		else
+		{
+			moveUpdateCyborgModel(psDroid, moveSpeed, moveDir, oldStatus);
+		}
 	}
 	else if (psPropStats->propulsionType == PROPULSION_TYPE_LIFT)
 	{

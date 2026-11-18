@@ -16,13 +16,14 @@
 #include "objmem.h"
 #include "warzoneconfig.h"
 
+#include <algorithm>
 #include <vector>
 
 namespace modcolour
 {
 namespace
 {
-constexpr int NUM_COLOURS = 16;
+constexpr int NUM_COLOURS = MOD_NUM_PLAYER_COLOURS;   // (18.11.) 16 = Wuestentarn
 
 class Swatch : public W_BUTTON
 {
@@ -42,6 +43,22 @@ public:
 		PIELIGHT c = pal_GetTeamColour(colour);
 		if (!ok) { c.byte.r /= 3; c.byte.g /= 3; c.byte.b /= 3; }
 		pie_BoxFill(x0 + 2, y0 + 2, x1 - 2, y1 - 2, c);
+		if (colour == MOD_COLOUR_DESERT_CAMO)
+		{
+			// (18.11.) Wuestentarn: kleines digitales Tarnmuster (Farben wie im Shader modcamo.glsl)
+			static const uint8_t pat[5][5] = { { 0, 1, 2, 2, 0 }, { 1, 2, 2, 1, 0 }, { 0, 1, 0, 0, 3 }, { 2, 0, 0, 1, 2 }, { 2, 1, 0, 2, 2 } };
+			static const PIELIGHT pal[4] = { { 205, 187, 149, 255 }, { 171, 149, 113, 255 }, { 128, 106, 77, 255 }, { 225, 214, 184, 255 } };
+			const int w = std::max(1, x1 - x0 - 4), h = std::max(1, y1 - y0 - 4);
+			for (int j = 0; j < 5; ++j)
+			{
+				for (int i = 0; i < 5; ++i)
+				{
+					PIELIGHT p = pal[pat[j][i]];
+					if (!ok) { p.byte.r /= 3; p.byte.g /= 3; p.byte.b /= 3; }
+					pie_BoxFill(x0 + 2 + i * w / 5, y0 + 2 + j * h / 5, x0 + 2 + (i + 1) * w / 5, y0 + 2 + (j + 1) * h / 5, p);
+				}
+			}
+		}
 		if (chosen)
 		{
 			iV_Box(x0, y0, x1, y1, WZCOL_TEXT_BRIGHT);
@@ -57,6 +74,15 @@ public:
 		}
 	}
 };
+
+const char *colourName(int c)
+{
+	// Namen je FARBE (getPlayerColourName erwartet einen Spieler)
+	static const char *names[MOD_NUM_PLAYER_COLOURS] = {
+		N_("Green"), N_("Orange"), N_("Grey"), N_("Black"), N_("Red"), N_("Blue"), N_("Pink"), N_("Cyan"), N_("Yellow"), N_("Purple"),
+		N_("White"), N_("Bright blue"), N_("Neon green"), N_("Infrared"), N_("Ultraviolet"), N_("Brown"), N_("Desert camo") };
+	return (c >= 0 && c < MOD_NUM_PLAYER_COLOURS) ? gettext(names[c]) : "";
+}
 
 bool hasObjects(unsigned p)
 {
@@ -114,7 +140,7 @@ int addSwatches(WIDGET *parent, int x, int y, int cols, int size, int gap, bool 
 		b->inGame = inGame;
 		const int col = shown % cols, row = shown / cols;
 		b->setGeometry(x + col * (size + gap), y + row * (size + gap), size, size);
-		b->setTip(getPlayerColourName(c));
+		b->setTip(colourName(c));
 		b->addOnClickHandler([c, inGame, afterPick](W_BUTTON &) {
 			apply(c, inGame);
 			if (afterPick) { afterPick(); }

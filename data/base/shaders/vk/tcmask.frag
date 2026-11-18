@@ -54,12 +54,14 @@ layout(location = 2) in vec3 lightDir;
 layout(location = 3) in vec3 halfVec;
 layout(location = 4) in vec2 texCoord;
 layout(location = 5) in mat3 TangentSpaceMatrix; // occupies locations 5, 6, 7
+layout(location = 8) in vec3 posLocal; // MOD: Punkt im Modell (Wuestentarn)
 
 layout(location = 0) out vec4 FragColor;
 
 #include "tangentspace.glsl"
 #include "distance_fog.glsl"
 #include "srgb.glsl"
+#include "modcamo.glsl"
 
 void main()
 {
@@ -128,17 +130,19 @@ void main()
 	{
 		// Get mask for team colors from texture
 		float maskAlpha = texture(TextureTcmask, texCoord, WZ_MIP_LOAD_BIAS).r;
+		// MOD (18.11.): Spielerfarbe Wuestentarn - Tarnmuster statt fester Teamfarbe (modcamo.glsl)
+		vec4 tc = modCamoActive(teamcolour) ? modCamoColour(posLocal) : teamcolour;
 
 		// Apply color using grain merge with tcmask
 		if (linearLighting != 0)
 		{
 			// Grain merge (neutral at 0.5) and the color multiply also run in display space, as tuned
-			vec4 blended = vec4(wzLinearToSrgb(light.rgb), light.a) + (teamcolour - 0.5) * maskAlpha;
+			vec4 blended = vec4(wzLinearToSrgb(light.rgb), light.a) + (tc - 0.5) * maskAlpha;
 			fragColour = vec4(wzSrgbToLinear(max(blended.rgb, vec3(0.0)) * wzLinearToSrgb(colour.rgb)), blended.a * colour.a);
 		}
 		else
 		{
-			vec4 blended = light + (teamcolour - 0.5) * maskAlpha;
+			vec4 blended = light + (tc - 0.5) * maskAlpha;
 			fragColour = blended * colour;
 		}
 	}
