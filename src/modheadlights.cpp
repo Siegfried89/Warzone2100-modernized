@@ -91,8 +91,9 @@ glm::vec3 lampLocal(const DROID *d, float &halfWidth)
 	{
 		return glm::vec3(6.f, 10.f, -20.f);
 	}
-	const float y = static_cast<float>(imd->min.y) + 0.45f * static_cast<float>(imd->max.y - imd->min.y);
-	return glm::vec3(0.55f * halfWidth, y, static_cast<float>(imd->min.z) + 1.f);
+	// wie beim Ausfahren aus dem Tunnel im WZ-Intro: halbe Rumpfbreite, oberer Teil der Frontplatte
+	const float y = static_cast<float>(imd->min.y) + 0.66f * static_cast<float>(imd->max.y - imd->min.y);
+	return glm::vec3(0.5f * halfWidth, y, static_cast<float>(imd->min.z) + 1.f);
 }
 
 /// Ruecklicht rechts im Modell (hinten = +z): aussen, halbe Hoehe
@@ -140,7 +141,7 @@ void draw3D(const glm::mat4 &viewMatrix)
 	const iIMDShape *shape = s_shape != nullptr ? s_shape->displayModel() : nullptr;
 	const iIMDShape *tail = s_tail != nullptr ? s_tail->displayModel() : nullptr;
 	const iIMDShape *beam = s_beam != nullptr ? s_beam->displayModel() : nullptr;
-	const int beamAlpha = std::clamp(static_cast<int>(150.f * k), 0, 255);   // sichtbarer Lichtkegel in der Luft (WZ-Intro)
+	const int beamAlpha = std::clamp(static_cast<int>(170.f * k), 0, 255);   // sichtbarer Lichtkegel in der Luft (WZ-Intro)
 	const int tailAlpha = std::clamp(static_cast<int>(210.f * k), 0, 255);
 	const glm::mat4 bill(glm::transpose(glm::mat3(viewMatrix)));
 	const int alpha = std::clamp(static_cast<int>(255.f * k), 0, 255);
@@ -221,7 +222,7 @@ void draw3D(const glm::mat4 &viewMatrix)
 			l.colour = pal_Colour(255, 238, 205);   // Halogen, warmweiss
 			l.intensity = intensity * k;
 			l.direction = Vector3f(dg.x, dg.y, dg.z);
-			l.cosOuter = 0.90f;                       // halber Oeffnungswinkel ca. 26 Grad
+			l.cosOuter = 0.86f;                       // halber Oeffnungswinkel ca. 31 Grad (Intro: breiter Lichtkegel)
 			lights.push_back(l);
 		};
 		const unsigned range = static_cast<unsigned>(std::clamp(460.f * (0.8f + c.scale), 380.f, 760.f));
