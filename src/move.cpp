@@ -2015,6 +2015,83 @@ static bool modPivotTurn(const DROID *psDroid, const PROPULSION_STATS *psPropSta
 }
 
 /* Update a tracked droids position and speed given target values */
+// MOD (Wunsch 18.11. 13:34 "Rueckwaertsgang fuer alle Einheiten moeglich machen und intelligent einsetzen lassen"):
+// Fahrzeuge (Rad, Kette, Halbkette, Luftkissen, Boote) setzen zurueck, statt umstaendlich zu wenden, wenn
+//  - das Ziel kurz hinter ihnen liegt (bis 4,5 Felder, hoechstens 2 Wegpunkte) - z. B. etwas zurueck rangieren, Platz machen;
+//  - sie im Gefecht sind (Ziel vor sich oder gerade beschossen) und sich zurueckziehen: dann bis 9 Felder, die starke Front und
+//    die Waffe bleiben zum Feind gerichtet.
+// Mit Nachlauf (kein Flattern zwischen vorwaerts/rueckwaerts); rueckwaerts geht es nur mit etwa halbem Tempo.
+static bool modReverseEligible(const DROID *psDroid, const PROPULSION_STATS *psPropStats)
+{
+	if (psDroid->droidType == DROID_PERSON || psDroid->isCyborg() || psDroid->isTransporter() || psDroid->isVtol())
+	{
+		return false;
+	}
+	switch (psPropStats->propulsionType)
+	{
+	case PROPULSION_TYPE_WHEELED: case PROPULSION_TYPE_TRACKED: case PROPULSION_TYPE_HALF_TRACKED:
+	case PROPULSION_TYPE_HOVER: case PROPULSION_TYPE_PROPELLOR:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static int modReversePercent(const PROPULSION_STATS *psPropStats)
+{
+	switch (psPropStats->propulsionType)
+	{
+	case PROPULSION_TYPE_TRACKED: return 55;
+	case PROPULSION_TYPE_HOVER: return 40;
+	case PROPULSION_TYPE_PROPELLOR: return 35;
+	default: return 50;
+	}
+}
+
+static bool modDecideReverse(DROID *psDroid, uint16_t direction)
+{
+	MOVE_CONTROL &mv = psDroid->sMove;
+	if (mv.Status == MOVEPAUSE || mv.Status == MOVETURN || mv.Status == MOVETURNTOTARGET || mv.Status == MOVEHOVER || mv.Status == MOVEINACTIVE)
+	{
+		mv.modReverse = false;
+		return false;
+	}
+	const Vector2i dest = mv.destination;
+	const int dist = iHypot(dest - psDroid->pos.xy());
+	const int left = static_cast<int>(mv.asPath.size()) - mv.pathIndex;
+	const int dNext = abs(angleDelta(direction - psDroid->rot.direction));
+	const int dDest = (dist > 8) ? abs(angleDelta(iAtan2(dest - psDroid->pos.xy()) - psDroid->rot.direction)) : dNext;
+	// Gefecht: Waffe hat ein Ziel ungefaehr vor dem Bug, oder die Einheit wurde eben getroffen
+	bool combat = false;
+	if (psDroid->numWeaps > 0)
+	{
+		const BASE_OBJECT *t = psDroid->psActionTarget[0];
+		if (t != nullptr && !t->died)
+		{
+			const int dT = abs(angleDelta(iAtan2(t->pos.xy() - psDroid->pos.xy()) - psDroid->rot.direction));
+			combat = dT < DEG(70);
+		}
+		if (!combat && psDroid->timeLastHit != 0 && psDroid->timeLastHit != UDWORD_MAX && gameTime >= psDroid->timeLastHit && gameTime - psDroid->timeLastHit < 6000)
+		{
+			combat = true;
+		}
+	}
+	const int limit = combat ? 9 * TILE_UNITS : TILE_UNITS * 9 / 2;
+	const int maxLeft = combat ? 4 : 2;
+	if (mv.modReverse)
+	{
+		// weiter zuruecksetzen, solange das Ziel noch grob hinten liegt (kleine Kurven beim Zuruecksetzen erlaubt)
+		mv.modReverse = dNext > DEG(70) && dDest > DEG(80) && dist <= limit + TILE_UNITS && left <= maxLeft + 1;
+	}
+	else
+	{
+		// nur aus langsamer Fahrt heraus in den Rueckwaertsgang (erst bremsen, dann zurueck)
+		const bool slow = abs(mv.speed) <= std::max<int>(psDroid->baseSpeed / 3, 1);
+		mv.modReverse = slow && dNext > DEG(115) && dDest > DEG(115) && dist <= limit && left <= maxLeft;
+	}
+	return mv.modReverse;
+}
+
 static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t direction)
 {
 	int			fPerpSpeed, fNormalSpeed;
@@ -2043,6 +2120,15 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	}
 
 	moveCheckFinalWaypoint(psDroid, &speed);
+
+	// MOD Rueckwaertsgang: die Einheit wird fuer die Lenk- und Fahrrechnung gedanklich umgedreht (das Heck ist "vorne"), am Ende
+	// wieder zurueck - so lenkt sie mit dem Heck ins Ziel und faehrt rueckwaerts, die echte Blickrichtung bleibt erhalten.
+	const bool modRev = modReverseEligible(psDroid, psPropStats) && modDecideReverse(psDroid, direction);
+	if (modRev)
+	{
+		psDroid->rot.direction += 0x8000;   // Cast wrapping intended.
+		speed = speed * modReversePercent(psPropStats) / 100;
+	}
 
 	// MOD (Wunsch 18.11. 12:44 "Lkw/Trucks drehen seltsam - das sind keine Kettenfahrzeuge, und die Drehung ist nicht mittig"):
 	// Radfahrzeuge drehen nicht mehr auf der Stelle, sondern lenken wie ein Auto - sie fahren beim Wenden weiter und beschreiben einen
@@ -2097,6 +2183,15 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	{
 		moveUpdateDroidDirection(psDroid, &speed, slideDir, spinAngle, psDroid->baseSpeed * DEG(1), psDroid->baseSpeed * DEG(1) / 3, &iDroidDir);
 		psDroid->rot.direction = iDroidDir;
+	}
+	if (modRev)
+	{
+		psDroid->rot.direction += 0x8000;   // wieder echte Blickrichtung (Cast wrapping intended.)
+		if (psDroid->sMove.speed < 0)       // Tempo nie negativ fuehren: gleiche Bewegung, umgekehrte Richtung
+		{
+			psDroid->sMove.speed = -psDroid->sMove.speed;
+			psDroid->sMove.moveDir += 0x8000;
+		}
 	}
 
 	moveUpdateDroidPos(psDroid, bx, by);
