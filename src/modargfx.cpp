@@ -16,7 +16,7 @@ namespace modargfx
 {
 namespace
 {
-constexpr const char *PACKAGE = "mods/grafik/ARGrafik.wz";
+constexpr const char *AR_PACKAGE_PATH = "mods/grafik/ARGrafik.wz";
 std::string s_mounted;   // reale Pfadangabe des eingehaengten Pakets (leer = nicht eingehaengt)
 
 bool stillMounted()
@@ -26,7 +26,7 @@ bool stillMounted()
 
 std::string realPackagePath()
 {
-	const char *dir = PHYSFS_getRealDir(PACKAGE);
+	const char *dir = PHYSFS_getRealDir(AR_PACKAGE_PATH);
 	if (dir == nullptr)
 	{
 		return std::string();
@@ -37,7 +37,7 @@ std::string realPackagePath()
 	{
 		p += sep;
 	}
-	std::string rel(PACKAGE);
+	std::string rel(AR_PACKAGE_PATH);
 	if (sep[0] != '/')
 	{
 		for (char &c : rel) { if (c == '/') { c = sep[0]; } }
@@ -78,7 +78,7 @@ void unmountNow()
 
 bool installed()
 {
-	return PHYSFS_exists(PACKAGE) != 0;
+	return PHYSFS_exists(AR_PACKAGE_PATH) != 0;
 }
 
 void applyMount()

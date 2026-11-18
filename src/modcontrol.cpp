@@ -40,6 +40,14 @@ bool manual(const DROID *d)
 	return d->order.type != DORDER_NONE && d->order.type != DORDER_GUARD && d->order.type != DORDER_HOLD;
 }
 
+unsigned sincePlayerOrder(const DROID *d)
+{
+	if (d == nullptr) { return 0xffffffffu; }
+	auto it = s_last.find(d->id);
+	if (it == s_last.end()) { return 0xffffffffu; }
+	return gameTime - it->second;
+}
+
 void reset()
 {
 	s_last.clear();

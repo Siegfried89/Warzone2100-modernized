@@ -183,8 +183,9 @@ vec4 modcApply(vec4 decal, int t, vec3 P)
 	if (modcBit(m, 128)) { d = min(d, length(vec2(f.x, f.y))); }
 	d *= size;   // Weltmass
 	float n = ((modcNoise(w / 37.0) - 0.5) * 34.0 + (modcNoise(w / 11.0) - 0.5) * 14.0) * smoothstep(0.0, 14.0, d);
-	// (18.11.) Beton unter Gebaeuden laeuft so breit aus wie der Rand der LZ wirkt (etwa ein Feld); Karten-Beton (Kachel 22) bleibt wie er ist
-	float reach = (lay == 22) ? 54.0 : 104.0;
+	// (18.11. 02:44 "genauso wie bei der LZ ... maximal die Haelfte (einer Kachel), wenn ueberhaupt"): Beton unter Gebaeuden laeuft genau so
+	// weit aus wie der Karten-Beton der LZ (etwa 0,4 Feld)
+	float reach = 54.0;
 	float a = 1.0 - smoothstep(0.0, reach, d + n * (reach / 54.0));
 	if (a <= 0.001) { return decal; }
 	vec4 c = modcSample(float(lay), w / 128.0);

@@ -16,5 +16,7 @@ constexpr unsigned GRACE_MS = 45000;
 void onPlayerOrder(const DROID *psDroid);
 /// steht die Einheit gerade unter Spieler-Kontrolle? (dann keine Autonomie)
 bool manual(const DROID *psDroid);
+/// (18.11.) Spielzeit seit dem letzten Spieler-Befehl an diese Einheit (sehr gross, wenn keiner gemerkt ist)
+unsigned sincePlayerOrder(const DROID *d);
 void reset();
 }
