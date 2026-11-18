@@ -163,6 +163,8 @@ void update()
 			if (d->droidType == DROID_PERSON || d->droidType == DROID_CYBORG || d->droidType == DROID_CYBORG_SUPER
 			    || d->droidType == DROID_CYBORG_CONSTRUCT || d->droidType == DROID_CYBORG_REPAIR) { continue; }
 			if (!d->visibleForLocalDisplay()) { s_last.erase(d->id); continue; }
+			// nur an der Oberflaeche (Untergrund-Gaenge und Orbit-Plattformen haben keinen weichen Boden)
+			if (modlayer::layerOf(d) != modlayer::SURFACE) { s_last.erase(d->id); continue; }
 			auto it = s_last.find(d->id);
 			if (it == s_last.end())
 			{
