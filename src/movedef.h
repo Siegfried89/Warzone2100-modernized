@@ -53,11 +53,16 @@ struct MOVE_CONTROL
 	/// Not saved: it only decides whether a memo is reused, and a miss recomputes the same answer.
 	uint32_t routeGeneration = 0;
 
+	/// MOD (Wunsch 18.11. 13:34 "Rueckwaertsgang fuer alle Einheiten"): faehrt gerade rueckwaerts (Entscheidung mit Nachlauf).
+	/// Nicht gespeichert: wird beim naechsten Schritt aus Lage und Ziel neu entschieden.
+	bool modReverse = false;
+
 	void setRoute(std::vector<Vector2i> route, int index = 0)
 	{
 		asPath = std::move(route);
 		pathIndex = index;
 		++routeGeneration;
+		modReverse = false;
 	}
 
 	void setRoute(Vector2i point)
@@ -65,6 +70,7 @@ struct MOVE_CONTROL
 		asPath.assign(1, point);
 		pathIndex = 0;
 		++routeGeneration;
+		modReverse = false;
 	}
 
 	void clearRoute()

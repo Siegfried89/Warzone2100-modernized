@@ -12,6 +12,7 @@
 
 #include "baseobject.h"
 #include "droid.h"
+#include "console.h"
 #include "feature.h"
 #include "game_world.h"
 #include "map.h"
@@ -218,11 +219,36 @@ bool orderSelected(unsigned player, int worldX, int worldY)
 	// MOD: gewaehlte Tuerme/Stellungen feuern ebenfalls auf den Punkt (nur an der Oberflaeche)
 	if (surfaceView)
 	{
+		bool tooFar = false;
+		int farTiles10 = 0, rangeTiles10 = 0;
 		for (STRUCTURE *s : gameWorld.objects.structures[player])
 		{
 			if (s == nullptr || !s->selected || !canStructureFireOnGround(s)) { continue; }
-			sendStructureGroundFire(s, worldX, worldY, currentOrderSource());
+			// (18.11. 13:37 "MG-Posten dreht sich, schiesst aber nicht" - Strg + Rechtsklick auf den Boden): Tuerme koennen nicht
+			// naeher heranfahren. Liegt der Punkt hinter der Reichweite, dreht der Turm nur hin und schweigt. Jetzt: er beschiesst den
+			// Boden in dieser Richtung so weit er reicht, und eine Meldung sagt, dass das Ziel zu weit weg ist.
+			int tx = worldX, ty = worldY;
+			const int range = proj_GetLongRange(*s->getWeaponStats(0), s->player);
+			const int dx = worldX - s->pos.x, dy = worldY - s->pos.y;
+			const int dist = iHypot(dx, dy);
+			if (range > 0 && dist > range - 8)
+			{
+				const int r = std::max(32, range - 24);
+				tx = s->pos.x + static_cast<int>(int64_t(dx) * r / std::max(1, dist));
+				ty = s->pos.y + static_cast<int>(int64_t(dy) * r / std::max(1, dist));
+				tooFar = true;
+				farTiles10 = std::max(farTiles10, dist * 10 / TILE_UNITS);
+				rangeTiles10 = std::max(rangeTiles10, range * 10 / TILE_UNITS);
+			}
+			sendStructureGroundFire(s, tx, ty, currentOrderSource());
 			any = true;
+		}
+		if (tooFar && player == selectedPlayer)
+		{
+			char msg[200];
+			snprintf(msg, sizeof(msg), "Ziel zu weit weg (%d,%d Felder) - der Turm reicht nur %d,%d Felder weit und beschiesst den Boden so weit er kommt.",
+			         farTiles10 / 10, farTiles10 % 10, rangeTiles10 / 10, rangeTiles10 % 10);
+			addConsoleMessage(msg, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 		}
 	}
 	return any;
