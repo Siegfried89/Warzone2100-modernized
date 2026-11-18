@@ -93,6 +93,7 @@ void kf_toggleTrapCursor();
 void kf_TogglePauseMode();
 
 void kf_ToggleEnergyBars();
+void kf_ToggleArtRevolution();   // MOD (18.11.)
 void kf_FinishAllResearch();
 void kf_FinishResearch();
 void kf_ToggleOverlays();

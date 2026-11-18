@@ -52,6 +52,7 @@
 #include "challenge.h"
 #include "component.h"
 #include "configuration.h"
+#include "modargfx.h"
 #include "difficulty.h"
 #include "display.h"
 #include "droid.h"
@@ -315,7 +316,7 @@ static void addFactionChoice()
 // Spielstart ueber alle Mods gelegt (init.cpp rebuildSearchPath) - die bisherigen Dateien bleiben unveraendert.
 static bool artRevolutionInstalled()
 {
-	return PHYSFS_exists("mods/grafik/ARGrafik.wz") != 0;
+	return modargfx::installed();
 }
 
 static std::string artRevolutionLabel()
@@ -329,7 +330,7 @@ static void addArtRevolutionButton()
 	auto b = addTextButton(FRONTEND_ARGRAPHICS, FRONTEND_POS1X, FRONTEND_POS9Y - 6, artRevolutionLabel(), WBUT_TXTCENTRE | (have ? 0 : WBUT_DISABLE));
 	b->FontID = font_regular;
 	b->setGeometry(FRONTEND_POS1X, FRONTEND_POS9Y - 6, FRONTEND_BUTWIDTH, 26);
-	widgSetTip(psWScreen, FRONTEND_ARGRAPHICS, have ? _("Switch between the standard graphics and the Art Revolution models and textures (takes effect when the next game starts)")
+	widgSetTip(psWScreen, FRONTEND_ARGRAPHICS, have ? _("Switch between the standard graphics and the Art Revolution models and textures (also in game with the Insert key)")
 	                                                : _("The Art Revolution graphics package is not installed"));
 }
 
@@ -449,9 +450,8 @@ bool runTitleMenu()
 		changeTitleUI(std::make_shared<WzFleetTitleUI>());
 		break;
 	case FRONTEND_ARGRAPHICS:   // MOD (18.11.): Grafik Standard / Art Revolution
-		war_setArtRevolution(!war_getArtRevolution());
+		modargfx::toggle(false);
 		widgSetString(psWScreen, FRONTEND_ARGRAPHICS, artRevolutionLabel().c_str());
-		saveConfig();
 		break;
 	case FRONTEND_FACTION_0:
 	case FRONTEND_FACTION_1:

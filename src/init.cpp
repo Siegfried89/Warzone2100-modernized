@@ -49,6 +49,7 @@
 
 #include "modfaction.h"
 #include "init.h"
+#include "modargfx.h"
 #include "titleui/titleui.h"
 #include "lib/framework/modtime.h"
 #include "modsave.h"
@@ -676,13 +677,7 @@ bool rebuildSearchPath(searchPathMode mode, bool force)
 				WZ_PHYSFS_MountSearchPathWrapper(curSearchPath->path.c_str(), NULL, PHYSFS_APPEND);
 
 				addSubdirs(curSearchPath->path.c_str(), versionedModsPath(MODS_MUSIC), PHYSFS_APPEND, nullptr, false);
-				// MOD (18.11., Wunsch "per Knopfdruck zwischen AR-Grafik und normaler Grafik wechseln"): das AR-Paket liegt ueber allen Mods
-				// (seine Modelle ersetzen die skalierten Originale), aber nur, wenn der Knopf im Hauptmenue auf "Art Revolution" steht
-				if (war_getArtRevolution())
-				{
-					tmpstr = curSearchPath->path + "mods/grafik/ARGrafik.wz";
-					WZ_PHYSFS_MountSearchPathWrapper(tmpstr.c_str(), NULL, PHYSFS_APPEND);
-				}
+				modargfx::applyMount();   // MOD (18.11.): AR-Grafik als Anzeige-Ersatz (graphics_overrides/curr), wenn eingeschaltet
 				addSubdirs(curSearchPath->path.c_str(), versionedModsPath(MODS_GLOBAL), PHYSFS_APPEND, use_override_mods ? &override_mods : &global_mods, true);
 				addSubdirs(curSearchPath->path.c_str(), versionedModsPath(MODS_AUTOLOAD), PHYSFS_APPEND, use_override_mods ? &override_mods : nullptr, true);
 				addSubdirs(curSearchPath->path.c_str(), versionedModsPath(MODS_CAMPAIGN), PHYSFS_APPEND, use_override_mods ? &override_mods : &campaign_mods, true);
@@ -736,13 +731,7 @@ bool rebuildSearchPath(searchPathMode mode, bool force)
 				// Only load if we are host or singleplayer (Initial mod load relies on this, too)
 				if (ingame.side == InGameSide::HOST_OR_SINGLEPLAYER || !NetPlay.bComms)
 				{
-					// MOD (18.11., Wunsch "per Knopfdruck zwischen AR-Grafik und normaler Grafik wechseln"): das AR-Paket liegt ueber allen Mods
-					// (seine Modelle ersetzen die skalierten Originale), aber nur, wenn der Knopf im Hauptmenue auf "Art Revolution" steht
-					if (war_getArtRevolution())
-					{
-						tmpstr = curSearchPath->path + "mods/grafik/ARGrafik.wz";
-						WZ_PHYSFS_MountSearchPathWrapper(tmpstr.c_str(), NULL, PHYSFS_APPEND);
-					}
+					modargfx::applyMount();   // MOD (18.11.): AR-Grafik als Anzeige-Ersatz (graphics_overrides/curr), wenn eingeschaltet
 					addSubdirs(curSearchPath->path.c_str(), versionedModsPath(MODS_GLOBAL), PHYSFS_APPEND, use_override_mods ? &override_mods : &global_mods, true);
 					addSubdirs(curSearchPath->path.c_str(), versionedModsPath(MODS_AUTOLOAD), PHYSFS_APPEND, use_override_mods ? &override_mods : nullptr, true);
 					addSubdirs(curSearchPath->path.c_str(), versionedModsPath(MODS_MULTIPLAY), PHYSFS_APPEND, use_override_mods ? &override_mods : &multiplay_mods, true);

@@ -37,6 +37,7 @@
 #include "range_rings.h"
 #include "edit3d.h"
 #include "keybind.h"
+#include "modargfx.h"
 #include <algorithm>
 #include "modsalvage.h"
 #include "screens/researchtreescreen.h"
@@ -1725,6 +1726,12 @@ void	kf_FinishResearch()
 }
 
 // --------------------------------------------------------------------------
+// MOD (Wunsch 18.11. 02:07): AR-Grafik mitten im Spiel per Tastendruck umschalten (Einfg), ohne Menuewechsel
+void kf_ToggleArtRevolution()
+{
+	modargfx::toggle(true);
+}
+
 void	kf_ToggleEnergyBars()
 {
 	switch (toggleEnergyBars())
