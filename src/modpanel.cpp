@@ -6,6 +6,8 @@
 //   Befehle:       GUARD / ATTACK / MOVE    PATROL / RETFIRE / STOP
 
 #include "modpanel.h"
+#include "modwzhd.h"
+#include "intfac.h"
 #include "modui.h"
 #include "modcombot.h"
 
@@ -196,6 +198,39 @@ void drawCmdButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
 	const modui::Img img = cmdImage(c, on);
 	const int w = static_cast<int>(modui::imgWidth(img) * s), h = static_cast<int>(modui::imgHeight(img) * s);
+	// (Wunsch 18.11. 12:03) "Die Befehlskommandozeile ... sehr eng am originalen WZ-Stil": die Original-WZ-Befehlsknoepfe (HD, mit Glow)
+	//   Waffeneinsatz nah/alle/fern = WZ-Reichweite kurz/optimal/lang, Verhalten = WZ halten/bewachen/verfolgen,
+	//   Feuer frei / Rueckfeuer / Feuer halten, Patrouille - eigene nur fuer "Bewachen" und "Stopp" (im selben Stil)
+	if (modwzhd::ready())
+	{
+		int up = -1, dn = -1; const char *named = nullptr;
+		switch (c)
+		{
+		case C_MELEE: up = IMAGE_ORD_RANGE1UP; dn = IMAGE_ORD_RANGE1DOWN; break;
+		case C_ALL: up = IMAGE_ORD_RANGE3UP; dn = IMAGE_ORD_RANGE3DOWN; break;
+		case C_RANGED: up = IMAGE_ORD_RANGE2UP; dn = IMAGE_ORD_RANGE2DOWN; break;
+		case C_STAY: up = IMAGE_ORD_HALTUP; dn = IMAGE_ORD_HALTDOWN; break;
+		case C_TETHER: up = IMAGE_ORD_GUARDUP; dn = IMAGE_ORD_GUARDDOWN; break;
+		case C_PURSUE: up = IMAGE_ORD_PURSUEUP; dn = IMAGE_ORD_PURSUEDOWN; break;
+		case C_GUARD: named = "wz_guard"; break;
+		case C_ATTACK: up = IMAGE_ORD_FATWILLUP; dn = IMAGE_ORD_FATWILLDOWN; break;
+		case C_MOVE: up = IMAGE_ORD_HOLDFIREUP; dn = IMAGE_ORD_HOLDFIREDOWN; break;
+		case C_PATROL: up = IMAGE_ORD_PATROLUP; dn = IMAGE_ORD_PATROLDOWN; break;
+		case C_RETFIRE: up = IMAGE_ORD_RETFIREUP; dn = IMAGE_ORD_RETFIREDOWN; break;
+		default: named = "wz_stop"; break;
+		}
+		const int yy = y0 + (down ? 1 : 0);
+		if (named != nullptr)
+		{
+			const std::string hn = std::string(named) + "h";
+			if (modwzhd::drawNamed((on || down) ? hn.c_str() : named, x0, yy, w, h, hl || on)) { return; }
+		}
+		else
+		{
+			modwzhd::drawIntfac(static_cast<unsigned>((on || down) ? dn : up), x0, yy, w, h, hl || on);
+			return;
+		}
+	}
 	modui::drawSized(img, x0, y0 + (down ? 1 : 0), w, h, down ? 200 : 255);
 	if (c >= C_GUARD && on && img < modui::B_GUARD_ON)
 	{

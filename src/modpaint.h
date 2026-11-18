@@ -34,6 +34,8 @@ void drawOnMap(const std::function<bool(const Vector2i &, Vector2i &)> &toScreen
 const char *activeLabel();
 /// (17.11.) Zeichenmodus nach Beschriftung waehlen (z. B. "Salvage" aus der Mod-Rosette)
 void selectMode(const char *label);
+/// (18.11.) Oberkante des Stapels unten rechts ohne Minikarte (Schlachtplan offen: seine Oberkante, sonst Bildschirmunterkante)
+int stackTop();
 /// beim Beenden der Oberflaeche
 void shutdown();
 }

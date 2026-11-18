@@ -111,7 +111,7 @@ int overrideTexture(WorldMapState &m, int x, int y, bool classic)
 	const MAPTILE *t = mapTile(m, x, y);
 	if (TILE_HAS_DECAL(t)) { return -1; }
 	const unsigned char tt = terrainType(t);
-	if (tt == TER_WATER || tt == TER_CLIFFFACE) { return -1; }
+	if (tt == TER_WATER || tt == TER_CLIFFFACE || tt == TER_ROAD) { return -1; }
 	int mask = 0;
 	if (concreteAt(m, x, y - 1)) { mask |= 1; }
 	if (concreteAt(m, x + 1, y)) { mask |= 2; }
@@ -151,7 +151,8 @@ int classicDecal(WorldMapState &m, int x, int y, int decalNo, bool waterOnly)
 	// Gebaeude liegen fast nur solche Felder (deshalb endete der Beton dort hart an der Kachelkante, an der LZ aber weich)
 	if (TileNumber_tile(t->texture) == MOD_TILE_VOID) { return decalNo; }
 	const unsigned char tt = terrainType(t);
-	if (tt == TER_WATER || tt == TER_CLIFFFACE) { return decalNo; }
+	// (18.11. 12:19 "der Beton soll nicht in Strassen hineinbluten - da sollte die Strasse Vorrang haben"): kein Betonrand auf Strassenfeldern
+	if (tt == TER_WATER || tt == TER_CLIFFFACE || tt == TER_ROAD) { return decalNo; }
 	const bool structOk = s_first >= 0;
 	if ((structOk && concreteAt(m, x, y)) || mapConcrete(m, x, y)) { return decalNo; }
 	static const int DX[8] = {0, 1, 0, -1, 1, 1, -1, -1};

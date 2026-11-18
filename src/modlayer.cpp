@@ -316,7 +316,13 @@ void layout()
 {
 	const float s = modui::uiScale();
 	const int w = static_cast<int>(TOTAL_W * s), h = static_cast<int>(TOTAL_H * s);
-	s_root->setGeometry(static_cast<int>(screenWidth) - w - 4, 44, w, h);
+	// (18.11. 12:10 "die Menues ueberlappen sich immer noch extrem") unter dem Zahnrad (Spieloptionen) oben rechts, nicht darauf
+	int y = 44;
+	if (WIDGET *opt = widgGetFromID(psWScreen, IDRET_OPTIONS))
+	{
+		if (opt->visible()) { y = std::max(y, opt->screenPosY() + opt->height() + static_cast<int>(6 * s)); }
+	}
+	s_root->setGeometry(static_cast<int>(screenWidth) - w - 4, y, w, h);
 	for (size_t i = 0; i < s_buttons.size(); ++i)
 	{
 		s_buttons[i]->setGeometry(static_cast<int>(PAD * s), static_cast<int>((PAD + static_cast<int>(i) * (BTN_H + BTN_GAP)) * s),

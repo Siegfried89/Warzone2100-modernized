@@ -1421,7 +1421,7 @@ bool droidUpdateDemolishing(DROID *psDroid)
 		return false;
 	}
 
-	int constructRate = 5 * constructorPoints(*psDroid->getConstructStats(), psDroid->player) * modbuild::demolishFactor(psDroid);   // MOD: Abrissbirne 4x
+	int constructRate = 5 * constructorPoints(*psDroid->getConstructStats(), psDroid->player) * modbuild::demolishFactor(psDroid, psStruct);   // MOD: Abrissbirne (grosse Beton-Bauwerke 8x)
 	int pointsToAdd = gameTimeAdjustedAverage(constructRate);
 
 	structureDemolish(gameWorld, psStruct, psDroid, pointsToAdd);
@@ -4141,6 +4141,13 @@ bool DROID::isCyborg() const
 
 bool DROID::isConstructionDroid() const
 {
+	// MOD (Wunsch 18.11. 12:28 "Diese beiden koennen noch bauen - das sollen sie nicht koennen"): Pickup/Pritschen-Lkw/Traktor mit
+	// Ladeflaeche und Oeltanker transportieren nur (Faesser, Kisten, Oel) - sie bauen und reparieren nicht
+	if (droidType == DROID_CONSTRUCT)
+	{
+		const CONSTRUCT_STATS *cs = getConstructStats();
+		if (cs != nullptr && (cs->id.startsWith("ScavBed") || cs->id.startsWith("ScavTank"))) { return false; }
+	}
 	return droidType == DROID_CONSTRUCT || droidType == DROID_CYBORG_CONSTRUCT || modbuild::isInfantryBuilder(this);   // MOD: Kampf-Infanterie mit Spaten
 }
 

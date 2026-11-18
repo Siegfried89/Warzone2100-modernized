@@ -423,11 +423,12 @@ void layout()
 {
 	const float s = modui::uiScale();
 	const int bw = static_cast<int>(70 * s), bh = static_cast<int>(18 * s), gap = static_cast<int>(3 * s);
-	const int W = static_cast<int>(screenWidth), H = static_cast<int>(screenHeight);
+	const int W = static_cast<int>(screenWidth);
 	// "Map" und "Symbols" ueber der Minikarte
-	int rx = W - 2 * bw - gap - 6, ry = H - 200;
+	// (18.11. 12:10) ohne Minikarte: rechts unten ueber dem Schlachtplan (nicht darauf)
+	int rx = W - 2 * bw - gap - 6, ry = modpaint::stackTop() - bh - gap;
 	const std::shared_ptr<WIDGET> radar = getRadarWidget();
-	if (radar && radar->width() > 0)
+	if (radar && radar->visible() && radar->width() > 0)
 	{
 		// (18.11. 01:14 "Das Menue rechts liegt teilweise uebereinander"): die gedrehte Minikarte ragt mit den Ecken bis zu 21 % ueber ihren
 		// Rahmen hinaus - die Knoepfe liegen darueber mit Abstand
@@ -457,6 +458,11 @@ void tick()
 	if (selectedPlayer >= MAX_PLAYERS || gameWorld.map.width <= 0) { return; }
 	ensureScreen();
 	if (s_btn.size() != B_COUNT) { return; }
+	// (18.11. 12:30) im Design-Bildschirm keine Map/Symbol-Knoepfe (lagen ueber der Vorlagenliste)
+	const bool design = intMode == INT_DESIGN;
+	s_btn[B_MAP]->show(!design);
+	s_btn[B_SYM]->show(!design);
+	if (design) { return; }
 	layout();
 	if (s_mode != 0 && (s_texAt == 0 || s_texView != s_view || realTime - s_texAt > 3000u)) { rebuildTexture(); }
 }

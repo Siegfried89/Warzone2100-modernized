@@ -274,13 +274,14 @@ void infButtonTick(bool want)
 	s_infBtn->setGeometry(0, 0, w, h);
 }
 
-void layout()
+void calcRect(int &x, int &y, int &w, int &h)
 {
 	const float s = modui::uiScale();
-	const int w = static_cast<int>(TOTAL_W * s), h = static_cast<int>(TOTAL_H * s);
+	w = static_cast<int>(TOTAL_W * s); h = static_cast<int>(TOTAL_H * s);
 	// (17.11.) nicht ueber der Karte unten rechts (Radar): links daneben, unten buendig
-	int x = static_cast<int>(screenWidth) - w - 4;
-	int y = static_cast<int>(screenHeight) - h - 64;
+	// (18.11. 12:10) ohne Minikarte unten rechts in der Ecke - Map/Symbol-Knoepfe und Rosette stapeln sich darueber (siehe stackTop)
+	x = static_cast<int>(screenWidth) - w - 4;
+	y = static_cast<int>(screenHeight) - h - 8;
 	const std::shared_ptr<WIDGET> radar = getRadarWidget();
 	if (radar && radar->visible() && radar->width() > 0)
 	{
@@ -288,6 +289,13 @@ void layout()
 		x = std::max(4, radar->x() - w - 6 - m);
 		y = std::max(4, static_cast<int>(screenHeight) - h - 8);
 	}
+}
+
+void layout()
+{
+	const float s = modui::uiScale();
+	int x, y, w, h;
+	calcRect(x, y, w, h);
 	s_root->setGeometry(x, y, w, h);
 	for (size_t i = 0; i < s_buttons.size(); ++i)
 	{
@@ -451,6 +459,37 @@ STRUCTURE_STATS *bestArtyEmplacement()
 		if (best == nullptr || range > bestRange) { best = &s; bestRange = range; }
 	}
 	return best;
+}
+
+/// Bauplan der Artilleriebasis (Sensor in der Mitte, 4 Stellungen dicht drumherum, Mauerring) - fuer den Bau UND die Vorschau
+/// unter der Maus (18.11. 12:14 "beim Klicken auf Arty base kommt das falsche Layout, beim Bestaetigen das richtige")
+std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld)
+{
+	std::vector<modbuild::Placement> out;
+	STRUCTURE_STATS *arty = bestArtyEmplacement();
+	STRUCTURE_STATS *sensor = firstAvailable({ "Sys-SensoTowerWS", "Sys-SensoTower02", "Sys-SensoTower01", "A0BaBaOutpost" });
+	STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall", "CollectiveWall", "NEXUSWall", "A0BaBaSandbagWall" });
+	const Vector2i ct(map_coord(centerWorld.x), map_coord(centerWorld.y));
+	auto one = [&](STRUCTURE_STATS *st, int tx, int ty) { modbuild::Placement p; p.stats = st; p.tile = Vector2i(tx, ty); p.tile2 = p.tile; out.push_back(p); };
+	auto line = [&](STRUCTURE_STATS *st, int x0, int y0, int x1, int y1) {
+		modbuild::Placement p; p.stats = st; p.tile = Vector2i(x0, y0); p.tile2 = Vector2i(x1, y1); p.line = true; out.push_back(p);
+	};
+	if (sensor != nullptr) { one(sensor, ct.x, ct.y); }
+	if (arty != nullptr)
+	{
+		// (16.11. 22:50 "immer noch zu gross, nicht so viel Platz verschwenden") dicht um den Sensor: 3 x 3 Felder
+		static const int OFF[4][2] = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } };
+		for (const auto &o : OFF) { one(arty, ct.x + o[0], ct.y + o[1]); }
+	}
+	if (wall != nullptr)
+	{
+		const int r = 2;   // Mauerring direkt um den 3x3-Block (vorher 4 = 9x9 Felder)
+		line(wall, ct.x - r, ct.y - r, ct.x + r, ct.y - r);
+		line(wall, ct.x + r, ct.y - r + 1, ct.x + r, ct.y + r);
+		line(wall, ct.x + r - 1, ct.y + r, ct.x - r, ct.y + r);
+		line(wall, ct.x - r, ct.y + r - 1, ct.x - r, ct.y - r + 1);
+	}
+	return out;
 }
 
 // ------------------------------------------------------------------------------------------------- Bergetrupp (Wunsch 14.11. Punkt 25)
@@ -1038,26 +1077,12 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 	}
 	case M_ARTYBASE:
 	{
-		STRUCTURE_STATS *arty = bestArtyEmplacement();
-		STRUCTURE_STATS *sensor = firstAvailable({ "Sys-SensoTowerWS", "Sys-SensoTower02", "Sys-SensoTower01", "A0BaBaOutpost" });
-		STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall", "CollectiveWall", "NEXUSWall", "A0BaBaSandbagWall" });
-		const Vector2i ct(map_coord(c.x), map_coord(c.y));
-		auto worldOf = [](int tx, int ty) { return Vector2i(world_coord(tx) + TILE_UNITS / 2, world_coord(ty) + TILE_UNITS / 2); };
+		auto worldOf = [](const Vector2i &t) { return Vector2i(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2); };
 		std::vector<DroidOrder> plan;
-		if (sensor != nullptr) { plan.emplace_back(DORDER_BUILD, sensor, worldOf(ct.x, ct.y), 0); }
-		if (arty != nullptr)
+		for (const modbuild::Placement &pl : artyBasePlan(c))
 		{
-			// (16.11. 22:50 "immer noch zu gross, nicht so viel Platz verschwenden") dicht um den Sensor: 3 x 3 Felder
-			static const int OFF[4][2] = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } };
-			for (const auto &o : OFF) { plan.emplace_back(DORDER_BUILD, arty, worldOf(ct.x + o[0], ct.y + o[1]), 0); }
-		}
-		if (wall != nullptr)
-		{
-			const int r = 2;   // Mauerring direkt um den 3x3-Block (vorher 4 = 9x9 Felder)
-			plan.emplace_back(DORDER_LINEBUILD, wall, worldOf(ct.x - r, ct.y - r), worldOf(ct.x + r, ct.y - r), 0);
-			plan.emplace_back(DORDER_LINEBUILD, wall, worldOf(ct.x + r, ct.y - r + 1), worldOf(ct.x + r, ct.y + r), 0);
-			plan.emplace_back(DORDER_LINEBUILD, wall, worldOf(ct.x + r - 1, ct.y + r), worldOf(ct.x - r, ct.y + r), 0);
-			plan.emplace_back(DORDER_LINEBUILD, wall, worldOf(ct.x - r, ct.y + r - 1), worldOf(ct.x - r, ct.y - r + 1), 0);
+			if (pl.line) { plan.emplace_back(DORDER_LINEBUILD, pl.stats, worldOf(pl.tile), worldOf(pl.tile2), 0); }
+			else { plan.emplace_back(DORDER_BUILD, pl.stats, worldOf(pl.tile), 0); }
 		}
 		// alle Baufahrzeuge arbeiten denselben Plan ab (sie helfen sich gegenseitig an derselben Baustelle)
 		for (DROID *d : units)
@@ -1374,7 +1399,7 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 void tick()
 {
 	// (17.11. 14:14) Mod-Rosette: der Schlachtplan-Knopf blendet die Leiste ein/aus; "Infantry: build" liegt jetzt in der Rosette
-	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS && modrosette::planOpen();
+	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS && modrosette::planOpen() && intMode != INT_DESIGN;
 	infButtonTick(false);
 	if (!want && !s_screen) { opTick(); planTick(); return; }
 	ensureScreen();
@@ -1391,6 +1416,17 @@ void tick()
 
 bool processMouse(bool overUi, const Vector2i &worldPos)
 {
+	// (18.11. 12:14) Artilleriebasis: der echte Bauplan folgt der Maus (beim Ziehen: Mitte der Zeichnung) - statt der Befestigungs-Vorschau
+	if (s_mode == M_ARTYBASE && (!overUi || s_drawing))
+	{
+		static std::vector<modbuild::Placement> s_artyPreview;
+		s_artyPreview = artyBasePlan(s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos);
+		modbuild::setExternalPreview(&s_artyPreview);
+	}
+	else
+	{
+		modbuild::setExternalPreview(nullptr);
+	}
 	if (s_mode < 0) { return false; }
 	if (mouseReleased(MOUSE_RMB))
 	{
@@ -1462,6 +1498,15 @@ void drawOverlay(const glm::mat4 &m)
 		if ((s_mode == M_TRAPS || s_mode == M_MINES) && s_cur.size() >= 3) { marks = fieldSpots(s_cur, s_mode == M_MINES); }
 		drawStroke(s_cur, s_mode, 255, m, &marks, (s_mode == M_DEFEND || s_mode == M_OFFENSE) ? defendSide(s_cur) : 0);
 	}
+}
+
+int stackTop()
+{
+	// (18.11. 12:10 "die Menues ueberlappen sich immer noch extrem") Oberkante des Stapels unten rechts, wenn keine Minikarte sichtbar ist:
+	// offener Schlachtplan (unten rechts in der Ecke) - sonst der Bildschirmrand
+	int x, y, w, h;
+	calcRect(x, y, w, h);
+	return modrosette::planOpen() ? y : static_cast<int>(screenHeight) - 4;
 }
 
 void selectMode(const char *label)

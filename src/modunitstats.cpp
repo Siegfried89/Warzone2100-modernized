@@ -3,6 +3,7 @@
 #include "modunitstats.h"
 
 #include <physfs.h>
+#include <algorithm>
 #include "lib/framework/frame.h"
 #include "map.h"
 #include "lib/widget/widget.h"
@@ -22,6 +23,7 @@
 #include "modui.h"
 #include "projectile.h"
 #include "stats.h"
+#include "transporter.h"
 #include "visibility.h"
 
 #include <string>
@@ -167,8 +169,17 @@ void tick()
 	s_toggle->show(want && d != nullptr);
 	s_panel->show(want && d != nullptr && s_on);
 	if (!want || d == nullptr) { return; }
-	// oben links unter der oberen Leiste
-	const int x = 6, y = 44;
+	// oben links unter der oberen Leiste - (18.11. 12:10 "die Menues ueberlappen sich immer noch extrem") ist links ein WZ-Fenster offen
+	// (Bau-/Fabrik-/Forschungsliste), steht die Werteleiste rechts daneben statt darauf
+	int x = 6, y = 44;
+	for (UDWORD fid : {static_cast<UDWORD>(IDSTAT_FORM), static_cast<UDWORD>(IDTRANS_FORM), static_cast<UDWORD>(IDTRANS_CONTENTFORM)})
+	{
+		WIDGET *f = widgGetFromID(psWScreen, fid);
+		if (f != nullptr && f->visible() && f->width() > 0 && f->screenPosX() < x + 60 && f->screenPosY() < 300)
+		{
+			x = std::max(x, f->screenPosX() + f->width() + 6);
+		}
+	}
 	s_toggle->setGeometry(x, y, ICON_W, ICON_H);
 	const int rows = static_cast<int>(rowsFor(d).size());
 	s_panel->setGeometry(x, y + ICON_H + 4, PAD * 2 + ICON_W + 3 + VAL_W + 4, PAD * 2 + rows * ROW_H);
