@@ -12,6 +12,9 @@
 #include "lib/ivis_opengl/piedef.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
+#include "lib/ivis_opengl/gfx_api.h"
+#include "lib/ivis_opengl/piestate.h"
+#include "lib/ivis_opengl/png_util.h"
 #include "lib/sound/audio.h"
 #include "ai.h"
 #include "component.h"
@@ -24,10 +27,16 @@
 #include "stats.h"
 #include "structure.h"
 
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/matrix.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <initializer_list>
+#include <string>
+#include <iterator>
 #include <map>
 #include <vector>
 
@@ -37,21 +46,30 @@ namespace
 {
 struct State
 {
+	bool init = false;          // erst beim ersten Spieltakt: Schild steht sofort voll (wie Supreme Commander)
 	int hp = 0;                 // aktuelle Schildpunkte
 	int frac = 0;               // Rest der Aufladung (Tausendstel)
 	bool down = false;          // zusammengebrochen
 	uint32_t downUntil = 0;     // Ausfall bis (Spielzeit)
 	bool powered = true;
+	uint32_t powerBackAt = 0;   // Strom wieder da: Kuppel nach 3 s wieder an (Spielzeit)
+	uint32_t lastDamage = 0;    // letzter Treffer (Spielzeit) - Aufladung erst danach
 	// nur Anzeige
 	uint32_t lastHit = 0;
 	uint32_t downAt = 0;
 	uint32_t upAt = 0;
 };
 
+// Kugel wie beim UEF-Schildgenerator in Supreme Commander (ShieldSize 26, ShieldVerticalOffset -3): Mittelpunkt 3/13 des Radius unter
+// dem Boden. Sichtbar ist die Kappe darueber (Bodenkreis 97 % des Radius); Treffer werden an genau dieser Kugel aufgehalten.
+constexpr int64_t SPHERE_DROP_NUM = 3, SPHERE_DROP_DEN = 13;
+constexpr uint32_t POWER_BACK_MS = 3000;    // ShieldEnergyDrainRechargeTime
+
 struct Active
 {
 	const STRUCTURE *s;
-	int64_t cx, cy, cz, r;
+	int64_t cx, cy, cz, r;      // Kugelmitte (unter dem Boden) und Radius
+	int64_t gz;                 // Bodenhoehe am Generator
 	modlayer::Layer layer;
 };
 
@@ -59,6 +77,8 @@ struct Hit
 {
 	glm::vec3 p;                // Einschlagpunkt (Welt, Anzeige-Koordinaten x, Hoehe, -y)
 	glm::vec3 n;                // nach aussen
+	glm::vec3 c;                // Kugelmitte (Anzeige-Koordinaten)
+	float r;                    // Kugelradius
 	uint32_t t;                 // Anzeigezeit
 	uint32_t shieldId;
 	float size;
@@ -86,6 +106,143 @@ bool passesShields(const WEAPON_STATS *w)
 	if (w->weaponSubClass == WSC_LAS_SAT) { return true; }
 	return w->id.startsWith("Nuke");   // strategische Waffen (Atomrakete, mobiler Atomwerfer)
 }
+
+namespace gpu
+{
+// Kuppel wie beim UEF-Schildgenerator in Supreme Commander 1: Kugel mit vier gegeneinander laufenden Texturlagen
+// (modshield.frag), Einschlag als Kugelkappe mit nach aussen laufendem Ring. Texturen liegen im Mod (texpages/modshield_uef_*.png);
+// fehlen sie, gibt es den Ersatz aus Modellen (draw3D).
+constexpr int SPH_SEG = 32, SPH_RING = 16;        // wie Sphere01 (960 Dreiecke)
+constexpr int CAP_SEG = 32, CAP_RING = 8;         // Kappe bis 22,5 Grad (wie SphereSection01)
+constexpr float CAP_DEG = 22.5f;
+constexpr float IMPACT_TICKS = 7.f;               // 0,2 s voll, dann in 0,5 s weg
+
+gfx_api::texture *texDome = nullptr, *texGrain = nullptr, *texNoise = nullptr, *texHitRing = nullptr, *texHitDetail = nullptr;
+gfx_api::buffer *sphPos = nullptr, *sphUV = nullptr, *sphIdx = nullptr, *capPos = nullptr, *capUV = nullptr, *capIdx = nullptr;
+size_t sphCount = 0, capCount = 0;
+bool tried = false, ok = false;
+
+gfx_api::texture *loadTexture(const char *file)
+{
+	iV_Image img;
+	if (!iV_loadImage_PNG2(file, img, true, true)) { return nullptr; }
+	if (img.channels() != 4 && !img.convert_to_rgba()) { return nullptr; }
+	const unsigned w = img.width(), h = img.height();
+	if (w == 0 || h == 0) { return nullptr; }
+	const size_t levels = 1 + static_cast<size_t>(std::floor(std::log2(static_cast<double>(std::max(w, h)))));
+	// Daten (Rauschen, Masken), keine Farben: unkomprimiert und ohne sRGB-Umrechnung, damit die Vergleiche im Shader stimmen
+	gfx_api::texture *t = gfx_api::context::get().create_texture(levels, w, h, gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, file);
+	if (t == nullptr) { return nullptr; }
+	if (!t->upload(0, img)) { delete t; return nullptr; }
+	unsigned cw = w, ch = h;
+	for (size_t i = 1; i < levels; ++i)
+	{
+		cw = std::max(1u, cw >> 1); ch = std::max(1u, ch >> 1);
+		if (!img.resize(static_cast<int>(cw), static_cast<int>(ch)) || !t->upload(i, img)) { delete t; return nullptr; }
+	}
+	return t;
+}
+
+void freeAll()
+{
+	for (gfx_api::texture **t : { &texDome, &texGrain, &texNoise, &texHitRing, &texHitDetail }) { delete *t; *t = nullptr; }
+	for (gfx_api::buffer **b : { &sphPos, &sphUV, &sphIdx, &capPos, &capUV, &capIdx }) { delete *b; *b = nullptr; }
+	sphCount = capCount = 0;
+	ok = false;
+}
+
+bool makeMesh(const std::vector<glm::vec3> &pos, const std::vector<glm::vec2> &uv, const std::vector<uint16_t> &idx,
+              gfx_api::buffer *&bp, gfx_api::buffer *&bu, gfx_api::buffer *&bi, const char *name)
+{
+	auto &ctx = gfx_api::context::get();
+	bp = ctx.create_buffer_object(gfx_api::buffer::usage::vertex_buffer, gfx_api::context::buffer_storage_hint::static_draw, std::string(name) + "Pos");
+	bu = ctx.create_buffer_object(gfx_api::buffer::usage::vertex_buffer, gfx_api::context::buffer_storage_hint::static_draw, std::string(name) + "UV");
+	bi = ctx.create_buffer_object(gfx_api::buffer::usage::index_buffer, gfx_api::context::buffer_storage_hint::static_draw, std::string(name) + "Idx");
+	if (bp == nullptr || bu == nullptr || bi == nullptr) { return false; }
+	bp->upload(pos.size() * sizeof(glm::vec3), pos.data());
+	bu->upload(uv.size() * sizeof(glm::vec2), uv.data());
+	bi->upload(idx.size() * sizeof(uint16_t), idx.data());
+	return true;
+}
+
+/// Gitter (Ringe x Segmente) zu Dreiecken; leere Dreiecke an Polen/Mitte weglassen
+void gridIndices(int rings, int segs, bool degenerateFirst, bool degenerateLast, std::vector<uint16_t> &idx)
+{
+	for (int j = 0; j < rings; ++j)
+	{
+		for (int i = 0; i < segs; ++i)
+		{
+			const uint16_t a = static_cast<uint16_t>(j * (segs + 1) + i), b = static_cast<uint16_t>(a + 1);
+			const uint16_t c = static_cast<uint16_t>(a + segs + 1), d = static_cast<uint16_t>(c + 1);
+			if (!(degenerateFirst && j == 0)) { idx.insert(idx.end(), { a, c, b }); }
+			if (!(degenerateLast && j == rings - 1)) { idx.insert(idx.end(), { b, c, d }); }
+		}
+	}
+}
+
+bool ensure()
+{
+	if (tried) { return ok; }
+	tried = true;
+	ok = false;
+	texDome = loadTexture("texpages/modshield_uef_dome.png");
+	texGrain = loadTexture("texpages/modshield_uef_grain.png");
+	texNoise = loadTexture("texpages/modshield_uef_noise.png");
+	texHitRing = loadTexture("texpages/modshield_uef_hitring.png");
+	texHitDetail = loadTexture("texpages/modshield_uef_hitdetail.png");
+	if (!texDome || !texGrain || !texNoise || !texHitRing || !texHitDetail)
+	{
+		debug(LOG_INFO, "Schildkuppel: Supreme-Commander-Texturen fehlen - Ersatz aus Modellen");
+		freeAll();
+		return false;
+	}
+	// Kugel (Radius 1): v = 0 am unteren Pol .. 1 am oberen, u rundherum
+	std::vector<glm::vec3> pos;
+	std::vector<glm::vec2> uv;
+	std::vector<uint16_t> idx;
+	for (int j = 0; j <= SPH_RING; ++j)
+	{
+		const float lat = (static_cast<float>(j) / SPH_RING - 0.5f) * glm::pi<float>();
+		for (int i = 0; i <= SPH_SEG; ++i)
+		{
+			const float u = static_cast<float>(i) / SPH_SEG;
+			const float ang = glm::half_pi<float>() + u * glm::two_pi<float>();
+			pos.emplace_back(std::cos(lat) * std::cos(ang), std::sin(lat), std::cos(lat) * std::sin(ang));
+			uv.emplace_back(u, static_cast<float>(j) / SPH_RING);
+		}
+	}
+	gridIndices(SPH_RING, SPH_SEG, true, true, idx);
+	sphCount = idx.size();
+	if (!makeMesh(pos, uv, idx, sphPos, sphUV, sphIdx, "modshield::sphere")) { freeAll(); return false; }
+	// Kappe um +z (Radius 1): v = 0 in der Mitte .. 1 am Rand (wie SphereSection01: 0,006 .. 0,986)
+	pos.clear(); uv.clear(); idx.clear();
+	for (int k = 0; k <= CAP_RING; ++k)
+	{
+		const float th = glm::radians(CAP_DEG) * static_cast<float>(k) / CAP_RING;
+		for (int i = 0; i <= CAP_SEG; ++i)
+		{
+			const float u = static_cast<float>(i) / CAP_SEG;
+			const float ph = u * glm::two_pi<float>();
+			pos.emplace_back(std::sin(th) * std::cos(ph), std::sin(th) * std::sin(ph), std::cos(th));
+			uv.emplace_back(u, 0.006f + 0.98f * static_cast<float>(k) / CAP_RING);
+		}
+	}
+	gridIndices(CAP_RING, CAP_SEG, true, false, idx);
+	capCount = idx.size();
+	if (!makeMesh(pos, uv, idx, capPos, capUV, capIdx, "modshield::cap")) { freeAll(); return false; }
+	ok = true;
+	return true;
+}
+
+void shutdown()
+{
+	freeAll();
+	tried = false;
+}
+
+inline float fractf(double x) { return static_cast<float>(x - std::floor(x)); }
+} // namespace gpu
+
 } // namespace
 
 void tick()
@@ -102,31 +259,48 @@ void tick()
 			const STRUCTURE_STATS *st = s->pStructureType;
 			alive.push_back(s->id);
 			State &S = s_state[s->id];
-			const bool powered = !modgrid::isPoweredDown(s);
-			if (powered && !S.powered) { S.upAt = gameTime; }
-			S.powered = powered;
-			if (S.down && gameTime >= S.downUntil)
+			if (!S.init)
 			{
-				S.down = false;
-				S.hp = 0;
+				// fertig gebaut: Schild steht sofort mit vollen Punkten (Supreme Commander: OnState setzt volle Gesundheit)
+				S.init = true;
+				S.hp = st->shieldHP;
+				S.upAt = gameTime;
+			}
+			// ohne Strom ist die Kuppel aus und behaelt ihre Punkte; kommt der Strom zurueck, geht sie nach 3 s wieder an
+			const bool powered = !modgrid::isPoweredDown(s);
+			if (powered && !S.powered) { S.powerBackAt = gameTime + POWER_BACK_MS; }
+			S.powered = powered;
+			if (!powered) { continue; }
+			if (S.powerBackAt != 0)
+			{
+				if (gameTime < S.powerBackAt) { continue; }
+				S.powerBackAt = 0;
 				S.upAt = gameTime;
 				const int t = track(s_sndUp, "modshield_up.ogg");
 				if (t >= 0) { audio_PlayStaticTrack(s->pos.x, s->pos.y, t); }
 			}
-			if (!powered)
+			// zusammengebrochen: nach der Ausfallzeit wieder an - mit vollen Punkten (Supreme Commander: DamageRechargeState)
+			if (S.down)
 			{
-				// ohne Strom bricht die Kuppel langsam zusammen (10 % je Sekunde)
-				S.hp = std::max(0, S.hp - static_cast<int>(int64_t(st->shieldHP) * dt / 10000));
-				continue;
+				if (gameTime < S.downUntil) { continue; }
+				S.down = false;
+				S.hp = st->shieldHP;
+				S.frac = 0;
+				S.upAt = gameTime;
+				const int t = track(s_sndUp, "modshield_up.ogg");
+				if (t >= 0) { audio_PlayStaticTrack(s->pos.x, s->pos.y, t); }
 			}
-			if (S.down) { continue; }
-			// aufladen (ganzzahlig, Rest in Tausendsteln)
-			S.frac += st->shieldRegen * static_cast<int>(dt);
-			if (S.frac >= 1000) { S.hp += S.frac / 1000; S.frac %= 1000; }
-			S.hp = std::min(S.hp, st->shieldHP);
+			// aufladen erst, wenn eine Weile kein Treffer kam (ganzzahlig, Rest in Tausendsteln)
+			if (S.hp < st->shieldHP && gameTime - S.lastDamage >= static_cast<uint32_t>(st->shieldRegenDelay))
+			{
+				S.frac += st->shieldRegen * static_cast<int>(dt);
+				if (S.frac >= 1000) { S.hp += S.frac / 1000; S.frac %= 1000; }
+				S.hp = std::min(S.hp, st->shieldHP);
+			}
 			if (S.hp > 0)
 			{
-				s_active.push_back({s, s->pos.x, s->pos.y, s->pos.z, st->shieldRadius, modlayer::layerOf(s)});
+				const int64_t r = st->shieldRadius;
+				s_active.push_back({s, s->pos.x, s->pos.y, s->pos.z - r * SPHERE_DROP_NUM / SPHERE_DROP_DEN, r, s->pos.z, modlayer::layerOf(s)});
 			}
 		}
 	}
@@ -166,7 +340,7 @@ bool tryAbsorb(PROJECTILE *proj)
 		// |Q - C|^2 <= r^2  <=>  q^2 <= r^2 * dd^2 ; in Gleitkomma-freier Form mit 128-Bit-Ersatz: erst durch dd teilen
 		const int64_t qxs = qx / dd, qys = qy / dd, qzs = qz / dd;
 		if (qxs * qxs + qys * qys + qzs * qzs > r2) { continue; }
-		if (A.cz + qzs < A.cz - 16) { continue; }                 // unter der Erde: keine Kuppel
+		if (A.cz + qzs < A.gz - 16) { continue; }                 // unter der Erde: keine Kuppel
 		if (best == nullptr || tn < bestT || (tn == bestT && A.s->id < best->s->id)) { best = &A; bestT = tn; }
 	}
 	if (best == nullptr) { return false; }
@@ -175,6 +349,8 @@ bool tryAbsorb(PROJECTILE *proj)
 	State &S = s_state[best->s->id];
 	S.hp -= dmg;
 	S.lastHit = gameTime;
+	S.lastDamage = gameTime;
+	S.frac = 0;
 	const STRUCTURE_STATS *st = best->s->pStructureType;
 	if (S.hp <= 0)
 	{
@@ -209,6 +385,8 @@ bool tryAbsorb(PROJECTILE *proj)
 		Hit h;
 		h.p = glm::vec3(P.x, P.z, -P.y);
 		h.n = glm::vec3(n.x, n.z, -n.y);
+		h.c = glm::vec3(C.x, C.z, -C.y);
+		h.r = R;
 		h.t = graphicsTime;
 		h.shieldId = best->s->id;
 		h.size = std::clamp(18.f + static_cast<float>(dmg) * 0.35f, 18.f, 90.f);
@@ -228,19 +406,34 @@ int shieldPercent(const STRUCTURE *s)
 
 void draw3D(const glm::mat4 &viewMatrix)
 {
-	static iIMDBaseShape *dome = nullptr, *ring = nullptr, *flash = nullptr;
+	// Kuppel wie Supreme Commander (eigenes Grafikprogramm) - wird im Durchsichtigen-Durchgang gezeichnet (drawDomes)
+	if (gpu::ensure()) { return; }
+	// Ersatz, falls die Texturen fehlen: Kuppel aus Modellen (Fliess-Muster, Lichtrand, Bodensaum)
+	// Lichtrand-Varianten (shields.py): Bogen endet 0, 3, 6 .. 90 Grad unter der Waagrechten seiner Ebene, dazu ein geschlossener Ring
+	constexpr int EDGE_VARIANTS = 31;
+	constexpr float EDGE_STEP_DEG = 3.f;
+	static iIMDBaseShape *dome = nullptr, *ring = nullptr, *flash = nullptr, *edgeFull = nullptr;
+	static iIMDBaseShape *edges[EDGE_VARIANTS] = {};
 	static bool tried = false;
 	static unsigned gen = 0;
-	if (modelCacheStale(gen)) { tried = false; dome = ring = flash = nullptr; }
+	if (modelCacheStale(gen)) { tried = false; dome = ring = flash = edgeFull = nullptr; std::fill(std::begin(edges), std::end(edges), nullptr); }
 	if (!tried)
 	{
 		tried = true;
 		dome = modelGet("modshielddome.pie");
 		ring = modelGet("modshieldrim.pie");
 		flash = modelGet("modshieldhit.pie");
+		edgeFull = modelGet("modshieldedgefull.pie");
+		for (int k = 0; k < EDGE_VARIANTS; ++k)
+		{
+			char nm[32];
+			snprintf(nm, sizeof(nm), "modshieldedge%02d.pie", k);
+			edges[k] = modelGet(nm);
+		}
 	}
 	if (dome == nullptr || s_state.empty()) { return; }
 	const float now = static_cast<float>(graphicsTime);
+	const glm::vec3 cam = glm::vec3(glm::inverse(viewMatrix)[3]);   // Kameraposition (Welt)
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
@@ -260,7 +453,7 @@ void draw3D(const glm::mat4 &viewMatrix)
 				if (since > 650.f) { continue; }
 				collapse = 1.f - since / 650.f;
 			}
-			else if (S.hp <= 0) { continue; }
+			else if (S.hp <= 0 || !S.powered || S.powerBackAt != 0) { continue; }
 			const float R = static_cast<float>(st->shieldRadius);
 			const PIELIGHT team = pal_GetTeamColour(getPlayerColour(s->player));
 			// Kuppelfarbe: helles Blau mit etwas Spielerfarbe
@@ -275,7 +468,8 @@ void draw3D(const glm::mat4 &viewMatrix)
 			const float grow = S.upAt != 0 && sinceUp < 900.f ? std::max(0.05f, sinceUp / 900.f) : 1.f;
 			int alpha = static_cast<int>((34.f + 46.f * hitBoost + 30.f * frac) * flick + 200.f * collapse);
 			alpha = std::clamp(alpha, 0, 255);
-			const glm::vec3 c(static_cast<float>(s->pos.x), static_cast<float>(s->pos.z), -static_cast<float>(s->pos.y));
+			const glm::vec3 cGround(static_cast<float>(s->pos.x), static_cast<float>(s->pos.z), -static_cast<float>(s->pos.y));   // Boden
+			const glm::vec3 c = cGround - glm::vec3(0.f, R * static_cast<float>(SPHERE_DROP_NUM) / static_cast<float>(SPHERE_DROP_DEN), 0.f);   // Kugelmitte
 			const float rr = R / 100.f;   // Modelle haben Radius 100
 			// Kuppel: langsam drehend (Wabenmuster wandert), zweite Lage gegenlaeufig etwas groesser
 			const float yaw = now * 0.0060f + static_cast<float>(s->id % 360);
@@ -288,8 +482,47 @@ void draw3D(const glm::mat4 &viewMatrix)
 			// heller Saum am Boden (wo die Kuppel auf die Erde trifft)
 			if (ring != nullptr)
 			{
-				glm::mat4 mr = glm::translate(glm::mat4(1.f), c + glm::vec3(0.f, 2.f, 0.f)) * glm::scale(glm::mat4(1.f), glm::vec3(rr, 1.f, rr));
+				const float rg = rr * std::sqrt(1.f - (3.f / 13.f) * (3.f / 13.f));   // Bodenkreis der Kugel
+				glm::mat4 mr = glm::translate(glm::mat4(1.f), cGround + glm::vec3(0.f, 2.f, 0.f)) * glm::scale(glm::mat4(1.f), glm::vec3(rg, 1.f, rg));
 				pie_Draw3DShape(ring->displayModel(), 0, 0, tint, pie_ADDITIVE, std::clamp(alpha * 3 / 2 + 30, 0, 255), mr, viewMatrix, 0.f, true);
+			}
+			// Lichtrand wie in Supreme Commander: eine Energieblase leuchtet an ihrem Umriss, weil man dort flach durch ihre Haut schaut.
+			// Der Umriss einer Kugel (Radius R, Abstand D zur Kamera) ist ein Kreis mit Radius R*sqrt(1-R^2/D^2), senkrecht zur
+			// Blickrichtung, um R^2/D zur Kamera hin verschoben. Darauf liegt ein zur Kamera gedrehter Bogen; wo dieser Kreis den Boden
+			// schneidet, endet der Bogen weich (Variante nach dem Winkel). Was trotzdem unter dem Gelaende liegt, verdeckt das Gelaende.
+			const glm::vec3 toC = c - cam;
+			const float D = glm::length(toC);
+			if (D > R * 1.15f && (edges[0] != nullptr || edgeFull != nullptr))
+			{
+				const glm::vec3 dn = toC / D;
+				glm::vec3 right = glm::cross(dn, glm::vec3(0.f, 1.f, 0.f));
+				const float rl = glm::length(right);
+				right = rl < 1e-3f ? glm::vec3(1.f, 0.f, 0.f) : right / rl;
+				glm::vec3 upv = glm::cross(right, dn);
+				if (upv.y < 0.f) { upv = -upv; }
+				const glm::vec3 cc = c - dn * (R * R / D);
+				const float rs = R * std::sqrt(std::max(0.f, 1.f - (R / D) * (R / D)));
+				const float denom = rs * upv.y;
+				const float sa = denom > 1e-3f ? -(cc.y - cGround.y) / denom : -2.f;   // sin des Winkels, an dem der Bogen den Boden trifft
+				iIMDBaseShape *shape = nullptr;
+				if (sa <= -0.999f) { shape = edgeFull; }
+				else
+				{
+					const float a0 = -glm::degrees(std::asin(std::clamp(sa, -1.f, 0.f)));
+					shape = edges[std::clamp(static_cast<int>(std::lround(a0 / EDGE_STEP_DEG)), 0, EDGE_VARIANTS - 1)];
+				}
+				if (shape != nullptr)
+				{
+					glm::mat4 rot(1.f);
+					rot[0] = glm::vec4(right, 0.f);
+					rot[1] = glm::vec4(upv, 0.f);
+					rot[2] = glm::vec4(glm::cross(right, upv), 0.f);
+					const float es = rs / 100.f;
+					const glm::mat4 me = glm::translate(glm::mat4(1.f), cc) * rot * glm::scale(glm::mat4(1.f), glm::vec3(es, es, es));
+					const float pulse = 0.92f + 0.08f * std::sin(now * 0.0035f + static_cast<float>(s->id % 97));
+					const int ea = static_cast<int>(static_cast<float>(alpha) * 1.5f * pulse * grow * grow);
+					pie_Draw3DShape(shape->displayModel(), 0, 0, tint, pie_ADDITIVE, std::clamp(ea, 0, 255), me, viewMatrix, 0.f, true);
+				}
 			}
 		}
 	}
@@ -314,6 +547,108 @@ void draw3D(const glm::mat4 &viewMatrix)
 	}
 }
 
+void drawDomes(const glm::mat4 &perspectiveMatrix, const glm::mat4 &viewMatrix)
+{
+	if (s_state.empty() || !gpu::ensure()) { return; }
+	const double tk = static_cast<double>(graphicsTime) / 100.0;   // Zeit in Supreme-Commander-Takten (1/10 s)
+	const auto &rs = getCurrentRenderState();
+	const bool linear = gfx_api::context::get().linearLightingEnabled();
+	const glm::vec4 fogColor = pie_SceneColourToVec4(pie_GetFogColour());
+	const glm::vec4 fogRange(rs.fogBegin, rs.fogEnd, pie_GetFogEnabled() ? 1.f : 0.f, linear ? 1.f : 0.f);
+	gfx_api::constant_buffer_type<SHADER_MODSHIELD> cb {};
+	cb.fogColor = fogColor;
+	cb.fogRange = fogRange;
+	cb.params2 = glm::vec4(1.f, linear ? 1.f : 0.f, 0.f, 0.f);
+	// Kuppeln: Lagen-Verschiebung je Takt wie beim UEF-Schild (Lage 2: 0,0003/0,005, Lage 3: -0,001/-0,005, Lage 4: -0,0003/-0,0008)
+	cb.shiftA = glm::vec4(gpu::fractf(tk * 0.0003), gpu::fractf(tk * 0.005), gpu::fractf(tk * -0.001), gpu::fractf(tk * -0.005));
+	cb.shiftB = glm::vec4(gpu::fractf(tk * -0.0003), gpu::fractf(tk * -0.0008), 0.f, 0.f);
+	const float pulseSlow = std::sin(gpu::fractf(0.01 * tk) * glm::pi<float>());
+	const float pulseFast = std::sin(gpu::fractf(0.06 * tk) * glm::pi<float>());
+	auto &ctx = gfx_api::context::get();
+	bool bound = false;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s->died || s->status != SS_BUILT || !hasShieldStats(s)) { continue; }
+			if (!s->visibleForLocalDisplay() || modlayer::hiddenInView(s)) { continue; }
+			const auto it = s_state.find(s->id);
+			if (it == s_state.end()) { continue; }
+			const State &S = it->second;
+			if (S.down || S.hp <= 0 || !S.powered || S.powerBackAt != 0) { continue; }   // aus: wie dort einfach weg
+			const STRUCTURE_STATS *st = s->pStructureType;
+			const float R = static_cast<float>(st->shieldRadius);
+			const glm::vec3 c(static_cast<float>(s->pos.x), static_cast<float>(s->pos.z) - R * static_cast<float>(SPHERE_DROP_NUM) / static_cast<float>(SPHERE_DROP_DEN),
+			                  -static_cast<float>(s->pos.y));
+			const glm::mat4 model = glm::translate(glm::mat4(1.f), c) * glm::scale(glm::mat4(1.f), glm::vec3(R, R, R));
+			const glm::mat4 mv = viewMatrix * model;
+			cb.ModelViewProjectionMatrix = perspectiveMatrix * mv;
+			cb.ModelViewMatrix = mv;
+			const float frac = std::clamp(static_cast<float>(S.hp) / static_cast<float>(std::max(1, st->shieldHP)), 0.f, 1.f);
+			cb.params = glm::vec4(pulseSlow, pulseFast, frac, 0.f);
+			if (!bound)
+			{
+				gfx_api::ModShieldDomePSO::get().bind();
+				gfx_api::ModShieldDomePSO::get().bind_textures(gpu::texDome, gpu::texGrain, gpu::texNoise);
+				ctx.bind_index_buffer(*gpu::sphIdx, gfx_api::index_type::u16);
+				gfx_api::ModShieldDomePSO::get().bind_vertex_buffers(gpu::sphPos, gpu::sphUV);
+				bound = true;
+			}
+			gfx_api::ModShieldDomePSO::get().bind_constants(cb);
+			gfx_api::ModShieldDomePSO::get().draw_elements(gpu::sphCount, 0);
+		}
+	}
+	if (bound)
+	{
+		gfx_api::ModShieldDomePSO::get().unbind_vertex_buffers(gpu::sphPos, gpu::sphUV);
+		ctx.unbind_index_buffer(*gpu::sphIdx);
+	}
+	// Einschlaege: Kugelkappe um den Treffpunkt, Ring laeuft nach aussen (additiv)
+	const uint32_t maxAge = static_cast<uint32_t>(gpu::IMPACT_TICKS * 100.f);
+	s_hits.erase(std::remove_if(s_hits.begin(), s_hits.end(), [&](const Hit &h) { return graphicsTime - h.t > maxAge; }), s_hits.end());
+	if (s_hits.empty()) { return; }
+	bound = false;
+	for (const Hit &h : s_hits)
+	{
+		const float ti = static_cast<float>(graphicsTime - h.t) / 100.f;
+		// z-Achse der Kappe auf die Trefferrichtung drehen
+		const glm::vec3 z = h.n;
+		const glm::vec3 helper = std::fabs(z.y) < 0.95f ? glm::vec3(0.f, 1.f, 0.f) : glm::vec3(1.f, 0.f, 0.f);
+		const glm::vec3 x = glm::normalize(glm::cross(helper, z));
+		const glm::vec3 y = glm::cross(z, x);
+		glm::mat4 rot(1.f);
+		rot[0] = glm::vec4(x, 0.f); rot[1] = glm::vec4(y, 0.f); rot[2] = glm::vec4(z, 0.f);
+		const glm::mat4 model = glm::translate(glm::mat4(1.f), h.c) * rot * glm::scale(glm::mat4(1.f), glm::vec3(h.r, h.r, h.r));
+		const glm::mat4 mv = viewMatrix * model;
+		cb.ModelViewProjectionMatrix = perspectiveMatrix * mv;
+		cb.ModelViewMatrix = mv;
+		cb.shiftA = glm::vec4(-0.003f * ti, -0.15f + (-0.1f + 0.015f * ti / 2.f) * ti, 0.f, 0.f);
+		cb.shiftB = glm::vec4(0.f);
+		cb.params = glm::vec4(0.f, 0.f, 1.f, 1.f);
+		cb.params2 = glm::vec4(std::clamp(1.f - (ti - 2.f) * 0.2f, 0.f, 1.f), linear ? 1.f : 0.f, 0.f, 0.f);
+		if (!bound)
+		{
+			gfx_api::ModShieldImpactPSO::get().bind();
+			gfx_api::ModShieldImpactPSO::get().bind_textures(gpu::texHitRing, gpu::texHitRing, gpu::texHitDetail);
+			ctx.bind_index_buffer(*gpu::capIdx, gfx_api::index_type::u16);
+			gfx_api::ModShieldImpactPSO::get().bind_vertex_buffers(gpu::capPos, gpu::capUV);
+			bound = true;
+		}
+		gfx_api::ModShieldImpactPSO::get().bind_constants(cb);
+		gfx_api::ModShieldImpactPSO::get().draw_elements(gpu::capCount, 0);
+	}
+	if (bound)
+	{
+		gfx_api::ModShieldImpactPSO::get().unbind_vertex_buffers(gpu::capPos, gpu::capUV);
+		ctx.unbind_index_buffer(*gpu::capIdx);
+	}
+}
+
+void gpuShutdown()
+{
+	gpu::shutdown();
+}
+
 void saveState(std::vector<int> &out)
 {
 	out.clear();
@@ -332,6 +667,7 @@ void loadState(const std::vector<int> &in)
 	for (size_t i = 0; i + 2 < in.size(); i += 3)
 	{
 		State S;
+		S.init = true;
 		S.hp = std::max(0, in[i + 1]);
 		if (in[i + 2] >= 0) { S.down = true; S.downUntil = gameTime + static_cast<uint32_t>(in[i + 2]); }
 		s_state[static_cast<uint32_t>(in[i])] = S;

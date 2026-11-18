@@ -133,6 +133,7 @@ struct STRUCTURE_STATS : public BASE_STATS
 	int shieldHP = 0;               // MOD: Schildpunkte
 	int shieldRegen = 0;            // MOD: Aufladung je Sekunde
 	int shieldRecharge = 0;         // MOD: Ausfall nach dem Zusammenbruch (ms)
+	int shieldRegenDelay = 10000;   // MOD: Aufladung erst so lange (ms) nach dem letzten Treffer (wie Supreme Commander)
 	bool passable = false;			// MOD (17.11.): blockiert das Feld nicht - alle Einheiten fahren darueber (Minen)
 	bool requiresPower = false;		// MOD: arbeitet nur im Versorgungsbereich eines gespeisten Strommastes (siehe modgrid)
 	int crewCost = 0;				// MOD (MF): bindet so viel Besatzung (Besatzungskonto, siehe modgrid)

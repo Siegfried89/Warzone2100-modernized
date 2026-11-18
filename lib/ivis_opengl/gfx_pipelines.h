@@ -567,6 +567,41 @@ namespace gfx_api
 	>;
 
 
+	// MOD (18.11.): Schildkuppel wie Supreme Commander 1 (UEF-Schildgenerator) - eigenes Grafikprogramm modshield.vert/.frag.
+	// Kuppel: alpha-gemischt, beide Seiten, schreibt keine Tiefe. Einschlag: additiv. Drei Texturen (siehe modshield.frag).
+	template<>
+	struct constant_buffer_type<SHADER_MODSHIELD>
+	{
+		glm::mat4 ModelViewProjectionMatrix;
+		glm::mat4 ModelViewMatrix;
+		glm::vec4 shiftA;   // Kuppel: Verschiebung Lage 2 (xy) und Lage 3 (zw) | Einschlag: Ringtextur (xy)
+		glm::vec4 shiftB;   // Kuppel: Verschiebung Lage 4 (xy)
+		glm::vec4 params;   // x = Puls 10 s, y = Puls 1,7 s, z = Schild-Fuellstand 0..1, w = Modus (0 Kuppel, 1 Einschlag)
+		glm::vec4 params2;  // x = Deckkraft / Ausblenden, y = linearLighting
+		glm::vec4 fogColor;
+		glm::vec4 fogRange; // Beginn, Ende, Nebel an, linearLighting
+	};
+	static_assert(sizeof(constant_buffer_type<SHADER_MODSHIELD>) == 224, "modshield cbuffer std140 size");
+
+	template<REND_MODE rm>
+	using ModShieldPSO = typename gfx_api::pipeline_state_helper<
+		rasterizer_state<rm, DEPTH_CMP_LEQ_WRT_OFF, 255, polygon_offset::disabled, stencil_mode::stencil_disabled, cull_mode::none>,
+		primitive_type::triangles,
+		index_type::u16,
+		std::tuple<constant_buffer_type<SHADER_MODSHIELD>>,
+		std::tuple<
+			gfx_vtx3, gfx_tc
+		>,
+		std::tuple<
+			texture_description<0, gfx_api::sampler_type::anisotropic_repeat, kSampler_tex>,
+			texture_description<1, gfx_api::sampler_type::anisotropic_repeat, kSampler_tex1>,
+			texture_description<2, gfx_api::sampler_type::anisotropic_repeat, kSampler_tex2>
+		>,
+		SHADER_MODSHIELD
+	>;
+	using ModShieldDomePSO = ModShieldPSO<REND_ALPHA>;
+	using ModShieldImpactPSO = ModShieldPSO<REND_ADDITIVE>;
+
 	using RadarPSO = GFX<REND_ALPHA, DEPTH_CMP_ALWAYS_WRT_OFF, primitive_type::triangle_strip, gfx_vtx2, gfx_tc, SHADER_GFX_TEXT, std::tuple<texture_description<0, gfx_api::sampler_type::nearest_clamped, kSampler_Texture>>>;
 	using RadarViewInsideFillPSO = GFX<REND_ALPHA, DEPTH_CMP_ALWAYS_WRT_OFF, primitive_type::triangle_strip, gfx_vtx2, gfx_colour, SHADER_GFX_COLOUR, notexture>;
 	using RadarViewOutlinePSO = GFX<REND_ALPHA, DEPTH_CMP_ALWAYS_WRT_OFF, primitive_type::line_strip, gfx_vtx2, gfx_colour, SHADER_GFX_COLOUR, notexture>;

@@ -1713,6 +1713,7 @@ void shutdown3DView_FullReset()
 	ssao::shutdown();
 	ssr::shutdown();
 	range_rings::shutdown();
+	modshield::gpuShutdown();   // MOD (18.11.)
 
 	setLightingManager(nullptr);
 	perPixelLightingManager.reset();
@@ -5802,6 +5803,11 @@ static void modDrawSelectionRings3D(const glm::mat4 &viewMatrix)
 void display3d_drawSelectionRings(const glm::mat4& viewMatrix)
 {
 	modDrawSelectionRings3D(viewMatrix);
+}
+
+void display3d_drawShieldDomes(const glm::mat4& perspectiveMatrix, const glm::mat4& viewMatrix)
+{
+	modshield::drawDomes(perspectiveMatrix, viewMatrix);
 }
 
 void display3d_locateMouse()

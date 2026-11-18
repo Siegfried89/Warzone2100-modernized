@@ -820,6 +820,7 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->shieldHP = std::max(0, ini.value("shieldHP", 0).toInt());
 		psStats->shieldRegen = std::max(0, ini.value("shieldRegen", 0).toInt());
 		psStats->shieldRecharge = std::max(0, ini.value("shieldRecharge", 12000).toInt());
+		psStats->shieldRegenDelay = std::max(0, ini.value("shieldRegenDelay", 10000).toInt());
 		psStats->passable = ini.value("passable", false).toBool();   // MOD (17.11.): Minen
 		psStats->infantryBuildable = ini.value("infantryBuildable", false).toBool();   // MOD
 		psStats->turretSpinMs = static_cast<unsigned>(std::max(500, ini.value("turretSpinMs", 3000).toInt()));   // MOD

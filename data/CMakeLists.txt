@@ -183,6 +183,8 @@ file(GLOB VK_SHADERS
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/range_ring_sdf.frag"
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/range_ring_composite.frag"
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/skybox.frag"
+	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/modshield.vert"
+	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/modshield.frag"
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/quad_texture2d.vert"
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/quad_texture2d.frag"
 	"${CMAKE_CURRENT_SOURCE_DIR}/base/shaders/vk/quad_texture2darray.vert"
