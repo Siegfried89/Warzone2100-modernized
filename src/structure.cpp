@@ -43,6 +43,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "modicbm.h"
 #include "modupgrade.h"
 #include "modgroundfire.h"   // MOD
 #include "modsound.h"
@@ -3394,11 +3395,12 @@ static void aiUpdateStructure(STRUCTURE *psStructure, GameWorld& world)
 	if (isLasSat(psStructure->pStructureType)
 	    && gameTime - psStructure->asWeaps[0].lastFired > weaponFirePause(*psStructure->getWeaponStats(0), psStructure->player)
 	    && psStructure->asWeaps[0].ammo > 0
+	    && !(modicbm::isNukeSilo(psStructure->pStructureType) && psStructure->asWeaps[0].lastFired == 0)   // MOD (18.11.): erste Rakete wird noch gebaut
 	    && modsat::canFire(psStructure))   // MOD (21:34): Uplink-Zentrale erst mit Satelliten in der Umlaufbahn
 	{
 		if (psStructure->player == selectedPlayer)
 		{
-			addConsoleMessage(_("Laser Satellite is ready to fire!"), CENTRE_JUSTIFY, SYSTEM_MESSAGE);
+			addConsoleMessage(modicbm::readyText(psStructure), CENTRE_JUSTIFY, SYSTEM_MESSAGE);
 			audio_PlayTrack(ID_SOUND_UPLINK); // This is about the best sound available for this.
 		}
 		triggerEventStructureReady(psStructure);
