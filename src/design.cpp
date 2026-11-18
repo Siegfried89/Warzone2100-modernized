@@ -3822,7 +3822,7 @@ static void intDisplayStatForm(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	 */
 	BASE_STATS *psStats = (BASE_STATS *) Form->pUserData;
 
-	SWORD templateRadius = getComponentRadius(psStats);
+	SWORD templateRadius = std::max<SWORD>(1, static_cast<SWORD>(getComponentRadius(psStats)));   // MOD (18.11.): Modell ohne Ausdehnung -> kein Teilen durch 0
 
 	Vector3i Rotation(-30, iRY, 0), Position(0, -templateRadius / 4, BUTTON_DEPTH /* templateRadius * 12 */);
 
@@ -3873,7 +3873,7 @@ static void intDisplayViewForm(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	//fixed depth scale the pie
 	Vector3i Position = {0, -100, BUTTON_DEPTH};
 
-	int templateRadius = getComponentDroidTemplateRadius(&sCurrDesign);
+	int templateRadius = std::max(1, static_cast<int>(getComponentDroidTemplateRadius(&sCurrDesign)));   // MOD (18.11.): kein Teilen durch 0
 	//scale the object around the OBJECT_RADIUS so that half size objects are draw are draw 75% the size of normal objects
 	int falseScale = (DESIGN_DROID_SCALE * OBJECT_RADIUS) / templateRadius;
 

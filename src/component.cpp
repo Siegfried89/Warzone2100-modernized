@@ -1482,6 +1482,12 @@ void	compPersonToBits(DROID *psDroid, Vector3f &velocity)
 
 SDWORD	rescaleButtonObject(SDWORD radius, SDWORD baseScale, SDWORD baseRadius)
 {
+	// MOD (18.11. 19:55, Absturz "Integer Divide By Zero" im Konstruktions-/Forschungsknopf): ein Modell ohne Ausdehnung (Halbmesser 0)
+	// darf den Knopf nicht teilen lassen - dann einfach in Grundgroesse zeigen
+	if (radius <= 0)
+	{
+		return baseScale > 0 ? baseScale : 100;
+	}
 	SDWORD newScale;
 	newScale = 100 * baseRadius;
 	newScale /= radius;
