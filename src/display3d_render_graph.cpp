@@ -166,6 +166,7 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 	if (fusedTransparents)
 	{
 		display3d_drawSelectionRings(fc.viewMatrix);   // MOD (18.11.)
+		display3d_drawShieldDomes(fc.perspectiveMatrix, fc.viewMatrix);   // MOD (18.11.): Schildkuppeln
 	}
 
 	display3d_locateMouse();
@@ -197,6 +198,7 @@ static void recordSceneTransparent(const gfx_api::RenderPassContext& passCtx)
 		display3d_doConstructionLines(fc.viewMatrix);
 	}
 	display3d_drawSelectionRings(fc.viewMatrix);   // MOD (18.11.)
+	display3d_drawShieldDomes(fc.perspectiveMatrix, fc.viewMatrix);   // MOD (18.11.): Schildkuppeln
 }
 
 static void recordShadowCascade(const gfx_api::RenderPassContext& passCtx)

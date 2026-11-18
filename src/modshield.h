@@ -21,8 +21,12 @@ namespace modshield
 void tick();
 /// nach dem Flugschritt eines Geschosses: true = von einem Schild aufgehalten (der Aufrufer nimmt es aus dem Spiel)
 bool tryAbsorb(PROJECTILE *proj);
-/// Kuppeln und Einschlag-Aufblitzen zeichnen (nach dem 3D-Bild, wie die anderen Mod-Effekte)
+/// Ersatz-Kuppeln aus Modellen (nur wenn die Supreme-Commander-Texturen fehlen), in die Modell-Warteschlange
 void draw3D(const glm::mat4 &viewMatrix);
+/// Kuppeln und Einschlaege wie Supreme Commander (eigenes Grafikprogramm), im Durchgang fuer Durchsichtiges
+void drawDomes(const glm::mat4 &perspectiveMatrix, const glm::mat4 &viewMatrix);
+/// Grafik-Mittel freigeben (Ende der 3D-Ansicht)
+void gpuShutdown();
 /// Schild-Fuellstand in Prozent fuer den Balken; -1 = kein Schild
 int shieldPercent(const STRUCTURE *s);
 /// Spielstand
