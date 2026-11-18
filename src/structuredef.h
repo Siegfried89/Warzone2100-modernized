@@ -129,6 +129,10 @@ struct STRUCTURE_STATS : public BASE_STATS
 	unsigned turretSpinMs = 3000;	// MOD: Drehzeit eines Sensor-Turms ohne Waffe in ms (Standard 3 s; Baukran langsamer)
 	bool infantryBuildable = false;	// MOD: darf auch von Kampf-Infanterie mit Spaten gebaut werden (Graeben, Gruben, Sandsaecke, MG-Nester)
 	bool infantryPassable = false;	// MOD: Infanterie darf das Feld betreten (Graeben, Gruben) und bekommt dort Schutz
+	int shieldRadius = 0;           // MOD: Schildkuppel (modshield) - Radius in Welteinheiten, 0 = kein Schild
+	int shieldHP = 0;               // MOD: Schildpunkte
+	int shieldRegen = 0;            // MOD: Aufladung je Sekunde
+	int shieldRecharge = 0;         // MOD: Ausfall nach dem Zusammenbruch (ms)
 	bool passable = false;			// MOD (17.11.): blockiert das Feld nicht - alle Einheiten fahren darueber (Minen)
 	bool requiresPower = false;		// MOD: arbeitet nur im Versorgungsbereich eines gespeisten Strommastes (siehe modgrid)
 	int crewCost = 0;				// MOD (MF): bindet so viel Besatzung (Besatzungskonto, siehe modgrid)

@@ -811,6 +811,10 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->storageProvide = std::max(0, ini.value("storageProvide", 0).toInt());   // MOD: Energie-Obergrenze
 		psStats->incomeProvide = std::max(0, ini.value("incomeProvide", 0).toInt());   // MOD: Energie je Sekunde
 		psStats->infantryPassable = ini.value("infantryPassable", false).toBool();   // MOD
+		psStats->shieldRadius = std::max(0, ini.value("shieldRadius", 0).toInt());   // MOD: Schildkuppel (modshield)
+		psStats->shieldHP = std::max(0, ini.value("shieldHP", 0).toInt());
+		psStats->shieldRegen = std::max(0, ini.value("shieldRegen", 0).toInt());
+		psStats->shieldRecharge = std::max(0, ini.value("shieldRecharge", 12000).toInt());
 		psStats->passable = ini.value("passable", false).toBool();   // MOD (17.11.): Minen
 		psStats->infantryBuildable = ini.value("infantryBuildable", false).toBool();   // MOD
 		psStats->turretSpinMs = static_cast<unsigned>(std::max(500, ini.value("turretSpinMs", 3000).toInt()));   // MOD
