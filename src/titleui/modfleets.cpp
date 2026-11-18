@@ -805,6 +805,7 @@ void loadParts()
 
 const DesignPart *partAt(int i) { return (i >= 0 && i < static_cast<int>(s_parts.size())) ? &s_parts[static_cast<size_t>(i)] : nullptr; }
 bool vtolProp() { const DesignPart *p = partAt(s_ds.prop); return p != nullptr && p->ptype == "Lift"; }
+bool flyOnlyBody() { const DesignPart *b = partAt(s_ds.body); return b != nullptr && b->id == "Body-Manta"; }   // Nurfluegler: nur Senkrechtstarter
 int bodySlots() { const DesignPart *b = partAt(s_ds.body); return b ? std::min(3, b->slots) : 1; }
 
 bool turretValid(int slot, const DesignPart &t)
@@ -841,7 +842,7 @@ std::vector<int> candidates(int tab)
 	{
 		const DesignPart &p = s_parts[static_cast<size_t>(i)];
 		if (tab == 0 && p.kind == PK_BODY) { out.push_back(i); }
-		else if (tab == 1 && p.kind == PK_PROP) { out.push_back(i); }
+		else if (tab == 1 && p.kind == PK_PROP && (!flyOnlyBody() || p.ptype == "Lift")) { out.push_back(i); }
 		else if (tab >= 2 && turretValid(tab - 2, p)) { out.push_back(i); }
 	}
 	return out;
@@ -849,6 +850,13 @@ std::vector<int> candidates(int tab)
 
 void fixTurrets()
 {
+	if (flyOnlyBody() && !vtolProp())
+	{
+		for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
+		{
+			if (s_parts[static_cast<size_t>(i)].kind == PK_PROP && s_parts[static_cast<size_t>(i)].ptype == "Lift") { s_ds.prop = i; break; }
+		}
+	}
 	for (int s = 0; s < 3; ++s)
 	{
 		const DesignPart *t = partAt(s_ds.turret[s]);

@@ -18,6 +18,8 @@ struct STRUCTURE;
 struct FEATURE;
 struct DROID;
 struct WorldMapState;
+struct iIMDShape;
+#include "lib/ivis_opengl/pietypes.h"   // PIELIGHT
 
 namespace modoil
 {
@@ -52,6 +54,10 @@ int roofHeight(const DROID *psDroid);
 bool isCargo(uint32_t droidId);
 /// faehrt der Lkw gerade Oel (Auftrag laeuft oder Faesser geladen)?
 bool isBusy(uint32_t droidId);
+/// (Wunsch 18.11. 02:44) geladene Faesser/Kisten sichtbar auf der Ladeflaeche (Scav-Lkw ScavBed*, nicht beim Oeltanker mit geschlossenem Tank).
+/// bed = Modell der Ladeflaeche, m = ihre Matrix (wie beim Zeichnen des Bauteils), Rest wie pie_Draw3DShape. Nur Anzeige.
+void drawCargo(const DROID *d, const iIMDShape *bed, const glm::mat4 &m, const glm::mat4 &viewMatrix, int team, PIELIGHT brightness, int pieFlag,
+               int pieFlagData, float stretchDepth);
 /// Hooks beim Zerstoeren (vor dem Entfernen aufrufen)
 void onStructureDestroyed(const STRUCTURE *psDel);
 void onFeatureDestroyed(const FEATURE *psDel);
