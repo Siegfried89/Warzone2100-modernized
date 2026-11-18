@@ -194,6 +194,8 @@ JS_BACKEND war_getJSBackend();
 void war_setJSBackend(JS_BACKEND backend);
 bool war_getAutoAdjustDisplayScale();
 void war_setAutoAdjustDisplayScale(bool autoAdjustDisplayScale);
+bool war_getArtRevolution();          // MOD (18.11.): AR-Grafik an/aus (Hauptmenue-Knopf)
+void war_setArtRevolution(bool enabled);
 int war_getAutoLagKickSeconds();
 void war_setAutoLagKickSeconds(int seconds);
 int war_getAutoLagKickAggressiveness();

@@ -52,6 +52,7 @@
 #include "challenge.h"
 #include "component.h"
 #include "configuration.h"
+#include "modargfx.h"
 #include "difficulty.h"
 #include "display.h"
 #include "droid.h"
@@ -145,7 +146,7 @@ template <typename T> static T pow2Cycle(T value, T min, T max)
 		min < value ? (value / 2 > 1 ? value / 2 : 0) : max;  // Cycle backwards.
 }
 
-static void moveToParentRightEdge(WIDGET *widget, int32_t right)
+[[maybe_unused]] static void moveToParentRightEdge(WIDGET *widget, int32_t right)
 {
 	if (auto parent = widget->parent())
 	{
@@ -310,6 +311,29 @@ static void addFactionChoice()
 	refreshFactionChoice();
 }
 
+// MOD (Wunsch 18.11. 01:58): "Mach einen Button im Hauptmenue, dass man per Knopfdruck zwischen AR-Grafik und normaler Grafik wechseln kann."
+// Das Paket mods/grafik/ARGrafik.wz (Modelle + Texturen der Art-Revolution-Mod, auf die Groessen des Mods gebracht) wird beim naechsten
+// Spielstart ueber alle Mods gelegt (init.cpp rebuildSearchPath) - die bisherigen Dateien bleiben unveraendert.
+static bool artRevolutionInstalled()
+{
+	return modargfx::installed();
+}
+
+static std::string artRevolutionLabel()
+{
+	return war_getArtRevolution() ? std::string(_("Graphics: Art Revolution")) : std::string(_("Graphics: Standard"));
+}
+
+static void addArtRevolutionButton()
+{
+	const bool have = artRevolutionInstalled();
+	auto b = addTextButton(FRONTEND_ARGRAPHICS, FRONTEND_POS1X, FRONTEND_POS9Y - 6, artRevolutionLabel(), WBUT_TXTCENTRE | (have ? 0 : WBUT_DISABLE));
+	b->FontID = font_regular;
+	b->setGeometry(FRONTEND_POS1X, FRONTEND_POS9Y - 6, FRONTEND_BUTWIDTH, 26);
+	widgSetTip(psWScreen, FRONTEND_ARGRAPHICS, have ? _("Switch between the standard graphics and the Art Revolution models and textures (also in game with the Insert key)")
+	                                                : _("The Art Revolution graphics package is not installed"));
+}
+
 void startTitleMenu()
 {
 	intRemoveReticule();
@@ -351,15 +375,8 @@ void startTitleMenu()
 	addTextButton(FRONTEND_QUIT, FRONTEND_POS8X, FRONTEND_POS8Y, _("Quit Game"), WBUT_TXTCENTRE);
 	addSideText(FRONTEND_SIDETEXT, FRONTEND_SIDEX, FRONTEND_SIDEY, _("MAIN MENU"));
 
-	addSmallTextButton(FRONTEND_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, _("Official site: http://wz2100.net/"), 0);
-	widgSetTip(psWScreen, FRONTEND_HYPERLINK, _("Come visit the forums and all Warzone 2100 news! Click this link."));
-	W_BUTTON * pRightAlignedButton = addSmallTextButton(FRONTEND_DONATELINK, FRONTEND_POS9X + 360, FRONTEND_POS9Y, _("Donate: http://donations.wz2100.net/"), 0);
-	moveToParentRightEdge(pRightAlignedButton, 1);
-	widgSetTip(psWScreen, FRONTEND_DONATELINK, _("Help support the project with our server costs, Click this link."));
-	pRightAlignedButton = addSmallTextButton(FRONTEND_CHATLINK, FRONTEND_POS9X + 360, 0, _("Chat with players on Discord or IRC"), 0);
-	moveToParentRightEdge(pRightAlignedButton, 6);
-	widgSetTip(psWScreen, FRONTEND_CHATLINK, _("Connect to Discord or Freenode through webchat by clicking this link."));
-	addMultiBut(psWScreen, FRONTEND_BOTFORM, FRONTEND_UPGRDLINK, 7, 7, MULTIOP_BUTW, MULTIOP_BUTH, _("Check for a newer version"), IMAGE_GAMEVERSION, IMAGE_GAMEVERSION_HI, true);
+	// MOD (Wunsch 18.11. 01:58): keine gelben Links/Schriftzuege mehr im Hauptmenue (Webseite, Spenden, Discord/IRC, Versionspruefung)
+	addArtRevolutionButton();
 }
 
 void runContinue()
@@ -431,6 +448,10 @@ bool runTitleMenu()
 		break;
 	case FRONTEND_FLEETS:   // MOD (17.11.)
 		changeTitleUI(std::make_shared<WzFleetTitleUI>());
+		break;
+	case FRONTEND_ARGRAPHICS:   // MOD (18.11.): Grafik Standard / Art Revolution
+		modargfx::toggle(false);
+		widgSetString(psWScreen, FRONTEND_ARGRAPHICS, artRevolutionLabel().c_str());
 		break;
 	case FRONTEND_FACTION_0:
 	case FRONTEND_FACTION_1:
@@ -538,11 +559,7 @@ void startSinglePlayerMenu()
 
 	addSideText(FRONTEND_SIDETEXT, FRONTEND_SIDEX, FRONTEND_SIDEY, _("SINGLE PLAYER"));
 	addMultiBut(psWScreen, FRONTEND_BOTFORM, FRONTEND_QUIT, 10, 10, 30, 29, P_("menu", "Return"), IMAGE_RETURN, IMAGE_RETURN_HI, IMAGE_RETURN_HI);
-	// show this only when the video sequences are not installed
-	if (!seq_hasVideos())
-	{
-		addSmallTextButton(FRONTEND_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, _("Campaign videos are missing! Get them from http://wz2100.net"), 0);
-	}
+	// MOD (18.11.): kein gelber Hinweis-Link "Campaign videos are missing" mehr
 }
 
 static void loadOK()
@@ -695,10 +712,7 @@ void startMultiPlayerMenu()
 
 	addMultiBut(psWScreen, FRONTEND_BOTFORM, FRONTEND_QUIT, 10, 10, 30, 29, P_("menu", "Return"), IMAGE_RETURN, IMAGE_RETURN_HI, IMAGE_RETURN_HI);
 
-	// This isn't really a hyperlink for now... perhaps link to the wiki ?
-	char buf[512]  =  {'\0'};
-	snprintf(buf, sizeof(buf), _("TCP port %d must be opened in your firewall or router to host games!"), NETgetGameserverPort());
-	addSmallTextButton(FRONTEND_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, buf, 0);
+	// MOD (18.11.): kein gelber Hinweis-Schriftzug (TCP-Port) mehr
 }
 
 bool runMultiPlayerMenu()
@@ -808,48 +822,7 @@ struct TitleBitmapCache {
 // show a background picture (currently used for version and mods labels)
 static void displayTitleBitmap(WZ_DECL_UNUSED WIDGET *psWidget, WZ_DECL_UNUSED UDWORD xOffset, WZ_DECL_UNUSED UDWORD yOffset)
 {
-	char modListText[MAX_STR_LENGTH] = "";
-
-	if (!getModList().empty())
-	{
-		sstrcat(modListText, _("Mod: "));
-		sstrcat(modListText, getModList().c_str());
-	}
-
-	if (pie_GetVideoBufferWidth() <= 0 || pie_GetVideoBufferHeight() <= 0)
-	{
-		// don't bother drawing when the dimensions are <= 0,0
-		return;
-	}
-
-	assert(psWidget->pUserData != nullptr);
-	TitleBitmapCache& cache = *static_cast<TitleBitmapCache*>(psWidget->pUserData);
-
-	cache.formattedVersionString.setText(version_getFormattedVersionString(), font_regular);
-	cache.modListText.setText(modListText, font_regular);
-#if defined(__EMSCRIPTEN__)
-	cache.gfxBackend.setText(WZ_EmscriptenGetBottomRendererSysInfoString(), font_small);
-#else
-	cache.gfxBackend.setText(WzString::fromUtf8(gfx_api::context::get().getFormattedRendererInfoString()), font_small);
-#endif
-
-	cache.formattedVersionString.render(pie_GetVideoBufferWidth() - 9, pie_GetVideoBufferHeight() - 14, WZCOL_GREY, 270.f);
-
-	if (!getModList().empty())
-	{
-		cache.modListText.render(9, 14, WZCOL_GREY);
-	}
-
-	cache.gfxBackend.render(9, pie_GetVideoBufferHeight() - 10, WZCOL_GREY);
-
-	cache.formattedVersionString.render(pie_GetVideoBufferWidth() - 10, pie_GetVideoBufferHeight() - 15, WZCOL_TEXT_BRIGHT, 270.f);
-
-	if (!getModList().empty())
-	{
-		cache.modListText.render(10, 15, WZCOL_TEXT_BRIGHT);
-	}
-
-	cache.gfxBackend.render(10, pie_GetVideoBufferHeight() - 11, WZCOL_TEXT_BRIGHT);
+	// MOD (Wunsch 18.11. 01:58): keine Schriftzuege (Version, Mod-Liste, Grafikschnittstelle) mehr am Rand des Hauptmenues
 }
 
 // ////////////////////////////////////////////////////////////////////////////

@@ -427,18 +427,19 @@ bool KeyMappings::load(const char* path, const KeyFunctionConfiguration& keyFunc
 			++it;
 		}
 	}
-	auto bindOnce = [&](KEY_CODE key, const char *fn) {
+	auto bindOnce = [&](KEY_CODE key, const char *fn, KeyAction action = KeyAction::DOWN) {
 		for (const KeyMapping &m : keyMappings)
 		{
 			if (m.keys.input.is(key) && !m.hasMeta() && m.info.name == fn) { return; }
 		}
 		auto rot = keyFuncConfig.keyFunctionInfoByName(fn);
 		if (!rot.has_value()) { return; }
-		add(KeyCombination(KEY_IGNORE, KeyMappingInput(key), KeyAction::DOWN), *rot, KeyMappingSlot::SECONDARY);
+		add(KeyCombination(KEY_IGNORE, KeyMappingInput(key), action), *rot, KeyMappingSlot::SECONDARY);
 		bDirty = true;
 	};
 	bindOnce(KEY_Q, "RotateRight");
 	bindOnce(KEY_E, "RotateLeft");
+	bindOnce(KEY_INSERT, "ToggleArtRevolution", KeyAction::PRESSED);   // (18.11.) AR-Grafik im Spiel umschalten
 	return true;
 }
 

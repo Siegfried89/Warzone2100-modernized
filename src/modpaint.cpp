@@ -120,6 +120,11 @@ int s_mode = -1;                 // aktiver Zeichenmodus (-1 = keiner)
 bool s_drawing = false;
 std::vector<Vector2i> s_cur;     // Linie, die gerade gezeichnet wird
 std::vector<Stroke> s_done;      // fertige Zeichnungen (verblassen)
+// MOD (Wunsch 18.11. 00:59): "mit Shift kann man mehrere Grossbefehle geben (Linien zeichnen). Es ueberschreibt nicht." - mit gedrueckter
+// Umschalttaste haengt jede Zeichnung ihre Befehle hinten an (die Einheiten arbeiten sie nacheinander ab), der Zeichenmodus bleibt an,
+// die alten Marker bleiben stehen, und ohne Auswahl bekommt dieselbe Einheitengruppe wie beim ersten Strich die weiteren Befehle.
+bool s_append = false;
+std::vector<uint32_t> s_chain;   // Einheiten der laufenden Shift-Kette
 // MOD (Wunsch 14.11., Infanterie baut): eigener WZ-Knopf direkt ueber der Rosette, sobald Infanterie mit Spaten gewaehlt ist -> oeffnet das WZ-Baumenue
 std::shared_ptr<W_SCREEN> s_infScreen;
 std::shared_ptr<W_CLICKFORM> s_infRoot;
@@ -413,7 +418,7 @@ std::vector<DROID *> pickUnits(Mode m, const std::vector<Vector2i> &pts)
 
 void send(DROID *d, const DroidOrder &o, bool add)
 {
-	sendDroidInfo(d, o, add, currentOrderSource());
+	sendDroidInfo(d, o, add || s_append, currentOrderSource());   // (18.11.) Shift: anhaengen statt ersetzen
 }
 
 // ------------------------------------------------------------------------------------------------- Bauwerke fuer die Artilleriebasis
@@ -881,12 +886,27 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		startSalvage(c, r);
 		return;
 	}
-	std::vector<DROID *> units = pickUnits(m, raw);
+	std::vector<DROID *> units;
+	if (s_append && selectedPlayer < MAX_PLAYERS)
+	{
+		// (18.11.) Shift-Kette: dieselben Einheiten wie beim vorigen Strich (sofern sie zur Aktion passen)
+		for (uint32_t id : s_chain)
+		{
+			DROID *d = IdToDroid(gameWorld.objects, id, selectedPlayer);
+			if (d != nullptr && !d->died && fits(m, d)) { units.push_back(d); }
+		}
+		bool anySelected = false;
+		for (const DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d != nullptr && d->selected) { anySelected = true; break; } }
+		if (anySelected) { units.clear(); }   // eine Auswahl hat wie immer Vorrang
+	}
+	if (units.empty()) { units = pickUnits(m, raw); }
 	const Vector2i c = centroid(raw);
 	if (units.empty())
 	{
 		return;
 	}
+	s_chain.clear();
+	for (const DROID *d : units) { s_chain.push_back(d->id); }
 	switch (m)
 	{
 	case M_MOVE:
@@ -1401,7 +1421,11 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	s_drawing = false;
 	if (s_cur.back() != worldPos) { s_cur.push_back(worldPos); }
 	const Mode m = static_cast<Mode>(s_mode);
+	const bool shift = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
+	if (!shift) { s_chain.clear(); }
+	s_append = shift;
 	applyStroke(m, s_cur);
+	s_append = false;
 	Stroke st;
 	st.mode = m;
 	st.pts = s_cur;
@@ -1409,11 +1433,12 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	if (m == M_TRAPS || m == M_MINES) { st.marks = fieldSpots(s_cur, m == M_MINES); }
 	if (m == M_DEFEND || m == M_OFFENSE) { st.side = defendSide(s_cur); }
 	// MOD (Wunsch 16.11. 21:25): hoechstens ein Marker je Aktion - eine neue Zeichnung ersetzt die alte derselben Art
-	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [m](const Stroke &o) { return o.mode == m; }), s_done.end());
+	// (18.11.) mit Shift bleiben die vorigen Marker stehen (die Befehle wurden ja angehaengt)
+	if (!shift) { s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [m](const Stroke &o) { return o.mode == m; }), s_done.end()); }
 	s_done.push_back(std::move(st));
 	if (s_done.size() > 24) { s_done.erase(s_done.begin()); }
 	s_cur.clear();
-	s_mode = -1;   // ein Zug je Knopfdruck
+	if (!shift) { s_mode = -1; }   // ein Zug je Knopfdruck - mit Shift bleibt der Modus fuer den naechsten Strich an
 	return true;
 }
 
@@ -1481,6 +1506,8 @@ void shutdown()
 	s_drawing = false;
 	s_cur.clear();
 	s_done.clear();
+	s_chain.clear();
+	s_append = false;
 	s_op = SalvageOp();
 	s_plan.clear();
 	s_nextPlanCheck = 0;

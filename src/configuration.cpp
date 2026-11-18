@@ -659,10 +659,13 @@ bool loadConfig()
 	}
 	war_SetDisplayScale(static_cast<unsigned int>(displayScale));
 	war_setAutoAdjustDisplayScale(iniGetBool("autoAdjustDisplayScale", true).value());
-	// MOD: Wunsch des Spielers - jeder Start im Vollbild mit Anzeigemassstab 125 %, ohne automatische Anpassung
+	// MOD: Wunsch des Spielers - jeder Start im Vollbild mit festem Anzeigemassstab, ohne automatische Anpassung
+	// (18.11. 01:20 "das ganze Fenster und UI ist hier irgendwie viel zu klein" -> 150 % statt 125 %; die Oberflaeche wirkt dann wie
+	// 1280x720 auf einem 1080p-Bildschirm)
 	war_setWindowMode(WINDOW_MODE::fullscreen);
-	war_SetDisplayScale(125);
+	war_SetDisplayScale(150);
 	war_setAutoAdjustDisplayScale(false);
+	war_setArtRevolution(iniGetBool("artRevolution", false).value());   // MOD (18.11.): AR-Grafik
 	// 640x480 is minimum that we will support, but default to something more sensible
 	int width = iniGetInteger("width", war_GetWidth()).value();
 	int height = iniGetInteger("height", war_GetHeight()).value();
@@ -1120,6 +1123,7 @@ bool saveConfig()
 	iniSetInteger("vsync", war_GetVsync());
 	iniSetInteger("displayScale", war_GetDisplayScale());
 	iniSetBool("autoAdjustDisplayScale", war_getAutoAdjustDisplayScale());
+	iniSetBool("artRevolution", war_getArtRevolution());   // MOD (18.11.)
 	iniSetInteger("textureSize", getTextureSize());
 	iniSetInteger("antialiasing", war_getAntialiasing());
 	iniSetInteger("portMapping", (int)NetPlay.isPortMappingEnabled);
