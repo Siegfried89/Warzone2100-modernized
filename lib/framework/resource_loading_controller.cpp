@@ -353,7 +353,8 @@ void ResourceLoadingController::step()
 {
 	// MOD (16.11.): schneller laden - je Bild des Ladebildschirms 1/20 s arbeiten statt 1/60 s. Mit VSync wartete das Laden sonst
 	// fast die Haelfte der Zeit auf den Bildaufbau; der Ladebalken laeuft weiter fluessig genug (20 Bilder/s).
-	using MinimumStepDuration = std::chrono::duration<int, std::ratio<1, 20>>;
+	// (18.11., "Ladezeiten verkuerzen"): 1/8 s je Bild - der Ladebalken laeuft mit 8 Bildern/s, das Laden wartet kaum noch auf VSync
+	using MinimumStepDuration = std::chrono::duration<int, std::ratio<1, 8>>;
 
 	ASSERT(activeSubmission, "step called without an active submission");
 	const auto minDeadline = std::chrono::steady_clock::now() + MinimumStepDuration(1);

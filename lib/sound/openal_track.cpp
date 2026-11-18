@@ -40,6 +40,13 @@
 #include <math.h>
 #include <limits>
 #include <list>
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 #include "tracklib.h"
 #include "audio.h"
@@ -53,6 +60,8 @@
 static ALuint current_queue_sample = -1;
 
 static bool openal_initialized = false;
+namespace { void decodeWorkersStop(); }   // MOD (18.11.): Hintergrund-Dekodieren (unten)
+static void sound_PumpDecodedTracks(int maxUploads);
 static const size_t bufferSize = 16 * 1024;
 static const unsigned int buffer_count = 32;
 
@@ -540,6 +549,7 @@ void sound_ShutdownLibrary(void)
 		return;
 	}
 	debug(LOG_SOUND, "starting shutdown");
+	decodeWorkersStop();   // MOD (18.11.): Hintergrund-Dekodierer beenden
 	efxShutdown();   // MOD: Umgebungshall vor dem Kontext abbauen
 
 	// Stop all streams, sound_UpdateStreams() will deallocate all stopped streams
@@ -607,6 +617,8 @@ void sound_Update()
 	{
 		return;
 	}
+
+	sound_PumpDecodedTracks(48);   // MOD (18.11.): fertig dekodierte Klaenge in OpenAL-Puffer
 
 	// Update all streaming audio
 	sound_UpdateStreams();
@@ -737,60 +749,231 @@ bool sound_QueueSamplePlaying()
 	return false;
 }
 
-/** Decodes *entirely* an opened OggVorbis file into an OpenAL buffer.
- *  This is used to play sound effects, not "music". Assumes .ogg file.
- *
- *  \param psTrack pointer to object which will contain the final buffer
- *  \param PHYSFS_fileHandle file handle given by PhysicsFS to the opened file
- *  \return true on success
- */
-static inline bool sound_DecodeOggVorbisTrack(TRACK *psTrack, const char* fileName)
+// MOD (18.11., "Ladezeiten ... verkuerzen"): Klaenge werden nicht mehr beim Laden der Karte einer nach dem anderen dekodiert (2400 Dateien,
+// fast 3 Sekunden), sondern im Hintergrund auf 1-3 Arbeitsthreads, waehrend das Spiel weiterlaedt. Das Oeffnen (Kopfdaten, Fehlermeldungen)
+// bleibt im Hauptthread, ebenso alle OpenAL-Aufrufe (Puffer anlegen/fuellen). Braucht das Spiel einen Klang, bevor er fertig ist, wird er
+// sofort an Ort und Stelle fertig dekodiert (sound_EnsureTrackDecoded) - es geht also kein Klang verloren.
+namespace
 {
-	if (!openal_initialized)
-	{
-		return false;
-	}
+struct TrackDecodeJob
+{
+	TRACK *track = nullptr;
+	WZVorbisDecoder *decoder = nullptr;
+	std::vector<uint8_t> pcm;
+	ALenum format = AL_FORMAT_MONO16;
+	ALsizei frequency = 0;
+	int state = 0;   // 0 = wartet, 1 = wird dekodiert, 2 = fertig, 3 = Fehler (alles unter s_decodeMutex)
+	std::string fileName;
+};
+// Absichtlich nie freigegeben: so beendet ein Programmende ohne sound_ShutdownLibrary die Arbeitsthreads nicht per std::terminate
+// und zerstoert keine Sperre, auf die ein Thread noch wartet.
+struct TrackDecodeShared
+{
+	std::mutex mutex;
+	std::condition_variable wake;
+	std::condition_variable done;
+	std::deque<std::shared_ptr<TrackDecodeJob>> queue;
+	std::vector<std::thread> workers;
+	bool stop = false;
+};
+TrackDecodeShared &decodeShared()
+{
+	static TrackDecodeShared *shared = new TrackDecodeShared();
+	return *shared;
+}
+#define s_decodeMutex (decodeShared().mutex)
+#define s_decodeWake (decodeShared().wake)
+#define s_decodeDone (decodeShared().done)
+#define s_decodeQueue (decodeShared().queue)
+#define s_decodeWorkers (decodeShared().workers)
+#define s_decodeStop (decodeShared().stop)
+std::unordered_map<TRACK *, std::shared_ptr<TrackDecodeJob>> s_decodePending;   // nur Hauptthread
 
-	WZVorbisDecoder* decoder = WZVorbisDecoder::fromFilename(fileName);
-	if (!decoder)
+// dekodiert vollstaendig (beliebiger Thread); gibt den Decoder frei
+bool decodeJobRun(TrackDecodeJob &j)
+{
+	WZVorbisDecoder *decoder = j.decoder;
+	j.decoder = nullptr;
+	if (decoder == nullptr)
 	{
-		debug(LOG_ERROR, "couldn't allocate decoder for %s", fileName);
 		return false;
 	}
-	const unsigned estimate = decoder->totalSamples() * decoder->channels() * 2;
-	uint8_t* buffer = (uint8_t*) malloc(estimate);
-	if (buffer == nullptr)
+	const int64_t samples = decoder->totalSamples();
+	const int64_t estimate64 = samples * decoder->channels() * 2;
+	if (samples <= 0 || estimate64 <= 0 || estimate64 > static_cast<int64_t>(std::numeric_limits<ALsizei>::max()))
 	{
-		debug(LOG_ERROR, "couldn't allocate temp buffer to load track %s", fileName);
 		delete decoder;
 		return false;
 	}
-	memset(buffer, 0, estimate);
-	auto res = decoder->decode(buffer, estimate);
+	j.pcm.assign(static_cast<size_t>(estimate64), 0);
+	const auto res = decoder->decode(j.pcm.data(), j.pcm.size());
+	j.format = (decoder->channels() == 1) ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
+	j.frequency = static_cast<ALsizei>(std::min<size_t>(decoder->frequency(), static_cast<size_t>(std::numeric_limits<ALsizei>::max())));
+	delete decoder;
 	if (!res.has_value())
 	{
-		debug(LOG_ERROR, "failed decoding %s", fileName);
-		free(buffer);
-		delete decoder;
+		j.pcm.clear();
 		return false;
 	}
+	return true;
+}
 
-	// Determine PCM data format
-	ALenum format = (decoder->channels() == 1) ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
-	ALuint alBuffer;
-	// Create an OpenAL buffer and fill it with the decoded data
+void decodeWorkerMain()
+{
+	for (;;)
+	{
+		std::shared_ptr<TrackDecodeJob> job;
+		{
+			std::unique_lock<std::mutex> lk(s_decodeMutex);
+			s_decodeWake.wait(lk, [] { return s_decodeStop || !s_decodeQueue.empty(); });
+			if (s_decodeQueue.empty())
+			{
+				return;   // nur bei s_decodeStop
+			}
+			job = s_decodeQueue.front();
+			s_decodeQueue.pop_front();
+			job->state = 1;
+		}
+		const bool ok = decodeJobRun(*job);
+		{
+			std::lock_guard<std::mutex> lk(s_decodeMutex);
+			job->state = ok ? 2 : 3;
+		}
+		s_decodeDone.notify_all();
+	}
+}
+
+void decodeWorkersStart()
+{
+	if (!s_decodeWorkers.empty())
+	{
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lk(s_decodeMutex);
+		s_decodeStop = false;
+	}
+	const unsigned hw = std::max(2u, std::thread::hardware_concurrency());
+	const unsigned n = std::clamp(hw / 2, 1u, 3u);
+	for (unsigned i = 0; i < n; ++i)
+	{
+		s_decodeWorkers.emplace_back(decodeWorkerMain);
+	}
+}
+
+void decodeWorkersStop()
+{
+	{
+		std::lock_guard<std::mutex> lk(s_decodeMutex);
+		s_decodeStop = true;
+		for (auto &j : s_decodeQueue)
+		{
+			delete j->decoder;
+			j->decoder = nullptr;
+			j->state = 3;
+		}
+		s_decodeQueue.clear();
+	}
+	s_decodeWake.notify_all();
+	for (std::thread &t : s_decodeWorkers)
+	{
+		if (t.joinable()) { t.join(); }
+	}
+	s_decodeWorkers.clear();
+	s_decodePending.clear();
+}
+
+// Hauptthread: fertigen Auftrag in einen OpenAL-Puffer laden
+void decodeJobUpload(TrackDecodeJob &j)
+{
+	if (j.state != 2 || j.pcm.empty() || j.track == nullptr || !openal_initialized)
+	{
+		if (j.state == 3)
+		{
+			debug(LOG_ERROR, "failed decoding %s", j.fileName.c_str());
+		}
+		j.pcm.clear();
+		j.pcm.shrink_to_fit();
+		return;
+	}
+	ALuint alBuffer = 0;
 	alGenBuffers(1, &alBuffer);
 	sound_GetError();
-	ASSERT(estimate <= static_cast<size_t>(std::numeric_limits<ALsizei>::max()), "soundBuffer->size (%u) exceeds ALsizei::max", estimate);
-	ASSERT(decoder->frequency() <= static_cast<size_t>(std::numeric_limits<ALsizei>::max()), "decoder->frequency() (%zu) exceeds ALsizei::max ??", decoder->frequency());
-	alBufferData(alBuffer, format, buffer, static_cast<ALsizei>(estimate), static_cast<ALsizei>(decoder->frequency()));
+	alBufferData(alBuffer, j.format, j.pcm.data(), static_cast<ALsizei>(j.pcm.size()), j.frequency);
 	sound_GetError();
+	j.track->iBufferName = alBuffer;
+	j.pcm.clear();
+	j.pcm.shrink_to_fit();
+}
 
-	// save buffer name in track
-	psTrack->iBufferName = alBuffer;
-	free(buffer);
-	delete decoder;
-	return true;
+// Hauptthread: wartet, bis der Auftrag nicht mehr laeuft; ein noch wartender wird hier selbst dekodiert (cancel = nur verwerfen)
+void decodeJobFinish(const std::shared_ptr<TrackDecodeJob> &job, bool cancel)
+{
+	std::unique_lock<std::mutex> lk(s_decodeMutex);
+	if (job->state == 0)
+	{
+		auto it = std::find(s_decodeQueue.begin(), s_decodeQueue.end(), job);
+		if (it != s_decodeQueue.end()) { s_decodeQueue.erase(it); }
+		if (cancel)
+		{
+			delete job->decoder;
+			job->decoder = nullptr;
+			job->state = 3;
+			return;
+		}
+		job->state = 1;
+		lk.unlock();
+		const bool ok = decodeJobRun(*job);
+		lk.lock();
+		job->state = ok ? 2 : 3;
+		return;
+	}
+	s_decodeDone.wait(lk, [&job] { return job->state >= 2; });
+}
+} // namespace
+
+/// MOD (18.11.): vor dem Abspielen - der Klang muss fertig dekodiert und im OpenAL-Puffer sein
+static void sound_EnsureTrackDecoded(TRACK *psTrack)
+{
+	if (psTrack == nullptr || s_decodePending.empty())
+	{
+		return;
+	}
+	const auto it = s_decodePending.find(psTrack);
+	if (it == s_decodePending.end())
+	{
+		return;
+	}
+	const std::shared_ptr<TrackDecodeJob> job = it->second;
+	s_decodePending.erase(it);
+	decodeJobFinish(job, false);
+	decodeJobUpload(*job);
+}
+
+/// MOD (18.11.): je Bild einige fertig dekodierte Klaenge in OpenAL-Puffer laden (haelt den Zwischenspeicher klein)
+static void sound_PumpDecodedTracks(int maxUploads)
+{
+	if (s_decodePending.empty())
+	{
+		return;
+	}
+	std::vector<std::shared_ptr<TrackDecodeJob>> ready;
+	{
+		std::lock_guard<std::mutex> lk(s_decodeMutex);
+		for (const auto &kv : s_decodePending)
+		{
+			if (kv.second->state >= 2)
+			{
+				ready.push_back(kv.second);
+				if (static_cast<int>(ready.size()) >= maxUploads) { break; }
+			}
+		}
+	}
+	for (const auto &job : ready)
+	{
+		s_decodePending.erase(job->track);
+		decodeJobUpload(*job);
+	}
 }
 
 /** This is used to play sound effets (not "music"). Assumes .ogg file.
@@ -803,6 +986,11 @@ TRACK *sound_LoadTrackFromFile(const char *fileName)
 	size_t filename_size;
 	char *track_name;
 
+	if (!openal_initialized)
+	{
+		return nullptr;
+	}
+
 	if (GetLastResourceFilename() == nullptr)
 	{
 		// This is a non fatal error.  We just can't find filename for some reason.
@@ -812,6 +1000,14 @@ TRACK *sound_LoadTrackFromFile(const char *fileName)
 	else
 	{
 		filename_size = strlen(GetLastResourceFilename()) + 1;
+	}
+
+	// Kopfdaten im Hauptthread lesen (Fehler werden hier gemeldet wie bisher)
+	WZVorbisDecoder* decoder = WZVorbisDecoder::fromFilename(fileName);
+	if (!decoder)
+	{
+		debug(LOG_ERROR, "couldn't allocate decoder for %s", fileName);
+		return nullptr;
 	}
 
 	// allocate track, plus the memory required to contain the filename
@@ -827,32 +1023,45 @@ TRACK *sound_LoadTrackFromFile(const char *fileName)
 	// Initialize everything (except for the filename) to zero
 	memset(pTrack, 0, sizeof(TRACK));
 
-	// Set filename pointer; if the filename (as returned by
-	// GetLastResourceFilename()) is a NULL pointer, then this will be a
-	// NULL pointer as well.
 	track_name = filename_size ? (char *)(pTrack + 1) : nullptr;
-
-	// Copy the filename into the struct, if we don't have a NULL pointer
 	if (filename_size != 0)
 	{
 		strcpy(track_name, GetLastResourceFilename());
 	}
 	pTrack->fileName = track_name;
 
-	// Now use sound_ReadTrackFromBuffer to decode the file's contents
-	if (!sound_DecodeOggVorbisTrack(pTrack, fileName))
+	// Dekodieren im Hintergrund
+	auto job = std::make_shared<TrackDecodeJob>();
+	job->track = pTrack;
+	job->decoder = decoder;
+	job->fileName = fileName;
+	decodeWorkersStart();
 	{
-		free(pTrack);
-		return nullptr;
+		std::lock_guard<std::mutex> lk(s_decodeMutex);
+		s_decodeQueue.push_back(job);
 	}
+	s_decodePending[pTrack] = job;
+	s_decodeWake.notify_one();
 
 	return pTrack;
 }
 
 void sound_FreeTrack(TRACK *psTrack)
 {
-	alDeleteBuffers(1, &psTrack->iBufferName);
-	sound_GetError();
+	// MOD (18.11.): laufendes/wartendes Hintergrund-Dekodieren dieses Klangs zuerst beenden bzw. verwerfen
+	const auto it = s_decodePending.find(psTrack);
+	if (it != s_decodePending.end())
+	{
+		const std::shared_ptr<TrackDecodeJob> job = it->second;
+		s_decodePending.erase(it);
+		decodeJobFinish(job, true);
+		job->pcm.clear();
+	}
+	if (psTrack->iBufferName != 0)
+	{
+		alDeleteBuffers(1, &psTrack->iBufferName);
+		sound_GetError();
+	}
 }
 
 static void sound_AddActiveSample(AUDIO_SAMPLE *psSample)
@@ -899,6 +1108,7 @@ static bool sound_SetupChannel(AUDIO_SAMPLE *psSample)
 //
 bool sound_Play2DSample(TRACK *psTrack, AUDIO_SAMPLE *psSample, bool bQueued)
 {
+	sound_EnsureTrackDecoded(psTrack);   // MOD (18.11.): Hintergrund-Dekodieren
 	ALfloat zero[3] = { 0.0, 0.0, 0.0 };
 	ALfloat volume;
 	ALint error;
@@ -971,6 +1181,7 @@ bool sound_Play2DSample(TRACK *psTrack, AUDIO_SAMPLE *psSample, bool bQueued)
 //
 bool sound_Play3DSample(TRACK *psTrack, AUDIO_SAMPLE *psSample)
 {
+	sound_EnsureTrackDecoded(psTrack);   // MOD (18.11.): Hintergrund-Dekodieren
 	ALfloat zero[3] = { 0.0, 0.0, 0.0 };
 	ALfloat volume;
 	ALint error;

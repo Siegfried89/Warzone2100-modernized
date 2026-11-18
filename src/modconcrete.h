@@ -30,6 +30,9 @@ void footprintChanged(const STRUCTURE *psStruct, int tileX, int tileY, int sizeX
 /// Spielbeginn: Kachelliste neu lesen
 void reset();
 
+/// (18.11.) Gebaeude auf Beton zeichnen ihre harte Fundament-Platte (baseModel) nicht - der Beton mit weichem Rand ersetzt sie
+bool replacesBasePlate(const STRUCTURE *psStruct);
+
 /// MOD (17.11., "Die Betontexturen laufen nirgends weich aus"): Grafikstufe "Klassisch" - Decal-Nummer fuer den Gelaende-Shader.
 /// Ein Feld neben Beton (Karten-Beton der Arizona-Kacheln 22/77 oder Beton unter Gebaeuden) bekommt eine Kennung, mit der der Shader
 /// den Beton vom gemeinsamen Rand aus weich und unregelmaessig auf das Feld auslaufen laesst; reine Wasserfelder bekommen eine Kennung

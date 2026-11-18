@@ -147,7 +147,9 @@ int classicDecal(WorldMapState &m, int x, int y, int decalNo, bool waterOnly)
 	load();
 	if (x < 0 || y < 0 || x >= m.width || y >= m.height || decalNo >= 4095) { return decalNo; }
 	const MAPTILE *t = mapTile(m, x, y);
-	if (TILE_HAS_DECAL(t) || TileNumber_tile(t->texture) == MOD_TILE_VOID) { return decalNo; }
+	// (18.11.) auch Felder mit Gestruepp-/Decal-Kachel bekommen den weichen Rand - in der Klassik ist jede Kachel ein Decal, und rund um die
+	// Gebaeude liegen fast nur solche Felder (deshalb endete der Beton dort hart an der Kachelkante, an der LZ aber weich)
+	if (TileNumber_tile(t->texture) == MOD_TILE_VOID) { return decalNo; }
 	const unsigned char tt = terrainType(t);
 	if (tt == TER_WATER || tt == TER_CLIFFFACE) { return decalNo; }
 	const bool structOk = s_first >= 0;
@@ -192,6 +194,13 @@ void footprintChanged(const STRUCTURE *psStruct, int tileX, int tileY, int sizeX
 			if (x >= 0 && y >= 0 && x < gameWorld.map.width && y < gameWorld.map.height) { markTileDirty(x, y); }
 		}
 	}
+}
+
+bool replacesBasePlate(const STRUCTURE *psStruct)
+{
+	if (psStruct == nullptr || psStruct->isBlueprint()) { return false; }
+	load();
+	return s_first >= 0 && wants(psStruct);
 }
 
 void reset()
