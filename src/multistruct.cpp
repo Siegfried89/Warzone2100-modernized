@@ -32,6 +32,7 @@
 
 #include "design.h"
 #include "template.h"
+#include "modicbm.h"
 #include "droid.h"
 #include "droiddef.h"
 #include "basedef.h"
@@ -255,6 +256,11 @@ bool recvLasSat(NETQUEUE queue)
 
 	if (psStruct && psObj && isLasSat(psStruct->pStructureType) && psStruct->status == SS_BUILT)
 	{
+		// MOD (Wunsch 18.11. 00:56): Atomraketen-Silo - eigene Rakete statt Laserstrahl (Start, Flug, Einschlag in modicbm)
+		if (modicbm::launch(psStruct, psObj))
+		{
+			return true;
+		}
 		// MOD (Wunsch 17.11. 21:34): die Uplink-Zentrale feuert nur mit NASDA-Satelliten in der Umlaufbahn (und nach deren Nachladezeit)
 		if (!modsat::canFire(psStruct))
 		{

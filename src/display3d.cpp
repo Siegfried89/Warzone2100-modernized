@@ -106,6 +106,7 @@
 #include "modnightlights.h"
 #include "modrocket.h"
 #include "modnuke.h"
+#include "modicbm.h"
 #include "modsat.h"
 #include "modmines.h"
 #include "modtactical.h"
@@ -1553,6 +1554,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	modnightlights::draw3D(viewMatrix);
 	modsat::draw3D(viewMatrix);      // MOD (17.11. 21:34): Satelliten-Start von der Orbit-Insel, Satelliten am Orbit-Himmel
 	modnuke::draw3D(viewMatrix);     // MOD (17.11. 21:13): Dampf ueber den Kuehltuermen laufender Atomkraftwerke
+	modicbm::draw3D(viewMatrix);     // MOD (18.11.): Atomrakete im Flug, Atompilz
 	modrocket::draw3D(viewMatrix);   // MOD (17.11. 20:56): Raketen im Silo, Countdown-Dampf, Start   // MOD (17.11. 20:44): warmweisse Nachtlichter an Masten, Kraenen, Tuermen, Gebaeuden
 	display3DProjectiles(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
 	wzPerfEnd(PERF_MODEL_INIT);
