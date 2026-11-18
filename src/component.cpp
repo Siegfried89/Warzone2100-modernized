@@ -53,6 +53,7 @@
 #include "modlayer.h"
 #include "modcrew.h"
 #include "modgdiart.h"
+#include "modicbm.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "modbuild.h"
 #include "modduel.h"
@@ -843,6 +844,10 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		{
 			didDrawSomething = true;
 		}
+		if (!bButton && modicbm::drawTelJacks(psDroid, bodyMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, psDroid->heightAboveMap))
+		{
+			didDrawSomething = true;   // MOD (18.11. 20:46): Stuetzen des Atomraketen-Werfers
+		}
 		// MOD (17.11., Wunsch 25 "Bergen"): Abschlepp-Lkw mit geladenem Wrack - das Wrack liegt verkleinert auf der Ladeflaeche (nur Anzeige)
 		if (!bButton)
 		{
@@ -932,6 +937,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 				{
 					Rotation rot = getInterpolatedWeaponRotation(psDroid, i, graphicsTime);
 					if (!bButton) { rot.pitch = modgdiart::displayPitch(psDroid, rot.pitch, graphicsTime); }   // MOD (18.11.): Rohre erst verankert hoch
+					rot.pitch = modicbm::telPitch(psDroid, rot.pitch, graphicsTime);   // MOD (18.11. 20:46): Aufrichter des Atomraketen-Werfers
 
 					glm::mat4 localModelMatrix = modifiedModelMatrix;
 					float localHeightAboveTerrain = psDroid->heightAboveMap;
@@ -1017,6 +1023,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					if (psShape)
 					{
 						if (pie_Draw3DShape(psShape, 0, colour, brightness, pieFlag, iPieData, localModelMatrix, viewMatrix, -localHeightAboveTerrain))
+						{
+							didDrawSomething = true;
+						}
+						// MOD (18.11. 20:46): Atomraketen-Werfer - die Rakete liegt auf dem Aufrichter, solange sie geladen ist
+						if (modicbm::drawTelRocket(psDroid, localModelMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, iPieData, localHeightAboveTerrain))
 						{
 							didDrawSomething = true;
 						}
