@@ -2591,8 +2591,10 @@ static void displayCraterPiles(const glm::mat4 &viewMatrix)
 				const float h10 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX + 1, d.tileY));
 				const float h01 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX, d.tileY + 1));
 				const float h11 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX + 1, d.tileY + 1));
-				const float base = (h00 + h10 + h01 + h11) * 0.25f;
-				const float sink = static_cast<float>(modterrain::centerSink(gameWorld.map, d.tileX, d.tileY));
+				constexpr int NB = DIST_TILE / TILE_UNITS;
+				// Feinraster: der Fleck liegt flach ueber dem 2 x 2-Kraterblock (Mitte = gemeinsamer Eckpunkt)
+				const float base = NB > 1 ? h11 : (h00 + h10 + h01 + h11) * 0.25f;
+				const float sink = NB > 1 ? 0.f : static_cast<float>(modterrain::centerSink(gameWorld.map, d.tileX, d.tileY));
 				const float gx = ((h10 + h11) - (h00 + h01)) / (2.f * TILE_UNITS);
 				const float gyW = ((h01 + h11) - (h00 + h10)) / (2.f * TILE_UNITS);
 				glm::mat4 shear(1.f);

@@ -619,11 +619,13 @@ void craterDecals(std::vector<CraterDecal> &out)
 	{
 		if ((kv.first >> 48) != layer || kv.second.dyn <= 0) { continue; }
 		const int x = static_cast<int>((kv.first >> 24) & 0xffffff), y = static_cast<int>(kv.first & 0xffffff);
+		constexpr int NB = DIST_TILE / TILE_UNITS;   // Feinraster: ein Krater = NB x NB Felder
+		if (NB > 1 && (cellDyn(static_cast<int>(layer), x - 1, y) > 0 || cellDyn(static_cast<int>(layer), x, y - 1) > 0)) { continue; }
 		const unsigned h = static_cast<unsigned>(x) * 2654435761u ^ static_cast<unsigned>(y) * 40503u;
 		CraterDecal d;
 		d.tileX = x; d.tileY = y;
-		d.worldX = world_coord(x) + TILE_UNITS / 2;
-		d.worldY = world_coord(y) + TILE_UNITS / 2;
+		d.worldX = world_coord(x) + NB * TILE_UNITS / 2;
+		d.worldY = world_coord(y) + NB * TILE_UNITS / 2;
 		d.depth = static_cast<float>(kv.second.dyn) / static_cast<float>(CRATER_DEPTH);
 		d.rotDeg = static_cast<int>(h % 360u);
 		d.scale = 0.88f + 0.2f * static_cast<float>((h >> 9) % 100u) / 100.f;
