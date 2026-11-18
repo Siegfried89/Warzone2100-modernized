@@ -37,6 +37,7 @@
 #include "modduel.h"
 #include "modlayer.h"
 #include "modgdiart.h"
+#include "modicbm.h"
 #include "modrecover.h"
 #include "modsalvage.h"
 #include "modparts.h"
@@ -3094,6 +3095,7 @@ void moveUpdateDroid(DROID *psDroid)
 	else
 	{
 		if (modtankguns::halted(psDroid)) { moveSpeed = 0; }   // MOD (17.11.): Feuerhalt der Panzer
+		if (modicbm::telHalted(psDroid)) { moveSpeed = 0; psDroid->sMove.speed = 0; }   // MOD (18.11.): Atomraketen-Werfer steht auf Stuetzen
 		if (modmines::flailing(psDroid)) { moveSpeed = moveSpeed * 7 / 10; }   // MOD (17.11. 20:06): mit drehender Walze nur langsam
 		if (!modEngineStarting) { moveUpdateGroundModel(psDroid, moveSpeed, moveDir); }   // MOD: waehrend des Anlassens steht er still
 		if (!modEngineStarting && psPropStats->hoverHeight > 0) { psDroid->pos.z += psPropStats->hoverHeight; }   // MOD: Balldrohne schwebt ueber dem Boden

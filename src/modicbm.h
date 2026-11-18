@@ -9,9 +9,13 @@
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
 
+#include "lib/framework/types.h"
+#include "lib/ivis_opengl/pietypes.h"
+
 struct STRUCTURE;
 struct STRUCTURE_STATS;
 struct BASE_OBJECT;
+struct DROID;
 
 namespace modicbm
 {
@@ -22,6 +26,19 @@ bool launch(STRUCTURE *psSilo, const BASE_OBJECT *psTarget);
 const char *readyText(const STRUCTURE *psStruct);
 /// Atompilz an dieser Stelle (x, y, Bodenhoehe) - auch fuer den mobilen Werfer (Waffe NukeTEL, Einschlag in projectile.cpp)
 void cloudAt(const Vector3i &groundPos);
+/// (18.11. 20:46) mobiler Werfer (Waffe NukeTEL): aus combFire - true = behandelt (kein normales Geschoss); beginnt im Stand das
+/// Aufrichten, der Start folgt im Spielschritt; 6 min Nachladen
+bool telIntercept(DROID *psDroid, const BASE_OBJECT *psTarget);
+/// steht fest (Stuetzen aus, richtet sich auf, legt sich hin)
+bool telHalted(const DROID *psDroid);
+/// Anzeige: Winkel des Aufrichters (statt des Zielwinkels)
+uint16_t telPitch(const DROID *psDroid, uint16_t aimPitch, UDWORD time);
+/// ist eine Rakete auf dem Fahrzeug (nicht abgeschossen / nachgeladen)?
+bool telRocketLoaded(const DROID *psDroid);
+/// Anzeige: Rakete auf dem Aufrichter (gleiche Lage wie das Waffenmodell)
+bool drawTelRocket(const DROID *psDroid, const glm::mat4 &weaponMatrix, const glm::mat4 &viewMatrix, int colour, PIELIGHT brightness, int pieFlag, int pieFlagData, float heightAboveMap);
+/// Anzeige: vier Stuetzen am Rahmen (bodyMatrix = Lage des Rumpfs)
+bool drawTelJacks(const DROID *psDroid, const glm::mat4 &bodyMatrix, const glm::mat4 &viewMatrix, int colour, PIELIGHT brightness, int pieFlag, float heightAboveMap);
 /// jeden Spielschritt: erste Rakete nach Fertigstellung beginnen, Einschlaege ausloesen
 void tick();
 /// Rakete im Flug, Abgasfahne, Atompilz (Anzeige)

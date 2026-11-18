@@ -52,6 +52,7 @@
 #include "modgroundfire.h"
 #include "modlayer.h"
 #include "modgdiart.h"
+#include "modicbm.h"
 #include "modlayermap.h"
 #include "modammo.h"
 #include "modrecoil.h"
@@ -276,6 +277,10 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	if (psAttacker->type == OBJ_DROID && !modgdiart::readyToFire((DROID *)psAttacker))
 	{
 		return false;   // MOD (18.11. 19:09): GDI-Artillerie feuert nur verankert (Stuetzen aus, Rohre im Steilfeuer)
+	}
+	if (psAttacker->type == OBJ_DROID && modicbm::telIntercept((DROID *)psAttacker, psTarget))
+	{
+		return false;   // MOD (18.11. 20:46): mobiler Atomraketen-Werfer - aufrichten und starten (modicbm), kein normales Geschoss
 	}
 
 	/* -------!!! From that point we are sure that we are firing !!!------- */
