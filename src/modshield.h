@@ -14,6 +14,7 @@
 
 struct PROJECTILE;
 struct STRUCTURE;
+struct BASE_OBJECT;
 
 namespace modshield
 {
@@ -27,8 +28,8 @@ void draw3D(const glm::mat4 &viewMatrix);
 void drawDomes(const glm::mat4 &perspectiveMatrix, const glm::mat4 &viewMatrix);
 /// Grafik-Mittel freigeben (Ende der 3D-Ansicht)
 void gpuShutdown();
-/// Schild-Fuellstand in Prozent fuer den Balken; -1 = kein Schild
-int shieldPercent(const STRUCTURE *s);
+/// Schild-Fuellstand in Prozent fuer den Balken; -1 = kein Schild (Bauwerk oder Fahrzeug)
+int shieldPercent(const BASE_OBJECT *o);
 /// Spielstand
 void saveState(std::vector<int> &out);
 void loadState(const std::vector<int> &in);

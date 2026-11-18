@@ -434,6 +434,24 @@ static inline const iIMDBaseShape *getRightPropulsionIMD(const DROID *psDroid)
 	return asBodyStats[bodyStat].ppIMDList[propStat * NUM_PROP_SIDES + RIGHT_PROP];
 }
 
+// MOD (18.11.): Lage der beiden Laufwerke quer zur Fahrtrichtung (Modell-x: Mitte und Breite links/rechts) fuer die Fahrspuren (modtracks)
+bool modDroidPropulsionSpan(const DROID *psDroid, float &leftCenter, float &leftWidth, float &rightCenter, float &rightWidth)
+{
+	if (psDroid == nullptr || psDroid->asBits[COMP_BODY] >= asBodyStats.size()) { return false; }
+	if (static_cast<size_t>(psDroid->asBits[COMP_PROPULSION]) * NUM_PROP_SIDES + RIGHT_PROP >= asBodyStats[psDroid->asBits[COMP_BODY]].ppIMDList.size()) { return false; }
+	auto span = [](const iIMDBaseShape *b, float &c, float &w) -> bool {
+		if (b == nullptr) { return false; }
+		const iIMDShape *sh = b->displayModel();
+		if (sh == nullptr) { return false; }
+		c = 0.5f * (static_cast<float>(sh->min.x) + static_cast<float>(sh->max.x));
+		w = static_cast<float>(sh->max.x) - static_cast<float>(sh->min.x);
+		return w > 0.5f;
+	};
+	const bool l = span(getLeftPropulsionIMD(psDroid), leftCenter, leftWidth);
+	const bool r = span(getRightPropulsionIMD(psDroid), rightCenter, rightWidth);
+	return l && r;
+}
+
 int modDroidFootprintRadius(const DROID *psDroid)
 {
 	if (psDroid == nullptr) { return 0; }

@@ -98,6 +98,7 @@
 #include "modai.h"
 #include "modpointdef.h"
 #include "modshield.h"
+#include "modtracks.h"
 #include "modoutpost.h"
 #include "modconcrete.h"
 #include "modweather.h"
@@ -784,6 +785,7 @@ void interfaceShutDown()
 	modai::reset();          // MOD
 	modpointdef::reset();    // MOD: Punktverteidigung
 	modshield::reset();      // MOD: Schildkuppeln
+	modtracks::reset();      // MOD: Fahrspuren
 	modoutpost::reset();     // MOD: Aussenposten-Teleport
 	modrocket::reset();      // MOD (17.11. 20:56): Raketensilo
 	modapc::reset();         // MOD (17.11. 21:01): Schuetzenpanzer

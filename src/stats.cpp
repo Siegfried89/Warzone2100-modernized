@@ -1040,6 +1040,12 @@ bool loadSensorStats(WzConfig &ini)
 		psStats->compType = COMP_SENSOR;
 
 		psStats->base.range = ini.value("range").toInt();
+		psStats->shieldRadius = std::max(0, ini.value("shieldRadius", 0).toInt());   // MOD: fahrender Schildgenerator (modshield)
+		psStats->shieldHP = std::max(0, ini.value("shieldHP", 0).toInt());
+		psStats->shieldRegen = std::max(0, ini.value("shieldRegen", 0).toInt());
+		psStats->shieldRecharge = std::max(0, ini.value("shieldRecharge", 18000).toInt());
+		psStats->shieldRegenDelay = std::max(0, ini.value("shieldRegenDelay", 10000).toInt());
+		psStats->shieldDrop = std::clamp(ini.value("shieldDrop", 375).toInt(), 0, 900);
 		for (int j = 0; j < MAX_PLAYERS; j++)
 		{
 			psStats->upgrade[j] = psStats->base;

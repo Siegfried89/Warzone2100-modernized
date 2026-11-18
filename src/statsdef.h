@@ -375,6 +375,13 @@ struct SENSOR_STATS : public COMPONENT_STATS
 	iIMDBaseShape *pMountGraphic = nullptr;     ///< The turret mount to use
 	unsigned location = 0;                  ///< specifies whether the Sensor is default or for the Turret
 	SENSOR_TYPE type = STANDARD_SENSOR;     ///< used for combat
+	// MOD (18.11.): fahrender Schildgenerator (Systemturm) - Werte wie bei den Schild-Bauwerken (modshield), 0 = kein Schild
+	int shieldRadius = 0;
+	int shieldHP = 0;
+	int shieldRegen = 0;
+	int shieldRecharge = 0;
+	int shieldRegenDelay = 10000;
+	int shieldDrop = 231;                   ///< Kugelmitte unter dem Boden in Tausendsteln des Radius (SupCom: 3/13 fest, 3/8 fahrend)
 
 	struct : UPGRADE
 	{
