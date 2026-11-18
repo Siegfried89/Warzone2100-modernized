@@ -410,6 +410,35 @@ bool KeyMappings::load(const char* path, const KeyFunctionConfiguration& keyFunc
 		add(keys, *info, slot);
 	}
 	ini.endArray();
+
+	// MOD (Wunsch 18.11. 01:08): "Q dreht die Kamera nach rechts, E nach links" - auch fuer eine schon gespeicherte keymap.json (der Spieler soll
+	// nichts selbst einstellen muessen): die alten Standardbelegungen Q = Patrouille und E = Feuer erwidern fallen weg (beides bleibt ueber die
+	// Befehlsknoepfe erreichbar), Q/E drehen die Kamera (zweite Belegung neben Ziffernblock 6/4).
+	for (auto it = keyMappings.begin(); it != keyMappings.end();)
+	{
+		const bool qe = (it->keys.input.is(KEY_Q) || it->keys.input.is(KEY_E)) && !it->hasMeta();
+		if (qe && (it->info.name == "SetDroidMovePatrol" || it->info.name == "SetDroidAttackReturn"))
+		{
+			it = keyMappings.erase(it);
+			bDirty = true;
+		}
+		else
+		{
+			++it;
+		}
+	}
+	auto bindOnce = [&](KEY_CODE key, const char *fn) {
+		for (const KeyMapping &m : keyMappings)
+		{
+			if (m.keys.input.is(key) && !m.hasMeta() && m.info.name == fn) { return; }
+		}
+		auto rot = keyFuncConfig.keyFunctionInfoByName(fn);
+		if (!rot.has_value()) { return; }
+		add(KeyCombination(KEY_IGNORE, KeyMappingInput(key), KeyAction::DOWN), *rot, KeyMappingSlot::SECONDARY);
+		bDirty = true;
+	};
+	bindOnce(KEY_Q, "RotateRight");
+	bindOnce(KEY_E, "RotateLeft");
 	return true;
 }
 
