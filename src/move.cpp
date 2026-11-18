@@ -36,6 +36,7 @@
 #include "modfort.h"
 #include "modduel.h"
 #include "modlayer.h"
+#include "modgdiart.h"
 #include "modrecover.h"
 #include "modsalvage.h"
 #include "modparts.h"
@@ -3075,6 +3076,7 @@ void moveUpdateDroid(DROID *psDroid)
 	}
 	else if (psDroid->isCyborg())
 	{
+		if (modgdiart::halted(psDroid)) { moveSpeed = 0; }   // MOD (18.11.): GDI-Artillerie verankert / faehrt ein
 		moveUpdateCyborgModel(psDroid, moveSpeed, moveDir, oldStatus);
 	}
 	else if (psPropStats->propulsionType == PROPULSION_TYPE_LIFT)

@@ -51,6 +51,7 @@
 #include "campaigninfo.h"
 #include "modgroundfire.h"
 #include "modlayer.h"
+#include "modgdiart.h"
 #include "modlayermap.h"
 #include "modammo.h"
 #include "modrecoil.h"
@@ -271,6 +272,10 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	if (psAttacker->type == OBJ_DROID && !modtankguns::readyToFire((DROID *)psAttacker, psStats))
 	{
 		return false;   // MOD (17.11.): Panzer halten zum Feuern an (Sudden Strike)
+	}
+	if (psAttacker->type == OBJ_DROID && !modgdiart::readyToFire((DROID *)psAttacker))
+	{
+		return false;   // MOD (18.11. 19:09): GDI-Artillerie feuert nur verankert (Stuetzen aus, Rohre im Steilfeuer)
 	}
 
 	/* -------!!! From that point we are sure that we are firing !!!------- */

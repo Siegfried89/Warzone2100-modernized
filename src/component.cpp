@@ -52,6 +52,7 @@
 #include "modcombot.h"
 #include "modlayer.h"
 #include "modcrew.h"
+#include "modgdiart.h"
 #include "modbuild.h"
 #include "modduel.h"
 #include "modrecoil.h"
@@ -836,6 +837,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 			}
 			strImd = strImd->next.get();
 		}
+		// MOD (18.11. 19:09): GDI-Artillerie - Hydraulikstuetzen an den Beinen (nur beim Verankern/verankert)
+		if (!bButton && modgdiart::drawStruts(psDroid, bodyMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, psDroid->heightAboveMap))
+		{
+			didDrawSomething = true;
+		}
 		// MOD (17.11., Wunsch 25 "Bergen"): Abschlepp-Lkw mit geladenem Wrack - das Wrack liegt verkleinert auf der Ladeflaeche (nur Anzeige)
 		if (!bButton)
 		{
@@ -924,6 +930,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 				    && !psShapeBody->connectors.empty())
 				{
 					Rotation rot = getInterpolatedWeaponRotation(psDroid, i, graphicsTime);
+					if (!bButton) { rot.pitch = modgdiart::displayPitch(psDroid, rot.pitch, graphicsTime); }   // MOD (18.11.): Rohre erst verankert hoch
 
 					glm::mat4 localModelMatrix = modifiedModelMatrix;
 					float localHeightAboveTerrain = psDroid->heightAboveMap;
@@ -934,6 +941,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					{
 						localModelMatrix *= glm::translate(glm::vec3(psShapeBody->connectors[bodyConnectorIndex].xzy()));
 						localHeightAboveTerrain += psShapeBody->connectors[bodyConnectorIndex].z;
+					}
+					if (!bButton)
+					{
+						const float lift = modgdiart::torsoLift(psDroid, graphicsTime);   // MOD (18.11.): Rumpf hebt sich beim Verankern
+						if (lift != 0.f) { localModelMatrix *= glm::translate(glm::vec3(0.f, lift, 0.f)); localHeightAboveTerrain += lift; }
 					}
 					else
 					{

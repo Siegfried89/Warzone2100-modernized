@@ -34,6 +34,7 @@
 #include "action.h"
 #include "modupgrade.h"
 #include "modarty.h"
+#include "modgdiart.h"
 #include "combat.h"
 #include "formation.h"
 #include "geometry.h"
@@ -418,7 +419,7 @@ bool actionTargetTurret(BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, WEAPON *
 		tPitch += clip(pitchError, -pitchRate, pitchRate);  // Addition wrapping intended.
 		onTarget = onTarget && targetPitch == tPitch;
 	}
-	else if (!bRepair && psAttacker->type == OBJ_DROID && modarty::isArtyWeapon(psWeapon->nStat))
+	else if (!bRepair && psAttacker->type == OBJ_DROID && (modarty::isArtyWeapon(psWeapon->nStat) || modgdiart::isGdiWeapon(psWeapon->nStat)))
 	{
 		// MOD (Wunsch 17.11. 20:38): Steilfeuer - das Rohr steht beim Feuern weit nach oben (nahe Ziele ~62 Grad, weite ~46 Grad)
 		const int range = std::max(1, proj_GetLongRange(*psWeapStats, psAttacker->player));
