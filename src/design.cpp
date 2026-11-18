@@ -2948,11 +2948,16 @@ bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complai
 	}
 
 	// Check no mixing of systems and weapons
+	// MOD (18.11.): Kampf-Infanterie traegt Waffe UND Spaten (infbuild: InfantrySpade) - sonst lehnte die Fabrik
+	// jede Infanterie-Vorlage ab ("Ignoring invalid droid template ... MG Scavenger Legs") und die Produktion lief nie an
+	const bool infantrySpade = psTempl->asParts[COMP_CONSTRUCT] != 0
+		&& (psTempl->droidType == DROID_PERSON || psTempl->droidType == DROID_CYBORG || psTempl->droidType == DROID_CYBORG_SUPER)
+		&& psTempl->getPropulsionStats()->propulsionType == PROPULSION_TYPE_LEGGED;
 	if (psTempl->numWeaps != 0 &&
 	    ((psTempl->asParts[COMP_SENSOR] && psTempl->asParts[COMP_SENSOR] != aDefaultSensor[player]) ||
 	     (psTempl->asParts[COMP_ECM] && psTempl->asParts[COMP_ECM] != aDefaultECM[player]) ||
 	     (psTempl->asParts[COMP_REPAIRUNIT] && psTempl->asParts[COMP_REPAIRUNIT] != aDefaultRepair[player]) ||
-	     psTempl->asParts[COMP_CONSTRUCT]))
+	     (psTempl->asParts[COMP_CONSTRUCT] && !infantrySpade)))
 	{
 		debug(level, "Cannot mix system and weapon turrets in a template!");
 		return false;

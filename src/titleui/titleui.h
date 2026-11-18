@@ -111,4 +111,17 @@ private:
 	int page = 0;
 };
 
+// - modfleets.cpp - MOD (Wunsch 18.11. 00:51): Einheiteneditor direkt im Hauptmenue (ohne Karte, alle Teile frei); speichert in die Flotte
+class WzUnitDesignTitleUI: public WzTitleUI
+{
+public:
+	explicit WzUnitDesignTitleUI(int fleetIndex);
+	virtual void start() override;
+	virtual TITLECODE run() override;
+	virtual void render() override;
+private:
+	void build();
+	int fleet = 0;
+};
+
 #endif

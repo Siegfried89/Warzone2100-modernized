@@ -76,6 +76,7 @@
 #include "intdisplay.h"
 #include "radar.h"
 #include "display3d.h"
+#include "modconcrete.h"
 #include "uiobjectrefs.h"
 #include "display3d_render_graph.h"
 #include "display3d_render_internal.h"
@@ -3346,7 +3347,7 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 	if (!defensive)
 	{
 		/* Draw the building's base first */
-		if (psStructure->pStructureType->pBaseIMD != nullptr)
+		if (psStructure->pStructureType->pBaseIMD != nullptr && !modconcrete::replacesBasePlate(psStructure))   // MOD (18.11.): Beton mit weichem Rand statt Platte
 		{
 			if (psStructure->isBlueprint())
 			{

@@ -381,9 +381,12 @@ int updateFleet(int index)
 }
 }
 
+namespace { int s_fleetReturnSelect = -1; }   // (18.11.) Rueckkehr aus dem Hauptmenue-Editor: diese Flotte wieder waehlen
+
 WzFleetTitleUI::WzFleetTitleUI()
 {
 	load();
+	if (s_fleetReturnSelect >= 0) { selected = s_fleetReturnSelect; s_fleetReturnSelect = -1; }
 }
 
 void WzFleetTitleUI::start()
@@ -653,7 +656,7 @@ TITLECODE WzFleetTitleUI::run()
 		s_info = ok ? astringf(_("\"%s\" is now available in every game mode"), fleets()[selected].value("name", std::string()).c_str())
 		            : std::string(_("Could not write the design files"));
 	}
-	else if (id == ID_DESIGNER) { modfleetdesigner::request(); rebuild = false; }
+	else if (id == ID_DESIGNER) { changeTitleUI(std::make_shared<WzUnitDesignTitleUI>(selected)); rebuild = false; }   // (18.11.) direkt im Hauptmenue
 	else if (id == ID_PREV) { --page; }
 	else if (id == ID_NEXT) { ++page; }
 	else if (id == ID_BACK) { changeTitleMode(TITLE); rebuild = false; }
@@ -663,6 +666,566 @@ TITLECODE WzFleetTitleUI::run()
 }
 
 void WzFleetTitleUI::render()
+{
+	widgDisplayScreen(psWScreen);
+}
+
+// =====================================================================================================================
+// MOD (Wunsch 18.11. 00:51): "Der Einheiteneditor soll ganz einfach im Hauptmenue funktionieren, mit allem freigeschaltet - ohne in ein
+// Spiel reinzugehen." Eigener Editor im Flotten-Menue: die Bauteile kommen direkt aus den Stats-Dateien (alles, was im Spiel im Designer
+// erscheinen kann = "designable"), Regeln wie im Spiel (VTOL nur mit VTOL-Waffen, Waffenplaetze des Rumpfs, keine Systeme mit Waffen),
+// drehende 3D-Vorschau der Einheit. "Save to fleet" legt den Entwurf in die gewaehlte Flotte UND in die gespeicherten Entwuerfe aller
+// Spielarten (er steht in jeder Fabrik bereit). Rein lokal, beruehrt keinen Spielzustand.
+#include "lib/ivis_opengl/imd.h"
+#include "lib/ivis_opengl/piedef.h"
+#include "lib/ivis_opengl/piematrix.h"
+#include "lib/ivis_opengl/pietypes.h"
+#include "lib/framework/fixedpoint.h"
+#ifndef GLM_ENABLE_EXPERIMENTAL
+	#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/transform.hpp>
+
+namespace
+{
+enum PartKind { PK_BODY = 0, PK_PROP, PK_WEAPON, PK_SENSOR, PK_CONSTRUCT, PK_REPAIR, PK_ECM };
+struct DesignPart
+{
+	std::string id, name, model, mount, size, ptype;
+	int kind = 0, power = 0, weight = 0, hp = 0, armour = 0, engine = 0, speed = 0, slots = 1, damage = 0, range = 0, firePause = 0, wsize = 2;
+	bool vtolWeapon = false, direct = true;
+	nlohmann::json extra;      // Rumpf: propulsionExtraModels
+};
+std::vector<DesignPart> s_parts;
+std::map<std::string, int> s_powerRatio;
+bool s_partsLoaded = false;
+struct DesignState
+{
+	int body = -1, prop = -1;
+	int turret[3] = {-1, -1, -1};
+	int tab = 0, page = 0;
+	std::string name;
+	bool edited = false;
+	std::string info;
+};
+DesignState s_ds;
+constexpr unsigned ID_D_TAB = 4599600, ID_D_ITEM = 4599620, ID_D_PREV = 4599660, ID_D_NEXT = 4599661, ID_D_SAVE = 4599662, ID_D_BACK = 4599663;
+constexpr unsigned ID_D_NAME = 4599664, ID_D_VIEW = 4599665, ID_D_INFO = 4599666, ID_D_HEAD = 4599700;
+constexpr int D_ROWS = 13;
+
+bool jsonTruthy(const nlohmann::json &j)
+{
+	if (j.is_boolean()) { return j.get<bool>(); }
+	if (j.is_number()) { return j.get<double>() != 0.0; }
+	return false;
+}
+int jsonInt(const nlohmann::json &e, const char *k, int def = 0)
+{
+	auto it = e.find(k);
+	if (it == e.end() || !it->is_number()) { return def; }
+	return static_cast<int>(it->get<double>());
+}
+std::string jsonStr(const nlohmann::json &e, const char *k)
+{
+	auto it = e.find(k);
+	return (it != e.end() && it->is_string()) ? it->get<std::string>() : std::string();
+}
+
+void loadParts()
+{
+	if (s_partsLoaded) { return; }
+	s_partsLoaded = true;
+	struct Src { const char *file; int kind; };
+	const Src srcs[] = {{"stats/body.json", PK_BODY}, {"stats/propulsion.json", PK_PROP}, {"stats/weapons.json", PK_WEAPON}, {"stats/sensor.json", PK_SENSOR},
+	                    {"stats/construction.json", PK_CONSTRUCT}, {"stats/repair.json", PK_REPAIR}, {"stats/ecm.json", PK_ECM}};
+	for (const Src &src : srcs)
+	{
+		if (!PHYSFS_exists(src.file)) { continue; }
+		auto j = parseJsonFile(src.file);
+		if (!j.has_value() || !j->is_object()) { continue; }
+		for (auto it = j->begin(); it != j->end(); ++it)
+		{
+			const nlohmann::json &e = it.value();
+			if (!e.is_object()) { continue; }
+			auto des = e.find("designable");
+			if (des == e.end() || !jsonTruthy(*des)) { continue; }
+			DesignPart p;
+			p.id = it.key();
+			p.kind = src.kind;
+			p.name = jsonStr(e, "name");
+			p.name.erase(std::remove(p.name.begin(), p.name.end(), '*'), p.name.end());
+			if (p.name.empty()) { p.name = p.id; }
+			p.power = jsonInt(e, "buildPower");
+			p.weight = jsonInt(e, "weight");
+			p.hp = jsonInt(e, "hitpoints");
+			switch (src.kind)
+			{
+			case PK_BODY:
+				p.model = jsonStr(e, "model"); p.size = jsonStr(e, "size"); p.slots = std::max(1, jsonInt(e, "weaponSlots", 1));
+				p.armour = jsonInt(e, "armourKinetic"); p.engine = jsonInt(e, "powerOutput");
+				if (e.contains("propulsionExtraModels") && e["propulsionExtraModels"].is_object()) { p.extra = e["propulsionExtraModels"]; }
+				break;
+			case PK_PROP:
+				p.model = jsonStr(e, "model"); p.ptype = jsonStr(e, "type"); p.speed = jsonInt(e, "speed"); p.hp = jsonInt(e, "hitpointPctOfBody");
+				break;
+			case PK_WEAPON:
+			{
+				p.model = jsonStr(e, "model"); p.mount = jsonStr(e, "mountModel");
+				p.vtolWeapon = jsonInt(e, "numAttackRuns") > 0;
+				const std::string mv = jsonStr(e, "movement");
+				p.direct = mv.empty() || mv == "DIRECT" || mv == "HOMING-DIRECT";
+				p.damage = jsonInt(e, "damage"); p.range = jsonInt(e, "longRange"); p.firePause = jsonInt(e, "firePause");
+				p.wsize = jsonInt(e, "weaponSize", 2);
+				break;
+			}
+			case PK_REPAIR:
+				p.model = jsonStr(e, "model"); p.mount = jsonStr(e, "mountModel");
+				break;
+			default:
+				p.model = jsonStr(e, "sensorModel"); p.mount = jsonStr(e, "mountModel");
+				break;
+			}
+			s_parts.push_back(p);
+		}
+	}
+	std::stable_sort(s_parts.begin(), s_parts.end(), [](const DesignPart &a, const DesignPart &b) {
+		if (a.kind != b.kind) { return a.kind < b.kind; }
+		if (a.power != b.power) { return a.power < b.power; }
+		return a.name < b.name;
+	});
+	if (PHYSFS_exists("stats/propulsiontype.json"))
+	{
+		auto j = parseJsonFile("stats/propulsiontype.json");
+		if (j.has_value() && j->is_object())
+		{
+			for (auto it = j->begin(); it != j->end(); ++it) { if (it->is_object()) { s_powerRatio[it.key()] = jsonInt(*it, "powerRatioMult", 100); } }
+		}
+	}
+}
+
+const DesignPart *partAt(int i) { return (i >= 0 && i < static_cast<int>(s_parts.size())) ? &s_parts[static_cast<size_t>(i)] : nullptr; }
+bool vtolProp() { const DesignPart *p = partAt(s_ds.prop); return p != nullptr && p->ptype == "Lift"; }
+int bodySlots() { const DesignPart *b = partAt(s_ds.body); return b ? std::min(3, b->slots) : 1; }
+
+bool turretValid(int slot, const DesignPart &t)
+{
+	if (t.kind < PK_WEAPON) { return false; }
+	if (slot >= bodySlots()) { return false; }
+	if (slot > 0)
+	{
+		const DesignPart *t0 = partAt(s_ds.turret[0]);
+		if (t.kind != PK_WEAPON || t0 == nullptr || t0->kind != PK_WEAPON) { return false; }
+	}
+	if (vtolProp())
+	{
+		if (t.kind != PK_WEAPON || !t.vtolWeapon || !t.direct) { return false; }
+	}
+	else if (t.kind == PK_WEAPON && t.vtolWeapon)
+	{
+		return false;
+	}
+	if (t.kind == PK_WEAPON)
+	{
+		const DesignPart *b = partAt(s_ds.body);
+		const bool light = b != nullptr && b->size == "LIGHT";
+		if (t.wsize == 0 && !light) { return false; }
+		if (t.wsize == 1 && light) { return false; }
+	}
+	return true;
+}
+
+std::vector<int> candidates(int tab)
+{
+	std::vector<int> out;
+	for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
+	{
+		const DesignPart &p = s_parts[static_cast<size_t>(i)];
+		if (tab == 0 && p.kind == PK_BODY) { out.push_back(i); }
+		else if (tab == 1 && p.kind == PK_PROP) { out.push_back(i); }
+		else if (tab >= 2 && turretValid(tab - 2, p)) { out.push_back(i); }
+	}
+	return out;
+}
+
+void fixTurrets()
+{
+	for (int s = 0; s < 3; ++s)
+	{
+		const DesignPart *t = partAt(s_ds.turret[s]);
+		if (t != nullptr && !turretValid(s, *t)) { s_ds.turret[s] = -1; }
+		if (s >= bodySlots()) { s_ds.turret[s] = -1; }
+	}
+	if (s_ds.turret[0] < 0)
+	{
+		const std::vector<int> c = candidates(2);
+		if (!c.empty()) { s_ds.turret[0] = c.front(); }
+	}
+	if (s_ds.turret[0] < 0) { s_ds.turret[1] = s_ds.turret[2] = -1; }
+}
+
+void defaultDesign()
+{
+	if (s_ds.body >= 0) { return; }
+	for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
+	{
+		const DesignPart &p = s_parts[static_cast<size_t>(i)];
+		if (s_ds.body < 0 && p.kind == PK_BODY) { s_ds.body = i; }
+		if (s_ds.prop < 0 && p.kind == PK_PROP && p.ptype != "Lift") { s_ds.prop = i; }
+	}
+	fixTurrets();
+}
+
+std::string autoName()
+{
+	const DesignPart *t = partAt(s_ds.turret[0]), *b = partAt(s_ds.body), *p = partAt(s_ds.prop);
+	std::string n;
+	if (t) { n += t->name; }
+	if (b) { n += (n.empty() ? "" : " ") + b->name; }
+	if (p) { n += (n.empty() ? "" : " ") + p->name; }
+	return n;
+}
+
+struct DesignNumbers { int power = 0, hp = 0, weight = 0, speed = 0, damage = 0, range = 0; };
+DesignNumbers numbers()
+{
+	DesignNumbers r;
+	const DesignPart *b = partAt(s_ds.body), *p = partAt(s_ds.prop);
+	if (b == nullptr || p == nullptr) { return r; }
+	// wie im Spiel: Laufwerk-Kosten/-Gewicht/-Lebenspunkte in Prozent des Rumpfs
+	r.power = b->power + p->power * b->power / 100;
+	r.weight = b->weight + p->weight * b->weight / 100;
+	r.hp = b->hp + p->hp * b->hp / 100;
+	for (int s = 0; s < 3; ++s)
+	{
+		const DesignPart *t = partAt(s_ds.turret[s]);
+		if (t == nullptr) { continue; }
+		r.power += t->power; r.weight += t->weight; r.hp += t->hp;
+		if (t->kind == PK_WEAPON) { r.damage += t->damage; r.range = std::max(r.range, t->range); }
+	}
+	const auto pr = s_powerRatio.find(p->ptype);
+	const int ratio = pr != s_powerRatio.end() ? pr->second : 100;
+	int spd = ratio * b->engine / std::max(1, r.weight);
+	if (p->ptype == "Lift") { spd = (b->size == "HEAVY") ? spd / 4 : (b->size == "MEDIUM" ? spd * 3 / 4 : spd); }
+	if (b->engine > r.weight) { spd = spd * 3 / 2; }
+	r.speed = p->speed > 0 ? std::min(p->speed, spd) : spd;
+	return r;
+}
+
+const iIMDShape *shapeOf(const std::string &model)
+{
+	if (model.empty()) { return nullptr; }
+	iIMDBaseShape *b = modelGet(WzString::fromUtf8(model));
+	return b ? b->displayModel() : nullptr;
+}
+
+void drawShape(const iIMDShape *shape, const glm::mat4 &m)
+{
+	for (const iIMDShape *imd = shape; imd != nullptr; imd = imd->next.get())
+	{
+		pie_Draw3DButton(imd, imd->getTeamColourForModel(0), m, glm::mat4(1.f));
+	}
+}
+
+class DesignView : public WIDGET
+{
+public:
+	void display(int xOffset, int yOffset) override
+	{
+		const int x0 = xOffset + x(), y0 = yOffset + y(), x1 = x0 + width(), y1 = y0 + height();
+		gradientBox(x0, y0, x1, y1, pal_RGBA(12, 22, 44, 240), pal_RGBA(4, 8, 18, 245), 10);
+		glowFrame(x0, y0, x1, y1, pal_RGBA(90, 190, 255, 255), 3, 0.5f);
+		const DesignPart *b = partAt(s_ds.body), *p = partAt(s_ds.prop);
+		const iIMDShape *bs = b ? shapeOf(b->model) : nullptr;
+		if (bs == nullptr) { return; }
+		static int s_rot = 45;
+		s_rot = (s_rot + realTimeAdjustedAverage(BUTTONOBJ_ROTSPEED)) % 360;
+		// Groesse wie im Spiel-Designer, grosse Ruempfe kleiner (passt ins Fenster)
+		const int ext = std::max({std::abs(bs->min.x), std::abs(bs->max.x), std::abs(bs->min.z), std::abs(bs->max.z), 1});
+		const float fit = std::min(static_cast<float>(width()) / 236.f, static_cast<float>(height()) / 192.f);
+		const float scale = 2.56f * fit * 100.f / static_cast<float>(std::max(100, ext * 100 / 60));
+		pie_SetGeometricOffset((x0 + x1) / 2, y0 + height() / 4 + static_cast<int>(32.f * fit));
+		const glm::mat4 base = glm::translate(glm::vec3(0.f, -100.f, static_cast<float>(BUTTON_DEPTH)))
+		                     * glm::rotate(glm::radians(-30.f), glm::vec3(1.f, 0.f, 0.f))
+		                     * glm::rotate(glm::radians(static_cast<float>(s_rot)), glm::vec3(0.f, 1.f, 0.f))
+		                     * glm::scale(glm::vec3(scale));
+		// Laufwerk links/rechts (die vom Betrachter abgewandte Seite zuerst)
+		const iIMDShape *propL = nullptr, *propR = nullptr;
+		if (p != nullptr && b->extra.is_object())
+		{
+			auto pe = b->extra.find(p->id);
+			if (pe != b->extra.end() && pe->is_object())
+			{
+				propL = shapeOf(jsonStr(*pe, "left"));
+				propR = shapeOf(jsonStr(*pe, "right"));
+			}
+		}
+		const bool leftFirst = s_rot > 180;
+		const iIMDShape *firstProp = leftFirst ? propL : propR, *secondProp = leftFirst ? propR : propL;
+		if (firstProp) { drawShape(firstProp, base); }
+		drawShape(bs, base);
+		for (int s = 0; s < 3; ++s)
+		{
+			const DesignPart *t = partAt(s_ds.turret[s]);
+			if (t == nullptr) { continue; }
+			glm::mat4 m = base;
+			const size_t ci = bs->connectors.size() > static_cast<size_t>(s) ? static_cast<size_t>(s) : 0;
+			if (!bs->connectors.empty()) { m *= glm::translate(glm::vec3(bs->connectors[ci].xzy())); }
+			const iIMDShape *mount = shapeOf(t->mount);
+			if (mount != nullptr)
+			{
+				drawShape(mount, m);
+				if (!mount->connectors.empty()) { m *= glm::translate(glm::vec3(mount->connectors[0].xzy())); }
+			}
+			const iIMDShape *gun = shapeOf(t->model);
+			if (gun != nullptr) { drawShape(gun, m); }
+		}
+		if (secondProp) { drawShape(secondProp, base); }
+	}
+};
+} // namespace
+
+WzUnitDesignTitleUI::WzUnitDesignTitleUI(int fleetIndex) : fleet(fleetIndex)
+{
+	load();
+	loadParts();
+	defaultDesign();
+}
+
+void WzUnitDesignTitleUI::start()
+{
+	build();
+}
+
+void WzUnitDesignTitleUI::build()
+{
+	widgDelete(psWScreen, FRONTEND_BACKDROP);
+	W_FORM *backdrop = addBackdrop();
+	if (backdrop == nullptr) { return; }
+	auto dim = std::make_shared<FleetDim>();
+	backdrop->attach(dim);
+	dim->id = ID_DIM;
+	dim->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
+		psWidget->setGeometry(-(static_cast<int>(pie_GetVideoBufferWidth()) - HIDDEN_FRONTEND_WIDTH) / 2 - 2, -(static_cast<int>(pie_GetVideoBufferHeight()) - HIDDEN_FRONTEND_HEIGHT) / 2 - 2,
+		                      static_cast<int>(pie_GetVideoBufferWidth()) + 4, static_cast<int>(pie_GetVideoBufferHeight()) + 4);
+	}));
+	dim->setTransparentToClicks(true);
+	auto panel = std::make_shared<FleetPanel>();
+	backdrop->attach(panel);
+	panel->id = FRONTEND_BOTFORM;
+	panel->setGeometry(PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
+	WIDGET *form = panel.get();
+	s_iconSpots.clear();
+	s_btnIcon.clear();
+	fixTurrets();
+	if (!s_ds.edited) { s_ds.name = autoName(); }
+
+	// ---- Kopf
+	s_iconSpots.push_back({IC_DESIGNER, 14, 10, 40});
+	headLabel(form, ID_D_HEAD, 60, 8, 360, _("UNIT DESIGNER"), pal_RGBA(200, 240, 255, 255), font_large, 30);
+	headLabel(form, ID_D_HEAD + 1, 60, 34, 540, _("All parts unlocked - saved designs go into your fleet and every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
+	if (s_parts.empty())
+	{
+		headLabel(form, ID_D_HEAD + 2, 16, 90, PANEL_W - 32, _("No parts found (stats files missing)."), WZCOL_TEXT_BRIGHT, font_regular);
+	}
+
+	// ---- Reiter: Rumpf, Laufwerk, Turm 1..n (WZ-Befehlsknoepfe mit Beschriftung)
+	const int slots = bodySlots();
+	const int ntabs = 2 + slots;
+	struct Tab { int icon; std::string cap; };
+	std::vector<Tab> tabs = {{IC_TANK, _("Body")}, {IC_RIGHT, _("Propulsion")}};
+	for (int s = 0; s < slots; ++s) { tabs.push_back({IC_ARTY, slots > 1 ? astringf(_("Turret %d"), s + 1) : std::string(_("Turret"))}); }
+	if (s_ds.tab >= ntabs) { s_ds.tab = 0; }
+	for (int k = 0; k < ntabs; ++k)
+	{
+		const int cx = 16 + k * 56;
+		auto b = wzButton(form, ID_D_TAB + static_cast<unsigned>(k), cx, 62, 48, 32, tabs[static_cast<size_t>(k)].icon, tabs[static_cast<size_t>(k)].cap.c_str());
+		if (k == s_ds.tab) { b->setState(WBUT_CLICKLOCK); }
+		headLabel(form, ID_D_HEAD + 10 + static_cast<unsigned>(k), cx - 6, 95, 60, tabs[static_cast<size_t>(k)].cap, k == s_ds.tab ? pal_RGBA(255, 214, 110, 255) : pal_RGBA(190, 210, 240, 255), font_small, 14, true);
+	}
+
+	// ---- links: Liste der Teile des Reiters
+	const std::vector<int> cand = candidates(s_ds.tab);
+	const bool allowNone = s_ds.tab >= 3;   // weitere Waffenplaetze duerfen leer bleiben
+	std::vector<int> rows;
+	if (allowNone) { rows.push_back(-1); }
+	rows.insert(rows.end(), cand.begin(), cand.end());
+	const int pages = std::max(1, (static_cast<int>(rows.size()) + D_ROWS - 1) / D_ROWS);
+	s_ds.page = std::clamp(s_ds.page, 0, pages - 1);
+	const int current = s_ds.tab == 0 ? s_ds.body : (s_ds.tab == 1 ? s_ds.prop : s_ds.turret[s_ds.tab - 2]);
+	s_selectedButton = 0;
+	int y = 116;
+	for (int k = s_ds.page * D_ROWS; k < static_cast<int>(rows.size()) && k < (s_ds.page + 1) * D_ROWS; ++k)
+	{
+		const int idx = rows[static_cast<size_t>(k)];
+		const DesignPart *p = partAt(idx);
+		std::string t = p ? p->name : std::string(_("(none)"));
+		if (p && p->power > 0) { t += astringf("  (%d)", p->power); }
+		const unsigned id = ID_D_ITEM + static_cast<unsigned>(k - s_ds.page * D_ROWS);
+		lineButton(form, id, 24, y, 210, t);
+		if (idx == current) { s_selectedButton = id; }
+		y += LINE_H;
+	}
+	if (rows.empty()) { headLabel(form, ID_D_HEAD + 3, 24, y, 210, _("Nothing fits this body/propulsion"), WZCOL_TEXT_MEDIUM, font_regular); }
+	if (pages > 1)
+	{
+		const int fy = 116 + D_ROWS * LINE_H + 4;
+		wzButton(form, ID_D_PREV, 24, fy, 36, 24, IC_LEFT, nullptr);
+		headLabel(form, ID_D_HEAD + 4, 70, fy + 2, 60, astringf("%d / %d", s_ds.page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22, true);
+		wzButton(form, ID_D_NEXT, 140, fy, 36, 24, IC_RIGHT, nullptr);
+	}
+
+	// ---- rechts: 3D-Vorschau
+	auto view = std::make_shared<DesignView>();
+	form->attach(view);
+	view->id = ID_D_VIEW;
+	view->setGeometry(250, 62, PANEL_W - 266, 236);
+	view->setTransparentToClicks(true);
+
+	// ---- Werte
+	const DesignNumbers n = numbers();
+	struct Val { const char *label; int v; };
+	const Val vals[6] = {{_("Power cost"), n.power}, {_("Hitpoints"), n.hp}, {_("Weight"), n.weight}, {_("Speed"), n.speed}, {_("Damage"), n.damage}, {_("Range"), n.range}};
+	for (int k = 0; k < 6; ++k)
+	{
+		const int cx = 254 + (k % 2) * 176, cy = 306 + (k / 2) * 22;
+		headLabel(form, ID_D_HEAD + 30 + static_cast<unsigned>(k), cx, cy, 100, vals[k].label, pal_RGBA(130, 180, 220, 255), font_regular, 20);
+		std::string v = (k == 5) ? astringf("%.1f", static_cast<double>(vals[k].v) / 128.0) : astringf("%d", vals[k].v);
+		headLabel(form, ID_D_HEAD + 40 + static_cast<unsigned>(k), cx + 100, cy, 70, v, WZCOL_TEXT_BRIGHT, font_regular_bold, 20);
+	}
+
+	// ---- Name + Speichern
+	auto edit = std::make_shared<W_EDITBOX>();
+	form->attach(edit);
+	edit->id = ID_D_NAME;
+	edit->FontID = font_regular;
+	edit->setGeometry(254, 384, 260, 26);
+	edit->setBoxColours(pal_RGBA(80, 100, 150, 255), pal_RGBA(80, 100, 150, 255), pal_RGBA(10, 12, 20, 255));
+	edit->setMaxStringSize(60);
+	edit->setPlaceholder(_("Design name"));
+	edit->setString(WzString::fromUtf8(s_ds.name));
+	wzButton(form, ID_D_SAVE, 528, 378, 54, 36, IC_STAR, _("Save this design into the fleet and into every game mode"));
+	headLabel(form, ID_D_HEAD + 5, 514, 414, 82, _("Save"), pal_RGBA(255, 214, 110, 255), font_small, 16, true);
+
+	// ---- Fusszeile
+	addMultiBut(*form, ID_D_BACK, 16, PANEL_H - 34, 30, 29, P_("menu", "Return"), IMAGE_RETURN, IMAGE_RETURN_HI, IMAGE_RETURN_HI);
+	std::string fname = fleets().empty() ? std::string(_("(new fleet)")) : fleets()[std::clamp(fleet, 0, static_cast<int>(fleets().size()) - 1)].value("name", std::string());
+	headLabel(form, ID_D_HEAD + 6, 56, PANEL_H - 31, 190, astringf(_("Fleet: %s"), fname.c_str()), pal_RGBA(190, 210, 240, 255), font_regular, 22);
+	auto info = std::make_shared<W_LABEL>();
+	form->attach(info);
+	info->id = ID_D_INFO;
+	info->setGeometry(250, PANEL_H - 31, PANEL_W - 266, 22);
+	info->setFont(font_regular, WZCOL_TEXT_BRIGHT);
+	info->setString(WzString::fromUtf8(s_ds.info));
+}
+
+TITLECODE WzUnitDesignTitleUI::run()
+{
+	screen_disableMapPreview();
+	WidgetTriggers const &triggers = widgRunScreen(psWScreen);
+	const unsigned id = triggers.empty() ? 0 : triggers.front().widget->id;
+	// eingegebener Name zaehlt als eigener Name
+	if (WIDGET *w = widgGetFromID(psWScreen, ID_D_NAME))
+	{
+		const std::string cur = w->getString().toUtf8();
+		if (cur != s_ds.name) { s_ds.name = cur; s_ds.edited = !cur.empty(); }
+	}
+	if (id == 0)
+	{
+		if (CancelPressed()) { s_fleetReturnSelect = fleet; changeTitleUI(std::make_shared<WzFleetTitleUI>()); }
+		return TITLECODE_CONTINUE;
+	}
+	bool rebuild = true;
+	s_ds.info.clear();
+	if (id >= ID_D_TAB && id < ID_D_TAB + 6) { s_ds.tab = static_cast<int>(id - ID_D_TAB); s_ds.page = 0; }
+	else if (id >= ID_D_ITEM && id < ID_D_ITEM + D_ROWS)
+	{
+		const std::vector<int> cand = candidates(s_ds.tab);
+		std::vector<int> rows;
+		if (s_ds.tab >= 3) { rows.push_back(-1); }
+		rows.insert(rows.end(), cand.begin(), cand.end());
+		const size_t k = static_cast<size_t>(s_ds.page * D_ROWS) + (id - ID_D_ITEM);
+		if (k < rows.size())
+		{
+			const int idx = rows[k];
+			if (s_ds.tab == 0) { s_ds.body = idx; }
+			else if (s_ds.tab == 1) { s_ds.prop = idx; }
+			else { s_ds.turret[s_ds.tab - 2] = idx; }
+			fixTurrets();
+		}
+	}
+	else if (id == ID_D_PREV) { --s_ds.page; }
+	else if (id == ID_D_NEXT) { ++s_ds.page; }
+	else if (id == ID_D_SAVE)
+	{
+		const DesignPart *b = partAt(s_ds.body), *p = partAt(s_ds.prop), *t0 = partAt(s_ds.turret[0]);
+		if (b == nullptr || p == nullptr || t0 == nullptr)
+		{
+			s_ds.info = _("A design needs a body, a propulsion and a turret");
+		}
+		else
+		{
+			std::string name = s_ds.name.empty() ? autoName() : s_ds.name;
+			nlohmann::json t = nlohmann::json::object();
+			t["name"] = name; t["body"] = b->id; t["propulsion"] = p->id;
+			switch (t0->kind)
+			{
+			case PK_SENSOR: t["type"] = "SENSOR"; t["sensor"] = t0->id; break;
+			case PK_CONSTRUCT: t["type"] = "CONSTRUCT"; t["construct"] = t0->id; break;
+			case PK_REPAIR: t["type"] = "REPAIR"; t["repair"] = t0->id; break;
+			case PK_ECM: t["type"] = "ECM"; t["ecm"] = t0->id; break;
+			default:
+			{
+				t["type"] = "WEAPON";
+				nlohmann::json w = nlohmann::json::array();
+				for (int s = 0; s < 3; ++s) { if (const DesignPart *ws = partAt(s_ds.turret[s])) { w.push_back(ws->id); } }
+				t["weapons"] = w;
+				break;
+			}
+			}
+			// in die Flotte (ohne Doppelte); ohne Flotte entsteht "Fleet 1"
+			if (fleets().empty())
+			{
+				nlohmann::json f = nlohmann::json::object();
+				f["name"] = astringf(_("Fleet %d"), 1); f["fav"] = false; f["designs"] = nlohmann::json::array();
+				fleets().push_back(f);
+				fleet = 0;
+			}
+			fleet = std::clamp(fleet, 0, static_cast<int>(fleets().size()) - 1);
+			nlohmann::json &designs = fleets()[fleet]["designs"];
+			if (!designs.is_array()) { designs = nlohmann::json::array(); }
+			bool dup = false;
+			for (const auto &e : designs) { if (identity(e) == identity(t)) { dup = true; } }
+			if (!dup) { designs.push_back(t); }
+			save();
+			// und in die gespeicherten Entwuerfe aller Spielarten (steht in jeder Fabrik bereit)
+			bool ok = true;
+			for (const char *tag : TAGS)
+			{
+				const std::string path = std::string("userdata/") + tag + "/templates.json";
+				nlohmann::json doc = nlohmann::json{{"version", 1}, {"templates", nlohmann::json::array()}};
+				if (PHYSFS_exists(path.c_str()))
+				{
+					auto j = parseJsonFile(path.c_str());
+					if (j.has_value() && j->is_object() && j->contains("templates") && (*j)["templates"].is_array()) { doc = std::move(*j); }
+				}
+				bool have = false;
+				for (const auto &e : doc["templates"]) { if (identity(e) == identity(t)) { have = true; } }
+				if (!have) { doc["templates"].push_back(t); }
+				PHYSFS_mkdir((std::string("userdata/") + tag).c_str());
+				ok = saveJSONToFile(doc, path.c_str()) && ok;
+			}
+			s_ds.info = ok ? astringf(_("Saved \"%s\" - in \"%s\" and in every game mode"), name.c_str(), fleets()[fleet].value("name", std::string()).c_str())
+			               : std::string(_("Could not write the design files"));
+			s_ds.edited = false;
+		}
+	}
+	else if (id == ID_D_BACK) { s_fleetReturnSelect = fleet; changeTitleUI(std::make_shared<WzFleetTitleUI>()); rebuild = false; }
+	else { rebuild = false; }
+	if (rebuild) { build(); }
+	return TITLECODE_CONTINUE;
+}
+
+void WzUnitDesignTitleUI::render()
 {
 	widgDisplayScreen(psWScreen);
 }

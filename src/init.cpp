@@ -49,6 +49,7 @@
 
 #include "modfaction.h"
 #include "init.h"
+#include "lib/framework/modtime.h"
 #include "modsave.h"
 
 #include "input/manager.h"
@@ -1584,6 +1585,7 @@ bool stageOneShutDown()
 
 bool stageTwoInitialise()
 {
+	ModLoadTimer modTimer("stageTwoInitialise", 100);   // MOD (18.11.): Ladezeit messen
 	int i;
 
 	debug(LOG_WZ, "== stageTwoInitialise ==");
@@ -2018,6 +2020,7 @@ LoadingTask<> stageThreeInitialiseTask(ResourceLoadingController& controller)
 	modelUpdateTilesetIdx(modelTilesetIdx);
 	if (!headlessGameMode())
 	{
+		ModLoadTimer modTimer("Modell-Texturen vorladen", 100);   // MOD (18.11.): Ladezeit messen
 		if (!(co_await preloadAllModelTexturesTask(controller)))
 		{
 			co_return load_fail();
