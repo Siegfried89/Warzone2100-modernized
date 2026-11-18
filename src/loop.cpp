@@ -133,6 +133,7 @@
 #include "modfort.h"
 #include "modmobilefactory.h"
 #include "modairwar.h"
+#include "modcrew.h"
 #include "modshield.h"
 #include "modcrates.h"
 #include "modincoming.h"
@@ -628,6 +629,7 @@ static void gameStateUpdate()
 	modshield::tick();           // MOD (18.11.): Schildkuppeln aufladen / Ausfall
 	modmobilefactory::update();  // MOD (18.11.): fahrende Fabrik (Fatboy) - Fabrik-Kern anlegen / mitfuehren / entfernen
 	modairwar::tick();           // MOD (18.11. 17:52): Luftkampf zwischen allen Fliegern (Vorbeiflug-Feuer, untaetige Flieger greifen an)
+	modcrew::tick();             // MOD (18.11. 17:52): MF-Besatzung (Piloten mit Stufen, Aussteigen, neutrale Combots)
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)
