@@ -49,6 +49,7 @@
 
 #include "modfaction.h"
 #include "init.h"
+#include "titleui/titleui.h"
 #include "lib/framework/modtime.h"
 #include "modsave.h"
 
@@ -1378,6 +1379,7 @@ bool frontendShutdown()
 	shutdownGameGuide();
 
 	modfaction::shutdown();   // MOD: animierte Fraktionssymbole freigeben (sonst Textur-Leck -> Absturzmeldung beim Beenden)
+	modfleetsui::shutdown();  // MOD (18.11.): Flotten-Sinnbilder freigeben (sonst Absturz beim naechsten Oeffnen des Flotten-Menues)
 	//do this before shutting down the iV library
 	resReleaseAllData();
 	FrontImages = nullptr;

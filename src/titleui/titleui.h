@@ -112,6 +112,8 @@ private:
 };
 
 // - modfleets.cpp - MOD (Wunsch 18.11. 00:51): Einheiteneditor direkt im Hauptmenue (ohne Karte, alle Teile frei); speichert in die Flotte
+namespace modfleetsui { void shutdown(); }   // MOD (18.11.): Flotten-Sinnbilder freigeben (frontendShutdown)
+
 class WzUnitDesignTitleUI: public WzTitleUI
 {
 public:

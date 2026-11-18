@@ -173,13 +173,13 @@ unsigned s_selectedButton = 0;     // hervorgehobene Zeile (gewaehlte Flotte)
 enum FleetIcon { IC_INFANTRY = 0, IC_CYBORG, IC_TANK, IC_ARTY, IC_AIR, IC_SYSTEMS, IC_DESIGNER, IC_FLEET, IC_STAR,
                  IC_BTN_UP, IC_BTN_DOWN, IC_BTN_HI, IC_NEW, IC_RENAME, IC_UPDATE, IC_DELETE, IC_USE, IC_LEFT, IC_RIGHT };
 std::map<unsigned, int> s_btnIcon;    // Knopf-ID -> Sinnbild
+IMAGEFILE *s_icons = nullptr;
+bool s_iconsTried = false;
 IMAGEFILE *icons()
 {
-	static IMAGEFILE *s_icons = nullptr;
-	static bool s_tried = false;
-	if (!s_tried)
+	if (!s_iconsTried)
 	{
-		s_tried = true;
+		s_iconsTried = true;
 		if (PHYSFS_exists("images/modfleets.img")) { s_icons = iV_LoadImageFile("images/modfleets.img"); }
 	}
 	return s_icons;
@@ -1228,4 +1228,20 @@ TITLECODE WzUnitDesignTitleUI::run()
 void WzUnitDesignTitleUI::render()
 {
 	widgDisplayScreen(psWScreen);
+}
+
+// MOD (18.11.): Absturz nach Rueckkehr aus einem Spiel ins Flotten-Menue (Absturzbericht 00:50) - beim Verlassen des Hauptmenues gibt
+// frontendShutdown alle Texturen frei (pie_TexShutDown); die zwischengespeicherten Flotten-Sinnbilder zeigten danach auf eine geloeschte
+// Textur. Jetzt werden sie dort mit freigegeben und beim naechsten Oeffnen neu geladen.
+namespace modfleetsui
+{
+void shutdown()
+{
+	if (s_icons != nullptr)
+	{
+		iV_FreeImageFile(s_icons);
+		s_icons = nullptr;
+	}
+	s_iconsTried = false;
+}
 }
