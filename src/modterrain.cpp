@@ -223,8 +223,8 @@ void dust(int wx, int wy, int size)
 		addEffect(&p, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING, false, nullptr, 0, gameTime);
 	}
 	static iIMDBaseShape *s_clod = nullptr;
-	static bool s_clodTried = false;
-	if (!s_clodTried) { s_clodTried = true; s_clod = modelGet("moddirtclod.pie"); }
+	static unsigned s_clodTried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(s_clodTried)) { s_clod = modelGet("moddirtclod.pie"); }
 	if (s_clod != nullptr && s_clod->displayModel() != nullptr)
 	{
 		const int clods = 5 + size * 4;

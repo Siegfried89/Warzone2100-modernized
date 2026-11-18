@@ -75,6 +75,16 @@ LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 const WzString &modelName(const iIMDShape *model);
 
 iIMDBaseShape *modelGet(const WzString &filename);
+/// MOD (18.11., Absturz 13:25 nach neuem Spiel: zwischengespeicherte Modellzeiger zeigten auf freigegebene Modelle): zaehlt bei jedem
+/// modelShutdown() hoch. modelCacheStale(gen) ist true, wenn ein gemerkter Modellzeiger (neu) geholt werden muss.
+unsigned modelGeneration();
+inline bool modelCacheStale(unsigned &gen)
+{
+	const unsigned g = modelGeneration();
+	if (gen == g) { return false; }
+	gen = g;
+	return true;
+}
 
 void modelReloadAllModelTextures();
 

@@ -30,7 +30,7 @@ namespace
 constexpr float DRUM_Y = 8.f, DRUM_Z = -14.f;    // Walzenachse relativ zur Bugspitze am Boden (flail.py)
 constexpr float REF_HALF_W = 20.5f;              // Modell-Masse fuer diese halbe Fahrzeugbreite (Python-Ketten)
 const iIMDShape *s_still = nullptr, *s_arms = nullptr, *s_spin = nullptr;
-bool s_loaded = false;
+unsigned s_loaded = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
 std::unordered_map<unsigned, unsigned> s_dust;   // Einheit -> letzte Staubwolke (Bildzeit)
 
 const iIMDShape *shape(const char *name)
@@ -44,9 +44,8 @@ bool draw(const DROID *d, const iIMDShape *body, const iIMDShape *prop, const gl
           int colour, PIELIGHT brightness, int pieFlag, int pieData, float hat, bool button, bool &didDraw)
 {
 	if (d == nullptr || !modmines::isFlail(d)) { return false; }
-	if (!s_loaded)
+	if (modelCacheStale(s_loaded))
 	{
-		s_loaded = true;
 		s_still = shape("modflail.pie");
 		s_arms = shape("modflail_arms.pie");
 		s_spin = shape("modflail_spin.pie");

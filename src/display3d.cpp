@@ -2534,6 +2534,8 @@ static void displayOrbitAsteroids(const glm::mat4 &viewMatrix)
 {
 	if (modlayermap::viewLayer() != modlayer::ORBIT) { return; }
 	static std::map<std::string, const iIMDShape *> cache;
+	static unsigned cacheGen = 0;
+	if (modelCacheStale(cacheGen)) { cache.clear(); }   // MOD (18.11.): Modelle wurden neu geladen
 	for (const modlayermap::IslandModel &m : modlayermap::orbitIslandModels())
 	{
 		// (17.11.) kein Entfernungs-Abschnitt: die Plattform-Felder der Insel zeichnet das Gelaende auch in der Ferne - ohne den
@@ -2558,10 +2560,9 @@ static void displayOrbitAsteroids(const glm::mat4 &viewMatrix)
 static void displayCraterPiles(const glm::mat4 &viewMatrix)
 {
 	static const iIMDShape *pile = nullptr;
-	static bool tried = false;
-	if (!tried)
+	static unsigned tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(tried))
 	{
-		tried = true;
 		const iIMDBaseShape *b = modelGet("craterpile.pie");
 		pile = b != nullptr ? b->displayModel() : nullptr;
 	}
@@ -2569,10 +2570,9 @@ static void displayCraterPiles(const glm::mat4 &viewMatrix)
 	// (Wunsch 18.11. 13:04) Kraterfleck: ein Viertel Kachel in der Kachelmitte, weicher Rand, folgt der Trichter-Mulde (Mitte tiefer)
 	{
 		static const iIMDShape *decal = nullptr;
-		static bool dTried = false;
-		if (!dTried)
+		static unsigned dTried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+		if (modelCacheStale(dTried))
 		{
-			dTried = true;
 			const iIMDBaseShape *b = modelGet("modcraterdecal.pie");
 			decal = b != nullptr ? b->displayModel() : nullptr;
 		}
@@ -3271,10 +3271,9 @@ static void modDrawSiteCrane(const STRUCTURE *psStructure, int colour, PIELIGHT 
 	const int w = std::max(1, static_cast<int>(st->baseWidth)), b = std::max(1, static_cast<int>(st->baseBreadth));
 	if (st->type == REF_WALL || st->type == REF_WALLCORNER || st->type == REF_GATE || (st->type == REF_DEFENSE && w * b <= 1)) { return; }
 	static iIMDBaseShape *s_mast = nullptr, *s_jib = nullptr;
-	static bool s_tried = false;
-	if (!s_tried)
+	static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(s_tried))
 	{
-		s_tried = true;
 		s_mast = modelGet("scavcrane.pie");
 		s_jib = modelGet("scavcranejib.pie");
 	}
@@ -3306,8 +3305,8 @@ static void modDrawStationBarrels(const STRUCTURE *psStructure, int colour, PIEL
 {
 	if (psStructure->isBlueprint() || !modfuel::isStation(psStructure)) { return; }
 	static iIMDBaseShape *s_drum = nullptr;
-	static bool s_tried = false;
-	if (!s_tried) { s_tried = true; s_drum = modelGet("mioil.pie"); }
+	static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(s_tried)) { s_drum = modelGet("mioil.pie"); }
 	if (s_drum == nullptr) { return; }
 	const int n = std::clamp(modoil::stationBarrels(psStructure), 0, 10);
 	if (n <= 0) { return; }
@@ -3541,8 +3540,8 @@ void renderDeliveryPoint(FLAG_POSITION *psPosition, bool blueprint, const glm::m
 	    && getPlayerFaction(static_cast<uint8_t>(psPosition->player)) == getFactionByID(FACTION_NORMAL))
 	{
 		static const iIMDBaseShape *s_flag = nullptr;
-		static bool s_tried = false;
-		if (!s_tried) { s_tried = true; s_flag = modelGet(WzString::fromUtf8("scavflag.pie")); }
+		static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+		if (modelCacheStale(s_tried)) { s_flag = modelGet(WzString::fromUtf8("scavflag.pie")); }
 		if (s_flag != nullptr)
 		{
 			const float sway = 4.f * std::sin(static_cast<float>(graphicsTime % 3000u) / 3000.f * 6.2831853f);

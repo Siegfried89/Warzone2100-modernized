@@ -1096,8 +1096,8 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 						if (wcs != nullptr && wcs->id.startsWith("WreckBall"))
 						{
 							static const iIMDBaseShape *s_pend = nullptr;
-							static bool s_pendTried = false;
-							if (!s_pendTried) { s_pendTried = true; s_pend = modelGet("modwreckpend.pie"); }
+							static unsigned s_pendTried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+							if (modelCacheStale(s_pendTried)) { s_pend = modelGet("modwreckpend.pie"); }
 							if (s_pend != nullptr)
 							{
 								const float sw = bButton ? 0.f : modbuild::ballSwing(psDroid, graphicsTime);

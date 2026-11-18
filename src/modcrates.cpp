@@ -250,8 +250,8 @@ void effects(int x, int y, int z, int n)
 	if (!seen(x, y)) { return; }
 	const int m = std::clamp(n, 1, 6);
 	static iIMDBaseShape *crate = nullptr;
-	static bool tried = false;
-	if (!tried) { tried = true; crate = modelGet("ammocrate.pie"); }
+	static unsigned tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(tried)) { crate = modelGet("ammocrate.pie"); }
 	// Feuerball und Druckwelle
 	for (int i = 0; i < 4 + 2 * m; ++i)
 	{

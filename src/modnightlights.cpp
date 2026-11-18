@@ -65,10 +65,9 @@ void draw3D(const glm::mat4 &viewMatrix)
 	const float k = modweather::visualNight();
 	if (k < 0.05f) { return; }
 	static const iIMDBaseShape *s_shape = nullptr;
-	static bool s_tried = false;
-	if (!s_tried)
+	static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(s_tried))
 	{
-		s_tried = true;
 		s_shape = modelGet(WzString::fromUtf8("modnightlight.pie"));
 	}
 	if (s_shape == nullptr) { return; }

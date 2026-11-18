@@ -404,6 +404,8 @@ const iIMDShape *displayModel(const STRUCTURE *psStructure)
 	const auto it = s_open.find(psStructure->id);
 	if (it == s_open.end()) { return nullptr; }
 	char name[64];
+	static unsigned cacheGen = 0;
+	if (modelCacheStale(cacheGen)) { s_models.clear(); }   // MOD (18.11.): Modelle wurden neu geladen
 	snprintf(name, sizeof(name), "%s_m%d.pie", key->c_str(), static_cast<int>(it->second));
 	const auto c = s_models.find(name);
 	if (c != s_models.end()) { return c->second; }

@@ -578,10 +578,9 @@ void drawCargo(const DROID *d, const iIMDShape *bed, const glm::mat4 &m, const g
 	if (n <= 0) { return; }
 	static iIMDBaseShape *s_barrel = nullptr;
 	static iIMDBaseShape *s_crate = nullptr;
-	static bool s_tried = false;
-	if (!s_tried)
+	static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(s_tried))
 	{
-		s_tried = true;
 		s_barrel = modelGet(WzString::fromUtf8("mioil.pie"));
 		s_crate = modelGet(WzString::fromUtf8("ammobox_c.pie"));
 	}
