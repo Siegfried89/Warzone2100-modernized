@@ -73,6 +73,7 @@ struct Boom
 std::map<uint32_t, Truck> s_trucks;
 std::map<uint32_t, int> s_stock;        // Depot/Kiste/Haufen -> Vorrat (Promille-Ladungen)
 std::map<uint32_t, uint32_t> s_facPile; // Fabrik -> ihr Ausgabe-Haufen
+std::map<uint32_t, uint32_t> s_idleSince;   // (18.11. 11:54) Lkw -> Spielzeit, seit der er steht und keinen Befehl hat
 std::map<uint32_t, unsigned> s_facNext; // Fabrik -> naechste fertige Kiste
 std::vector<Boom> s_booms;
 unsigned s_nextTick = 0;
@@ -412,6 +413,25 @@ void produce()
 /// Autopilot: freie Lkw bringen Fabrik-Kisten zum naechsten Depot mit Platz
 void autopilot()
 {
+	// (Wunsch 18.11. 11:54) "nur wenn sie stehen und keinen Befehl mehr haben": Wartezeit zaehlt erst ab dem Stillstand ohne Befehl
+	// (ein Spieler-Befehl - hinfahren, abladen - wird immer erst ganz ausgefuehrt)
+	{
+		std::map<uint32_t, uint32_t> idle;
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			for (DROID *d : gameWorld.objects.droids[p])
+			{
+				if (d == nullptr || d->died || capacity(d) <= 0 || d->order.type != DORDER_NONE || d->sMove.Status != MOVEINACTIVE) { continue; }
+				const auto it = s_idleSince.find(d->id);
+				idle[d->id] = (it != s_idleSince.end()) ? it->second : gameTime;
+			}
+		}
+		s_idleSince.swap(idle);
+	}
+	auto idleMs = [](const DROID *d) -> uint32_t {
+		const auto it = s_idleSince.find(d->id);
+		return it == s_idleSince.end() ? 0u : gameTime - it->second;
+	};
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
 		if (!isHumanPlayer(p)) { continue; }
@@ -434,7 +454,7 @@ void autopilot()
 			if (d == nullptr || d->died || capacity(d) <= 0 || d->order.type != DORDER_NONE) { continue; }
 			// (Wunsch 18.11. 02:44) "alle Fahrzeuge wie Lkw und Oeltanker nehmen selbstaendig ihre Arbeit auf, immer wieder, falls sie
 			// abbeordert werden, aber mit kurzer Wartezeit": nach einem Spieler-Befehl nur 6 s Pause, sobald der Lkw frei ist
-			if (modoil::isBusy(d->id) || modcontrol::sincePlayerOrder(d) < 6000u) { continue; }
+			if (modoil::isBusy(d->id) || modcontrol::sincePlayerOrder(d) < 6000u || idleMs(d) < 6000u) { continue; }
 			auto it = s_trucks.find(d->id);
 			if (it != s_trucks.end() && it->second.job != J_NONE) { continue; }
 			trucks.push_back(d);
@@ -450,7 +470,7 @@ void autopilot()
 				if (!t.autopilot)
 				{
 					// vom Spieler beladen: der Spieler entscheidet - steht der Lkw aber 20 s untaetig, bringt er die Kisten selbst ins Depot
-					if (modcontrol::sincePlayerOrder(d) < 20000u) { continue; }
+					if (modcontrol::sincePlayerOrder(d) < 20000u || idleMs(d) < 20000u) { continue; }
 					t.autopilot = true;
 				}
 				STRUCTURE *best = nullptr; int64_t bd = 0;
@@ -725,6 +745,7 @@ void reset()
 	s_trucks.clear();
 	s_stock.clear();
 	s_facPile.clear();
+	s_idleSince.clear();
 	s_facNext.clear();
 	s_booms.clear();
 	s_nextTick = 0;

@@ -814,10 +814,13 @@ void startOrder(DROID *psDroid, int worldX, int worldY, int tier)
 	s_jobs[psDroid->id] = j;
 }
 
+namespace { const std::vector<Placement> *s_external = nullptr; }   // (18.11.) fremder Bauplan als Vorschau
+
 void updatePreview(bool wanted, const Vector2i &worldPos)
 {
 	bool show = false;
-	if (wanted && selectedPlayer < MAX_PLAYERS && keysForFortify())
+	// (18.11. 12:14) waehrend der Schlachtplan einen Bauplan zeigt (Arty base), keine Befestigungs-Vorschau daneben
+	if (wanted && selectedPlayer < MAX_PLAYERS && keysForFortify() && s_external == nullptr)
 	{
 		for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
 		{
@@ -880,8 +883,14 @@ Vector2i planTileWorld(const Vector2i &planTile)
 	return Vector2i(ptW(planTile.x), ptW(planTile.y));
 }
 
+void setExternalPreview(const std::vector<Placement> *plan)
+{
+	s_external = plan;
+}
+
 const std::vector<Placement> *previewPlan()
 {
+	if (s_external != nullptr && !s_external->empty()) { return s_external; }   // (18.11.) Bauplan aus dem Schlachtplan (Arty base)
 	return (s_previewOn && !s_preview.empty()) ? &s_preview : nullptr;
 }
 
@@ -970,7 +979,8 @@ bool armWork(const DROID *psDroid, unsigned anim, float &yawDeg, float &pitchDeg
 	const float t = static_cast<float>((anim + psDroid->id * 397u) % 100000u);
 	if (cs->id.startsWith("WreckBall"))
 	{
-		yawDeg = ramp * 38.f * std::sin(t * (6.2831853f / 3200.f));
+		// (18.11. 12:22) der Kran dreht sich nur leicht mit - die Birne selbst pendelt (ballSwing)
+		yawDeg = ramp * 8.f * std::sin(t * (6.2831853f / 4800.f));
 		pitchDeg = 0.f;
 	}
 	else
@@ -981,10 +991,38 @@ bool armWork(const DROID *psDroid, unsigned anim, float &yawDeg, float &pitchDeg
 	return true;
 }
 
-int demolishFactor(const DROID *psDroid)
+int demolishFactor(const DROID *psDroid, const STRUCTURE *psTarget)
 {
 	const CONSTRUCT_STATS *cs = psDroid != nullptr ? psDroid->getConstructStats() : nullptr;
-	return (cs != nullptr && cs->id.startsWith("WreckBall")) ? 4 : 1;
+	if (cs == nullptr || !cs->id.startsWith("WreckBall")) { return 1; }
+	// (Wunsch 18.11. 12:22) "Zweck: Gebaeude abreissen, die sehr gross sind und aus Beton - nicht die kleineren, fragiler wirkenden
+	// Scav-Gebaeude, eher die Project-Gebaeude und so weiter": grosse/Beton-Bauwerke 8-fach, kleine Scav-Bauwerke nur normal
+	if (psTarget != nullptr && psTarget->pStructureType != nullptr)
+	{
+		const STRUCTURE_STATS *st = psTarget->pStructureType;
+		const std::string id = st->id.toUtf8();
+		const bool scav = id.find("BaBa") != std::string::npos || id.find("Baba") != std::string::npos || id.find("Scav") != std::string::npos;
+		const bool big = st->baseWidth * st->baseBreadth >= 4;
+		if (scav && !big) { return 1; }
+	}
+	return 8;
+}
+
+float ballSwing(const DROID *psDroid, unsigned anim)
+{
+	// Pendel der Abrissbirne (Grad um die Querachse; positiv = nach vorn). Beim Abreissen grosse Schwuenge, sonst leichtes Nachpendeln.
+	if (psDroid == nullptr) { return 0.f; }
+	const float t = static_cast<float>((anim + psDroid->id * 613u) % 1000000u);
+	if (psDroid->action == DACTION_DEMOLISH)
+	{
+		const unsigned since = gameTime > psDroid->actionStarted ? gameTime - psDroid->actionStarted : 0;
+		const float ramp = std::min(1.f, static_cast<float>(since) / 900.f);
+		// Ausholen nach hinten, Schlag nach vorn (Kosinus mit verstaerkter Vorwaertshaelfte)
+		const float c = std::cos(t * (6.2831853f / 2200.f));
+		return ramp * (c > 0.f ? 46.f * c : 30.f * c);
+	}
+	const bool moving = psDroid->sMove.Status != MOVEINACTIVE;
+	return (moving ? 9.f : 3.f) * std::sin(t * (6.2831853f / (moving ? 1700.f : 3100.f)));
 }
 
 unsigned craneBoost(const DROID *psDroid, unsigned points)

@@ -476,14 +476,14 @@ static ComponentIterator weaponIterator()
 }
 
 // MOD: Liste aufraeumen: Eintraege ohne Modell weglassen und Duplikate (gleiche Gruppe laut `same`) nur einmal anbieten, und zwar den letzten (beste Stufe)
-static ComponentIterator uniqueIterator(ComponentIterator all, std::function<bool(const COMPONENT_STATS &, const COMPONENT_STATS &)> same)
+static ComponentIterator uniqueIterator(ComponentIterator all, std::function<bool(const COMPONENT_STATS &, const COMPONENT_STATS &)> same, bool requireModel = true)
 {
-	return [all, same](std::function<bool(COMPONENT_STATS &, size_t)> callback)
+	return [all, same, requireModel](std::function<bool(COMPONENT_STATS &, size_t)> callback)
 	{
 		std::vector<std::pair<COMPONENT_STATS *, size_t>> list;
-		all([&list](COMPONENT_STATS &stats, size_t index)
+		all([&list, requireModel](COMPONENT_STATS &stats, size_t index)
 		{
-			if (stats.pIMD == nullptr) { return true; }
+			if (requireModel && stats.pIMD == nullptr) { return true; }
 			list.emplace_back(&stats, index);
 			return true;
 		});
@@ -505,10 +505,12 @@ static ComponentIterator propulsionIterator()
 {
 	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer: %" PRIu32 "", selectedPlayer);
 	ComponentIterator all = componentIterator(asPropulsionStats.data(), sizeof(PROPULSION_STATS), apCompLists[selectedPlayer][COMP_PROPULSION], asPropulsionStats.size());
+	// MOD (18.11. 12:30 "trotz Research all habe ich nur den VTOL-Antrieb im Einheiteneditor"): Antriebe haben meist kein eigenes Modell
+	// (das Fahrwerk-Modell haengt am Rumpf: propulsionExtraModels) - deshalb hier KEIN Modell verlangen, nur je Antriebsart die beste Stufe
 	return uniqueIterator(all, [](const COMPONENT_STATS &a, const COMPONENT_STATS &b)
 	{
 		return static_cast<const PROPULSION_STATS &>(a).propulsionType == static_cast<const PROPULSION_STATS &>(b).propulsionType && a.pIMD == b.pIMD;
-	});
+	}, false);
 }
 
 static ComponentIterator bodyIterator()

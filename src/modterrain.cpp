@@ -593,6 +593,12 @@ void craterPiles(std::vector<CraterPile> &out)
 		CraterPile p;
 		p.worldX = static_cast<int>(cx + static_cast<float>(DX[d]) * off);
 		p.worldY = static_cast<int>(cy + static_cast<float>(DY[d]) * off);
+		// (18.11. 12:18) kein Erdhaufen auf/an einem Bauwerk (Krater neben einem Bauplatz, Haufen ragte in das Gebaeude)
+		if (worldOnMap(gameWorld.map, p.worldX, p.worldY))
+		{
+			const MAPTILE *pt = worldTile(gameWorld.map, p.worldX, p.worldY);
+			if (pt != nullptr && TileHasStructure(pt)) { continue; }
+		}
 		const float depth = static_cast<float>(kv.second.dyn) / static_cast<float>(CRATER_DEPTH);
 		p.scale = std::clamp(depth, 0.f, 1.f) * (0.78f + 0.32f * static_cast<float>((h >> 8) % 100u) / 100.f);
 		p.rotDeg = static_cast<int>((h >> 16) % 360u);

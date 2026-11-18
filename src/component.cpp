@@ -122,7 +122,23 @@ UDWORD getComponentDroidTemplateRadius(const DROID_TEMPLATE *psTemplate)
 		const iIMDShape *imd = (psBody != nullptr && psBody->pIMD != nullptr) ? psBody->pIMD->displayModel() : nullptr;
 		if (imd != nullptr)
 		{
-			const int ext = std::max({std::abs(imd->min.x), std::abs(imd->max.x), std::abs(imd->min.z), std::abs(imd->max.z)});
+			// (18.11. 12:31 "grosse Modelle gehen immer noch ueber das UI hinaus") auch das Fahrwerk zaehlt - beim Zerstoerer ist der
+			// Schiffsrumpf das Antriebsmodell (prhnaval3), der Rumpf nur der Aufbau
+			auto extOf = [](const iIMDShape *m) {
+				int e = 0;
+				for (const iIMDShape *l = m; l != nullptr; l = l->next.get())
+				{
+					e = std::max({e, std::abs(l->min.x), std::abs(l->max.x), std::abs(l->min.z), std::abs(l->max.z), (l->max.y - l->min.y) * 2 / 3});
+				}
+				return e;
+			};
+			int ext = extOf(imd);
+			const size_t prop = psTemplate->asParts[COMP_PROPULSION];
+			for (int side = 0; side < NUM_PROP_SIDES; ++side)
+			{
+				const size_t k = prop * NUM_PROP_SIDES + static_cast<size_t>(side);
+				if (k < psBody->ppIMDList.size() && psBody->ppIMDList[k] != nullptr) { ext = std::max(ext, extOf(psBody->ppIMDList[k]->displayModel())); }
+			}
 			return static_cast<UDWORD>(std::max(100, ext * 100 / 60));
 		}
 	}
@@ -1044,6 +1060,28 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					if (psDroid->droidType == DROID_CONSTRUCT && !bButton)   // MOD (18.11.): geladene Faesser/Kisten auf der Ladeflaeche
 					{
 						modoil::drawCargo(psDroid, psShape, localModelMatrix, viewMatrix, colour, brightness, pieFlag, iPieData, -localHeightAboveTerrain);
+					}
+					// MOD (Wunsch 18.11. 12:22): Abrissbirne (Original-WZ-Modell, Kran + Pendel) - die Birne haengt am Anschluss 0 des Krans
+					// und pendelt (beim Abreissen grosse Schwuenge); im Designer/auf Knoepfen haengt sie ruhig
+					if (psDroid->droidType == DROID_CONSTRUCT && !psShape->connectors.empty())
+					{
+						const CONSTRUCT_STATS *wcs = psDroid->getConstructStats();
+						if (wcs != nullptr && wcs->id.startsWith("WreckBall"))
+						{
+							static const iIMDBaseShape *s_pend = nullptr;
+							static bool s_pendTried = false;
+							if (!s_pendTried) { s_pendTried = true; s_pend = modelGet("modwreckpend.pie"); }
+							if (s_pend != nullptr)
+							{
+								const float sw = bButton ? 0.f : modbuild::ballSwing(psDroid, graphicsTime);
+								const glm::mat4 pm = localModelMatrix * glm::translate(glm::vec3(psShape->connectors[0].xzy()))
+								                   * glm::rotate(glm::radians(-sw), glm::vec3(1.f, 0.f, 0.f));
+								if (pie_Draw3DShape(s_pend->displayModel(), 0, colour, brightness, pieFlag, iPieData, pm, viewMatrix, -localHeightAboveTerrain))
+								{
+									didDrawSomething = true;
+								}
+							}
+						}
 					}
 
 					// In repair droid case only:

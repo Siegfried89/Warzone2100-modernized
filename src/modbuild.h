@@ -30,6 +30,9 @@ struct Placement
 	unsigned direction = 0; // 0..65535
 };
 
+/// (18.11.) fremder Bauplan als Vorschau (z. B. Artilleriebasis aus dem Schlachtplan); nullptr = keiner. Der Zeiger muss gueltig bleiben.
+void setExternalPreview(const std::vector<Placement> *plan);
+
 /// Radius (Kacheln) der Groesse 1..3
 int radiusOfTier(int tier);
 
@@ -69,7 +72,9 @@ void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued);
 /// darf dieses Fahrzeug dieses Bauwerk bauen? (Kampf-Infanterie nur Graeben/Gruben/Sandsack/MG-Nester; alle anderen Baufahrzeuge alles)
 bool mayBuild(const DROID *psDroid, const STRUCTURE_STATS *psStats);
 /// Abrissfaktor des Fahrzeugs (Abrissbirne reisst 4x so schnell ab, sonst 1)
-int demolishFactor(const DROID *psDroid);
+int demolishFactor(const DROID *psDroid, const STRUCTURE *psTarget = nullptr);
+/// (18.11.) Pendelwinkel der Abrissbirne in Grad (nur Anzeige)
+float ballSwing(const DROID *psDroid, unsigned anim);
 /// (16.11. 19:55) Baufahrzeuge gewaehlt + Klick auf einen eigenen geraden Mauerabschnitt: dort ein Tor bauen (die Mauer wird ersetzt).
 /// Scav-Mauern bekommen das Scav-Tor (A0BaBaGate), andere Mauern das Beton-Tor. true, wenn der Befehl erteilt wurde.
 bool gateFromWall(unsigned player, const STRUCTURE *psWall, bool add);

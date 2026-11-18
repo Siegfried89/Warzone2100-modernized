@@ -115,6 +115,9 @@ struct STRUCTURE_STATS : public BASE_STATS
 	UDWORD height;                  /*The height above/below the terrain - negative values denote below the terrain*/
 	UDWORD powerToBuild;            /*How much power the structure requires to build*/
 	std::vector<iIMDBaseShape *> pIMD;  // The IMDs to draw for this structure, for each possible number of modules.
+	std::vector<iIMDBaseShape *> altIMDs;   ///< MOD (18.11.): weitere Modell-Varianten (JSON "alternativeModels"), je Bauplatz gewuerfelt
+	std::vector<int> altWeights;            ///< MOD: Gewicht je Variante (JSON "alternativeWeights")
+	int modelWeight = 100;                  ///< MOD: Gewicht des Hauptmodells (JSON "modelWeight")
 	iIMDBaseShape *pBaseIMD;            /*The base IMD to draw for this structure */
 	struct ECM_STATS *pECM;         /*Which ECM is standard for the structure -if any*/
 	struct SENSOR_STATS *pSensor;   /*Which Sensor is standard for the structure -if any*/

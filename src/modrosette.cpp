@@ -447,7 +447,8 @@ void layout()
 	const float s = modui::uiScale();
 	const int fw = static_cast<int>(FORM_W * s), fh = static_cast<int>(FORM_H * s);
 	int x = static_cast<int>(screenWidth) - fw - 4;
-	int y = static_cast<int>(screenHeight) - fh - 230;
+	// (18.11. 12:10 "die Menues ueberlappen sich immer noch extrem") ohne Minikarte: ueber der Knopfzeile Map/Symbol und dem Schlachtplan
+	int y = modpaint::stackTop() - static_cast<int>(21 * s) - fh - static_cast<int>(6 * s);
 	const std::shared_ptr<WIDGET> radar = getRadarWidget();
 	if (radar && radar->visible() && radar->height() > 0)
 	{
@@ -485,7 +486,8 @@ void layout()
 
 void tick()
 {
-	const bool want = imagesReady() && !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS;
+	// (18.11. 12:30) im Design-Bildschirm ausblenden - lag ueber der Vorlagenliste rechts
+	const bool want = imagesReady() && !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS && intMode != INT_DESIGN;
 	if (!want && !s_screen) { return; }
 	ensureScreen();
 	s_root->show(want);

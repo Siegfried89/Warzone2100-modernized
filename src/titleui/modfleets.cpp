@@ -35,6 +35,8 @@
 #include "../multiint.h"
 #include "../modfleetdesigner.h"
 #include "../display.h"
+#include "../intfac.h"
+#include "../modwzhd.h"
 
 #include <algorithm>
 #include <string>
@@ -284,12 +286,41 @@ void displayFleetLine(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 /// (Wunsch 22:42) "jeden neuen Knopf im Stil der WZ-Knoepfe im Kommandomenue (Patrouille, Feuerunterstuetzung ...): genau gleiche Form,
 /// Rand und Hintergrund - einziger Unterschied: das farbige Leuchten der neuen Icons". Vorlagen aus image_ord_* (fleeticons.py), Ueberfahren =
 /// WZ-Hervorhebung (image_des_hilight), gedrueckt = heller Hintergrund wie image_ord_*down.
+// (Wunsch 18.11. 12:03) "Den Stil der WZ-Buttons beibehalten, aber schoener machen mit Glow ... die sehen nicht annaehernd so aus wie die
+// originalen WZ-Buttons ... fuer Muelltonne, Turm 1, Turm 2 usw. keine neuen, einfach die originalen verschoenern": Knoepfe mit Original-WZ-Bild
+// (intfac, in HD aus images/wzhd.img) - normal / Maus darueber mit Lichthof / gewaehlt = WZ-Hervorhebungsbild + Lichthof.
+// Eigene neue Knoepfe (Neu, Umbenennen, Ueberall, Pfeile) im selben WZ-Stil ("wz_*" im HD-Paket). Reiter mit Text: WZ-Rahmen + Text.
+struct WzLook { int img = -1, hi = -1; std::string named; std::string text; };
+std::map<unsigned, WzLook> s_btnWz;
+
 void displayWzButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
 	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
 	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
 	const int w = psWidget->width(), h = psWidget->height();
 	const bool down = (b->getState() & (WBUT_DOWN | WBUT_CLICKLOCK)) != 0;
+	const bool sel = (b->getState() & WBUT_CLICKLOCK) != 0;
+	const bool hover = b->isMouseOverWidget();
+	const auto wz = s_btnWz.find(psWidget->id);
+	if (wz != s_btnWz.end())
+	{
+		const WzLook &l = wz->second;
+		if (!l.text.empty()) { modwzhd::textButton(x0, y0, w, h, l.text, sel, hover, down); return; }
+		if (!l.named.empty())
+		{
+			if (modwzhd::drawNamed((l.named + ((down || sel) ? "h" : "")).c_str(), x0, y0, w, h, hover || sel)
+			    || modwzhd::drawNamed(l.named.c_str(), x0, y0, w, h, hover || sel))
+			{
+				return;
+			}
+		}
+		else if (l.img >= 0)
+		{
+			const int img = ((down || sel) && l.hi >= 0) ? l.hi : l.img;
+			modwzhd::drawIntfac(static_cast<unsigned>(img), x0, y0, w, h, hover || sel);
+			return;
+		}
+	}
 	drawImg(down ? IC_BTN_DOWN : IC_BTN_UP, x0, y0, w, h);
 	const auto it = s_btnIcon.find(psWidget->id);
 	if (it != s_btnIcon.end())
@@ -319,6 +350,31 @@ std::shared_ptr<W_BUTTON> wzButton(WIDGET *parent, unsigned id, int x, int y, in
 	if (tip != nullptr) { btn->setTip(tip); }
 	s_btnIcon[id] = icon;
 	return btn;
+}
+
+/// Knopf mit Original-WZ-Bild (intfac-Nummern normal / hervorgehoben)
+std::shared_ptr<W_BUTTON> wzImgButton(WIDGET *parent, unsigned id, int x, int y, int w, int h, int img, int hi, const char *tip, int fallbackIcon)
+{
+	auto b = wzButton(parent, id, x, y, w, h, fallbackIcon, tip);
+	WzLook l; l.img = img; l.hi = hi;
+	s_btnWz[id] = l;
+	return b;
+}
+/// eigener Knopf im WZ-Stil aus dem HD-Paket ("wz_new" usw.; "...h" = hervorgehoben, falls vorhanden)
+std::shared_ptr<W_BUTTON> wzNamedButton(WIDGET *parent, unsigned id, int x, int y, int w, int h, const char *named, const char *tip, int fallbackIcon)
+{
+	auto b = wzButton(parent, id, x, y, w, h, fallbackIcon, tip);
+	WzLook l; l.named = named;
+	s_btnWz[id] = l;
+	return b;
+}
+/// Reiter mit Beschriftung im WZ-Stil
+std::shared_ptr<W_BUTTON> wzTextButton(WIDGET *parent, unsigned id, int x, int y, int w, int h, const std::string &text, const char *tip)
+{
+	auto b = wzButton(parent, id, x, y, w, h, -1, tip);
+	WzLook l; l.text = text;
+	s_btnWz[id] = l;
+	return b;
 }
 
 std::shared_ptr<W_BUTTON> lineButton(WIDGET *parent, unsigned id, int x, int y, int w, const std::string &text, iV_fonts font = font_regular, int h = LINE_H,
@@ -428,13 +484,14 @@ void WzFleetTitleUI::build()
 	const int W = PANEL_W;
 	s_iconSpots.clear();
 	s_btnIcon.clear();
+	s_btnWz.clear();
 
 	// ---- Kopf: Titel, eine Zeile Erklaerung, grosser Knopf zum Einheiteneditor
 	s_iconSpots.push_back({IC_FLEET, 14, 10, 40});
 	headLabel(form, ID_HEAD + 20, 60, 8, 300, _("FLEETS"), pal_RGBA(200, 240, 255, 255), font_large, 30);
 	headLabel(form, ID_HEAD + 21, 60, 34, 330, _("Your unit designs - for every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
 	headLabel(form, ID_HEAD + 23, W - 250, 22, 160, _("Unit designer"), pal_RGBA(255, 214, 110, 255), font_regular_bold, 22, true);
-	wzButton(form, ID_DESIGNER, W - 88, 10, 72, 48, IC_DESIGNER, _("Design units with all parts; save them with the star. Closing the designer brings you back here."));
+	wzImgButton(form, ID_DESIGNER, W - 72, 8, 54, 46, IMAGE_DESIGN_UP, IMAGE_DESIGN_DOWN, _("Design units with all parts; save them with the star. Closing the designer brings you back here."), IC_DESIGNER);
 
 	// ---- links: Flotten
 	const std::string active = s_doc.value("active", std::string());
@@ -475,10 +532,16 @@ void WzFleetTitleUI::build()
 		{ID_FAV, IC_STAR, _("Favourite"), _("Favourite fleets are listed first")},
 		{ID_DEL, IC_DELETE, _("Delete"), _("Delete the selected fleet")},
 		{ID_USE, IC_USE, _("Everywhere"), _("The designs of this fleet are available in every game mode (campaign, skirmish, multiplayer)")}};
+	// (18.11. 12:03) Original-WZ-Bilder, wo es sie gibt (Diskette, Stern, Muelltonne); Neu/Umbenennen/Ueberall im selben WZ-Stil
+	struct Look { int img, hi; const char *named; };
+	const Look looks[6] = {{-1, -1, "wz_new"}, {-1, -1, "wz_rename"}, {IMAGE_DES_SAVE, IMAGE_DES_SAVEH, nullptr},
+	                       {IMAGE_DES_COMMAND, IMAGE_DES_COMMANDDOWN, nullptr}, {IMAGE_DES_BIN, IMAGE_DES_BINH, nullptr}, {-1, -1, "wz_globe"}};
 	for (int k = 0; k < 6; ++k)
 	{
 		const int cx = 16 + (k % 3) * 70, cy = 302 + (k / 3) * 58;
-		wzButton(form, acts[k].id, cx + 8, cy, 54, 36, acts[k].icon, acts[k].tip);
+		const int bw = 45 * 13 / 10, bh = 24 * 13 / 10;
+		if (looks[k].named != nullptr) { wzNamedButton(form, acts[k].id, cx + 8 + (54 - bw) / 2, cy + 2, bw, bh, looks[k].named, acts[k].tip, acts[k].icon); }
+		else { wzImgButton(form, acts[k].id, cx + 8 + (54 - bw) / 2, cy + 2, bw, bh, looks[k].img, looks[k].hi, acts[k].tip, acts[k].icon); }
 		headLabel(form, ID_HEAD + 40 + static_cast<unsigned>(k), cx - 4, cy + 38, 78, acts[k].cap, pal_RGBA(190, 210, 240, 255), font_small, 16, true);
 	}
 
@@ -554,9 +617,9 @@ void WzFleetTitleUI::build()
 	const int fy = 62 + LINE_H + 4 + DESIGN_ROWS * LINE_H + 2;
 	if (pages > 1)
 	{
-		wzButton(form, ID_PREV, X, fy - 2, 36, 24, IC_LEFT, nullptr);
+		wzNamedButton(form, ID_PREV, X, fy - 2, 36, 24, "wz_left", nullptr, IC_LEFT);
 		headLabel(form, ID_HEAD + 4, X + 52, fy, 60, astringf("%d / %d", page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22);
-		wzButton(form, ID_NEXT, X + 112, fy - 2, 36, 24, IC_RIGHT, nullptr);
+		wzNamedButton(form, ID_NEXT, X + 112, fy - 2, 36, 24, "wz_right", nullptr, IC_RIGHT);
 	}
 	headLabel(form, ID_HEAD + 22, X + 170, fy, RW - 170, _("Click a design: favourite on/off"), WZCOL_TEXT_MEDIUM, font_small, 22);
 }
@@ -704,14 +767,15 @@ struct DesignState
 	int body = -1, prop = -1;
 	int turret[3] = {-1, -1, -1};
 	int tab = 0, page = 0;
+	int sub[6] = {0, 0, 0, 0, 0, 0};   // (18.11. 12:03) Unterreiter je Reiter: Rumpf leicht/mittel/schwer/ueberschwer, Antrieb Land/Wasser/Luft, Turm Waffen/Systeme
 	std::string name;
 	bool edited = false;
 	std::string info;
 };
 DesignState s_ds;
 constexpr unsigned ID_D_TAB = 4599600, ID_D_ITEM = 4599620, ID_D_PREV = 4599660, ID_D_NEXT = 4599661, ID_D_SAVE = 4599662, ID_D_BACK = 4599663;
-constexpr unsigned ID_D_NAME = 4599664, ID_D_VIEW = 4599665, ID_D_INFO = 4599666, ID_D_HEAD = 4599700;
-constexpr int D_ROWS = 13;
+constexpr unsigned ID_D_NAME = 4599664, ID_D_VIEW = 4599665, ID_D_INFO = 4599666, ID_D_HEAD = 4599700, ID_D_SUB = 4599680;
+constexpr int D_ROWS = 12;
 
 bool jsonTruthy(const nlohmann::json &j)
 {
@@ -835,15 +899,54 @@ bool turretValid(int slot, const DesignPart &t)
 	return true;
 }
 
+// (Wunsch 18.11. 12:03) "statt 1-5 besser sortiert in leicht, mittel, schwer, ueberschwer; Antrieb vorab eingeteilt in Land, Wasser, Luft;
+// die Turmsektion wieder eingeteilt in Waffen und Systeme - genau wie bei WZ"
+int bodyClass(const DesignPart &p)
+{
+	if (p.size == "LIGHT") { return 0; }
+	if (p.size == "MEDIUM") { return 1; }
+	if (p.size == "HEAVY") { return 2; }
+	return 3;   // SUPER HEAVY und groesser
+}
+bool propIn(const DesignPart &p, int cat)
+{
+	const bool air = p.ptype == "Lift";
+	const bool water = p.ptype == "Propellor" || p.ptype == "Hover";   // Luftkissen faehrt auf Land und Wasser
+	const bool land = !air && p.ptype != "Propellor";
+	return cat == 0 ? land : (cat == 1 ? water : air);
+}
+int subCount(int tab)
+{
+	if (tab == 0) { return 4; }
+	if (tab == 1) { return 3; }
+	return tab == 2 ? 2 : 1;   // weitere Waffenplaetze: nur Waffen
+}
+bool inSub(int tab, const DesignPart &p)
+{
+	const int c = s_ds.sub[std::clamp(tab, 0, 5)];
+	if (tab == 0) { return bodyClass(p) == c; }
+	if (tab == 1) { return propIn(p, c); }
+	if (tab == 2) { return c == 0 ? p.kind == PK_WEAPON : p.kind != PK_WEAPON; }
+	return true;
+}
+/// Unterreiter, in dem das gewaehlte Teil steht (beim Wechsel des Reiters)
+int subOfCurrent(int tab)
+{
+	if (tab == 0) { const DesignPart *b = partAt(s_ds.body); return b ? bodyClass(*b) : 0; }
+	if (tab == 1) { const DesignPart *p = partAt(s_ds.prop); if (!p) { return 0; } for (int c = 0; c < 3; ++c) { if (propIn(*p, c)) { return c; } } return 0; }
+	if (tab == 2) { const DesignPart *t = partAt(s_ds.turret[0]); return (t && t->kind != PK_WEAPON) ? 1 : 0; }
+	return 0;
+}
+
 std::vector<int> candidates(int tab)
 {
 	std::vector<int> out;
 	for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
 	{
 		const DesignPart &p = s_parts[static_cast<size_t>(i)];
-		if (tab == 0 && p.kind == PK_BODY) { out.push_back(i); }
-		else if (tab == 1 && p.kind == PK_PROP && (!flyOnlyBody() || p.ptype == "Lift")) { out.push_back(i); }
-		else if (tab >= 2 && turretValid(tab - 2, p)) { out.push_back(i); }
+		if (tab == 0 && p.kind == PK_BODY && inSub(0, p)) { out.push_back(i); }
+		else if (tab == 1 && p.kind == PK_PROP && (!flyOnlyBody() || p.ptype == "Lift") && inSub(1, p)) { out.push_back(i); }
+		else if (tab >= 2 && turretValid(tab - 2, p) && inSub(tab, p)) { out.push_back(i); }
 	}
 	return out;
 }
@@ -947,15 +1050,47 @@ public:
 		if (bs == nullptr) { return; }
 		static int s_rot = 45;
 		s_rot = (s_rot + realTimeAdjustedAverage(BUTTONOBJ_ROTSPEED)) % 360;
-		// Groesse wie im Spiel-Designer, grosse Ruempfe kleiner (passt ins Fenster)
-		const int ext = std::max({std::abs(bs->min.x), std::abs(bs->max.x), std::abs(bs->min.z), std::abs(bs->max.z), 1});
-		const float fit = std::min(static_cast<float>(width()) / 236.f, static_cast<float>(height()) / 192.f);
-		const float scale = 2.56f * fit * 100.f / static_cast<float>(std::max(100, ext * 100 / 60));
-		pie_SetGeometricOffset((x0 + x1) / 2, y0 + height() / 4 + static_cast<int>(32.f * fit));
-		const glm::mat4 base = glm::translate(glm::vec3(0.f, -100.f, static_cast<float>(BUTTON_DEPTH)))
+		// (Wunsch 18.11. 12:03 "Das Modell wird nicht richtig dargestellt": winzig und flach) Groesse aus der tatsaechlichen Projektion:
+		// das ganze Fahrzeug (Rumpf, Antrieb, Turm) fuellt gut die Haelfte des Fensters - die Mod-Modelle sind halb so gross wie die
+		// Originale, daher passte die feste Groesse des Spiel-Designers nicht.
+		float ext = static_cast<float>(std::max({std::abs(bs->min.x), std::abs(bs->max.x), std::abs(bs->min.z), std::abs(bs->max.z), 1}));
+		float top = static_cast<float>(std::max(bs->max.y, 1));
+		float bottom = static_cast<float>(std::min(bs->min.y, 0));
+		for (int s = 0; s < 3; ++s)
+		{
+			const DesignPart *t = partAt(s_ds.turret[s]);
+			const iIMDShape *gun = t ? shapeOf(t->model) : nullptr;
+			if (gun == nullptr || bs->connectors.empty()) { continue; }
+			const size_t ci = bs->connectors.size() > static_cast<size_t>(s) ? static_cast<size_t>(s) : 0;
+			top = std::max(top, static_cast<float>(bs->connectors[ci].z + gun->max.y));
+			ext = std::max(ext, static_cast<float>(std::max(std::abs(gun->min.z), std::abs(gun->max.z)) + std::abs(bs->connectors[ci].y)));
+		}
+		if (p != nullptr && b->extra.is_object())
+		{
+			auto pe = b->extra.find(p->id);
+			if (pe != b->extra.end() && pe->is_object())
+			{
+				if (const iIMDShape *pl = shapeOf(jsonStr(*pe, "left")))
+				{
+					ext = std::max(ext, static_cast<float>(std::max({std::abs(pl->min.x), std::abs(pl->max.x), std::abs(pl->min.z), std::abs(pl->max.z)})));
+					bottom = std::min(bottom, static_cast<float>(pl->min.y));
+				}
+			}
+		}
+		const float radius = std::max({ext, (top - bottom) * 0.75f, 8.f});
+		const float midY = (top + bottom) * 0.5f;
+		pie_SetGeometricOffset((x0 + x1) / 2, (y0 + y1) / 2);
+		// Bildpunkte je Modelleinheit in der Tiefe BUTTON_DEPTH (aus der UI-Projektion gemessen)
+		const glm::mat4 &proj = pie_UIPerspectiveGet();
+		auto ndcX = [&](float wx) { const glm::vec4 c = proj * glm::vec4(wx, 0.f, static_cast<float>(BUTTON_DEPTH), 1.f); return c.x / c.w; };
+		const float pxPerUnit = std::max(1e-4f, std::abs(ndcX(100.f) - ndcX(0.f)) * 0.5f * static_cast<float>(pie_GetVideoBufferWidth()) / 100.f);
+		const float want = 0.40f * static_cast<float>(std::min(width(), height()));
+		const float scale = want / (pxPerUnit * radius);
+		const glm::mat4 base = glm::translate(glm::vec3(0.f, 0.f, static_cast<float>(BUTTON_DEPTH)))
 		                     * glm::rotate(glm::radians(-30.f), glm::vec3(1.f, 0.f, 0.f))
 		                     * glm::rotate(glm::radians(static_cast<float>(s_rot)), glm::vec3(0.f, 1.f, 0.f))
-		                     * glm::scale(glm::vec3(scale));
+		                     * glm::scale(glm::vec3(scale))
+		                     * glm::translate(glm::vec3(0.f, -midY, 0.f));
 		// Laufwerk links/rechts (die vom Betrachter abgewandte Seite zuerst)
 		const iIMDShape *propL = nullptr, *propR = nullptr;
 		if (p != nullptr && b->extra.is_object())
@@ -1024,6 +1159,7 @@ void WzUnitDesignTitleUI::build()
 	WIDGET *form = panel.get();
 	s_iconSpots.clear();
 	s_btnIcon.clear();
+	s_btnWz.clear();
 	fixTurrets();
 	if (!s_ds.edited) { s_ds.name = autoName(); }
 
@@ -1036,22 +1172,59 @@ void WzUnitDesignTitleUI::build()
 		headLabel(form, ID_D_HEAD + 2, 16, 90, PANEL_W - 32, _("No parts found (stats files missing)."), WZCOL_TEXT_BRIGHT, font_regular);
 	}
 
-	// ---- Reiter: Rumpf, Laufwerk, Turm 1..n (WZ-Befehlsknoepfe mit Beschriftung)
+	// ---- Reiter: Rumpf, Laufwerk, Turm 1..n - (18.11. 12:03) Original-WZ-Bilder des Design-Bildschirms (verschoenert), darunter die Unterreiter
 	const int slots = bodySlots();
 	const int ntabs = 2 + slots;
-	struct Tab { int icon; std::string cap; };
-	std::vector<Tab> tabs = {{IC_TANK, _("Body")}, {IC_RIGHT, _("Propulsion")}};
-	for (int s = 0; s < slots; ++s) { tabs.push_back({IC_ARTY, slots > 1 ? astringf(_("Turret %d"), s + 1) : std::string(_("Turret"))}); }
+	struct Tab { int img, hi; std::string cap; };
+	std::vector<Tab> tabs = {{IMAGE_DES_BODY, IMAGE_DES_BODYH, _("Body")}, {IMAGE_DES_PROPULSION, IMAGE_DES_PROPULSIONH, _("Propulsion")}};
+	for (int s = 0; s < slots; ++s) { tabs.push_back({IMAGE_DES_TURRET, IMAGE_DES_TURRETH, slots > 1 ? astringf(_("Turret %d"), s + 1) : std::string(_("Turret"))}); }
 	if (s_ds.tab >= ntabs) { s_ds.tab = 0; }
+	const int tabW = 45 * 13 / 10, tabH = 24 * 13 / 10, tabGap = 4;
 	for (int k = 0; k < ntabs; ++k)
 	{
-		const int cx = 16 + k * 56;
-		auto b = wzButton(form, ID_D_TAB + static_cast<unsigned>(k), cx, 62, 48, 32, tabs[static_cast<size_t>(k)].icon, tabs[static_cast<size_t>(k)].cap.c_str());
+		const int cx = 18 + k * (tabW + tabGap);
+		const Tab &t = tabs[static_cast<size_t>(k)];
+		auto b = wzImgButton(form, ID_D_TAB + static_cast<unsigned>(k), cx, 62, tabW, tabH, t.img, t.hi, t.cap.c_str(), IC_TANK);
 		if (k == s_ds.tab) { b->setState(WBUT_CLICKLOCK); }
-		headLabel(form, ID_D_HEAD + 10 + static_cast<unsigned>(k), cx - 6, 95, 60, tabs[static_cast<size_t>(k)].cap, k == s_ds.tab ? pal_RGBA(255, 214, 110, 255) : pal_RGBA(190, 210, 240, 255), font_small, 14, true);
+		headLabel(form, ID_D_HEAD + 10 + static_cast<unsigned>(k), cx - 4, 62 + tabH + 1, tabW + 8, t.cap, k == s_ds.tab ? pal_RGBA(255, 214, 110, 255) : pal_RGBA(190, 210, 240, 255), font_small, 14, true);
+	}
+	// Unterreiter: Rumpf leicht/mittel/schwer/ueberschwer, Antrieb Land/Wasser/Luft, Turm Waffen/Systeme (WZ-Bilder)
+	const int nsub = subCount(s_ds.tab);
+	s_ds.sub[s_ds.tab] = std::clamp(s_ds.sub[s_ds.tab], 0, nsub - 1);
+	if (nsub > 1)
+	{
+		const int sy = 62 + tabH + 18;
+		if (s_ds.tab == 2)
+		{
+			const int w2 = 37 * 13 / 10, h2 = 24 * 13 / 10;
+			const int imgs[2][2] = {{IMAGE_DES_WEAPONS, IMAGE_DES_WEAPONSDOWN}, {IMAGE_DES_SYSTEMS, IMAGE_DES_SYSTEMSDOWN}};
+			const char *tips[2] = {_("Weapons"), _("Systems (sensor, construction, repair, ECM)")};
+			for (int k = 0; k < 2; ++k)
+			{
+				auto b = wzImgButton(form, ID_D_SUB + static_cast<unsigned>(k), 18 + k * (w2 + 6), sy, w2, h2, imgs[k][0], imgs[k][1], tips[k], IC_ARTY);
+				if (k == s_ds.sub[2]) { b->setState(WBUT_CLICKLOCK); }
+			}
+			headLabel(form, ID_D_HEAD + 20, 18 + 2 * (w2 + 6) + 4, sy + 6, 110, s_ds.sub[2] == 0 ? _("Weapons") : _("Systems"), pal_RGBA(255, 214, 110, 255), font_regular, 20);
+		}
+		else
+		{
+			const char *bodyCats[4] = {N_("Light"), N_("Medium"), N_("Heavy"), N_("Super")};
+			const char *propCats[3] = {N_("Land"), N_("Water"), N_("Air")};
+			const char *bodyTips[4] = {N_("Light bodies"), N_("Medium bodies"), N_("Heavy bodies"), N_("Super heavy bodies")};
+			const char *propTips[3] = {N_("Land: wheels, half-tracks, tracks, legs, hover"), N_("Water: ships and hover"), N_("Air: VTOL")};
+			const int totalW = 214, gap = 4;
+			const int w = (totalW - (nsub - 1) * gap) / nsub;
+			for (int k = 0; k < nsub; ++k)
+			{
+				const char *cap = s_ds.tab == 0 ? bodyCats[k] : propCats[k];
+				const char *tip = s_ds.tab == 0 ? bodyTips[k] : propTips[k];
+				auto b = wzTextButton(form, ID_D_SUB + static_cast<unsigned>(k), 18 + k * (w + gap), sy, w, 24, gettext(cap), gettext(tip));
+				if (k == s_ds.sub[s_ds.tab]) { b->setState(WBUT_CLICKLOCK); }
+			}
+		}
 	}
 
-	// ---- links: Liste der Teile des Reiters
+	// ---- links: Liste der Teile des Unterreiters
 	const std::vector<int> cand = candidates(s_ds.tab);
 	const bool allowNone = s_ds.tab >= 3;   // weitere Waffenplaetze duerfen leer bleiben
 	std::vector<int> rows;
@@ -1061,7 +1234,8 @@ void WzUnitDesignTitleUI::build()
 	s_ds.page = std::clamp(s_ds.page, 0, pages - 1);
 	const int current = s_ds.tab == 0 ? s_ds.body : (s_ds.tab == 1 ? s_ds.prop : s_ds.turret[s_ds.tab - 2]);
 	s_selectedButton = 0;
-	int y = 116;
+	const int listY = nsub > 1 ? 62 + tabH + 18 + 34 : 62 + tabH + 22;
+	int y = listY;
 	for (int k = s_ds.page * D_ROWS; k < static_cast<int>(rows.size()) && k < (s_ds.page + 1) * D_ROWS; ++k)
 	{
 		const int idx = rows[static_cast<size_t>(k)];
@@ -1076,10 +1250,10 @@ void WzUnitDesignTitleUI::build()
 	if (rows.empty()) { headLabel(form, ID_D_HEAD + 3, 24, y, 210, _("Nothing fits this body/propulsion"), WZCOL_TEXT_MEDIUM, font_regular); }
 	if (pages > 1)
 	{
-		const int fy = 116 + D_ROWS * LINE_H + 4;
-		wzButton(form, ID_D_PREV, 24, fy, 36, 24, IC_LEFT, nullptr);
+		const int fy = std::min(listY + D_ROWS * LINE_H + 4, PANEL_H - 66);
+		wzNamedButton(form, ID_D_PREV, 24, fy, 36, 24, "wz_left", nullptr, IC_LEFT);
 		headLabel(form, ID_D_HEAD + 4, 70, fy + 2, 60, astringf("%d / %d", s_ds.page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22, true);
-		wzButton(form, ID_D_NEXT, 140, fy, 36, 24, IC_RIGHT, nullptr);
+		wzNamedButton(form, ID_D_NEXT, 140, fy, 36, 24, "wz_right", nullptr, IC_RIGHT);
 	}
 
 	// ---- rechts: 3D-Vorschau
@@ -1111,7 +1285,7 @@ void WzUnitDesignTitleUI::build()
 	edit->setMaxStringSize(60);
 	edit->setPlaceholder(_("Design name"));
 	edit->setString(WzString::fromUtf8(s_ds.name));
-	wzButton(form, ID_D_SAVE, 528, 378, 54, 36, IC_STAR, _("Save this design into the fleet and into every game mode"));
+	wzImgButton(form, ID_D_SAVE, 524, 380, 45 * 13 / 10, 24 * 13 / 10, IMAGE_DES_SAVE, IMAGE_DES_SAVEH, _("Save this design into the fleet and into every game mode"), IC_STAR);
 	headLabel(form, ID_D_HEAD + 5, 514, 414, 82, _("Save"), pal_RGBA(255, 214, 110, 255), font_small, 16, true);
 
 	// ---- Fusszeile
@@ -1144,7 +1318,12 @@ TITLECODE WzUnitDesignTitleUI::run()
 	}
 	bool rebuild = true;
 	s_ds.info.clear();
-	if (id >= ID_D_TAB && id < ID_D_TAB + 6) { s_ds.tab = static_cast<int>(id - ID_D_TAB); s_ds.page = 0; }
+	if (id >= ID_D_TAB && id < ID_D_TAB + 6)
+	{
+		s_ds.tab = static_cast<int>(id - ID_D_TAB); s_ds.page = 0;
+		s_ds.sub[s_ds.tab] = subOfCurrent(s_ds.tab);   // Unterreiter des gewaehlten Teils
+	}
+	else if (id >= ID_D_SUB && id < ID_D_SUB + 4) { s_ds.sub[std::clamp(s_ds.tab, 0, 5)] = static_cast<int>(id - ID_D_SUB); s_ds.page = 0; }
 	else if (id >= ID_D_ITEM && id < ID_D_ITEM + D_ROWS)
 	{
 		const std::vector<int> cand = candidates(s_ds.tab);

@@ -54,6 +54,7 @@
 #include "modcrates.h"
 #include "modoil.h"
 #include "modconcrete.h"
+#include "modterrain.h"
 #include "modnestcrew.h"
 #include "research.h"
 #include "hci.h"
@@ -728,6 +729,22 @@ bool loadStructureStats(WzConfig &ini)
 		{
 			debug(LOG_ERROR, "Structure '%s' has no valid structureModel", getID(psStats));
 			return false;
+		}
+		// MOD (Wunsch 18.11. 12:27): Modell-Varianten je Bauplatz (z. B. Scav-Aussenposten: Wellblech 85 %, braunes Dach / Ziegel selten)
+		psStats->altIMDs.clear();
+		psStats->altWeights.clear();
+		if (ini.contains("alternativeModels"))
+		{
+			std::vector<WzString> alts = ini.value("alternativeModels").toWzStringList();
+			std::vector<WzString> ws = ini.value("alternativeWeights").toWzStringList();
+			for (size_t j = 0; j < alts.size(); j++)
+			{
+				iIMDBaseShape *imd = modelGet(alts[j].trimmed());
+				if (imd == nullptr) { debug(LOG_ERROR, "Cannot find the alternative model '%s' for structure '%s'", alts[j].toUtf8().c_str(), getID(psStats)); continue; }
+				psStats->altIMDs.push_back(imd);
+				psStats->altWeights.push_back(j < ws.size() ? std::max(0, ws[j].toInt()) : 100);
+			}
+			psStats->modelWeight = std::max(0, ini.value("modelWeight", 100).toInt());
 		}
 
 		// set base model
@@ -1691,6 +1708,27 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 
 		//set up the imd to use for the display
 		building.sDisplay.imd = pStructureType->pIMD[0];
+		// MOD (18.11.): Modell-Variante nach dem Bauplatz (fest je Feld - gleich auf allen Rechnern und nach dem Laden)
+		if (!pStructureType->altIMDs.empty() && pStructureType->pIMD.size() == 1)
+		{
+			int total = pStructureType->modelWeight;
+			for (int w : pStructureType->altWeights) { total += w; }
+			if (total > 0)
+			{
+				uint32_t h = static_cast<uint32_t>(map.x) * 73856093u ^ static_cast<uint32_t>(map.y) * 19349663u ^ 0x9E3779B9u;
+				h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+				int r = static_cast<int>(h % static_cast<uint32_t>(total));
+				if (r >= pStructureType->modelWeight)
+				{
+					r -= pStructureType->modelWeight;
+					for (size_t k = 0; k < pStructureType->altIMDs.size(); ++k)
+					{
+						if (r < pStructureType->altWeights[k]) { building.sDisplay.imd = pStructureType->altIMDs[k]; break; }
+						r -= pStructureType->altWeights[k];
+					}
+				}
+			}
+		}
 
 		building.state = SAS_NORMAL;
 		building.lastStateTime = gameTime;
@@ -1788,7 +1826,16 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 				}
 			}
 		}
-		if (&world == &gameWorld) { modconcrete::footprintChanged(psBuilding, map.x, map.y, size.x, size.y); }   // MOD: Betonboden
+		if (&world == &gameWorld)
+		{
+			modconcrete::footprintChanged(psBuilding, map.x, map.y, size.x, size.y);   // MOD: Betonboden
+			// MOD (18.11. 12:18 "beim Gebaeudebau erscheinen ein oder zwei unserer Erdhaufen daneben"): Krater unter dem Bauplatz werden
+			// zugeschuettet - das Gebaeude steht eben, und der Erdhaufen des Kraters verschwindet
+			for (int ty = map.y; ty < map.y + size.y; ++ty)
+			{
+				for (int tx = map.x; tx < map.x + size.x; ++tx) { modterrain::fillTile(tx, ty, 10000); }
+			}
+		}
 
 		switch (pStructureType->type)
 		{
