@@ -1455,6 +1455,19 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	s_drawing = false;
 	if (s_cur.back() != worldPos) { s_cur.push_back(worldPos); }
 	const Mode m = static_cast<Mode>(s_mode);
+	// (Wunsch 18.11. 13:06 "wenn man sich verklickt, ist immer noch der Befehl ausgewaehlt, den man geben will"): ein blosses Antippen
+	// (Strich kuerzer als eine halbe Kachel) gilt als Verklicken - nichts wird befohlen, der gewaehlte Befehl bleibt aktiv.
+	// Ausnahme: Artilleriebasis und Sammelpunkt duerfen mit einem Klick gesetzt werden.
+	if (m != M_ARTYBASE && m != M_RALLY)
+	{
+		int64_t len = 0;
+		for (size_t i = 1; i < s_cur.size(); ++i) { len += static_cast<int64_t>(std::sqrt(static_cast<double>(dist2(s_cur[i], s_cur[i - 1])))); }
+		if (len < DIST_TILE / 2)
+		{
+			s_cur.clear();
+			return true;
+		}
+	}
 	const bool shift = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
 	if (!shift) { s_chain.clear(); }
 	s_append = shift;

@@ -977,7 +977,7 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 		return graphicsTime < psEffect->birthTime + 30000;
 	}
 
-	if (psEffect->type != GRAVITON_TYPE_GIBLET && psEffect->type != GRAVITON_TYPE_CASING)
+	if (psEffect->type != GRAVITON_TYPE_GIBLET && psEffect->type != GRAVITON_TYPE_CASING && psEffect->type != GRAVITON_TYPE_DIRT)
 	{
 		light.position = psEffect->position;
 		light.range = 128;
@@ -1062,6 +1062,10 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 	}
 
 	/* Are we below it? - Hit the ground? */
+	if (psEffect->type == GRAVITON_TYPE_DIRT && (int)psEffect->position.y < (int)groundHeight && psEffect->velocity.y < 0)
+	{
+		return false;   // MOD: Erdbrocken faellt in den Boden - weg (kein Abprallen, keine Explosion)
+	}
 	if ((int)psEffect->position.y < (int)groundHeight)
 	{
 		psTile = mapTile(gameWorld.map, map_coord(static_cast<int32_t>(psEffect->position.x)), map_coord(static_cast<int32_t>(psEffect->position.z)));
@@ -1954,6 +1958,7 @@ void	effectSetupGraviton(EFFECT& effect)
 		effect.velocity.y = static_cast<float>(780 + rand() % 320);
 		break;
 	case GRAVITON_TYPE_CASING:
+	case GRAVITON_TYPE_DIRT:
 		// MOD: Geschwindigkeit (seitlich + nach oben) kommt vom Aufrufer
 		break;
 	default:

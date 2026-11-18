@@ -118,6 +118,8 @@ enum EFFECT_TYPE
 
 	DROID_ANIMEVENT_DYING_NORMAL,
 	DROID_ANIMEVENT_DYING_NORMAL_ST,
+
+	GRAVITON_TYPE_DIRT,     // MOD (18.11.): Erdbrocken beim Krater-Einschlag - fliegt senkrecht hoch, faellt zurueck und ist weg (am Ende: alte Spielstaende)
 };
 
 

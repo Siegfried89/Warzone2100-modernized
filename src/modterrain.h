@@ -68,6 +68,15 @@ struct CraterPile
 	int rotDeg = 0;
 };
 void craterPiles(std::vector<CraterPile> &out);
+/// (18.11.) Kraterflecke (weicher Rand, ein Viertel Kachel) in der Kachelmitte: depth 0..1 (Resttiefe), alpha = Einblenden
+struct CraterDecal
+{
+	int tileX = 0, tileY = 0;
+	int worldX = 0, worldY = 0;
+	float depth = 1.f, alpha = 1.f, scale = 1.f;
+	int rotDeg = 0;
+};
+void craterDecals(std::vector<CraterDecal> &out);
 
 /// jeden Spielschritt: verzoegerte Krater anlegen (unter der Staubwolke)
 void tick();

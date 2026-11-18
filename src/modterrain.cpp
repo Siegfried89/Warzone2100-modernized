@@ -24,6 +24,8 @@
 #include <vector>
 
 #include "modterrain.h"
+#include "lib/ivis_opengl/imd.h"
+#include "lib/ivis_opengl/ivisdef.h"
 
 #include "modgroundfire.h"
 #include "modlayer.h"
@@ -60,6 +62,7 @@ struct Cell
 	uint16_t origTexture = 0;   // Kacheltextur vor dem Krater
 	bool texSwapped = false;
 	bool origDecal = false;
+	uint32_t born = 0;          // (18.11.) Entstehungszeit des Kraters (Einblenden des Kraterflecks)
 	int depth() const { return std::max<int>(dyn, fixed); }
 };
 
@@ -209,15 +212,30 @@ void dust(int wx, int wy, int size)
 		return;
 	}
 	Vector3i pos(wx, map_Height(gameWorld.map, wx, wy) + 12, wy);
-	// grosse Staubwolke - verdeckt das Einsinken des Kraters (der Krater entsteht erst kurz danach, siehe tick())
-	const int n = 3 + size * 3;
+	// (18.11. 13:04 "etwas weniger Rauch, damit man es auch sehen kann") kleine Staubwolke ueber der Kachelmitte - verdeckt das kurze
+	// Einblenden des Kraterflecks; dazu fliegt Erde senkrecht nach oben und faellt zurueck
+	const int n = 1 + size;
+	const int cxw = (wx / TILE_UNITS) * TILE_UNITS + TILE_UNITS / 2, cyw = (wy / TILE_UNITS) * TILE_UNITS + TILE_UNITS / 2;
 	for (int i = 0; i < n; i++)
 	{
-		Vector3i p = pos;
-		p.x += ((i * 53) % 61 - 30) * size;
-		p.z += ((i * 37) % 59 - 29) * size;
-		p.y += (i % 3) * 10 * size;
-		addEffect(&p, EFFECT_SMOKE, (i % 3 != 2) ? SMOKE_TYPE_BILLOW : SMOKE_TYPE_DRIFTING, false, nullptr, 0, gameTime);
+		Vector3i p(cxw, pos.y, cyw);
+		p.x += ((i * 53) % 41 - 20) * size / 2;
+		p.z += ((i * 37) % 39 - 19) * size / 2;
+		p.y += (i % 2) * 8;
+		addEffect(&p, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING, false, nullptr, 0, gameTime);
+	}
+	static iIMDBaseShape *s_clod = nullptr;
+	static bool s_clodTried = false;
+	if (!s_clodTried) { s_clodTried = true; s_clod = modelGet("moddirtclod.pie"); }
+	if (s_clod != nullptr && s_clod->displayModel() != nullptr)
+	{
+		const int clods = 5 + size * 4;
+		for (int i = 0; i < clods; ++i)
+		{
+			Vector3i p(cxw + rand() % 21 - 10, pos.y - 4, cyw + rand() % 21 - 10);
+			Vector3f vel(static_cast<float>(rand() % 90 - 45), static_cast<float>(420 + rand() % 260 + size * 60), static_cast<float>(rand() % 90 - 45));
+			addEffect(&p, EFFECT_GRAVITON, GRAVITON_TYPE_DIRT, true, s_clod->displayModel(), 0, graphicsTime, nullptr, &vel);
+		}
 	}
 }
 
@@ -405,7 +423,8 @@ bool addCrater(int worldX, int worldY, int size)
 			const int before = c.dyn;
 			// (17.11.) jeder Krater ist gleich: so tief wie ein Schuetzenloch; weitere Treffer vertiefen nicht
 			c.dyn = static_cast<int16_t>(std::max<int>(c.dyn, CRATER_DEPTH));
-			swapTexture(c, xx, yy, true);
+			// (18.11. 13:04) keine Kratertextur-Kachel mehr - Kraterfleck in der Mitte (modcraterdecal.pie)
+			if (before <= 0) { c.born = gameTime; }
 			if (c.dyn != before)
 			{
 				dirtyAround(xx, yy);
@@ -589,7 +608,7 @@ void craterPiles(std::vector<CraterPile> &out)
 		const float diag = (DX[d] != 0 && DY[d] != 0) ? 0.7071f : 1.f;
 		const float cx = static_cast<float>(world_coord(x)) + static_cast<float>(N * TILE_UNITS) * 0.5f;
 		const float cy = static_cast<float>(world_coord(y)) + static_cast<float>(N * TILE_UNITS) * 0.5f;
-		const float off = static_cast<float>(DIST_TILE) * 0.47f * diag;
+		const float off = (N > 1 ? static_cast<float>(DIST_TILE) * 0.47f : 38.f) * diag;   // (18.11.) direkt am Rand des kleinen Kraterflecks
 		CraterPile p;
 		p.worldX = static_cast<int>(cx + static_cast<float>(DX[d]) * off);
 		p.worldY = static_cast<int>(cy + static_cast<float>(DY[d]) * off);
@@ -600,9 +619,35 @@ void craterPiles(std::vector<CraterPile> &out)
 			if (pt != nullptr && TileHasStructure(pt)) { continue; }
 		}
 		const float depth = static_cast<float>(kv.second.dyn) / static_cast<float>(CRATER_DEPTH);
-		p.scale = std::clamp(depth, 0.f, 1.f) * (0.78f + 0.32f * static_cast<float>((h >> 8) % 100u) / 100.f);
+		p.scale = std::clamp(depth, 0.f, 1.f) * (0.78f + 0.32f * static_cast<float>((h >> 8) % 100u) / 100.f) * 0.6f;
 		p.rotDeg = static_cast<int>((h >> 16) % 360u);
 		if (p.scale >= 0.08f) { out.push_back(p); }
+	}
+}
+
+void craterDecals(std::vector<CraterDecal> &out)
+{
+	out.clear();
+	if (s_cells.empty()) { return; }
+	const uint64_t layer = static_cast<uint64_t>(layerTag());
+	for (const auto &kv : s_cells)
+	{
+		if ((kv.first >> 48) != layer || kv.second.dyn <= 0) { continue; }
+		const int x = static_cast<int>((kv.first >> 24) & 0xffffff), y = static_cast<int>(kv.first & 0xffffff);
+		constexpr int NB = DIST_TILE / TILE_UNITS;   // Feinraster: ein Krater = NB x NB Felder
+		if (NB > 1 && (cellDyn(static_cast<int>(layer), x - 1, y) > 0 || cellDyn(static_cast<int>(layer), x, y - 1) > 0)) { continue; }
+		const unsigned h = static_cast<unsigned>(x) * 2654435761u ^ static_cast<unsigned>(y) * 40503u;
+		CraterDecal d;
+		d.tileX = x; d.tileY = y;
+		d.worldX = world_coord(x) + NB * TILE_UNITS / 2;
+		d.worldY = world_coord(y) + NB * TILE_UNITS / 2;
+		d.depth = static_cast<float>(kv.second.dyn) / static_cast<float>(CRATER_DEPTH);
+		d.rotDeg = static_cast<int>(h % 360u);
+		d.scale = 0.88f + 0.2f * static_cast<float>((h >> 9) % 100u) / 100.f;
+		// (18.11.) nicht aufploppen, aber auch nicht langsam: in 0,2 s unter der Staubwolke einblenden
+		const uint32_t age = kv.second.born != 0 && graphicsTime >= kv.second.born ? graphicsTime - kv.second.born : 100000u;
+		d.alpha = std::clamp(static_cast<float>(age) / 200.f, 0.f, 1.f);
+		out.push_back(d);
 	}
 }
 
@@ -665,6 +710,7 @@ void loadState(const std::vector<int> &in)
 		c.origTexture = static_cast<uint16_t>(in[i + 3]);
 		c.texSwapped = in[i + 4] != 0;
 		c.origDecal = in[i + 5] != 0;
+		swapTexture(c, x, y, false);   // (18.11.) alte ganze Krater-Kacheln zurueck - der Krater ist jetzt ein Fleck in der Kachelmitte
 		dirtyAround(x, y);
 	}
 }
