@@ -398,8 +398,8 @@ bool genOrbitGridMF(Grid &g, Rng &r)
 		{
 			const int cx = MARGIN + 1 + r.range(std::max(1, maxW - s.w + 1));
 			const int cy = MARGIN + 1 + r.range(std::max(1, maxH - s.h + 1));
-			const int g = gapTo(cx, cy, s.w, s.h);
-			if (g > bestGap) { bestGap = g; x0 = cx; y0 = cy; }
+			const int gap = gapTo(cx, cy, s.w, s.h);
+			if (gap > bestGap) { bestGap = gap; x0 = cx; y0 = cy; }
 		}
 		if (x0 < 0 || bestGap < 6) { continue; }
 		placed.push_back({x0, y0, x0 + s.w, y0 + s.h});
