@@ -397,16 +397,51 @@ bool isFort(const STRUCTURE *psStructure)
 	return familyOf(psStructure) != nullptr;
 }
 
+/// (Wunsch 18.11. 12:49 "Vorschau und Ergebnis passen nicht - rund wird zu eckig ..."): Bauplan beim Platzieren zeigt dasselbe Modell wie
+/// das fertige Bauwerk - Gaenge zu angrenzenden eigenen Stellungen, sonst die Oeffnung zur gezogenen Seite
+uint8_t predictOpen(const STRUCTURE *bp)
+{
+	const int tx0 = map_coord(bp->pos.x - (S * TILE_UNITS) / 2), ty0 = map_coord(bp->pos.y - (S * TILE_UNITS) / 2);
+	uint8_t conn = 0;
+	for (int k = 0; k < 4; ++k)
+	{
+		const int nx = tx0 + S * DX[k], ny = ty0 + S * DY[k];
+		if (!tileOnMap(gameWorld.map, nx, ny)) { continue; }
+		const MAPTILE *t = mapTile(gameWorld.map, nx, ny);
+		if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_STRUCTURE) { continue; }
+		const STRUCTURE *n = static_cast<const STRUCTURE *>(t->psObject);
+		if (n->died || familyOf(n) == nullptr || n->player != bp->player) { continue; }
+		conn |= static_cast<uint8_t>(BIT[k]);
+	}
+	if (conn != 0) { return conn; }
+	const uint16_t d = static_cast<uint16_t>(bp->rot.direction + 0x2000);
+	static const int SIDE_OF_QUADRANT[4] = {2, 1, 0, 3};
+	return static_cast<uint8_t>(BIT[SIDE_OF_QUADRANT[(d >> 14) & 3]]);
+}
+
 const iIMDShape *displayModel(const STRUCTURE *psStructure)
 {
 	const std::string *key = familyOf(psStructure);
 	if (key == nullptr) { return nullptr; }
-	const auto it = s_open.find(psStructure->id);
-	if (it == s_open.end()) { return nullptr; }
+	uint8_t open = 0;
+	if (psStructure->isBlueprint())
+	{
+		// Graeben werden als Linie gezogen: deren Bauplan richtet sich wie Mauern nach den Nachbar-Bauplaenen aus (Standardmodelle)
+		const STRUCTURE_TYPE t = psStructure->pStructureType->type;
+		if (t == REF_WALL || t == REF_WALLCORNER || t == REF_GATE) { return nullptr; }
+		if (!surfaceResident() || modlayer::layerOf(psStructure) != modlayer::SURFACE) { return nullptr; }
+		open = predictOpen(psStructure);
+	}
+	else
+	{
+		const auto it = s_open.find(psStructure->id);
+		if (it == s_open.end()) { return nullptr; }
+		open = it->second;
+	}
 	char name[64];
 	static unsigned cacheGen = 0;
 	if (modelCacheStale(cacheGen)) { s_models.clear(); }   // MOD (18.11.): Modelle wurden neu geladen
-	snprintf(name, sizeof(name), "%s_m%d.pie", key->c_str(), static_cast<int>(it->second));
+	snprintf(name, sizeof(name), "%s_m%d.pie", key->c_str(), static_cast<int>(open));
 	const auto c = s_models.find(name);
 	if (c != s_models.end()) { return c->second; }
 	const iIMDBaseShape *b = modelGet(WzString::fromUtf8(name));

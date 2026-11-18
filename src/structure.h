@@ -516,7 +516,7 @@ struct LineBuild
 	int count = 0;
 };
 
-LineBuild calcLineBuild(Vector2i size, STRUCTURE_TYPE type, Vector2i pos, Vector2i pos2);
+LineBuild calcLineBuild(Vector2i size, STRUCTURE_TYPE type, Vector2i pos, Vector2i pos2, int minPitchTiles = 0);   // MOD: minPitchTiles = Mindestabstand (Strommasten)
 LineBuild calcLineBuild(STRUCTURE_STATS const *stats, uint16_t direction, Vector2i pos, Vector2i pos2);
 
 // Split the struct storage into pages containing 256 structs, disable slot reuse

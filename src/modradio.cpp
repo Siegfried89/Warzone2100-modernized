@@ -92,7 +92,7 @@ void tick(GameWorld &world)
 	s_last = clip;
 	if (s_track[clip] == -2) { s_track[clip] = audio_GetTrackID(CLIP_FILES[clip]); }
 	if (s_track[clip] >= 0) { audio_PlayStaticTrack(src.x, src.y, s_track[clip]); }
-	// langes Stueck (ein Gespraech dauert bis zu 12 s): naechste Durchsage erst danach
-	s_next += 10000;
+	// langes Stueck (ein Gespraech dauert bis zu 17 s): naechste Durchsage erst danach
+	s_next += 12000;
 }
 }
