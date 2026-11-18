@@ -449,7 +449,16 @@ bool modDroidPropulsionSpan(const DROID *psDroid, float &leftCenter, float &left
 	};
 	const bool l = span(getLeftPropulsionIMD(psDroid), leftCenter, leftWidth);
 	const bool r = span(getRightPropulsionIMD(psDroid), rightCenter, rightWidth);
-	return l && r;
+	if (l && r) { return true; }
+	// Scav-Fahrzeuge u. a.: Raeder/Ketten sind Teil des Rumpf-Modells (kein eigenes Laufwerk) - Spuren unter den Rumpfkanten
+	const BODY_STATS *psBody = psDroid->getBodyStats();
+	if (psBody == nullptr || psBody->pIMD == nullptr || psBody->pIMD->displayModel() == nullptr) { return false; }
+	const iIMDShape *sh = psBody->pIMD->displayModel();
+	const float ex = std::max(std::abs(static_cast<float>(sh->min.x)), std::abs(static_cast<float>(sh->max.x)));
+	if (ex < 2.f) { return false; }
+	leftCenter = -0.74f * ex; rightCenter = 0.74f * ex;
+	leftWidth = rightWidth = 0.24f * ex;
+	return true;
 }
 
 int modDroidFootprintRadius(const DROID *psDroid)
