@@ -791,6 +791,10 @@ bool rebuildSearchPath(searchPathMode mode, bool force)
 		// User's home dir must be first so we always see what we write
 		WZ_PHYSFS_unmount(PHYSFS_getWriteDir());
 		WZ_PHYSFS_MountSearchPathWrapper(PHYSFS_getWriteDir(), NULL, PHYSFS_PREPEND);
+		if (mode != mod_clean)
+		{
+			modargfx::applyMount();   // MOD (18.11.): spaetestens hier ist der Benutzerordner (mods/grafik/ARGrafik.wz) sichtbar
+		}
 
 #ifdef DEBUG
 		printSearchPath();
