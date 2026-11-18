@@ -2,6 +2,7 @@
 // MOD: Funkgebrabbel (siehe modradio.h)
 
 #include "modradio.h"
+#include "lib/framework/frameresource.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
@@ -90,7 +91,7 @@ void tick(GameWorld &world)
 	int clip = static_cast<int>(rnd() % NUM_CLIPS);
 	if (clip == s_last) { clip = (clip + 1) % NUM_CLIPS; }     // nicht zweimal dasselbe Stueck hintereinander
 	s_last = clip;
-	if (s_track[clip] == -2) { s_track[clip] = audio_GetTrackID(CLIP_FILES[clip]); }
+	if (s_track[clip] == -2) { s_track[clip] = resPresent("WAV", CLIP_FILES[clip]) ? audio_GetTrackID(CLIP_FILES[clip]) : -1; }   // aelteres Paket: nur 4 Stuecke
 	if (s_track[clip] >= 0) { audio_PlayStaticTrack(src.x, src.y, s_track[clip]); }
 	// langes Stueck (ein Gespraech dauert bis zu 17 s): naechste Durchsage erst danach
 	s_next += 12000;
