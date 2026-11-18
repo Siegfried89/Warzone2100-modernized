@@ -51,6 +51,7 @@
 #include "faction.h"
 #include "modcombot.h"
 #include "modlayer.h"
+#include "modcrew.h"
 #include "modbuild.h"
 #include "modduel.h"
 #include "modrecoil.h"
@@ -730,6 +731,13 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	// MOD: modulare Combots (Torso/Beine/Arme) werden Teil fuer Teil mit den Original-MF-Animationen zusammengesetzt
 	if (modcombot::isModular(psDroid))
 	{
+		if (!bButton && modcrew::crewless(psDroid))
+		{
+			// (18.11., MF-Besatzung) Combot ohne Besatzung: dunkel wie abgeschaltet - so findet man ihn zum Besteigen
+			brightness.byte.r = static_cast<uint8_t>(brightness.byte.r * 45 / 100);
+			brightness.byte.g = static_cast<uint8_t>(brightness.byte.g * 45 / 100);
+			brightness.byte.b = static_cast<uint8_t>(brightness.byte.b * 45 / 100);
+		}
 		return modcombot::draw(const_cast<DROID *>(psDroid), bButton, modifiedModelMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, iPieData);
 	}
 
