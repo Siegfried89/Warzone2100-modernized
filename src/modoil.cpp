@@ -365,6 +365,15 @@ int stationTake(const STRUCTURE *st, int milli)
 	return take;
 }
 
+int storeBarrels(const STRUCTURE *st, int &cap)
+{
+	cap = STORAGE_CAP;
+	if (st == nullptr || st->pStructureType == nullptr || !isOilStore(st->pStructureType)) { return -1; }
+	const auto it = s_store.find(st->id);
+	const auto ir = s_storeR.find(st->id);
+	return (it == s_store.end() ? 0 : it->second) + (ir == s_storeR.end() ? 0 : ir->second);
+}
+
 int stationBarrels(const STRUCTURE *st)
 {
 	return (stationMilli(st) + 999) / 1000;
@@ -591,8 +600,12 @@ void drawCargo(const DROID *d, const iIMDShape *bed, const glm::mat4 &m, const g
 		const float px = (cols == 1) ? (x0 + x1) * 0.5f : x0 + w * (c == 0 ? 0.3f : 0.7f);
 		const float pz = z0 + l * (static_cast<float>(r) + 0.5f) / static_cast<float>(rows);
 		// Fass (mioil.pie, 27 breit, 37 hoch) auf etwa 11 Hoehe; Kiste (ammobox_c.pie) fast in Originalgroesse
-		const float sc = isBarrel ? std::min(0.32f, (l / static_cast<float>(rows)) / 30.f) : std::min(0.95f, (l / static_cast<float>(rows)) / 11.f);
-		const glm::mat4 mm = m * glm::translate(glm::vec3(px, y0 + 1.5f, pz)) * glm::rotate(static_cast<float>(k) * 0.7f, glm::vec3(0.f, 1.f, 0.f))
+		const float sc = isBarrel ? std::min(0.36f, (l / static_cast<float>(rows)) / 30.f) : std::min(0.95f, (l / static_cast<float>(rows)) / 11.f);
+		// (Wunsch 18.11. 12:45 "Man sieht nicht, ob der Lkw etwas geladen hat") - die Ladung stand am Boden des Ladeflaechen-Modells
+		// und verschwand hinter der Bordwand. Jetzt schaut sie ein Stueck ueber die Bordwand heraus (Oberkante = Bordwand + 5).
+		const float ch = isBarrel ? 37.f * sc : 7.f * sc;
+		const float yb = std::max(y0 + 1.5f, static_cast<float>(bed->max.y) + 5.f - ch);
+		const glm::mat4 mm = m * glm::translate(glm::vec3(px, yb, pz)) * glm::rotate(static_cast<float>(k) * 0.7f, glm::vec3(0.f, 1.f, 0.f))
 		                     * glm::scale(glm::vec3(sc));
 		pie_Draw3DShape(shape->displayModel(), 0, team, brightness, pieFlag, pieFlagData, mm, viewMatrix, stretchDepth);
 	}

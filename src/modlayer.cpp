@@ -242,6 +242,7 @@ void update()
 	{
 		s_current = s_target;
 		modlayermap::setView(s_current);   // eigene Karte der Ebene anzeigen (Gelaende, Beleuchtung neu aufbauen)
+		initEffectsSystem();               // (18.11. 12:51) Rauch/Feuer/Funken der alten Ebene nicht in der neuen zeigen
 		deselectOtherLayers(s_current);
 	}
 	if (p >= 1.f) { s_busy = false; }

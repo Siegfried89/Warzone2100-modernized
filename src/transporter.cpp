@@ -1081,7 +1081,7 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 					checkTransporterSpace(psOtherDroid, psDroidToAdd) &&
 					droidSqDist(psOtherDroid, psTransporter) < MAX_NEAREST_TRANSPORT_SQ_DIST)
 				{
-					if (psOtherDroid->droidType == DROID_TRANSPORTER && !psDroidToAdd->isCyborg())
+					if (psOtherDroid->droidType == DROID_TRANSPORTER && !modMayBoardSmallTransport(psDroidToAdd))
 					{
 						continue; // Only send cyborgs to a cyborg transporter.
 					}
@@ -1179,6 +1179,14 @@ bool checkTransporterSpace(DROID const *psTransporter, DROID const *psAssigned, 
 }
 
 /*returns the space the droid occupies on a transporter based on the body size*/
+bool modMayBoardSmallTransport(const DROID *psDroid)
+{
+	if (psDroid == nullptr || psDroid->isTransporter()) { return false; }
+	if (psDroid->isCyborg() || psDroid->droidType == DROID_PERSON) { return true; }
+	const BODY_STATS *b = psDroid->getBodyStats();
+	return b != nullptr && b->size == SIZE_LIGHT && !psDroid->isVtol();
+}
+
 int transporterSpaceRequired(const DROID *psDroid)
 {
 	// all droids are the same weight for campaign games.

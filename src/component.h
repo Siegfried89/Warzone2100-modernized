@@ -38,6 +38,8 @@ UBYTE getPlayerColour(UDWORD pl);
 
 UDWORD getComponentDroidRadius(const DROID *psDroid);
 UDWORD getComponentDroidTemplateRadius(const DROID_TEMPLATE *psDroid);
+/// MOD (18.11.): halbe Diagonale der Grundflaeche (Rumpf, Antrieb, Bau-Aufsatz) in Weltkoordinaten - fuer den Auswahlring am Boden
+int modDroidFootprintRadius(const DROID *psDroid);
 UDWORD getComponentRadius(const BASE_STATS *psComponent);
 UDWORD getResearchRadius(const BASE_STATS *Stat);
 UDWORD getStructureSizeMax(const STRUCTURE *psStructure);

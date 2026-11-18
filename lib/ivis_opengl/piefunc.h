@@ -40,6 +40,9 @@ namespace gfx_api
 }
 
 void pie_TransColouredTriangle(const std::array<Vector3f, 3> &vrt, PIELIGHT c, const glm::mat4 &modelViewMatrix);
+/// MOD (18.11.): wie pie_TransColouredTriangle, aber ein ganzer Dreiecksstreifen in einem Aufruf (additiv, mit Tiefentest);
+/// c.byte.a = Deckkraft
+void pie_TransColouredTriangleStrip(const Vector3f *vrt, size_t count, PIELIGHT c, const glm::mat4 &modelViewMatrix);
 
 void pie_SetViewingWindow(Vector3i *v, PIELIGHT colour);
 /// MOD (17.11.): Kameramarker der Minikarte als freie Dreiecksfolge (xy = 2 Werte je Punkt, rgba = 4 Bytes je Punkt).

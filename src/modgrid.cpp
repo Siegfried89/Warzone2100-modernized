@@ -50,6 +50,10 @@ constexpr int SAG_STEPS = 12;
 constexpr int GEN_CAPACITY = 40;
 constexpr int GEN_MODULE_CAPACITY = 20;
 constexpr int PANEL_CAPACITY = 1;
+// (Wunsch 18.11. 12:54 "Ausbilden geht immer noch nicht. Bei KEINER Einheit.") Die Fabrik stand im PowerDown: das Kraftwerk hatte kein
+// Oel mehr (oder die Fabrik lag ausserhalb des Netzes) - dann lief gar nichts. Die Kommandozentrale liefert jetzt Notstrom: eine stetige
+// kleine Quelle (reicht fuer Fabrik + Forschung in ihrer Naehe), auch ohne Oel. Volle Leistung weiterhin nur mit laufendem Kraftwerk.
+constexpr int NOTSTROM_CAPACITY = 6;
 constexpr int SMALL_DEMAND = 1;
 constexpr int BIG_DEMAND = 3;
 constexpr int PANEL_LINK_RANGE = 2 * 128;     // Paneele bis 2 Felder auseinander bilden ein Solarfeld
@@ -266,6 +270,12 @@ void update()
 				gens.push_back({s->id, s->pos.x, s->pos.y, s->pos.z});
 				genCap.push_back(modoil::generatorRunning(s) ? GEN_CAPACITY + GEN_MODULE_CAPACITY * static_cast<int>(s->capacity) : 0);
 			}
+			else if (st->type == REF_HQ)
+			{
+				panels.push_back({s->id, s->pos.x, s->pos.y, s->pos.z});
+				panelCap.push_back(NOTSTROM_CAPACITY);
+				panelNuke.push_back(2);   // 2 = Notstrom der Kommandozentrale
+			}
 			else if (st->incomeProvide > 0)
 			{
 				// (Wunsch 17.11. 20:35) Solarpaneele speisen das Netz: an der Oberflaeche nur tagsueber, auf den Orbit-Inseln immer
@@ -371,12 +381,19 @@ void update()
 		// Netze: Quellen (laufende Kraftwerke, Solarpaneele), Umspannwerke, Leistung
 		const int total = n + g + m + q;
 		std::vector<int> solarCap(total, 0), genCapC(total, 0), demand(total, 0);
-		std::vector<char> hasSub(total, 0), hasGenC(total, 0);
+		std::vector<char> hasSub(total, 0), hasGenC(total, 0), realSrc(total, 0);
+		std::vector<int> emergCap(total, 0);
 		for (int k = 0; k < q; k++)
 		{
 			const int r = find(par, P0 + k);
 			solarCap[r] += panelCap[static_cast<size_t>(k)];
 			if (panelNuke[static_cast<size_t>(k)] && panelCap[static_cast<size_t>(k)] > 0) { hasGenC[r] = 1; }   // ohne Umspannwerk: speist wie ein Kraftwerk
+			if (panelNuke[static_cast<size_t>(k)] == 1 && panelCap[static_cast<size_t>(k)] > 0) { realSrc[r] = 1; }
+			if (panelNuke[static_cast<size_t>(k)] == 2) { emergCap[r] += panelCap[static_cast<size_t>(k)]; }
+		}
+		for (int k = 0; k < g; k++)
+		{
+			if (genCap[static_cast<size_t>(k)] > 0) { realSrc[find(par, G0 + k)] = 1; }
 		}
 		for (int k = 0; k < g; k++)
 		{
@@ -454,6 +471,7 @@ void update()
 			{
 				fed[r] = hasGenC[r];
 				capacity[r] = fed[r] ? INT32_MAX / 4 : 0;   // ohne Umspannwerk wie bisher: ein laufendes Kraftwerk versorgt alles am Netz
+				if (fed[r] && !realSrc[r]) { capacity[r] = emergCap[r]; }   // nur Notstrom der Kommandozentrale
 			}
 		}
 		for (int k = 0; k < g; k++)

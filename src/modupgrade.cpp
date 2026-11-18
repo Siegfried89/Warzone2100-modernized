@@ -7,6 +7,7 @@
 #include "lib/framework/file.h"
 
 #include "structure.h"
+#include "stats.h"
 #include "structuredef.h"
 
 #include <string>
@@ -45,6 +46,23 @@ const std::string *baseOf(const STRUCTURE_STATS *psStats)
 bool isUpgrade(const STRUCTURE_STATS *psStats)
 {
 	return baseOf(psStats) != nullptr;
+}
+
+STRUCTURE_STATS *upgradeFor(const STRUCTURE *psOld, unsigned player)
+{
+	if (psOld == nullptr || psOld->pStructureType == nullptr || player >= MAX_PLAYERS || apStructTypeLists[player] == nullptr) { return nullptr; }
+	if (!s_loaded) { load(); }
+	if (s_base.empty()) { return nullptr; }
+	const std::string oldId = psOld->pStructureType->id.toStdString();
+	for (UDWORD i = 0; i < numStructureStats; ++i)
+	{
+		STRUCTURE_STATS *st = &asStructureStats[i];
+		const auto it = s_base.find(st->id.toStdString());
+		if (it == s_base.end() || it->second != oldId) { continue; }
+		if (apStructTypeLists[player][i] != AVAILABLE) { continue; }
+		if (canReplace(st, psOld, player)) { return st; }
+	}
+	return nullptr;
 }
 
 bool canReplace(const STRUCTURE_STATS *psNew, const STRUCTURE *psOld, unsigned player)

@@ -34,6 +34,9 @@ bool busy(uint32_t droidId);
 bool startOrder(DROID *psDroid, int worldX, int worldY, uint16_t code);
 /// Oberflaeche: Strg + Klick auf ein Bauwerk. true = Befehl an gewaehlte Lkw verschickt
 bool loadOrderSelected(unsigned player, const STRUCTURE *psStructure);
+/// (Wunsch 18.11. 12:43 "Trucks koennen keine Munitionskisten aufnehmen") normaler Klick: ist das ein Bauwerk, an dem dieser Lkw Kisten
+/// laden oder einlagern kann (Fabrik mit Kistenhaufen, Haufen, Depot, Munitionskiste)?
+bool isCrateTarget(const DROID *psDroid, const STRUCTURE *psStructure);
 /// Oberflaeche: soll dieser Lkw bei Strg + Klick auf den Boden abladen (statt Befestigung zu bauen)?
 bool wantsUnload(const DROID *psDroid);
 /// modammo: Quelle mit Vorrat (Depot, Kiste, Haufen)? Dann hasStock pruefen
@@ -42,6 +45,8 @@ bool finite(const STRUCTURE *psSource);
 bool hasStock(const STRUCTURE *psSource);
 /// modammo: Quelle hat Munition abgegeben (Promille einer vollen Ladung)
 void consume(const STRUCTURE *psSource, int permille);
+/// Anzeige: Kisten-Plaetze eines Depots/einer Kiste/eines Haufens (-1 = keine Vorrats-Quelle)
+int crateCapAt(const STRUCTURE *psSource);
 /// Anzeige/Hilfe: Kisten in einer Quelle (-1 = unbegrenzt)
 int cratesAt(const STRUCTURE *psSource);
 /// Hooks beim Zerstoeren (vor dem Entfernen)

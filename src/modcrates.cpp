@@ -545,7 +545,7 @@ bool startOrder(DROID *d, int x, int y, uint16_t code)
 		{
 			for (STRUCTURE *s : gameWorld.objects.structures[d->player])
 			{
-				if (!alive(s) || !modammo::isSource(s)) { continue; }
+				if (!alive(s) || !(modammo::isSource(s) || isFactory(s))) { continue; }
 				if (s->pos.x == x && s->pos.y == y) { src = s; break; }
 			}
 		}
@@ -584,6 +584,20 @@ bool loadOrderSelected(unsigned player, const STRUCTURE *s)
 	return any;
 }
 
+bool isCrateTarget(const DROID *d, const STRUCTURE *s)
+{
+	if (d == nullptr || s == nullptr || capacity(d) <= 0 || s->player != d->player || !alive(s)) { return false; }
+	if (isFactory(s)) { return facPile(s) != nullptr && crates(d) < capacity(d); }
+	if (isPile(s)) { return crates(d) < capacity(d) && stockRef(s) > 0; }
+	if (isDepot(s) || isBox(s))
+	{
+		const bool canStore = crates(d) > 0 && cratesIn(stockRef(s)) < capOf(s);
+		const bool canLoad = crates(d) < capacity(d) && stockRef(s) > 0;
+		return canStore || canLoad;
+	}
+	return false;
+}
+
 bool wantsUnload(const DROID *d)
 {
 	return crates(d) > 0;
@@ -604,6 +618,12 @@ void consume(const STRUCTURE *s, int permille)
 {
 	if (s == nullptr || permille <= 0 || !finite(s)) { return; }
 	stockRef(s) -= permille;
+}
+
+int crateCapAt(const STRUCTURE *s)
+{
+	if (s == nullptr || !finite(s)) { return -1; }
+	return capOf(s);
 }
 
 int cratesAt(const STRUCTURE *s)

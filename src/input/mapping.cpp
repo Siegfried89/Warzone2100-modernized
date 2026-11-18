@@ -411,13 +411,15 @@ bool KeyMappings::load(const char* path, const KeyFunctionConfiguration& keyFunc
 	}
 	ini.endArray();
 
-	// MOD (Wunsch 18.11. 01:08): "Q dreht die Kamera nach rechts, E nach links" - auch fuer eine schon gespeicherte keymap.json (der Spieler soll
+	// MOD (Wunsch 18.11. 01:08, 12:41 getauscht): "Q dreht die Kamera nach links, E nach rechts" - auch fuer eine schon gespeicherte keymap.json (der Spieler soll
 	// nichts selbst einstellen muessen): die alten Standardbelegungen Q = Patrouille und E = Feuer erwidern fallen weg (beides bleibt ueber die
 	// Befehlsknoepfe erreichbar), Q/E drehen die Kamera (zweite Belegung neben Ziffernblock 6/4).
 	for (auto it = keyMappings.begin(); it != keyMappings.end();)
 	{
 		const bool qe = (it->keys.input.is(KEY_Q) || it->keys.input.is(KEY_E)) && !it->hasMeta();
-		if (qe && (it->info.name == "SetDroidMovePatrol" || it->info.name == "SetDroidAttackReturn"))
+		// (Wunsch 18.11. 12:41 "Q und E fuer die Kamerasteuerung tauschen"): die Belegung von 01:08 (Q = rechts, E = links) faellt weg
+		const bool oldRot = (it->keys.input.is(KEY_Q) && it->info.name == "RotateRight") || (it->keys.input.is(KEY_E) && it->info.name == "RotateLeft");
+		if (qe && (oldRot || it->info.name == "SetDroidMovePatrol" || it->info.name == "SetDroidAttackReturn"))
 		{
 			it = keyMappings.erase(it);
 			bDirty = true;
@@ -437,8 +439,8 @@ bool KeyMappings::load(const char* path, const KeyFunctionConfiguration& keyFunc
 		add(KeyCombination(KEY_IGNORE, KeyMappingInput(key), action), *rot, KeyMappingSlot::SECONDARY);
 		bDirty = true;
 	};
-	bindOnce(KEY_Q, "RotateRight");
-	bindOnce(KEY_E, "RotateLeft");
+	bindOnce(KEY_Q, "RotateLeft");     // (18.11. 12:41) Q dreht nach links, E nach rechts
+	bindOnce(KEY_E, "RotateRight");
 	bindOnce(KEY_INSERT, "ToggleArtRevolution", KeyAction::PRESSED);   // (18.11.) AR-Grafik im Spiel umschalten
 	return true;
 }

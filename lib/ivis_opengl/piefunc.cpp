@@ -201,6 +201,26 @@ void pie_TransColouredTriangle(const std::array<Vector3f, 3> &vrt, PIELIGHT c, c
 	gfx_api::context::get().disable_all_vertex_buffers();
 }
 
+void pie_TransColouredTriangleStrip(const Vector3f *vrt, size_t count, PIELIGHT c, const glm::mat4 &modelViewMatrix)
+{
+	if (vrt == nullptr || count < 3) { return; }
+	glm::vec4 color(c.byte.r / 255.f, c.byte.g / 255.f, c.byte.b / 255.f, c.byte.a / 255.f);
+	const auto& renderState = getCurrentRenderState();
+	const glm::vec4 fogRange(renderState.fogBegin, renderState.fogEnd, pie_GetFogEnabled() ? 1.f : 0.f, gfx_api::context::get().linearLightingEnabled() ? 1.f : 0.f);
+
+	gfx_api::TransColouredTrianglePSO::get().bind();
+	gfx_api::TransColouredTrianglePSO::get().bind_constants({
+		pie_UIPerspectiveGet() * modelViewMatrix,
+		modelViewMatrix,
+		color,
+		pie_SceneColourToVec4(pie_GetFogColour()),
+		fogRange
+	});
+	gfx_api::context::get().bind_streamed_vertex_buffers(vrt, count * sizeof(Vector3f));
+	gfx_api::TransColouredTrianglePSO::get().draw(count, 0);
+	gfx_api::context::get().disable_all_vertex_buffers();
+}
+
 void pie_Skybox_Init()
 {
 	float narrowingOfTop = 0.15f;
