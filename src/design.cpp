@@ -2906,6 +2906,13 @@ bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complai
 
 	const bool isVtolTemplate = checkTemplateIsVtol(psTempl); // True for transporters also.
 
+	// MOD (18.11.): der Nurfluegler "Manta" (Body-Manta) hat kein Fahrwerk und fliegt nur
+	if (!isVtolTemplate && psTempl->getBodyStats()->id.compare("Body-Manta") == 0)
+	{
+		debug(level, "Body-Manta needs VTOL propulsion");
+		return false;
+	}
+
 	// Check the weapons
 	for (int i = 0; i < psTempl->numWeaps; i++)
 	{
