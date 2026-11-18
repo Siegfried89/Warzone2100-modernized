@@ -521,9 +521,10 @@ bool regionOf(const STRUCTURE *s, Region &r)
 	const std::string *key = familyOf(s);
 	if (key == nullptr) { return false; }
 	const bool pit = key->rfind("pit", 0) == 0;
-	// lichte Masse aus trench.py: Grabengang 40 breit (HI 20), Grube 76 (PIT_HI 38); abzueglich ~6 fuer den Koerper des Soldaten
-	r.core = pit ? 32 : 14;
-	r.arm = 14;
+	// lichte Masse aus trench.py: Grabengang 40 breit (HI 20), Grube 76 (PIT_HI 38); abzueglich ~4-5 fuer den Koerper des Soldaten.
+	// Die Deckungsplaetze (modcover::slotPos) liegen hoechstens 16 seitlich bzw. 32 laengs - sie bleiben damit erreichbar.
+	r.core = pit ? 33 : 16;
+	r.arm = 16;
 	r.half = (S * TILE_UNITS) / 2 + 2;
 	r.open = it->second & 0x0F;
 	return true;
