@@ -40,6 +40,50 @@ bool isArtillery(const DROID *d)
 	return !proj_Direct(&asWeaponStats[d->asWeaps[0].nStat]);
 }
 
+/// (19.11. 00:13 "Bei Formationen sollen immer die Panzer an der Spitze oder in der Mitte sein"): Rang je Einheit, kleiner = weiter vorn
+/// bzw. weiter in der Mitte. 0 Panzer (Kette/Halbkette mit Waffe), 1 andere Kampffahrzeuge (Raeder, Luftkissen, Combots), 2 Cyborgs und
+/// Infanterie, 3 Hilfsfahrzeuge (Sensor, Bau, Reparatur, Stoersender), 4 Artillerie (indirekt) ganz hinten/aussen.
+int rankOf(const DROID *d)
+{
+	if (isArtillery(d)) { return 4; }
+	switch (d->droidType)
+	{
+	case DROID_PERSON: case DROID_CYBORG: case DROID_CYBORG_SUPER: return 2;
+	case DROID_SENSOR: case DROID_CONSTRUCT: case DROID_REPAIR: case DROID_ECM: case DROID_CYBORG_CONSTRUCT: case DROID_CYBORG_REPAIR:
+	case DROID_TRANSPORTER: case DROID_SUPERTRANSPORTER: return 3;
+	default: break;
+	}
+	if (d->numWeaps == 0) { return 3; }
+	const PROPULSION_STATS *p = d->getPropulsionStats();
+	if (p != nullptr && (p->propulsionType == PROPULSION_TYPE_TRACKED || p->propulsionType == PROPULSION_TYPE_HALF_TRACKED)) { return 0; }
+	return 1;
+}
+
+/// Panzer zuerst, innerhalb eines Rangs die schwersten (meiste Trefferpunkte) zuerst; bei Gleichstand nach Nummer (auf allen Rechnern gleich)
+void sortForFormation(std::vector<DROID *> &v)
+{
+	std::stable_sort(v.begin(), v.end(), [](const DROID *a, const DROID *b) {
+		const int ra = rankOf(a), rb = rankOf(b);
+		if (ra != rb) { return ra < rb; }
+		if (a->originalBody != b->originalBody) { return a->originalBody > b->originalBody; }
+		return a->id < b->id;
+	});
+}
+
+/// Plaetze einer Reihe von der Mitte nach aussen: 0, +1, -1, +2, -2 ... (Index in die Reihe 0..n-1)
+std::vector<size_t> centreOut(size_t n)
+{
+	std::vector<size_t> idx(n);
+	for (size_t i = 0; i < n; ++i) { idx[i] = i; }
+	const float mid = (static_cast<float>(n) - 1.f) * 0.5f;
+	std::stable_sort(idx.begin(), idx.end(), [mid](size_t a, size_t b) {
+		const float da = std::fabs(static_cast<float>(a) - mid), db = std::fabs(static_cast<float>(b) - mid);
+		if (da != db) { return da < db; }
+		return a > b;
+	});
+	return idx;
+}
+
 Vec forwardOf(const DROID *d)
 {
 	return { static_cast<float>(iSinR(d->rot.direction, 1000)) / 1000.f, static_cast<float>(iCosR(d->rot.direction, 1000)) / 1000.f };
@@ -110,6 +154,7 @@ void apply(Type type)
 	{
 		if (d != anchor) { rest.push_back(d); }
 	}
+	sortForFormation(rest);   // Panzer an die Spitze (Keil, Kolonne) bzw. in die Mitte (Ring innen, Linie mittig)
 	const size_t n = rest.size();
 
 	switch (type)
@@ -131,12 +176,15 @@ void apply(Type type)
 		break;
 	}
 	case LINE:
+	{
+		const std::vector<size_t> slot = centreOut(n);
 		for (size_t i = 0; i < n; ++i)
 		{
-			const float o = (static_cast<float>(i) - (n - 1) * 0.5f) * SPACING;
+			const float o = (static_cast<float>(slot[i]) - (n - 1) * 0.5f) * SPACING;
 			place(rest[i], { c.x + r.x * o + f.x * SPACING, c.y + r.y * o + f.y * SPACING });
 		}
 		break;
+	}
 	case WEDGE:
 		for (size_t i = 0; i < n; ++i)
 		{
@@ -162,9 +210,10 @@ void apply(Type type)
 		{
 			(isArtillery(d) ? arty : front).push_back(d);
 		}
+		const std::vector<size_t> slot = centreOut(front.size());
 		for (size_t i = 0; i < front.size(); ++i)
 		{
-			const float o = (static_cast<float>(i) - (front.size() - 1) * 0.5f) * SPACING;
+			const float o = (static_cast<float>(slot[i]) - (front.size() - 1) * 0.5f) * SPACING;
 			place(front[i], { s.x + r.x * o + f.x * 2.f * SPACING, s.y + r.y * o + f.y * 2.f * SPACING });
 		}
 		for (size_t i = 0; i < arty.size(); ++i)

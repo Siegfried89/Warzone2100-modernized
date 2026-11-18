@@ -32,6 +32,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "action.h"
+#include "modicbm.h"
 #include "modupgrade.h"
 #include "modarty.h"
 #include "modgdiart.h"
@@ -445,6 +446,13 @@ bool actionVisibleTarget(DROID *psDroid, BASE_OBJECT *psTarget, int weapon_slot)
 	if (!psTarget->visible[psDroid->player])
 	{
 		return false;
+	}
+	// MOD (19.11. 00:13): der Atomraketen-Werfer schiesst auf Befehl indirekt ueber Bergketten - jedes Ziel, das der Spieler gerade sieht
+	// (eigene oder verbuendete Einheiten, Sensoren), oder einen Bodenpunkt. Von sich aus feuert er weiter nur auf das, was er selbst sieht.
+	if (modicbm::isTelDroid(psDroid) && (psDroid->order.type == DORDER_ATTACK || psDroid->order.type == DORDER_FIRESUPPORT)
+	    && psDroid->order.psObj == psTarget)
+	{
+		return modgroundfire::isMarker(psTarget) || psTarget->visible[psDroid->player] == UBYTE_MAX;
 	}
 	if (modgroundfire::isMarker(psTarget))   // MOD: Boden beschiessen - Zielpunkt ist fuer den Befehlsgeber immer "gesehen"
 	{

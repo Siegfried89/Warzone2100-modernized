@@ -29,6 +29,9 @@ void cloudAt(const Vector3i &groundPos);
 /// (18.11. 20:46) mobiler Werfer (Waffe NukeTEL): aus combFire - true = behandelt (kein normales Geschoss); beginnt im Stand das
 /// Aufrichten, der Start folgt im Spielschritt; 6 min Nachladen
 bool telIntercept(DROID *psDroid, const BASE_OBJECT *psTarget);
+/// (19.11. 00:13) ist das ein mobiler Atomraketen-Werfer? Er schiesst indirekt ueber Bergketten: jedes Ziel, das der Spieler sieht und
+/// das in Reichweite liegt (die Rakete steigt senkrecht auf und fliegt im hohen Bogen)
+bool isTelDroid(const DROID *psDroid);
 /// steht fest (Stuetzen aus, richtet sich auf, legt sich hin)
 bool telHalted(const DROID *psDroid);
 /// Anzeige: Winkel des Aufrichters (statt des Zielwinkels)
