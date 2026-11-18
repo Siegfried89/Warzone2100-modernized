@@ -2,6 +2,7 @@
 // MOD: "Fully autonomous" (siehe modauto.h)
 
 #include "modauto.h"
+#include "modcrew.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -45,7 +46,7 @@ bool candidate(const DROID *d, const BASE_OBJECT *o, unsigned player, int64_t &b
 
 bool supported(const DROID *psDroid)
 {
-	return psDroid != nullptr && !psDroid->isTransporter() && !psDroid->isVtol() && psDroid->numWeaps > 0;
+	return psDroid != nullptr && !psDroid->isTransporter() && !psDroid->isVtol() && psDroid->numWeaps > 0 && !modcrew::crewless(psDroid);   // ohne Besatzung: nichts
 }
 
 bool isOn(const DROID *psDroid)
