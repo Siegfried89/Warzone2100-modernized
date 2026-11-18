@@ -1330,7 +1330,21 @@ void frontendScreenSizeDidChange(int oldWidth, int oldHeight, int newWidth, int 
 		&& (newWidth >= WZ_SUGGESTED_MAX_LOGICAL_SCREEN_SIZE_DIMENSION || newHeight >= WZ_SUGGESTED_MAX_LOGICAL_SCREEN_SIZE_DIMENSION))
 	{
 		unsigned int suggestedDisplayScale = wzGetSuggestedDisplayScaleForCurrentWindowSize(WZ_SUGGESTED_MAX_LOGICAL_SCREEN_SIZE_DIMENSION);
-		if ((suggestedDisplayScale > currentDisplayScale)
+		// MOD (Wunsch 18.11. 01:20 "das ganze Fenster und UI ist viel zu klein - die PS1-Variante wirkt besser"): Einblendungen sind seit 16.11.
+		// abgeschaltet, die Frage nach dem groesseren Anzeigemassstab kam deshalb nie. Jetzt wird der vorgeschlagene Massstab direkt eingestellt
+		// (bei 1920 x 1080: 150 %), solange "Anzeigemassstab automatisch" an ist (Standard) - der Spieler muss nichts einstellen.
+		if (suggestedDisplayScale > currentDisplayScale && war_getAutoAdjustDisplayScale())
+		{
+			const unsigned int wanted = suggestedDisplayScale;
+			wzAsyncExecOnMainThread([wanted]() {
+				if (wanted <= wzGetCurrentDisplayScale()) { return; }
+				const unsigned int prior = war_GetDisplayScale();
+				war_SetDisplayScale(wanted);
+				if (!wzChangeDisplayScale(wanted)) { war_SetDisplayScale(prior); }
+				else { debug(LOG_INFO, "MOD: Anzeigemassstab automatisch auf %u%% gestellt", wanted); }
+			});
+		}
+		else if ((suggestedDisplayScale > currentDisplayScale)
 			&& !hasNotificationsWithTag(DISPLAY_SCALE_PROMPT_INCREASE_TAG, NotificationScope::DISPLAYED_ONLY))
 		{
 			cancelOrDismissNotificationIfTag([](const std::string& tag) {

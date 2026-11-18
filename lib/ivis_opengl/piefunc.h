@@ -54,7 +54,8 @@ void pie_DrawSkyboxHaze(float scale, const glm::mat4& projectionMatrix, const gl
 /// texFile: Bodenbild (wie Orbit-Leere), hazeMix wie im Gelaende-Shader eingebacken; Mittelpunkt/Radien in Modellkoordinaten (x, z)
 void pie_DrawOrbitGround(const char *texFile, const glm::vec3 &hazeTint, float hazeMix, float centerX, float centerZ, float rClear, float rFull,
                          float groundY, float uvScale, const glm::mat4 &projectionMatrix, const glm::mat4 &worldViewMatrix,
-                         const glm::vec4 &colourMul, const glm::vec4 &hazeColour);
+                         const glm::vec4 &colourMul, const glm::vec4 &hazeColour,
+                         const class iV_Image *customImage = nullptr, float uvPeriodX = 0.f, float uvPeriodZ = 0.f);
 void pie_OrbitGround_Shutdown();
 void pie_Skybox_Init();
 void pie_Skybox_Shutdown();

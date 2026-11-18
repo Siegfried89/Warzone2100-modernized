@@ -451,8 +451,11 @@ void layout()
 	const std::shared_ptr<WIDGET> radar = getRadarWidget();
 	if (radar && radar->visible() && radar->height() > 0)
 	{
+		// (18.11. 01:14) ueber der Knopfzeile "Map"/"Symbols" (und dem Rand der gedrehten Minikarte), nicht mehr darauf
+		const int m = rotateRadar ? static_cast<int>(radar->height() * 0.21f) : 0;
+		const int row = static_cast<int>(18 * s) + static_cast<int>(3 * s);
 		x = std::min(x, radar->x() + radar->width() - fw);
-		y = radar->y() - fh + static_cast<int>(6 * s);
+		y = radar->y() - m - row - fh - static_cast<int>(4 * s);
 	}
 	x = std::max(4, x); y = std::max(40, y);
 	s_root->setGeometry(x, y, fw, fh);

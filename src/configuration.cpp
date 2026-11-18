@@ -484,7 +484,9 @@ bool loadConfig()
 	{
 		war_setLODDistanceBiasPercentage(value.value());
 	}
-	rotateRadar = iniGetBool("rotateRadar", true).value();
+	// MOD (Wunsch 18.11. 01:24 "Karte dreht sich nicht mehr mit"): die Minikarte bleibt immer nach Norden ausgerichtet (auch bei einer
+	// gespeicherten alten Einstellung - der Spieler muss nichts umstellen)
+	rotateRadar = false;
 	radarRotationArrow = iniGetBool("radarRotationArrow", true).value();
 	hostQuitConfirmation = iniGetBool("hostQuitConfirmation", true).value();
 	war_SetPauseOnFocusLoss(iniGetBool("PauseOnFocusLoss", false).value());

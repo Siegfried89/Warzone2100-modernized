@@ -371,12 +371,14 @@ bool genOrbitGridMF(Grid &g, Rng &r)
 	if (fit.empty()) { return false; }
 	g.tid.assign(static_cast<size_t>(W) * static_cast<size_t>(H), -1);
 	std::vector<uint8_t> occ(static_cast<size_t>(W) * static_cast<size_t>(H), 0);
-	const long wanted = mapArea * 22 / 100;   // etwa ein Fuenftel der Karte soll Inselflaeche sein
-	long placed = 0;
+	// (Wunsch 18.11. 01:14) "viel weniger Inseln - im niedrigen einstelligen Bereich": 3 bis 5 Inseln, bevorzugt die grossen Formen
+	const int wantedCount = 3 + r.range(3);
+	std::stable_sort(fit.begin(), fit.end(), [&](int a, int b) { return lib[static_cast<size_t>(a)].w * lib[static_cast<size_t>(a)].h > lib[static_cast<size_t>(b)].w * lib[static_cast<size_t>(b)].h; });
+	const int bigPool = std::max(1, static_cast<int>(fit.size()) / 3);   // aus dem groessten Drittel waehlen
 	int count = 0;
-	for (int tries = 0; tries < 600 && (placed < wanted || count < 3); ++tries)
+	for (int tries = 0; tries < 600 && count < wantedCount; ++tries)
 	{
-		const IslandShape &s = lib[static_cast<size_t>(fit[static_cast<size_t>(r.range(static_cast<int>(fit.size())))])];
+		const IslandShape &s = lib[static_cast<size_t>(fit[static_cast<size_t>(r.range(tries < 300 ? bigPool : static_cast<int>(fit.size())))])];
 		const int x0 = MARGIN + 1 + r.range(std::max(1, maxW - s.w + 1));
 		const int y0 = MARGIN + 1 + r.range(std::max(1, maxH - s.h + 1));
 		bool free = true;
@@ -407,7 +409,6 @@ bool genOrbitGridMF(Grid &g, Rng &r)
 				if (v < 0) { continue; }
 				g.set(x0 + x, y0 + y);
 				g.tid[static_cast<size_t>(x0 + x) + static_cast<size_t>(y0 + y) * W] = v;
-				++placed;
 			}
 		}
 		++count;
