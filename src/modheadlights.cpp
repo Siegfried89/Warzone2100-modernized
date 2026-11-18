@@ -40,6 +40,7 @@ namespace
 constexpr size_t DOUBLE_LIT = 40;    // so viele Fahrzeuge (die naechsten zur Kamera) werfen zwei Lichtkegel
 constexpr size_t SINGLE_LIT = 60;    // die naechsten danach einen gemeinsamen
 constexpr float TILT = 0.16f;        // Kegel leicht nach unten (ca. 9 Grad)
+constexpr float BEAM_TILT = 0.07f;   // sichtbarer Lichtkegel: flacher (ca. 4 Grad), damit er erst ein Stueck vor dem Fahrzeug im Boden versinkt
 
 bool eligible(const DROID *d)
 {
@@ -94,6 +95,19 @@ glm::vec3 lampLocal(const DROID *d, float &halfWidth)
 	return glm::vec3(0.55f * halfWidth, y, static_cast<float>(imd->min.z) + 1.f);
 }
 
+/// Ruecklicht rechts im Modell (hinten = +z): aussen, halbe Hoehe
+glm::vec3 tailLocal(const DROID *d, float halfWidth)
+{
+	const BODY_STATS *b = d->getBodyStats();
+	const iIMDShape *imd = (b != nullptr && b->pIMD != nullptr) ? b->pIMD->displayModel() : nullptr;
+	if (imd == nullptr)
+	{
+		return glm::vec3(0.6f * halfWidth, 10.f, 20.f);
+	}
+	const float y = static_cast<float>(imd->min.y) + 0.5f * static_cast<float>(imd->max.y - imd->min.y);
+	return glm::vec3(0.62f * halfWidth, y, static_cast<float>(imd->max.z) - 0.5f);
+}
+
 struct Cand
 {
 	glm::vec3 lamp[2];      // Bild-Koordinaten
@@ -115,13 +129,19 @@ void draw3D(const glm::mat4 &viewMatrix)
 	{
 		return;
 	}
-	static const iIMDBaseShape *s_shape = nullptr;
+	static const iIMDBaseShape *s_shape = nullptr, *s_tail = nullptr, *s_beam = nullptr;
 	static unsigned s_gen = 0;
 	if (modelCacheStale(s_gen))
 	{
 		s_shape = modelGet(WzString::fromUtf8("modheadlamp.pie"));
+		s_tail = modelGet(WzString::fromUtf8("modtaillamp.pie"));
+		s_beam = modelGet(WzString::fromUtf8("modheadbeam.pie"));
 	}
 	const iIMDShape *shape = s_shape != nullptr ? s_shape->displayModel() : nullptr;
+	const iIMDShape *tail = s_tail != nullptr ? s_tail->displayModel() : nullptr;
+	const iIMDShape *beam = s_beam != nullptr ? s_beam->displayModel() : nullptr;
+	const int beamAlpha = std::clamp(static_cast<int>(150.f * k), 0, 255);   // sichtbarer Lichtkegel in der Luft (WZ-Intro)
+	const int tailAlpha = std::clamp(static_cast<int>(210.f * k), 0, 255);
 	const glm::mat4 bill(glm::transpose(glm::mat3(viewMatrix)));
 	const int alpha = std::clamp(static_cast<int>(255.f * k), 0, 255);
 	const modlayer::Layer view = modlayer::current();
@@ -153,6 +173,29 @@ void draw3D(const glm::mat4 &viewMatrix)
 				{
 					const glm::mat4 bb = glm::translate(glm::mat4(1.f), c.lamp[s]) * glm::mat4(bill) * glm::scale(glm::mat4(1.f), glm::vec3(c.scale));
 					pie_Draw3DShape(shape, 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, bb, viewMatrix, 0.f, true);
+				}
+			}
+			// sichtbarer Lichtkegel vor jeder Lampe (wie im WZ-Intro): leicht nach unten, verblasst nach vorn, versinkt im Boden
+			if (beam != nullptr)
+			{
+				const float len = std::clamp(halfW * 7.f + 60.f, 90.f, 400.f);
+				for (int s = 0; s < 2; ++s)
+				{
+					const float sx = s == 0 ? L.x : -L.x;
+					const glm::mat4 bm = M * glm::translate(glm::vec3(sx, L.y, L.z - 1.f)) * glm::rotate(-BEAM_TILT, glm::vec3(1.f, 0.f, 0.f))
+					                     * glm::scale(glm::vec3(len, len, len));
+					pie_Draw3DShape(beam, 0, 0, WZCOL_WHITE, pie_ADDITIVE, beamAlpha, bm, viewMatrix, 0.f, true);
+				}
+			}
+			// zwei rote Ruecklichter hinten (wie am Lkw im Intro), kleiner, ohne Lichtwurf
+			if (tail != nullptr)
+			{
+				const glm::vec3 T = tailLocal(d, halfW);
+				for (int s = 0; s < 2; ++s)
+				{
+					const glm::vec3 tp = glm::vec3(M * glm::vec4(s == 0 ? T.x : -T.x, T.y, T.z + 1.f, 1.f));
+					const glm::mat4 bb = glm::translate(glm::mat4(1.f), tp) * glm::mat4(bill) * glm::scale(glm::mat4(1.f), glm::vec3(c.scale * 0.55f));
+					pie_Draw3DShape(tail, 0, 0, WZCOL_WHITE, pie_ADDITIVE, tailAlpha, bb, viewMatrix, 0.f, true);
 				}
 			}
 			cands.push_back(c);
