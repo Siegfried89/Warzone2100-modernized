@@ -33,32 +33,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - compiler: "MSVC_2022"
-            architecture: "x86"
-            artifact_description: "msvc_x86"
-            deploy_release: false
-            support_sentry: true
-          - compiler: "MSVC_2022"
-            architecture: "x64"
-            artifact_description: "msvc_x64"
-            deploy_release: false
-            support_sentry: true
-          # - compiler: "MSVC_2022"
-          #   architecture: "arm64"
-          #   artifact_description: "msvc_arm64"
-          #   deploy_release: false
-          - compiler: "LLVM_MINGW"
-            architecture: "x86"
-            deploy_release: true
-            support_sentry: true
-            sentry_backend: breakpad
+          # MOD (18.11.): nur noch der eine Build, der wirklich gebraucht wird (LLVM_MINGW x64 -> Zweig winbuild/winbuild-viertel).
+          # Die anderen 4 Varianten (MSVC x86/x64, LLVM x86/arm64) kosteten pro Push ~4 Runner-Stunden und verstopften die Warteschlange.
           - compiler: "LLVM_MINGW"
             architecture: "x64"
-            deploy_release: true
-            support_sentry: true
-            sentry_backend: crashpad
-          - compiler: "LLVM_MINGW"
-            architecture: "arm64"
             deploy_release: true
             support_sentry: true
             sentry_backend: crashpad
@@ -706,6 +684,8 @@ jobs:
       id-token: write
       attestations: write
     needs: windows-build
+    # MOD (18.11.): x86/arm64 werden nicht mehr gebaut -> nichts zu normalisieren (Installer/Release-Jobs danach entfallen damit auch)
+    if: false
     runs-on: ubuntu-latest
     strategy:
       matrix:
