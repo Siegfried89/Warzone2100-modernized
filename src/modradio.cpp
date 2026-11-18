@@ -25,13 +25,16 @@ namespace modradio
 namespace
 {
 // (18.11. 13:12 "ATC-Funk klingt zu robotisch") acht echte Funkgespraeche mit menschlichen Stimmen; fehlende Dateien werden uebersprungen
-constexpr int NUM_CLIPS = 8;
-const char *const CLIP_FILES[NUM_CLIPS] = {"atc_a.ogg", "atc_b.ogg", "atc_c.ogg", "atc_d.ogg", "atc_e.ogg", "atc_f.ogg", "atc_g.ogg", "atc_h.ogg"};
+// (14:26 "etwas mehr Funkgebrabbel") 20 Gespraeche atc_a .. atc_t
+constexpr int NUM_CLIPS = 20;
+const char *const CLIP_FILES[NUM_CLIPS] = {"atc_a.ogg", "atc_b.ogg", "atc_c.ogg", "atc_d.ogg", "atc_e.ogg", "atc_f.ogg", "atc_g.ogg", "atc_h.ogg",
+                                           "atc_i.ogg", "atc_j.ogg", "atc_k.ogg", "atc_l.ogg", "atc_m.ogg", "atc_n.ogg", "atc_o.ogg", "atc_p.ogg",
+                                           "atc_q.ogg", "atc_r.ogg", "atc_s.ogg", "atc_t.ogg"};
 constexpr int HEAR_RANGE = 14 * DIST_TILE;     // Kamera hoechstens so weit entfernt (Weltkoordinaten)
-constexpr unsigned MIN_GAP_MS = 6000;           // kleinste Pause zwischen zwei Durchsagen
-constexpr unsigned MAX_EXTRA_MS = 11000;        // dazu zufaellig 0..MAX_EXTRA_MS
+constexpr unsigned MIN_GAP_MS = 3000;           // kleinste Pause zwischen zwei Durchsagen (14:26: mehr Funkverkehr)
+constexpr unsigned MAX_EXTRA_MS = 6000;         // dazu zufaellig 0..MAX_EXTRA_MS
 
-int s_track[NUM_CLIPS] = {-2, -2, -2, -2, -2, -2, -2, -2};      // -2 = Sound noch nicht gesucht, -1 = nicht vorhanden
+int s_track[NUM_CLIPS] = {-2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2, -2};      // -2 = Sound noch nicht gesucht, -1 = nicht vorhanden
 unsigned s_next = 0;                            // fruehester Zeitpunkt der naechsten Durchsage (gameTime)
 unsigned s_rng = 0x2545F491u;                   // eigener Zufall (nur Ton, nicht synchronisationsrelevant)
 int s_last = -1;
