@@ -55,6 +55,9 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd);
 void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode);
 /*check to see if the droid can fit on the Transporter - return true if fits*/
 bool checkTransporterSpace(DROID const *psTransporter, DROID const *psAssigned, bool mayFlash = true);
+/// MOD (Wunsch 18.11. 13:00 "Infanterie soll natuerlich ohne Probleme alle Transporter nutzen duerfen. Auch alle kleinen Fahrzeuge"):
+/// darf diese Einheit in den (Cyborg-)Transporter? Cyborgs, Infanterie und leichte Fahrzeuge ja; mittlere/schwere und Transporter nein
+bool modMayBoardSmallTransport(const DROID *psDroid);
 /*calculates how much space is remaining on the transporter - allows droids to take
 up different amount depending on their body size - currently all are set to one!*/
 int calcRemainingCapacity(const DROID *psTransporter);

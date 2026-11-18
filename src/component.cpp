@@ -434,6 +434,33 @@ static inline const iIMDBaseShape *getRightPropulsionIMD(const DROID *psDroid)
 	return asBodyStats[bodyStat].ppIMDList[propStat * NUM_PROP_SIDES + RIGHT_PROP];
 }
 
+int modDroidFootprintRadius(const DROID *psDroid)
+{
+	if (psDroid == nullptr) { return 0; }
+	float ex = 0.f, ez = 0.f;
+	auto take = [&](const iIMDBaseShape *b) {
+		if (b == nullptr) { return; }
+		const iIMDShape *sh = b->displayModel();
+		if (sh == nullptr) { return; }
+		ex = std::max({ex, std::abs(static_cast<float>(sh->min.x)), std::abs(static_cast<float>(sh->max.x))});
+		ez = std::max({ez, std::abs(static_cast<float>(sh->min.z)), std::abs(static_cast<float>(sh->max.z))});
+	};
+	const BODY_STATS *psBody = psDroid->getBodyStats();
+	if (psBody != nullptr) { take(psBody->pIMD); }
+	if (psDroid->asBits[COMP_BODY] < asBodyStats.size()
+	    && static_cast<size_t>(psDroid->asBits[COMP_PROPULSION]) * NUM_PROP_SIDES + RIGHT_PROP < asBodyStats[psDroid->asBits[COMP_BODY]].ppIMDList.size())
+	{
+		take(getLeftPropulsionIMD(psDroid));
+		take(getRightPropulsionIMD(psDroid));
+	}
+	if (psDroid->droidType == DROID_CONSTRUCT || psDroid->droidType == DROID_CYBORG_CONSTRUCT)
+	{
+		const CONSTRUCT_STATS *cs = psDroid->getConstructStats();
+		if (cs != nullptr) { take(cs->pIMD); }
+	}
+	return static_cast<int>(std::hypot(ex, ez));
+}
+
 //! Whether a weapon's muzzle graphic stands for a single shot, which is what the light below
 //! reads as. The commander and NEXUS link turrets aim a continuous beam and fire again every
 //! few frames, so a light for each shot would sit there flickering rather than punch out once.

@@ -124,6 +124,7 @@ struct Block
 	int tx0, ty0, player;
 	uint32_t id;
 	uint8_t conn = 0, entry = 0;
+	int faceSide = 2;   // (18.11.) Seite, in die das Bauwerk beim Platzieren gedreht wurde (0 N, 1 O, 2 S, 3 W)
 };
 
 void rebuild()
@@ -147,6 +148,12 @@ void rebuild()
 			at[{tx0, ty0}] = blocks.size();
 			Block b;
 			b.tx0 = tx0; b.ty0 = ty0; b.player = p; b.id = s->id;
+			{
+				// Richtung 0 = Sueden (+y), 90 Grad = Osten ... (wie das Ziehen beim Platzieren)
+				const uint16_t d = static_cast<uint16_t>(s->rot.direction + 0x2000);
+				static const int SIDE_OF_QUADRANT[4] = {2, 1, 0, 3};
+				b.faceSide = SIDE_OF_QUADRANT[(d >> 14) & 3];
+			}
 			blocks.push_back(b);
 		}
 	}
@@ -231,6 +238,17 @@ void rebuild()
 			return best;
 		};
 		std::vector<size_t> entries;
+		// (Wunsch 18.11. 12:42 "Richtungs-Ziehen funktioniert noch nicht mit allen Stellungen"): eine einzelne Stellung (ohne Nachbarn)
+		// bekommt ihre Oeffnung auf der Seite, in die sie beim Platzieren gezogen wurde
+		if (comp.size() == 1)
+		{
+			Block &b1 = blocks[comp[0]];
+			if (usable(b1, b1.faceSide))
+			{
+				b1.entry |= static_cast<uint8_t>(BIT[b1.faceSide]);
+				continue;
+			}
+		}
 		for (size_t i : comp)
 		{
 			bool farEnough = true;

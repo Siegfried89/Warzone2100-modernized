@@ -112,6 +112,7 @@
 #include "modtactical.h"
 #include "modbigmap.h"
 #include "modoil.h"
+#include "modcrates.h"
 #include "modrecover.h"
 #include "modnestcrew.h"
 #include "modwreck.h"
@@ -166,6 +167,7 @@ static bool	eitherSelected(DROID *psDroid);
 static void	structureEffects();
 static void	addConstructionLine(DROID *psDroid, STRUCTURE *psStructure, const glm::mat4 &viewMatrix);
 static void	doConstructionLines(const glm::mat4 &viewMatrix);
+static bool s_ring3DActive = false;   // MOD (18.11.): Auswahlring als 3D-Ring am Boden (modDrawSelectionRings3D)
 static void	drawDroidCmndNo(DROID *psDroid);
 static void	drawDroidOrder(const DROID *psDroid);
 static void	drawDroidRank(DROID *psDroid);
@@ -2759,7 +2761,9 @@ void setViewDistance(float dist)
 void	renderFeature(FEATURE *psFeature, const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	PIELIGHT brightness = pal_SetBrightness(200);
-	bool bForceDraw = (getRevealStatus() && psFeature->psStats->visibleAtStart);
+	// MOD (Wunsch 18.11. 12:51 "Man sieht Objekte und Gebaeude von der Oberflaeche" im Orbit): auch "von Anfang an sichtbare"
+	// Merkmale (Bunker-Ruinen, Baeume ...) nur in ihrer eigenen Ebene zeichnen
+	bool bForceDraw = (getRevealStatus() && psFeature->psStats->visibleAtStart && !modlayer::hiddenInView(psFeature));
 	int pieFlags = 0;
 
 	if (modgroundfire::isMarkerStats(psFeature->psStats))   // MOD: Bodenziel-Punkt wird nie gezeichnet und nie angeklickt
@@ -3833,6 +3837,37 @@ static void queueStructureHealth(STRUCTURE *psStruct, BatchedMultiRectRenderer& 
 	batchedMultiRectRenderer.addRectF(PIERECT_DrawRequest_f(scrX - scrR - 1, scrY - 1, scrX - scrR + 2 * width + 1, scrY + 3, WZCOL_RELOAD_BACKGROUND), rectGroup);
 	batchedMultiRectRenderer.addRectF(PIERECT_DrawRequest_f(scrX - scrR, scrY, scrX - scrR + health, scrY + 1, powerCol), rectGroup);
 	batchedMultiRectRenderer.addRectF(PIERECT_DrawRequest_f(scrX - scrR, scrY + 1, scrX - scrR + health, scrY + 2, powerColShadow), rectGroup);
+	// MOD (Wunsch 18.11. 12:45 "es gibt keinen Ladebalken am Oellagerturm"): Fuellstand von Oellager (Faesser, blau) und Munitionsdepot /
+	// Kiste / Kistenhaufen (Kisten, gelb) als Balken unter dem Lebensbalken, ein Abschnitt je Platz (bei vielen Plaetzen je 5)
+	{
+		int cap = 0, have = -1;
+		PIELIGHT col = pal_RGBA(70, 150, 255, 255), shade = pal_RGBA(30, 80, 175, 255);
+		have = modoil::storeBarrels(psStruct, cap);
+		if (have < 0 && psStruct->player == selectedPlayer)
+		{
+			cap = modcrates::crateCapAt(psStruct);
+			if (cap > 0)
+			{
+				have = modcrates::cratesAt(psStruct);
+				col = pal_RGBA(255, 214, 40, 255); shade = pal_RGBA(170, 130, 10, 255);
+			}
+		}
+		if (have >= 0 && cap > 0)
+		{
+			const int full = 2 * width;
+			const int fill = full * std::clamp(have, 0, cap) / cap;
+			const int x0 = scrX - scrR, y0 = scrY + 5;
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0 - 1, y0 - 1, x0 + full + 1, y0 + 3, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0, x0 + fill, y0 + 1, col), rectGroup);
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 2, shade), rectGroup);
+			const int segs = cap > 12 ? cap / 5 : cap;
+			for (int k = 1; k < segs; ++k)
+			{
+				const int sx = x0 + full * k / segs;
+				batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(sx, y0, sx + 1, y0 + 2, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			}
+		}
+	}
 	// MOD (16.11.): Tankstelle - Oelbalken (blau) darunter, ein Abschnitt je Fass
 	if (modfuel::isStation(psStruct))
 	{
@@ -4123,7 +4158,11 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 	if (drawBox)
 	{
 		// MOD: Auswahl-Hervorhebung wie in Rome Total War: Leuchtring um die Fuesse der Einheit (statt der vier Eckwinkel)
-		if (psDroid->sDisplay.modFootValid)
+		if (s_ring3DActive)
+		{
+			// MOD (18.11.): Ring liegt als 3D-Ring am Boden (modDrawSelectionRings3D)
+		}
+		else if (psDroid->sDisplay.modFootValid)
 		{
 			modQueueGroundRing(batchedMultiRectRenderer, rectGroup, psDroid->sDisplay);
 		}
@@ -4978,6 +5017,24 @@ static void trackHeight(float desiredHeight)
 		haveTrackedHeight = true;
 	}
 
+	// MOD (Wunsch 18.11. 12:52 "beim Ebenenwechsel springt die Kamera immer von oben nach unten. Sie soll ab jetzt immer starr sein,
+	// wenn man sie nicht selbst bewegt. Und ohne JEGLICHE Traegheit oder Verzoegerung"): keine Feder mehr. Die Hoehe folgt dem Gelaende
+	// nur, wenn der Spieler die Kamera bewegt (Position, Drehung, Neigung, Zoom) oder die Ebene wechselt (unter dem Schleier) - und
+	// dann sofort. Steht die Kamera, bleibt sie, wo sie ist (auch wenn sich darunter etwas aendert).
+	{
+		static int lx = INT32_MIN, lz = 0, lry = 0, lrx = 0, lview = -1;
+		static float ldist = -1.f;
+		const int view = static_cast<int>(modlayermap::viewLayer());
+		const float dist = getViewDistance();
+		const bool moved = playerPos.p.x != lx || playerPos.p.z != lz || playerPos.r.y != lry || playerPos.r.x != lrx
+		                   || view != lview || std::fabs(dist - ldist) > 0.5f;
+		lx = playerPos.p.x; lz = playerPos.p.z; lry = playerPos.r.y; lrx = playerPos.r.x; lview = view; ldist = dist;
+		if (moved) { trackedHeight = desiredHeight; }
+		heightSpeed = 0.0f;
+		playerPos.p.y = static_cast<int>(std::lround(trackedHeight));
+		lastCommittedHeight = playerPos.p.y;
+		return;
+	}
 	float separation = desiredHeight - trackedHeight;	// How far are we from desired height?
 	if (std::fabs(separation) < 0.5f && heightSpeed > -5.f && heightSpeed < 5.f)
 	{
@@ -5620,6 +5677,66 @@ void display3d_renderSurroundings(const glm::mat4& projectionMatrix, const glm::
 void display3d_doConstructionLines(const glm::mat4& viewMatrix)
 {
 	doConstructionLines(viewMatrix);
+}
+
+// MOD (Wunsch 18.11. 12:46 "Die Intersektionen [des Auswahlrings] sind immer unregelmaessig je nach Kamerawinkel und Entfernung"):
+// der Ring wurde als Punkte UEBER das fertige Bild gemalt (immer vor dem Modell, auch der Teil dahinter) und war nur so gross wie
+// der Rumpf. Jetzt liegt er als gestrichelter Leuchtring wirklich am Boden (Gelaendehoehe je Punkt), mit Tiefentest - das Fahrzeug
+// verdeckt den hinteren Teil - und umschliesst die ganze Grundflaeche (Rumpf, Antrieb, Aufbau).
+static void modDrawSelectionRings3D(const glm::mat4 &viewMatrix)
+{
+	s_ring3DActive = true;
+	if (selectedPlayer >= MAX_PLAYERS) { return; }
+	static std::vector<Vector3f> core, halo;
+	core.clear(); halo.clear();
+	auto groundAt = [](const DROID *d, float x, float z) -> float {
+		const int ix = std::clamp(static_cast<int>(x), 0, gameWorld.map.width * TILE_UNITS - 1);
+		const int iz = std::clamp(static_cast<int>(z), 0, gameWorld.map.height * TILE_UNITS - 1);
+		float h = static_cast<float>(map_Height(gameWorld.map, ix, iz));
+		const MAPTILE *t = worldTile(gameWorld.map, ix, iz);
+		if (t != nullptr && terrainType(t) == TER_WATER) { h = std::max(h, static_cast<float>(d->pos.z)); }
+		return h + 4.f;
+	};
+	// ein Strich = Viereck (innen/aussen) als eigener Streifen; Streifen durch doppelte Punkte getrennt (gerade Anzahl -> gleiche Drehrichtung)
+	auto addDash = [&](std::vector<Vector3f> &v, const DROID *d, float r, float w, float a0, float a1) {
+		const float cx = static_cast<float>(d->pos.x), cz = static_cast<float>(d->pos.y);
+		const Vector3f p[4] = {
+			Vector3f(cx + (r - w) * std::cos(a0), 0.f, cz + (r - w) * std::sin(a0)),
+			Vector3f(cx + (r + w) * std::cos(a0), 0.f, cz + (r + w) * std::sin(a0)),
+			Vector3f(cx + (r - w) * std::cos(a1), 0.f, cz + (r - w) * std::sin(a1)),
+			Vector3f(cx + (r + w) * std::cos(a1), 0.f, cz + (r + w) * std::sin(a1))};
+		Vector3f q[4];
+		for (int k = 0; k < 4; ++k) { q[k] = Vector3f(p[k].x, groundAt(d, p[k].x, p[k].z), -p[k].z); }
+		if (!v.empty()) { v.push_back(v.back()); v.push_back(q[0]); }
+		for (int k = 0; k < 4; ++k) { v.push_back(q[k]); }
+	};
+	for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d == nullptr || d->died || !d->selected || d->sDisplay.frameNumber != currentGameFrame) { continue; }
+		const float R = static_cast<float>(std::max(40, modDroidFootprintRadius(d) + 8));
+		const int n = std::clamp(static_cast<int>(R * 6.2831853f / 15.f), 20, 80);
+		const float step = 6.2831853f / static_cast<float>(n);
+		for (int i = 0; i < n; ++i)
+		{
+			const float a0 = step * static_cast<float>(i), a1 = a0 + step * 0.58f;
+			addDash(halo, d, R, 3.6f, a0 - step * 0.06f, a1 + step * 0.06f);
+			addDash(core, d, R, 1.3f, a0, a1);
+		}
+	}
+	if (core.empty()) { return; }
+	// beide Umlaufrichtungen (eine davon faellt der Rueckseiten-Unterdrueckung zum Opfer, je nach Blickrichtung)
+	auto drawBoth = [&](std::vector<Vector3f> &v, PIELIGHT c) {
+		pie_TransColouredTriangleStrip(v.data(), v.size(), c, viewMatrix);
+		for (size_t k = 0; k + 1 < v.size(); k += 2) { std::swap(v[k], v[k + 1]); }
+		pie_TransColouredTriangleStrip(v.data(), v.size(), c, viewMatrix);
+	};
+	drawBoth(halo, pal_RGBA(40, 120, 40, 150));
+	drawBoth(core, pal_RGBA(170, 255, 150, 255));
+}
+
+void display3d_drawSelectionRings(const glm::mat4& viewMatrix)
+{
+	modDrawSelectionRings3D(viewMatrix);
 }
 
 void display3d_locateMouse()

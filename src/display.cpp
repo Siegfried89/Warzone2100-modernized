@@ -78,6 +78,7 @@
 #include "modgroundfire.h"
 #include "modrally.h"
 #include "modcrates.h"
+#include "modupgrade.h"
 #include "modbuild.h"
 #include "lighting.h"
 #include "ingameop.h"
@@ -3087,6 +3088,11 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 				// If this building is a factory/power generator/research facility
 				// which isn't upgraded. Make the build icon available.
 				else if (nextModuleToBuild(psStructure, -1) > 0)
+				{
+					retVal = MT_OWNSTRINCOMP;
+				}
+				// MOD (18.11. 12:48): Ausbau wie ein Modul (Betonbunker auf den Scav-Bunker) - Bau-Zeiger beim Ueberfahren
+				else if (modupgrade::upgradeFor(psStructure, selectedPlayer) != nullptr)
 				{
 					retVal = MT_OWNSTRINCOMP;
 				}

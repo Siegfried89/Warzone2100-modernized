@@ -16,4 +16,7 @@ namespace modupgrade
 bool isUpgrade(const STRUCTURE_STATS *psStats);
 /// darf psNew (Ausbau) an die Stelle von psOld gebaut werden? (eigenes, fertiges Grundbauwerk)
 bool canReplace(const STRUCTURE_STATS *psNew, const STRUCTURE *psOld, unsigned player);
+/// (Wunsch 18.11. 12:48 "Modul auf Scav-Bunker bauen soll genauso sein wie beim Kraftwerksmodul"): der fuer diesen Spieler
+/// verfuegbare Ausbau, der auf psOld gesetzt werden kann (nullptr = keiner) - fuer Bau-Zeiger beim Ueberfahren und Klick-Befehl
+STRUCTURE_STATS *upgradeFor(const STRUCTURE *psOld, unsigned player);
 }

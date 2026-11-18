@@ -68,6 +68,8 @@ int stationCapMilli();
 int stationMilli(const STRUCTURE *psStation);
 /// Treibstoff entnehmen; gibt die entnommene Menge (milli) zurueck
 int stationTake(const STRUCTURE *psStation, int milli);
+/// (Wunsch 18.11. 12:45 "es gibt keinen Ladebalken am Oellagerturm") Faesser im Oellager (roh + veredelt); -1 = kein Oellager. cap = Plaetze
+int storeBarrels(const STRUCTURE *psStructure, int &cap);
 /// ganze/angebrochene Faesser an der Tankstelle (Anzeige)
 int stationBarrels(const STRUCTURE *psStation);
 /// Faesser-Anzeige (Anzeigemodus 4) und Fass-Fenster der gewaehlten Tankstelle, nach dem 3D-Bild aufrufen

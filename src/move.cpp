@@ -2044,7 +2044,33 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 
 	moveCheckFinalWaypoint(psDroid, &speed);
 
-	moveUpdateDroidDirection(psDroid, &speed, direction, spinAngle, spinSpeed, turnSpeed, &iDroidDir);
+	// MOD (Wunsch 18.11. 12:44 "Lkw/Trucks drehen seltsam - das sind keine Kettenfahrzeuge, und die Drehung ist nicht mittig"):
+	// Radfahrzeuge drehen nicht mehr auf der Stelle, sondern lenken wie ein Auto - sie fahren beim Wenden weiter und beschreiben einen
+	// Bogen (Wenderadius ~1,3 Felder, Drehtempo = Fahrtempo / Radius). Nur wenn der naechste Wegpunkt so nah und so weit seitlich liegt,
+	// dass der Bogen ihn nicht erreicht, drehen sie langsam (wie Rangieren) wie bisher.
+	bool carDone = false;
+	if (psPropStats->propulsionType == PROPULSION_TYPE_WHEELED && psDroid->droidType != DROID_PERSON && !psDroid->isCyborg()
+	    && psDroid->sMove.Status != MOVEPAUSE && speed > 0)
+	{
+		constexpr int R = 165;
+		const int diff = angleDelta(direction - psDroid->rot.direction);
+		const int distT = iHypot((psDroid->sMove.target - psDroid->pos.xy()));
+		const bool unreachable = abs(diff) > DEG(70) && distT < 2 * R;
+		if (!unreachable)
+		{
+			const int carSpeed = std::max<int>(speed * 45 / 100, speed - static_cast<int>(int64_t(speed) * abs(diff) / DEG(200)));
+			const int vNow = std::max<int>(psDroid->sMove.speed, carSpeed / 2);
+			const int turnRate = static_cast<int>(int64_t(vNow) * 10430 / R);   // Winkel-Einheiten je Sekunde
+			const int maxChange = std::max(1, gameTimeAdjustedAverage(turnRate));
+			iDroidDir = psDroid->rot.direction + clip(diff, -maxChange, maxChange);
+			speed = carSpeed;
+			carDone = true;
+		}
+	}
+	if (!carDone)
+	{
+		moveUpdateDroidDirection(psDroid, &speed, direction, spinAngle, spinSpeed, turnSpeed, &iDroidDir);
+	}
 
 	// MOD (17.11. 19:45): Traegheit - mittlere Panzer beschleunigen/bremsen etwas, schwere deutlich langsamer
 	const SDWORD modAccel = std::max<SDWORD>(1, psPropStats->acceleration * modinertia::accelPercent(psDroid) / 100);

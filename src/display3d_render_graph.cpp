@@ -163,6 +163,10 @@ static void recordScenePass(const gfx_api::RenderPassContext& passCtx)
 	{
 		display3d_doConstructionLines(fc.viewMatrix);
 	}
+	if (fusedTransparents)
+	{
+		display3d_drawSelectionRings(fc.viewMatrix);   // MOD (18.11.)
+	}
 
 	display3d_locateMouse();
 }
@@ -192,6 +196,7 @@ static void recordSceneTransparent(const gfx_api::RenderPassContext& passCtx)
 	{
 		display3d_doConstructionLines(fc.viewMatrix);
 	}
+	display3d_drawSelectionRings(fc.viewMatrix);   // MOD (18.11.)
 }
 
 static void recordShadowCascade(const gfx_api::RenderPassContext& passCtx)

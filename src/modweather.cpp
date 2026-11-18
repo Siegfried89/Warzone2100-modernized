@@ -9,6 +9,7 @@
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piedef.h"
 #include "lib/ivis_opengl/piepalette.h"
+#include "lib/ivis_opengl/piestate.h"
 #include "lib/ivis_opengl/screen.h"
 #include "lib/sound/audio.h"
 
@@ -201,6 +202,20 @@ void applyLighting(float level, float flash)
 		for (int i = 0; i < 3; i++) { amb[i] *= 1.f + 2.2f * flash; dif[i] *= 1.f + 3.0f * flash; }
 	}
 	pie_SetLightingScale(glm::vec3(amb[0], amb[1], amb[2]), glm::vec3(dif[0], dif[1], dif[2]));
+	// (Wunsch 18.11. 12:39 "Nebel an: bei Nacht koennte es trotzdem etwas dunkler sein") - die Nebelfarbe (Arizona sandbraun) blieb nachts
+	// gleich hell und faerbte Himmel und Ferne hellbraun. Nachts wird sie zu einem dunklen, leicht blaeulichen Dunst; die Grundfarbe
+	// (Kartenstil oder vom Skript gesetzt) wird erkannt, sobald jemand anderes sie aendert.
+	static PIELIGHT s_fogBase = pie_GetFogColour();
+	static PIELIGHT s_fogSet = s_fogBase;
+	const PIELIGHT cur = pie_GetFogColour();
+	if (cur.rgba() != s_fogSet.rgba()) { s_fogBase = cur; }
+	const float fk = 0.88f * nk;
+	PIELIGHT fog = s_fogBase;
+	fog.byte.r = static_cast<UBYTE>(lerp(static_cast<float>(s_fogBase.byte.r), 36.f, fk));
+	fog.byte.g = static_cast<UBYTE>(lerp(static_cast<float>(s_fogBase.byte.g), 34.f, fk));
+	fog.byte.b = static_cast<UBYTE>(lerp(static_cast<float>(s_fogBase.byte.b), 50.f, fk));
+	if (fog.rgba() != cur.rgba()) { pie_SetFogColour(fog); }
+	s_fogSet = fog;
 }
 
 void lightningTick(unsigned now, float level)

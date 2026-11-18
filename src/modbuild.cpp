@@ -791,7 +791,8 @@ bool orderSelected(unsigned player, int worldX, int worldY)
 	bool any = false;
 	for (DROID *d : gameWorld.objects.droids[player])
 	{
-		if (d == nullptr || !d->selected || !canFortify(d)) { continue; }
+		// (18.11.) Pickup/Tanker bauen nicht mehr (kein Baufahrzeug) - beladene Lkw laden mit Strg + Klick trotzdem hier ab
+		if (d == nullptr || !d->selected || !(canFortify(d) || modcrates::wantsUnload(d))) { continue; }
 		DroidOrder sOrder(DORDER_FORTIFY, Vector2i(worldX, worldY));
 		// MOD (16.11.): Lkw mit Munitionskisten laden sie hier ab statt eine Befestigung zu bauen
 		sOrder.direction = modcrates::wantsUnload(d) ? modcrates::CODE_UNLOAD : static_cast<uint16_t>(s_tier);

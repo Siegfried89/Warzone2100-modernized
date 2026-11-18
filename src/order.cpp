@@ -43,6 +43,7 @@
 #include "modlayermap.h"
 #include "modgroundfire.h"
 #include "modcrates.h"
+#include "modupgrade.h"
 #include "modrecover.h"
 #include "modbuild.h"
 #include "modlayerdig.h"
@@ -939,14 +940,14 @@ bool orderUpdateDroid(DROID *psDroid)
 			// only place it can be trapped - in multiPlayer can only put cyborgs onto a Cyborg Transporter
 			DROID *temp = (DROID *)psDroid->order.psObj;	// NOTE: It is possible to have a NULL here
 
-			if (temp && temp->droidType == DROID_TRANSPORTER && !psDroid->isCyborg())
+			if (temp && temp->droidType == DROID_TRANSPORTER && !modMayBoardSmallTransport(psDroid))   // MOD (18.11.): auch Infanterie + leichte Fahrzeuge
 			{
 				psDroid->order = DroidOrder(DORDER_NONE);
 				actionDroid(psDroid, DACTION_NONE);
 				if (psDroid->player == selectedPlayer)
 				{
 					audio_PlayBuildFailedOnce();
-					addConsoleMessage(_("We can't do that! We must be a Cyborg unit to use a Cyborg Transport!"), DEFAULT_JUSTIFY, selectedPlayer);
+					addConsoleMessage("Das geht nicht! In diesen Transporter passen nur Infanterie, Cyborgs und leichte Fahrzeuge.", DEFAULT_JUSTIFY, selectedPlayer);
 				}
 			}
 			else
@@ -2939,6 +2940,14 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 			return DroidOrder(DORDER_ATTACK, psObj);
 		}
 	}
+	// MOD (Wunsch 18.11. 12:43 "Trucks koennen keine Munitionskisten aufnehmen"): Lkw mit Ladeflaeche + normaler Klick auf eine eigene
+	// Kistenquelle (Fabrik mit Kistenhaufen, Haufen, Depot, Munitionskiste) = dort Kisten laden bzw. einlagern (bisher nur mit Strg)
+	if (psObj->type == OBJ_STRUCTURE && modcrates::isCrateTarget(psDroid, static_cast<STRUCTURE *>(psObj)))
+	{
+		DroidOrder o(DORDER_FORTIFY, psObj->pos.xy());
+		o.direction = modcrates::CODE_LOAD;
+		return o;
+	}
 	//check for transporters first
 	// MOD (17.11. 21:01): Infanterie auf den eigenen Schuetzenpanzer klicken = einsteigen (begleiten, modapc nimmt sie auf)
 	if (psObj->type == OBJ_DROID && modapc::isApc((DROID *)psObj) && psObj->player == psDroid->player && modoil::isInfantry(psDroid)
@@ -3090,6 +3099,11 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 			else if (moduleIndex > 0)
 			{
 				order = DroidOrder(DORDER_BUILDMODULE, psObj, moduleIndex);
+			}
+			// MOD (Wunsch 18.11. 12:48 "genauso wie beim Kraftwerksmodul"): Ausbau (Betonbunker) per Klick auf das Grundbauwerk
+			else if (STRUCTURE_STATS *psUp = modupgrade::upgradeFor(psStruct, psDroid->player))
+			{
+				order = DroidOrder(DORDER_BUILD, psUp, psStruct->pos.xy(), psStruct->rot.direction);
 			}
 		}
 
@@ -3244,6 +3258,16 @@ void orderSelectedObjAdd(UDWORD player, BASE_OBJECT *psObj, bool add)
 			}
 
 			DroidOrder order = chooseOrderObj(psCurr, psObj, specialOrderKeyDown());
+			if (order.type == DORDER_FORTIFY)   // MOD (18.11.): Kisten laden - Ortsbefehl mit Code, ohne Ziel-Objekt
+			{
+				sendDroidInfo(psCurr, order, false, currentOrderSource());
+				continue;
+			}
+			if (order.type == DORDER_BUILD)     // MOD (18.11.): Ausbau auf ein Grundbauwerk (Bauauftrag mit Bauwerk, Ort, Richtung)
+			{
+				sendDroidInfo(psCurr, order, add, currentOrderSource());
+				continue;
+			}
 			// see if the order can be added to the list
 			if (order.type != DORDER_NONE && !orderDroidObjAdd(psCurr, order, add))
 			{

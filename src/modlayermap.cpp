@@ -376,20 +376,33 @@ bool genOrbitGridMF(Grid &g, Rng &r)
 	std::stable_sort(fit.begin(), fit.end(), [&](int a, int b) { return lib[static_cast<size_t>(a)].w * lib[static_cast<size_t>(a)].h > lib[static_cast<size_t>(b)].w * lib[static_cast<size_t>(b)].h; });
 	const int bigPool = std::max(1, static_cast<int>(fit.size()) / 3);   // aus dem groessten Drittel waehlen
 	int count = 0;
+	// (Wunsch 18.11. 12:51 "Orbit-Inseln sind sehr eng zusammen und sollten weit voneinander entfernt sein"): je Insel viele
+	// moegliche Plaetze pruefen und den nehmen, der am weitesten von den schon gesetzten Inseln weg ist (mindestens 6 Felder Luft)
+	struct Rect { int x0, y0, x1, y1; };
+	std::vector<Rect> placed;
+	auto gapTo = [&](int x0, int y0, int w, int h) {
+		int best = INT32_MAX;
+		for (const Rect &q : placed)
+		{
+			const int dx = std::max({0, q.x0 - (x0 + w), x0 - q.x1});
+			const int dy = std::max({0, q.y0 - (y0 + h), y0 - q.y1});
+			best = std::min(best, static_cast<int>(std::lround(std::hypot(static_cast<double>(dx), static_cast<double>(dy)))));
+		}
+		return best;
+	};
 	for (int tries = 0; tries < 600 && count < wantedCount; ++tries)
 	{
 		const IslandShape &s = lib[static_cast<size_t>(fit[static_cast<size_t>(r.range(tries < 300 ? bigPool : static_cast<int>(fit.size())))])];
-		const int x0 = MARGIN + 1 + r.range(std::max(1, maxW - s.w + 1));
-		const int y0 = MARGIN + 1 + r.range(std::max(1, maxH - s.h + 1));
-		bool free = true;
-		for (int y = std::max(0, y0 - 2); y < std::min(H, y0 + s.h + 2) && free; ++y)
+		int x0 = -1, y0 = -1, bestGap = -1;
+		for (int c = 0; c < 120; ++c)
 		{
-			for (int x = std::max(0, x0 - 2); x < std::min(W, x0 + s.w + 2); ++x)
-			{
-				if (occ[static_cast<size_t>(x) + static_cast<size_t>(y) * W]) { free = false; break; }
-			}
+			const int cx = MARGIN + 1 + r.range(std::max(1, maxW - s.w + 1));
+			const int cy = MARGIN + 1 + r.range(std::max(1, maxH - s.h + 1));
+			const int g = gapTo(cx, cy, s.w, s.h);
+			if (g > bestGap) { bestGap = g; x0 = cx; y0 = cy; }
 		}
-		if (!free) { continue; }
+		if (x0 < 0 || bestGap < 6) { continue; }
+		placed.push_back({x0, y0, x0 + s.w, y0 + s.h});
 		if (!s.model.empty())
 		{
 			IslandModel m;
