@@ -200,7 +200,8 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 
 	int min_angle = 0;
 	// Calculate angle for indirect shots
-	if (!proj_Direct(psStats) && dist > 0)
+	// MOD (19.11.): der Atomraketen-Werfer startet senkrecht und fliegt im hohen Bogen - Berge verkuerzen seine Reichweite nicht
+	if (!proj_Direct(psStats) && dist > 0 && !(psAttacker->type == OBJ_DROID && modicbm::isTelDroid((const DROID *)psAttacker)))
 	{
 		min_angle = arcOfFire(psAttacker, psTarget, weapon_slot, true);
 

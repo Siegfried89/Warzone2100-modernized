@@ -458,6 +458,11 @@ void drawLaunchFx()
 }
 } // namespace
 
+bool isTelDroid(const DROID *psDroid)
+{
+	return telStat(psDroid);
+}
+
 bool telIntercept(DROID *psDroid, const BASE_OBJECT *psTarget)
 {
 	if (!telStat(psDroid)) { return false; }

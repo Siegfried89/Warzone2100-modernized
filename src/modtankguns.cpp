@@ -37,6 +37,22 @@ std::unordered_map<uint32_t, unsigned> s_haltUntil;
 std::unordered_map<uint32_t, Gun> s_guns;
 int s_mgStat = -2;
 
+/// Bugspitze des Rumpfmodells (Anzeige): Abstand nach vorn (Modell -z) und Hoehe auf etwa halber Bughoehe, je Modell einmal berechnet
+void bowPoint(const BODY_STATS *b, int &front, int &hgt)
+{
+	static std::unordered_map<const void *, std::pair<int, int>> cache;
+	if (b == nullptr || b->pIMD == nullptr || b->pIMD->displayModel() == nullptr) { return; }
+	const auto it = cache.find(b->pIMD);
+	if (it != cache.end()) { front = it->second.first; hgt = it->second.second; return; }
+	const iIMDShape *m = b->pIMD->displayModel();
+	float minZ = 0.f, bowTop = 0.f;
+	for (const Vector3f &v : m->points) { minZ = std::min(minZ, v.z); }
+	for (const Vector3f &v : m->points) { if (v.z < minZ * 0.6f) { bowTop = std::max(bowTop, v.y); } }   // vorderstes Drittel
+	front = std::max(20, static_cast<int>(-minZ) + 2);
+	hgt = std::max(8, static_cast<int>(bowTop * 0.55f));
+	cache[b->pIMD] = { front, hgt };
+}
+
 bool mainIsCannon(const WEAPON_STATS *st)
 {
 	return st != nullptr && (st->weaponSubClass == WSC_CANNON || st->weaponSubClass == WSC_GAUSS);
@@ -148,10 +164,10 @@ void tick()
 				tgt = nullptr;
 			}
 			proj_SendProjectile(&w, d, static_cast<int>(p), aim, tgt, true, -1);
-			// gelbes Muendungsfeuer vorn am Rumpf (nur Anzeige)
-			const BODY_STATS *b = d->getBodyStats();
-			const int front = (b && b->pIMD) ? std::max(20, b->pIMD->max.z) : 40;
-			const int hgt = (b && b->pIMD) ? std::max(10, b->pIMD->max.y * 2 / 5) : 16;
+			// gelbes Muendungsfeuer vorn am Bug (nur Anzeige). (19.11. 00:13 "Das MG-Feuer beim Fatboy sieht man nicht"): vorn ist im Modell
+			// -z; bisher wurde die hintere Ausdehnung (max.z) genommen - bei langen Aufbauten hinten (Fatboy-Fabrik) lag das Feuer im Rumpf.
+			int front = 40, hgt = 16;
+			bowPoint(d->getBodyStats(), front, hgt);
 			Vector3i fx(d->pos.x + iSinR(d->rot.direction, front), d->pos.z + hgt, d->pos.y + iCosR(d->rot.direction, front));
 			if (ms.pMuzzleGraphic != nullptr)
 			{
