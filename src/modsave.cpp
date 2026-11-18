@@ -15,6 +15,7 @@
 #include "modwreck.h"
 #include "modrecover.h"
 #include "modlayer.h"
+#include "modcrew.h"
 #include "featuredef.h"
 #include "feature.h"
 #include "game_world.h"
@@ -155,6 +156,9 @@ void write(const std::string &folder)
 		modlayer::saveState(lobjs, ldrills);
 		j["layerObjs"] = lobjs;
 		j["layerDrills"] = ldrills;
+		std::vector<int64_t> crew;
+		modcrew::saveState(crew);   // MOD (18.11.): Piloten mit Namen/Stufen, Combots ohne Besatzung
+		j["crew"] = crew;
 		const std::string path = folder + "/modstate.json";
 		const std::string text = j.dump();
 		if (!saveFile(path.c_str(), text.c_str(), text.size()))
@@ -229,6 +233,9 @@ void applyPending()
 		readArray(*j, "layerObjs", lobjs);
 		readArray(*j, "layerDrills", ldrills);
 		modlayer::loadState(lobjs, ldrills);   // eingesetzt im ersten Spielschritt (wenn die Zusatzkarten stehen)
+		std::vector<int64_t> crew;
+		readArray(*j, "crew", crew);
+		modcrew::loadState(crew);
 		debug(LOG_INFO, "MOD: Mod-Zustand geladen (%zu Krater, %zu Tankfuellungen)", terrain.size() / 6, fuel.size() / 2);
 	}
 	catch (const std::exception &e)

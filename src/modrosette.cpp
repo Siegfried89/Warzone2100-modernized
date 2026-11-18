@@ -2,6 +2,8 @@
 // MOD (Wunsch 17.11. 14:14): Mod-Rosette im WZ-Stil - siehe modrosette.h
 
 #include "modrosette.h"
+#include "modcrew.h"
+#include "modcombot.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/input.h"
@@ -50,7 +52,7 @@ namespace
 {
 // Bilder in images/modrosette.img (Reihenfolge wie rosette.py): 7 Sechsecke (normal, gedrueckt), dann 14 Befehlsknoepfe (normal, gedrueckt)
 enum Hex { H_CENTER = 0, H_PLAN, H_FORMATION, H_FIRE, H_RINGS, H_INFANTRY, H_LAYERS, H_COUNT };
-enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_AUTO, C_MINES, C_UNLOAD, C_COUNT };
+enum Cmd { C_RING = 0, C_LINE, C_WEDGE, C_COLUMN, C_ARTYF, C_COVER, C_SPREAD, C_SALVAGE, C_RECOVER, C_SPADE, C_ARTY, C_ORBIT, C_SURFACE, C_UNDER, C_LEAVE, C_AUTO, C_MINES, C_UNLOAD, C_EJECT, C_COUNT };
 int hexImg(int h, bool down) { return h * 2 + (down ? 1 : 0); }
 int cmdImg(int c, bool down) { return H_COUNT * 2 + c * 2 + (down ? 1 : 0); }
 
@@ -259,6 +261,19 @@ std::vector<Item> itemsFor(int hex)
 			if (!any) { addConsoleMessage(_("Unload: select a halftrack APC"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
 		};
 		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_UNLOAD, true) + 1)) { v.push_back(unload); }
+		// (18.11. 17:52, MF-Besatzung) Pilot steigt aus: der Combot steht danach ohne Besatzung (neutral) da; jede Besatzung kann ihn besteigen
+		Item eject; eject.img = C_EJECT; eject.tip = _("Eject crew: the pilots leave the selected combots, which then stand unmanned and neutral (to board: select a crew and right-click an unmanned combot - also an enemy one)");
+		eject.action = []() {
+			bool any = false;
+			for (DROID *d : selection())
+			{
+				if (!modcombot::isModular(d) || modcrew::crewless(d)) { continue; }
+				any = true;
+				secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_MINECLEAR_SET);
+			}
+			if (!any) { addConsoleMessage(_("Eject crew: select manned combots"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+		};
+		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_EJECT, true) + 1)) { v.push_back(eject); }
 		break;
 	}
 	case H_LAYERS:
