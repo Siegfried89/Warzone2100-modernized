@@ -960,7 +960,9 @@ bool orderUpdateDroid(DROID *psDroid)
 				}
 
 				// Wait for the action to finish then assign to Transporter (if not already flying)
-				if (psDroid->order.psObj == nullptr || transporterFlying((DROID *)psDroid->order.psObj))
+				// MOD (18.11.): Transporter in einer anderen Ebene (Orbit) nimmt niemanden auf
+				if (psDroid->order.psObj == nullptr || transporterFlying((DROID *)psDroid->order.psObj)
+				    || !modlayer::canInteract(psDroid, psDroid->order.psObj))
 				{
 					psDroid->order = DroidOrder(DORDER_NONE);
 					actionDroid(psDroid, DACTION_NONE);
@@ -1934,6 +1936,11 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	case DORDER_EMBARK:
 		{
 			DROID *embarkee = castDroid(psOrder->psObj);
+			if (embarkee != nullptr && !modlayer::canInteract(psDroid, embarkee))   // MOD (18.11.): einsteigen nur in derselben Ebene
+			{
+				psDroid->order = DroidOrder(DORDER_NONE);
+				break;
+			}
 			if (psDroid->isTransporter()  // require a transporter for embarking.
 			    || embarkee == nullptr || !embarkee->isTransporter())  // nor can a transporter load another transporter
 			{

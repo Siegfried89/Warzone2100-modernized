@@ -23,6 +23,7 @@
 */
 
 #include "lib/framework/frame.h"
+#include "lib/framework/trig.h"
 #include <unordered_map>
 #include <algorithm>
 #include <cmath>
@@ -1274,11 +1275,19 @@ void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix, const g
 		position.y += bobTransporterHeight();
 	}
 	// MOD: fliessender Ebenenwechsel (Orbit) und Flughoehe der Sprungduesen-Combots - nur Anzeige
-	position.y += static_cast<int>(modlayer::transitionOffset(psDroid, graphicsTime) + modcombot::flightOffset(psDroid));
+	// (18.11. 17:52) Ebenenwechsel als fast senkrechter Steigflug: Hoehe, Versatz in Flugrichtung und Nickwinkel
+	const modlayer::FlightPose flightPose = modlayer::transitionPose(psDroid, graphicsTime);
+	position.y += static_cast<int>(flightPose.up + modcombot::flightOffset(psDroid));
+	if (flightPose.forward != 0.f)
+	{
+		const int fw = static_cast<int>(flightPose.forward);
+		position.x += iSinR(st.rot.direction, fw);
+		position.z -= iCosR(st.rot.direction, fw);
+	}
 
 	/* Get all the pitch,roll,yaw info */
 	rotation.y = -st.rot.direction;
-	rotation.x = st.rot.pitch;
+	rotation.x = st.rot.pitch + flightPose.pitch;
 	rotation.z = st.rot.roll;
 
 	/* Translate origin */

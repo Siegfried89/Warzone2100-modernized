@@ -112,6 +112,7 @@ void stepPlayer(GameWorld &world, unsigned p)
 	for (DROID *t : world.objects.droids[p])
 	{
 		if (t == nullptr || t->died || !t->isTransporter()) { continue; }
+		if (modlayer::layerOf(t) != modlayer::SURFACE || modlayer::inTransition(t)) { continue; }   // (18.11.) im Orbit: nicht im Pendelverkehr
 		TState &st = s_trans[t->id];
 		const bool atHome = d2(t->pos.xy(), homePos) <= r2(HOME_TILES);
 		const bool idle = t->order.type == DORDER_NONE || t->order.type == DORDER_HOLD;

@@ -255,7 +255,7 @@ void orbitStrike(GameWorld &w, unsigned p)
 	std::vector<DROID *> up, there;
 	for (DROID *d : w.objects.droids[p])
 	{
-		if (d->died || !modlayer::isFlier(d) || modlayer::inTransition(d)) { continue; }
+		if (d->died || !modlayer::isFlier(d) || modlayer::inTransition(d) || d->isTransporter()) { continue; }   // Transporter fliegen nur auf Befehl in den Orbit
 		const modlayer::Layer l = modlayer::layerOf(d);
 		if (l == modlayer::ORBIT) { there.push_back(d); }
 		else if (l == modlayer::SURFACE && d->order.type == DORDER_NONE && (!d->isVtol() || !vtolEmpty(d))) { up.push_back(d); }

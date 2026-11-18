@@ -12,6 +12,7 @@
 #include "modoil.h"
 
 #include "lib/framework/frame.h"
+#include "lib/framework/trig.h"
 #include "lib/gamelib/gtime.h"
 #include "lib/sound/audio.h"
 #include "lib/sound/audio_id.h"
@@ -38,6 +39,7 @@
 #include "visibility.h"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 #include "modlayerdig.h"
@@ -212,6 +214,18 @@ void flierTick()
 			orderDroid(d, DORDER_STOP, ModeImmediate);
 		}
 		if (age >= TRANS_A_MS + TRANS_B_MS) { it = s_trans.erase(it); continue; }
+		// (18.11.) Abgasfahne entlang der Flugbahn, nur in der angezeigten Ebene (reine Anzeige)
+		if (layerOfId(d->id) == s_current && age >= 60)
+		{
+			const FlightPose fp = transitionPose(d, gameTime);
+			const FlightPose back = transitionPose(d, gameTime - 60);   // etwas frueher = hinter dem Flieger auf der Bahn
+			if (std::abs(fp.up) < 1800.f)
+			{
+				const int fw = static_cast<int>(back.forward);
+				Vector3i sp(d->pos.x + iSinR(d->rot.direction, fw), d->pos.z + static_cast<int>(back.up) + 8, d->pos.y + iCosR(d->rot.direction, fw));
+				addEffect(&sp, EFFECT_SMOKE, SMOKE_TYPE_TRAIL, false, nullptr, 0, gameTime - deltaGameTime / 2 + 1);
+			}
+		}
 		++it;
 	}
 	if (s_layerOf.empty()) { return; }
@@ -537,26 +551,63 @@ void moveToLayer(DROID *d, Layer next)
 
 bool isFlier(const DROID *psDroid)
 {
-	return psDroid != nullptr && (psDroid->getPropulsionStats()->alwaysFlying || psDroid->isVtol() || modcombot::canFly(psDroid));
+	// (18.11. 17:52) auch Transporter mit Luftantrieb steigen in den Orbit (mit ihrer Fracht)
+	return psDroid != nullptr && (psDroid->getPropulsionStats()->alwaysFlying || psDroid->isVtol() || psDroid->isFlightBasedTransporter()
+	                              || modcombot::canFly(psDroid));
 }
 
-float transitionOffset(const DROID *d, UDWORD time)
+void onUnloaded(const DROID *psTransporter, const DROID *psCargo)
 {
-	if (d == nullptr || s_trans.empty()) { return 0.f; }
+	if (psTransporter != nullptr && psCargo != nullptr) { assignLayer(psCargo, layerOfId(psTransporter->id)); }
+}
+
+namespace
+{
+float smoothStep(float a, float b, float x)
+{
+	const float t = std::clamp((x - a) / (b - a), 0.f, 1.f);
+	return t * t * (3.f - 2.f * t);
+}
+}
+
+FlightPose transitionPose(const DROID *d, UDWORD time)
+{
+	FlightPose fp;
+	if (d == nullptr || s_trans.empty()) { return fp; }
 	const auto it = s_trans.find(d->id);
-	if (it == s_trans.end()) { return 0.f; }
+	if (it == s_trans.end()) { return fp; }
 	const bool up = it->second.to == ORBIT;
 	const int age = static_cast<int>(time - it->second.start);
 	constexpr float HIGH = 2200.f;   // so hoch steigt er aus dem Bild (bzw. kommt von dort)
 	constexpr float DEEP = 700.f;    // so tief liegt die verschwommene Untertextur unter den Inseln
+	// (Antwort 18.11. 17:52 "das fast senkrechte Aufsteigen in den Orbit"): Steigflug mit ca. 75 Grad - je Hoehe ein Viertel nach vorn,
+	// die Nase richtet sich gleich zu Beginn steil auf; abwaerts mit der Nase nach unten, unten wird abgefangen
+	constexpr float SLOPE = 0.27f;
+	constexpr float PITCH = static_cast<float>(DEG(70));
+	const float sign = up ? 1.f : -1.f;
 	if (layerOfId(d->id) != it->second.to)
 	{
+		// Phase A (alte Ebene): beschleunigt hinauf aus dem Bild bzw. hinab in die verschwommene Tiefe
 		const float t = std::clamp(static_cast<float>(age) / TRANS_A_MS, 0.f, 1.f);
-		return up ? HIGH * t * t : -DEEP * t * t;
+		const float h = (up ? HIGH : DEEP) * t * t;
+		fp.up = sign * h;
+		fp.forward = SLOPE * h;
+		fp.pitch = static_cast<int>(sign * PITCH * smoothStep(0.f, 0.3f, t));
+		return fp;
 	}
+	// Phase B (neue Ebene): kommt von unten (Orbit) bzw. von oben (Oberflaeche) schraeg hinter der Zielstelle heran und fliegt sich gerade
 	const float t = std::clamp(static_cast<float>(age - static_cast<int>(TRANS_A_MS)) / TRANS_B_MS, 0.f, 1.f);
 	const float r = (1.f - t) * (1.f - t);
-	return up ? -DEEP * r : HIGH * r;
+	const float h = (up ? DEEP : HIGH) * r;
+	fp.up = -sign * h;
+	fp.forward = -SLOPE * h;
+	fp.pitch = static_cast<int>(sign * PITCH * (1.f - smoothStep(0.4f, 1.f, t)));
+	return fp;
+}
+
+float transitionOffset(const DROID *d, UDWORD time)
+{
+	return transitionPose(d, time).up;
 }
 
 void requestLayer(DROID *d, Layer target)

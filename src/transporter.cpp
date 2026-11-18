@@ -36,6 +36,8 @@
 #include "intdisplay.h"
 #include "objmem.h"
 #include "transporter.h"
+#include "modlayer.h"
+#include "modlayermap.h"
 #include "uiobjectrefs.h"
 #include "ordersource.h"
 #include "group.h"
@@ -969,12 +971,15 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 			//pick a tile because save games won't remember where the droid was when it was loaded
 			droidPos = map_coord(Vector2i(getLandingX(0), getLandingY(0)));
 		}
+		// MOD (18.11.): Transporter koennen in den Orbit fliegen - die Fracht steigt in der Karte der Ebene des Transporters aus
+		modlayermap::Scope cargoLayerScope(modlayer::layerOf(psTransport));
 		if (!pickATileGen(gameWorld, &droidPos, LOOK_FOR_EMPTY_TILE, zonedPAT))
 		{
 			ASSERT(false, "Unable to find a valid location");
 		}
 		droidSetPosition(psDroid, gameWorld.map, world_coord(droidPos.x), world_coord(droidPos.y));
 		updateDroidOrientation(psDroid, gameWorld.map);
+		modlayer::onUnloaded(psTransport, psDroid);
 	}
 
 	// remove it from the transporter group

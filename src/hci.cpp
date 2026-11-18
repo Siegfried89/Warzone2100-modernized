@@ -99,6 +99,7 @@
 #include "modpointdef.h"
 #include "modshield.h"
 #include "modmobilefactory.h"
+#include "modairwar.h"
 #include "modtracks.h"
 #include "modoutpost.h"
 #include "modconcrete.h"
@@ -788,6 +789,7 @@ void interfaceShutDown()
 	modshield::reset();      // MOD: Schildkuppeln
 	modtracks::reset();      // MOD: Fahrspuren
 	modmobilefactory::reset();   // MOD: fahrende Fabrik (Fatboy)
+	modairwar::reset();      // MOD: Luftkampf
 	modoutpost::reset();     // MOD: Aussenposten-Teleport
 	modrocket::reset();      // MOD (17.11. 20:56): Raketensilo
 	modapc::reset();         // MOD (17.11. 21:01): Schuetzenpanzer
