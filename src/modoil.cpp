@@ -9,6 +9,9 @@
 #include "lib/gamelib/gtime.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piematrix.h"
+#include "lib/ivis_opengl/piedef.h"
+#include "lib/ivis_opengl/ivisdef.h"
+#include "lib/ivis_opengl/imd.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/netplay/sync_debug.h"
 #include "lib/sound/audio.h"
@@ -30,6 +33,10 @@
 #include "template.h"
 #include "qtscript.h"   // triggerEventDroidBuilt
 
+#ifndef GLM_ENABLE_EXPERIMENTAL
+	#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/transform.hpp>
 #include <algorithm>
 #include <climits>
 #include <cmath>
@@ -547,6 +554,48 @@ bool isBusy(uint32_t droidId)
 {
 	const auto it = s_cargo.find(droidId);
 	return it != s_cargo.end() && (it->second.mode != 0 || it->second.n > 0);
+}
+
+void drawCargo(const DROID *d, const iIMDShape *bed, const glm::mat4 &m, const glm::mat4 &viewMatrix, int team, PIELIGHT brightness, int pieFlag,
+               int pieFlagData, float stretchDepth)
+{
+	if (d == nullptr || bed == nullptr) { return; }
+	const CONSTRUCT_STATS *cs = d->getConstructStats();
+	if (cs == nullptr || !cs->id.startsWith("ScavBed")) { return; }   // offene Ladeflaechen; Tanker/Schaufel zeigen nichts
+	const auto it = s_cargo.find(d->id);
+	const int barrels = (it != s_cargo.end() && !it->second.tank) ? std::max(0, it->second.n) : 0;
+	const int crates = std::max(0, modcrates::crates(d));
+	const int n = std::min(8, barrels + crates);
+	if (n <= 0) { return; }
+	static iIMDBaseShape *s_barrel = nullptr;
+	static iIMDBaseShape *s_crate = nullptr;
+	static bool s_tried = false;
+	if (!s_tried)
+	{
+		s_tried = true;
+		s_barrel = modelGet(WzString::fromUtf8("mioil.pie"));
+		s_crate = modelGet(WzString::fromUtf8("ammobox_c.pie"));
+	}
+	const float x0 = static_cast<float>(bed->min.x), x1 = static_cast<float>(bed->max.x);
+	const float z0 = static_cast<float>(bed->min.z), z1 = static_cast<float>(bed->max.z);
+	const float y0 = static_cast<float>(bed->min.y);
+	const float w = x1 - x0, l = z1 - z0;
+	const int cols = (w > 30.f && n > 1) ? 2 : 1;
+	const int rows = (n + cols - 1) / cols;
+	for (int k = 0; k < n; ++k)
+	{
+		const bool isBarrel = k < barrels;
+		iIMDBaseShape *shape = isBarrel ? s_barrel : s_crate;
+		if (shape == nullptr) { continue; }
+		const int r = k / cols, c = k % cols;
+		const float px = (cols == 1) ? (x0 + x1) * 0.5f : x0 + w * (c == 0 ? 0.3f : 0.7f);
+		const float pz = z0 + l * (static_cast<float>(r) + 0.5f) / static_cast<float>(rows);
+		// Fass (mioil.pie, 27 breit, 37 hoch) auf etwa 11 Hoehe; Kiste (ammobox_c.pie) fast in Originalgroesse
+		const float sc = isBarrel ? std::min(0.32f, (l / static_cast<float>(rows)) / 30.f) : std::min(0.95f, (l / static_cast<float>(rows)) / 11.f);
+		const glm::mat4 mm = m * glm::translate(glm::vec3(px, y0 + 1.5f, pz)) * glm::rotate(static_cast<float>(k) * 0.7f, glm::vec3(0.f, 1.f, 0.f))
+		                     * glm::scale(glm::vec3(sc));
+		pie_Draw3DShape(shape->displayModel(), 0, team, brightness, pieFlag, pieFlagData, mm, viewMatrix, stretchDepth);
+	}
 }
 
 bool generatorRunning(const STRUCTURE *psGen)

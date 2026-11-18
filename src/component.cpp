@@ -32,6 +32,7 @@
 
 #include "action.h"
 #include "component.h"
+#include "modoil.h"
 #include "modimpostor.h"
 #include "modtactical.h"
 #include "display3d.h"
@@ -1039,6 +1040,10 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					if (pie_Draw3DShape(psShape, 0, colour, brightness, pieFlag, iPieData, localModelMatrix, viewMatrix, -localHeightAboveTerrain))
 					{
 						didDrawSomething = true;
+					}
+					if (psDroid->droidType == DROID_CONSTRUCT && !bButton)   // MOD (18.11.): geladene Faesser/Kisten auf der Ladeflaeche
+					{
+						modoil::drawCargo(psDroid, psShape, localModelMatrix, viewMatrix, colour, brightness, pieFlag, iPieData, -localHeightAboveTerrain);
 					}
 
 					// In repair droid case only:
