@@ -32,6 +32,7 @@
 #include <string>
 #include <cmath>
 #include <cstdlib>
+#include <array>
 #include <deque>
 #include <functional>
 #include <map>
@@ -188,16 +189,16 @@ struct RingSpec
 // innen -> aussen. k = Abstand vom Gebaeuderechteck.
 // MOD (Wunsch 16.11. 20:54): deutlich kleiner; Mauer dicht an der Basis, Kanonentuerme als Ecktuerme (siehe Mauer), davor Igel und
 // Hoecker in versetzten Reihen in die Tiefe gestaffelt (Schachbrett, step 2 = jedes zweite Feld nach x+y, Nachbarreihe versetzt).
+// (18.11. 02:55 "Diese Basenbildung funktioniert anscheinend noch nicht so richtig") aufgeraeumt: statt bis zu fuenf Igel-/Hoecker-Reihen
+// (Hunderte verstreute Sperren) eine klare Anlage - Mauer mit Toren und Ecktuermen, Bunker/Flammentuerme davor, hoechstens zwei
+// versetzte Panzersperren-Reihen; Moerser nur bei der grossen Anlage.
 const RingSpec kRings[] = {
-	{1, Role::Mortar,    4, 1, false, 2},
+	{1, Role::Mortar,    5, 1, false, 3},
 	{2, Role::Wall,      1, 0, true,  1},
-	{3, Role::Bunker,    6, 0, true,  1},
-	{3, Role::Flame,     6, 3, true,  2},
-	{4, Role::Hedgehog,  2, 0, true,  1},
-	{5, Role::Hedgehog,  2, 1, true,  2},
-	{6, Role::Dragon,    2, 0, true,  2},
-	{7, Role::Dragon,    2, 1, true,  3},
-	{8, Role::Hedgehog,  2, 0, true,  3},
+	{3, Role::Bunker,    6, 0, true,  2},
+	{3, Role::Flame,     6, 3, true,  3},
+	{4, Role::Hedgehog,  2, 0, true,  2},
+	{5, Role::Hedgehog,  2, 1, true,  3},
 };
 
 struct Cell
@@ -508,7 +509,15 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 			static const int TAN[4][2] = { {1, 0}, {0, 1}, {-1, 0}, {0, -1} };
 			static const int NRM[4][2] = { {0, -1}, {1, 0}, {0, 1}, {-1, 0} };
 			const int tx = TAN[c.side & 3][0], ty = TAN[c.side & 3][1], nx = NRM[c.side & 3][0], ny = NRM[c.side & 3][1];
-			const int shifts[][2] = { {0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {2, 0}, {-2, 0}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1} };
+			const int shiftsAll[][2] = { {0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {2, 0}, {-2, 0}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1} };
+			// (18.11.) Panzersperren bleiben in ihrer Reihe (blockiert = auslassen) - Ausweichen machte das Feld unordentlich
+			const bool rowItem = rs.role == Role::Hedgehog || rs.role == Role::Dragon;
+			const size_t nShifts = rowItem ? 1u : sizeof(shiftsAll) / sizeof(shiftsAll[0]);
+			const std::vector<std::array<int, 2>> shifts = [&]() {
+				std::vector<std::array<int, 2>> v;
+				for (size_t q = 0; q < nShifts; ++q) { v.push_back({shiftsAll[q][0], shiftsAll[q][1]}); }
+				return v;
+			}();
 			if (ownStructAt(player, Vector2i(c.x, c.y)) != nullptr) { continue; }   // steht schon (erneuter Befehl)
 			bool already = false;   // frueher schon ausgewichen? dann nicht noch einmal
 			for (const auto &sh : shifts)

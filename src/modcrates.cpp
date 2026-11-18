@@ -432,7 +432,9 @@ void autopilot()
 		for (DROID *d : gameWorld.objects.droids[p])
 		{
 			if (d == nullptr || d->died || capacity(d) <= 0 || d->order.type != DORDER_NONE) { continue; }
-			if (modoil::isBusy(d->id) || modcontrol::manual(d)) { continue; }
+			// (Wunsch 18.11. 02:44) "alle Fahrzeuge wie Lkw und Oeltanker nehmen selbstaendig ihre Arbeit auf, immer wieder, falls sie
+			// abbeordert werden, aber mit kurzer Wartezeit": nach einem Spieler-Befehl nur 6 s Pause, sobald der Lkw frei ist
+			if (modoil::isBusy(d->id) || modcontrol::sincePlayerOrder(d) < 6000u) { continue; }
 			auto it = s_trucks.find(d->id);
 			if (it != s_trucks.end() && it->second.job != J_NONE) { continue; }
 			trucks.push_back(d);
@@ -445,7 +447,12 @@ void autopilot()
 			if (t.crates > 0)
 			{
 				// geladen (vom Autopiloten): zum naechsten Depot mit Platz
-				if (!t.autopilot) { continue; }   // vom Spieler beladen: der Spieler entscheidet
+				if (!t.autopilot)
+				{
+					// vom Spieler beladen: der Spieler entscheidet - steht der Lkw aber 20 s untaetig, bringt er die Kisten selbst ins Depot
+					if (modcontrol::sincePlayerOrder(d) < 20000u) { continue; }
+					t.autopilot = true;
+				}
 				STRUCTURE *best = nullptr; int64_t bd = 0;
 				for (STRUCTURE *s : depots) { const int64_t dd = dist2(s->pos.x, s->pos.y, d->pos.x, d->pos.y); if (!best || dd < bd) { best = s; bd = dd; } }
 				if (best == nullptr) { continue; }
@@ -473,7 +480,7 @@ int capacity(const DROID *d)
 	const CONSTRUCT_STATS *cs = d->getConstructStats();
 	if (cs == nullptr) { return 0; }
 	const std::string id = cs->id.toUtf8();
-	if (id == "ScavBed1") { return 2; }
+	if (id == "ScavBed1") { return 3; }   // (18.11.) groessere Pickup-Ladeflaeche: 3 statt 2
 	if (id == "ScavBed3") { return 3; }
 	if (id == "ScavBed2") { return 4; }
 	if (id == "ScavBucket") { return 4; }

@@ -80,6 +80,8 @@ struct CargoState
 	int stuck = 0;
 	int pause = 0;
 	int x = 0, y = 0, z = 0;    // letzte bekannte Position
+	bool manualWait = false;    // (18.11.) nach einem Spieler-Befehl: erst kurz frei stehen, dann wieder Autopilot
+	int idleSec = 0;
 };
 
 struct Boom
@@ -159,7 +161,7 @@ int cargoCapacity(const DROID *d)
 {
 	const CONSTRUCT_STATS *cs = d->getConstructStats();
 	if (cs == nullptr) { return 0; }
-	if (idIs(cs->id, "ScavBed1")) { return 2; }
+	if (idIs(cs->id, "ScavBed1")) { return 3; }   // (18.11.) groessere Pickup-Ladeflaeche: 3 statt 2
 	if (idIs(cs->id, "ScavBed3")) { return 3; }
 	if (idIs(cs->id, "ScavBed2")) { return 4; }
 	if (idIs(cs->id, "ScavBucket")) { return 6; }
@@ -928,10 +930,18 @@ void logistics()
 			if (c.mode != 0 && !ownMove && d->order.type != DORDER_NONE)
 			{
 				c.mode = 0;       // der Spieler hat selbst einen Befehl gegeben: Autopilot wartet, bis der Lkw wieder frei ist
-				c.pause = 20;
+				c.manualWait = true;
+				c.idleSec = 0;
 				continue;
 			}
-			if (c.mode == 0 && d->order.type != DORDER_NONE) { continue; }
+			if (c.mode == 0 && d->order.type != DORDER_NONE) { c.manualWait = true; c.idleSec = 0; continue; }
+			// (Wunsch 18.11. 02:44) nach einem Spieler-Befehl nimmt der Lkw/Tanker seine Arbeit nach kurzer Wartezeit (5 s frei) wieder auf
+			if (c.mode == 0 && c.manualWait)
+			{
+				if (++c.idleSec < 5) { continue; }
+				c.manualWait = false;
+				c.idleSec = 0;
+			}
 
 			// kind: 0 Kraftwerk, 1 Wasserturm (Lager), 2 Raffinerie, 3 Oelturm
 			auto go = [&](int mode, int kind, uint32_t target, int wx, int wy)

@@ -120,11 +120,11 @@ int s_mode = -1;                 // aktiver Zeichenmodus (-1 = keiner)
 bool s_drawing = false;
 std::vector<Vector2i> s_cur;     // Linie, die gerade gezeichnet wird
 std::vector<Stroke> s_done;      // fertige Zeichnungen (verblassen)
-// MOD (Wunsch 18.11. 00:59): "mit Shift kann man mehrere Grossbefehle geben (Linien zeichnen). Es ueberschreibt nicht." - mit gedrueckter
-// Umschalttaste haengt jede Zeichnung ihre Befehle hinten an (die Einheiten arbeiten sie nacheinander ab), der Zeichenmodus bleibt an,
-// die alten Marker bleiben stehen, und ohne Auswahl bekommt dieselbe Einheitengruppe wie beim ersten Strich die weiteren Befehle.
-bool s_append = false;
-std::vector<uint32_t> s_chain;   // Einheiten der laufenden Shift-Kette
+// MOD (Wunsch 18.11. 00:59, berichtigt 02:44): "Wenn man Shift drueckt, lassen sich neue zeichnen, auch mehrere. Aber wenn man nicht Shift
+// drueckt, dann wird sie ersetzt." - mit gedrueckter Umschalttaste kommt jede Zeichnung als WEITERE Linie dazu (eigener Marker, eigene
+// Einheiten; der Zeichenmodus bleibt an); ohne Shift ersetzt eine neue Zeichnung die bisherigen Linien derselben Art.
+bool s_append = false;           // Zeichnung mit Shift
+std::vector<uint32_t> s_chain;   // Einheiten, die in der laufenden Shift-Folge schon eine Linie bekommen haben
 // MOD (Wunsch 14.11., Infanterie baut): eigener WZ-Knopf direkt ueber der Rosette, sobald Infanterie mit Spaten gewaehlt ist -> oeffnet das WZ-Baumenue
 std::shared_ptr<W_SCREEN> s_infScreen;
 std::shared_ptr<W_CLICKFORM> s_infRoot;
@@ -418,7 +418,7 @@ std::vector<DROID *> pickUnits(Mode m, const std::vector<Vector2i> &pts)
 
 void send(DROID *d, const DroidOrder &o, bool add)
 {
-	sendDroidInfo(d, o, add || s_append, currentOrderSource());   // (18.11.) Shift: anhaengen statt ersetzen
+	sendDroidInfo(d, o, add, currentOrderSource());
 }
 
 // ------------------------------------------------------------------------------------------------- Bauwerke fuer die Artilleriebasis
@@ -886,26 +886,24 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		startSalvage(c, r);
 		return;
 	}
-	std::vector<DROID *> units;
-	if (s_append && selectedPlayer < MAX_PLAYERS)
+	std::vector<DROID *> units = pickUnits(m, raw);
+	if (s_append && !s_chain.empty() && selectedPlayer < MAX_PLAYERS)
 	{
-		// (18.11.) Shift-Kette: dieselben Einheiten wie beim vorigen Strich (sofern sie zur Aktion passen)
-		for (uint32_t id : s_chain)
-		{
-			DROID *d = IdToDroid(gameWorld.objects, id, selectedPlayer);
-			if (d != nullptr && !d->died && fits(m, d)) { units.push_back(d); }
-		}
+		// (18.11.) weitere Linie mit Shift: ohne Auswahl behalten die Einheiten der vorigen Linien ihre Linie
 		bool anySelected = false;
 		for (const DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d != nullptr && d->selected) { anySelected = true; break; } }
-		if (anySelected) { units.clear(); }   // eine Auswahl hat wie immer Vorrang
+		if (!anySelected)
+		{
+			units.erase(std::remove_if(units.begin(), units.end(), [](const DROID *d) {
+				return std::find(s_chain.begin(), s_chain.end(), d->id) != s_chain.end();
+			}), units.end());
+		}
 	}
-	if (units.empty()) { units = pickUnits(m, raw); }
 	const Vector2i c = centroid(raw);
 	if (units.empty())
 	{
 		return;
 	}
-	s_chain.clear();
 	for (const DROID *d : units) { s_chain.push_back(d->id); }
 	switch (m)
 	{
