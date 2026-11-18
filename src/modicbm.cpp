@@ -211,6 +211,11 @@ void tickClouds()
 }
 } // namespace
 
+void cloudAt(const Vector3i &groundPos)
+{
+	startCloud(groundPos);
+}
+
 bool isNukeSilo(const STRUCTURE_STATS *psStats)
 {
 	return psStats != nullptr && psStats->id.compare("A0NukeSilo") == 0;

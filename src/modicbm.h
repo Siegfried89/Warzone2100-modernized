@@ -20,6 +20,8 @@ bool isNukeSilo(const STRUCTURE_STATS *psStats);
 bool launch(STRUCTURE *psSilo, const BASE_OBJECT *psTarget);
 /// Meldung "Atomrakete bereit" statt "Lasersatellit bereit"
 const char *readyText(const STRUCTURE *psStruct);
+/// Atompilz an dieser Stelle (x, y, Bodenhoehe) - auch fuer den mobilen Werfer (Waffe NukeTEL, Einschlag in projectile.cpp)
+void cloudAt(const Vector3i &groundPos);
 /// jeden Spielschritt: erste Rakete nach Fertigstellung beginnen, Einschlaege ausloesen
 void tick();
 /// Rakete im Flug, Abgasfahne, Atompilz (Anzeige)

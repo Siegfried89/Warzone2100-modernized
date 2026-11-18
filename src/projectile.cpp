@@ -47,6 +47,7 @@
 #include "modincoming.h"
 #include "modpointdef.h"
 #include "projectile.h"
+#include "modicbm.h"
 #include "lib/ivis_opengl/imd.h"   // MOD: modelGet (MG-Einschlag je Ziel)
 #include "visibility.h"
 #include "group.h"
@@ -1248,6 +1249,10 @@ static void proj_ImpactFunc(PROJECTILE *psObj)
 	ASSERT_OR_RETURN(, psStats != nullptr, "Invalid weapon stats pointer");
 
 	modterrain::onProjectileImpact(psObj);   // MOD: Krater bei Kanonen-/Moerser-/Haubitzentreffern auf freien Boden
+	if (psStats->id.compare("NukeTEL") == 0)   // MOD (18.11.): mobiler Atomraketen-Werfer - Atompilz (Anzeige)
+	{
+		modicbm::cloudAt(Vector3i(psObj->pos.x, psObj->pos.y, map_Height(gameWorld.map, psObj->pos.x, psObj->pos.y)));
+	}
 
 	/* play impact audio */
 	if (gfxVisible(psObj))
