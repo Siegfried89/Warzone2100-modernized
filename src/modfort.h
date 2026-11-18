@@ -51,4 +51,9 @@ int displayHeight(const STRUCTURE *psStructure, int fallback);
 bool heavyCrosser(const DROID *psDroid);
 /// steht auf dem Feld eine Stellung (beliebiger Spieler)?
 bool fortTile(int tileX, int tileY);
+
+/// (Wunsch 18.11. 13:17 "bei tiefen Graeben versinken die Infanteristen ... die Sandsackwaende/Graeben/Stellungen haben immer noch keine
+/// Kollision - genau ueberpruefen"): Infanterie bewegt sich in einer Stellung nur im freien Innenraum (Grube bzw. Grabengang) und in den
+/// Gaengen zu den offenen Seiten - nicht mehr durch oder in die Sandsack-/Holzwaende. newPos wird angepasst; true = geaendert.
+bool clampInfantry(const DROID *psDroid, int oldX, int oldY, int &newX, int &newY);
 }

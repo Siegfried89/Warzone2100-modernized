@@ -435,6 +435,100 @@ int displayHeight(const STRUCTURE *psStructure, int fallback)
 	return (h + 2) / 4;
 }
 
+namespace
+{
+struct Region
+{
+	int core = 0, arm = 0, half = 0;
+	uint8_t open = 0;
+};
+
+bool inRegion(const Region &r, int u, int v)
+{
+	if (std::abs(u) <= r.core && std::abs(v) <= r.core) { return true; }
+	if ((r.open & 1) && std::abs(u) <= r.arm && v <= 0 && v >= -r.half) { return true; }
+	if ((r.open & 2) && std::abs(v) <= r.arm && u >= 0 && u <= r.half) { return true; }
+	if ((r.open & 4) && std::abs(u) <= r.arm && v >= 0 && v <= r.half) { return true; }
+	if ((r.open & 8) && std::abs(v) <= r.arm && u <= 0 && u >= -r.half) { return true; }
+	return false;
+}
+
+void nearestIn(const Region &r, int u, int v, int &ou, int &ov)
+{
+	int64_t best = INT64_MAX;
+	auto tryRect = [&](int u0, int u1, int v0, int v1) {
+		const int cu = std::clamp(u, u0, u1), cv = std::clamp(v, v0, v1);
+		const int64_t d = int64_t(cu - u) * (cu - u) + int64_t(cv - v) * (cv - v);
+		if (d < best) { best = d; ou = cu; ov = cv; }
+	};
+	tryRect(-r.core, r.core, -r.core, r.core);
+	if (r.open & 1) { tryRect(-r.arm, r.arm, -r.half, 0); }
+	if (r.open & 2) { tryRect(0, r.half, -r.arm, r.arm); }
+	if (r.open & 4) { tryRect(-r.arm, r.arm, 0, r.half); }
+	if (r.open & 8) { tryRect(-r.half, 0, -r.arm, r.arm); }
+}
+
+const STRUCTURE *fortAt(int worldX, int worldY)
+{
+	const int tx = map_coord(worldX), ty = map_coord(worldY);
+	if (!tileOnMap(gameWorld.map, tx, ty)) { return nullptr; }
+	const MAPTILE *t = mapTile(gameWorld.map, tx, ty);
+	if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_STRUCTURE) { return nullptr; }
+	const STRUCTURE *s = static_cast<const STRUCTURE *>(t->psObject);
+	if (s->died || s->status != SS_BUILT || !isFort(s)) { return nullptr; }
+	return s;
+}
+
+bool regionOf(const STRUCTURE *s, Region &r)
+{
+	const auto it = s_open.find(s->id);
+	if (it == s_open.end()) { return false; }   // altes Einzelmodell (nicht im Netz): keine Wandmasse bekannt
+	const std::string *key = familyOf(s);
+	if (key == nullptr) { return false; }
+	const bool pit = key->rfind("pit", 0) == 0;
+	// lichte Masse aus trench.py: Grabengang 40 breit (HI 20), Grube 76 (PIT_HI 38); abzueglich ~6 fuer den Koerper des Soldaten
+	r.core = pit ? 32 : 14;
+	r.arm = 14;
+	r.half = (S * TILE_UNITS) / 2 + 2;
+	r.open = it->second & 0x0F;
+	return true;
+}
+} // namespace
+
+bool clampInfantry(const DROID *psDroid, int oldX, int oldY, int &newX, int &newY)
+{
+	if (psDroid == nullptr || s_grid.empty() || !surfaceResident() || modlayer::layerOf(psDroid) != modlayer::SURFACE) { return false; }
+	const STRUCTURE *s = fortAt(newX, newY);
+	if (s == nullptr) { return false; }
+	Region r;
+	if (!regionOf(s, r)) { return false; }
+	const int u = newX - s->pos.x, v = newY - s->pos.y;
+	if (inRegion(r, u, v)) { return false; }
+	const int ou0 = oldX - s->pos.x, ov0 = oldY - s->pos.y;
+	const bool oldInBlock = std::abs(ou0) <= r.half && std::abs(ov0) <= r.half;
+	if (oldInBlock)
+	{
+		// innen (oder in einer Wand gestrandet): am naechsten freien Punkt bleiben - gleitet an der Wand entlang
+		int ou = 0, ov = 0;
+		nearestIn(r, u, v, ou, ov);
+		newX = s->pos.x + ou;
+		newY = s->pos.y + ov;
+		return true;
+	}
+	// von aussen gegen eine geschlossene Wand: an ihr entlang gleiten (nur eine Achse), sonst stehen bleiben
+	const int cand[2][2] = {{newX, oldY}, {oldX, newY}};
+	for (const auto &c : cand)
+	{
+		const STRUCTURE *cs = fortAt(c[0], c[1]);
+		if (cs == nullptr) { newX = c[0]; newY = c[1]; return true; }
+		Region cr;
+		if (!regionOf(cs, cr) || inRegion(cr, c[0] - cs->pos.x, c[1] - cs->pos.y)) { newX = c[0]; newY = c[1]; return true; }
+	}
+	newX = oldX;
+	newY = oldY;
+	return true;
+}
+
 bool heavyCrosser(const DROID *psDroid)
 {
 	if (psDroid == nullptr) { return false; }
