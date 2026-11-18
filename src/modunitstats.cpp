@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Werteleiste der gewaehlten Einheit (siehe modunitstats.h)
 #include "modunitstats.h"
+#include "modwzhd.h"
+#include "intfac.h"
+#include "intimage.h"
 
 #include <physfs.h>
 #include <algorithm>
@@ -122,7 +125,37 @@ void drawPanel(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	int y = y0 + PAD;
 	for (const Row &r : rows)
 	{
-		wzIconBox(r.icon, x0 + PAD, y, ICON_W, ICON_H);
+		// (Wunsch 18.11. 13:28 "diese Knoepfe sollten auch die knuddelige WZ-Grafik haben - nur mit Leuchten und Farben verschoenert"):
+		// die Original-Sinnbilder des WZ-Einheiteneditors (intfac) in der HD-Fassung mit Glanz, auf dem WZ-Knopf
+		{
+			int wz = -1;
+			switch (r.icon)
+			{
+			case S_DAMAGE: wz = IMAGE_DES_DAMAGE; break;
+			case S_ROF: wz = IMAGE_DES_FIRERATE; break;
+			case S_RANGE: wz = IMAGE_DES_RANGE; break;
+			case S_ARMOUR: wz = IMAGE_DES_ARMOUR_KINETIC; break;
+			case S_THERMAL: wz = IMAGE_DES_ARMOUR_EXPLOSIVE; break;
+			case S_HP: wz = IMAGE_DES_BODYPOINTS; break;
+			case S_SPEED: wz = IMAGE_DES_ROAD; break;
+			case S_WEIGHT: wz = IMAGE_DES_WEIGHT; break;
+			case S_POWER: wz = IMAGE_DES_POWER; break;
+			case S_SENSOR: wz = IMAGE_ORIGIN_SENSOR_STANDARD; break;
+			default: break;
+			}
+			if (wz >= 0)
+			{
+				drawImg(IC_BTN_UP, x0 + PAD, y, ICON_W, ICON_H);
+				const int iw = iV_GetImageWidth(IntImages, static_cast<UWORD>(wz)), ih = iV_GetImageHeight(IntImages, static_cast<UWORD>(wz));
+				const float k = std::min(static_cast<float>(ICON_W - 6) / std::max(1, iw), static_cast<float>(ICON_H - 4) / std::max(1, ih));
+				const int dw = std::max(1, static_cast<int>(iw * k)), dh = std::max(1, static_cast<int>(ih * k));
+				modwzhd::drawIntfac(static_cast<unsigned>(wz), x0 + PAD + (ICON_W - dw) / 2, y + (ICON_H - dh) / 2, dw, dh, true);
+			}
+			else
+			{
+				wzIconBox(r.icon, x0 + PAD, y, ICON_W, ICON_H);
+			}
+		}
 		// Wertefeld wie im Bild: dunkles Kaestchen mit hellem Rand, Zahl rechts davon
 		const int vx = x0 + PAD + ICON_W + 3;
 		pie_UniTransBoxFill(static_cast<float>(vx), static_cast<float>(y + 2), static_cast<float>(vx + VAL_W), static_cast<float>(y + ICON_H - 2), pal_RGBA(16, 18, 40, 230));
