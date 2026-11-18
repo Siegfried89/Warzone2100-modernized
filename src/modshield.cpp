@@ -60,17 +60,26 @@ struct State
 	uint32_t upAt = 0;
 };
 
-// Kugel wie beim UEF-Schildgenerator in Supreme Commander (ShieldSize 26, ShieldVerticalOffset -3): Mittelpunkt 3/13 des Radius unter
-// dem Boden. Sichtbar ist die Kappe darueber (Bodenkreis 97 % des Radius); Treffer werden an genau dieser Kugel aufgehalten.
-constexpr int64_t SPHERE_DROP_NUM = 3, SPHERE_DROP_DEN = 13;
+// Kugel wie in Supreme Commander: Mittelpunkt unter dem Boden (Schildgenerator ShieldSize 26 / ShieldVerticalOffset -3 = 3/13 des Radius,
+// fahrender Schildgenerator 16 / -3 = 3/8). Sichtbar ist die Kappe darueber; Treffer werden an genau dieser Kugel aufgehalten.
 constexpr uint32_t POWER_BACK_MS = 3000;    // ShieldEnergyDrainRechargeTime
+
+/// Werte einer Schildquelle: Schild-Bauwerk (structure.json) oder Fahrzeug mit Schild-Systemturm (sensor.json, wie der fahrende
+/// Schildgenerator UEL0307 in Supreme Commander)
+struct Params
+{
+	int radius = 0, hp = 0, regen = 0, recharge = 0, regenDelay = 0;
+	int drop = 231;             // Kugelmitte unter dem Boden, Tausendstel des Radius
+	bool needsPower = false;    // Bauwerke brauchen Strom, Fahrzeuge nicht
+};
 
 struct Active
 {
-	const STRUCTURE *s;
+	const BASE_OBJECT *s;
 	int64_t cx, cy, cz, r;      // Kugelmitte (unter dem Boden) und Radius
 	int64_t gz;                 // Bodenhoehe am Generator
 	modlayer::Layer layer;
+	Params P;
 };
 
 struct Hit
@@ -89,10 +98,51 @@ std::vector<Active> s_active;
 std::vector<Hit> s_hits;
 int s_sndHit = -2, s_sndDown = -2, s_sndUp = -2;
 
-bool hasShieldStats(const STRUCTURE *s)
+bool shieldParams(const BASE_OBJECT *o, Params &P)
 {
-	return s != nullptr && s->pStructureType != nullptr && s->pStructureType->shieldRadius > 0 && s->pStructureType->shieldHP > 0;
+	if (o == nullptr || o->died) { return false; }
+	if (o->type == OBJ_STRUCTURE)
+	{
+		const STRUCTURE *s = static_cast<const STRUCTURE *>(o);
+		const STRUCTURE_STATS *st = s->pStructureType;
+		if (st == nullptr || st->shieldRadius <= 0 || st->shieldHP <= 0 || s->status != SS_BUILT) { return false; }
+		P.radius = st->shieldRadius; P.hp = st->shieldHP; P.regen = st->shieldRegen; P.recharge = st->shieldRecharge;
+		P.regenDelay = st->shieldRegenDelay; P.drop = st->shieldDrop; P.needsPower = true;
+		return true;
+	}
+	if (o->type == OBJ_DROID)
+	{
+		const DROID *d = static_cast<const DROID *>(o);
+		if (d->droidType != DROID_SENSOR || d->isVtol() || d->isTransporter()) { return false; }
+		const SENSOR_STATS *ss = d->getSensorStats();
+		if (ss == nullptr || ss->shieldRadius <= 0 || ss->shieldHP <= 0) { return false; }
+		P.radius = ss->shieldRadius; P.hp = ss->shieldHP; P.regen = ss->shieldRegen; P.recharge = ss->shieldRecharge;
+		P.regenDelay = ss->shieldRegenDelay; P.drop = ss->shieldDrop; P.needsPower = false;
+		return true;
+	}
+	return false;
 }
+
+/// alle Schildquellen in fester Reihenfolge (Spieler, Bauwerke, dann Fahrzeuge) - auf allen Rechnern gleich
+template<typename F>
+void forEachSource(F &&f)
+{
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			Params P;
+			if (shieldParams(s, P)) { f(static_cast<const BASE_OBJECT *>(s), P); }
+		}
+		for (const DROID *d : gameWorld.objects.droids[p])
+		{
+			Params P;
+			if (shieldParams(d, P)) { f(static_cast<const BASE_OBJECT *>(d), P); }
+		}
+	}
+}
+
+int64_t dropOf(const Params &P) { return int64_t(P.radius) * P.drop / 1000; }
 
 int track(int &cache, const char *name)
 {
@@ -249,61 +299,54 @@ void tick()
 {
 	s_active.clear();
 	const uint32_t dt = deltaGameTime;
-	// Zustand fuer jedes fertige Schild-Bauwerk; verschwundene Bauwerke werden unten entfernt
+	// Zustand fuer jede Schildquelle (fertiges Schild-Bauwerk, Fahrzeug mit Schild-Systemturm); verschwundene werden unten entfernt
 	std::vector<uint32_t> alive;
-	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
-	{
-		for (const STRUCTURE *s : gameWorld.objects.structures[p])
+	forEachSource([&](const BASE_OBJECT *o, const Params &P) {
+		alive.push_back(o->id);
+		State &S = s_state[o->id];
+		if (!S.init)
 		{
-			if (s->died || s->status != SS_BUILT || !hasShieldStats(s)) { continue; }
-			const STRUCTURE_STATS *st = s->pStructureType;
-			alive.push_back(s->id);
-			State &S = s_state[s->id];
-			if (!S.init)
-			{
-				// fertig gebaut: Schild steht sofort mit vollen Punkten (Supreme Commander: OnState setzt volle Gesundheit)
-				S.init = true;
-				S.hp = st->shieldHP;
-				S.upAt = gameTime;
-			}
-			// ohne Strom ist die Kuppel aus und behaelt ihre Punkte; kommt der Strom zurueck, geht sie nach 3 s wieder an
-			const bool powered = !modgrid::isPoweredDown(s);
-			if (powered && !S.powered) { S.powerBackAt = gameTime + POWER_BACK_MS; }
-			S.powered = powered;
-			if (!powered) { continue; }
-			if (S.powerBackAt != 0)
-			{
-				if (gameTime < S.powerBackAt) { continue; }
-				S.powerBackAt = 0;
-				S.upAt = gameTime;
-				const int t = track(s_sndUp, "modshield_up.ogg");
-				if (t >= 0) { audio_PlayStaticTrack(s->pos.x, s->pos.y, t); }
-			}
-			// zusammengebrochen: nach der Ausfallzeit wieder an - mit vollen Punkten (Supreme Commander: DamageRechargeState)
-			if (S.down)
-			{
-				if (gameTime < S.downUntil) { continue; }
-				S.down = false;
-				S.hp = st->shieldHP;
-				S.frac = 0;
-				S.upAt = gameTime;
-				const int t = track(s_sndUp, "modshield_up.ogg");
-				if (t >= 0) { audio_PlayStaticTrack(s->pos.x, s->pos.y, t); }
-			}
-			// aufladen erst, wenn eine Weile kein Treffer kam (ganzzahlig, Rest in Tausendsteln)
-			if (S.hp < st->shieldHP && gameTime - S.lastDamage >= static_cast<uint32_t>(st->shieldRegenDelay))
-			{
-				S.frac += st->shieldRegen * static_cast<int>(dt);
-				if (S.frac >= 1000) { S.hp += S.frac / 1000; S.frac %= 1000; }
-				S.hp = std::min(S.hp, st->shieldHP);
-			}
-			if (S.hp > 0)
-			{
-				const int64_t r = st->shieldRadius;
-				s_active.push_back({s, s->pos.x, s->pos.y, s->pos.z - r * SPHERE_DROP_NUM / SPHERE_DROP_DEN, r, s->pos.z, modlayer::layerOf(s)});
-			}
+			// fertig gebaut: Schild steht sofort mit vollen Punkten (Supreme Commander: OnState setzt volle Gesundheit)
+			S.init = true;
+			S.hp = P.hp;
+			S.upAt = gameTime;
 		}
-	}
+		// ohne Strom (nur Bauwerke) ist die Kuppel aus und behaelt ihre Punkte; kommt der Strom zurueck, geht sie nach 3 s wieder an
+		const bool powered = !P.needsPower || !modgrid::isPoweredDown(static_cast<const STRUCTURE *>(o));
+		if (powered && !S.powered) { S.powerBackAt = gameTime + POWER_BACK_MS; }
+		S.powered = powered;
+		if (!powered) { return; }
+		if (S.powerBackAt != 0)
+		{
+			if (gameTime < S.powerBackAt) { return; }
+			S.powerBackAt = 0;
+			S.upAt = gameTime;
+			const int t = track(s_sndUp, "modshield_up.ogg");
+			if (t >= 0) { audio_PlayStaticTrack(o->pos.x, o->pos.y, t); }
+		}
+		// zusammengebrochen: nach der Ausfallzeit wieder an - mit vollen Punkten (Supreme Commander: DamageRechargeState)
+		if (S.down)
+		{
+			if (gameTime < S.downUntil) { return; }
+			S.down = false;
+			S.hp = P.hp;
+			S.frac = 0;
+			S.upAt = gameTime;
+			const int t = track(s_sndUp, "modshield_up.ogg");
+			if (t >= 0) { audio_PlayStaticTrack(o->pos.x, o->pos.y, t); }
+		}
+		// aufladen erst, wenn eine Weile kein Treffer kam (ganzzahlig, Rest in Tausendsteln)
+		if (S.hp < P.hp && P.regen > 0 && gameTime - S.lastDamage >= static_cast<uint32_t>(P.regenDelay))
+		{
+			S.frac += P.regen * static_cast<int>(dt);
+			if (S.frac >= 1000) { S.hp += S.frac / 1000; S.frac %= 1000; }
+			S.hp = std::min(S.hp, P.hp);
+		}
+		if (S.hp > 0)
+		{
+			s_active.push_back({o, o->pos.x, o->pos.y, o->pos.z - dropOf(P), P.radius, o->pos.z, modlayer::layerOf(o), P});
+		}
+	});
 	std::sort(alive.begin(), alive.end());
 	for (auto it = s_state.begin(); it != s_state.end();)
 	{
@@ -351,13 +394,13 @@ bool tryAbsorb(PROJECTILE *proj)
 	S.lastHit = gameTime;
 	S.lastDamage = gameTime;
 	S.frac = 0;
-	const STRUCTURE_STATS *st = best->s->pStructureType;
+	const Params &BP = best->P;
 	if (S.hp <= 0)
 	{
 		S.hp = 0;
 		S.frac = 0;
 		S.down = true;
-		S.downUntil = gameTime + static_cast<uint32_t>(std::max(1000, st->shieldRecharge));
+		S.downUntil = gameTime + static_cast<uint32_t>(std::max(1000, BP.recharge));
 		S.downAt = gameTime;
 		const int t = track(s_sndDown, "modshield_down.ogg");
 		if (t >= 0) { audio_PlayStaticTrack(best->s->pos.x, best->s->pos.y, t); }
@@ -396,12 +439,13 @@ bool tryAbsorb(PROJECTILE *proj)
 	return true;
 }
 
-int shieldPercent(const STRUCTURE *s)
+int shieldPercent(const BASE_OBJECT *o)
 {
-	if (!hasShieldStats(s) || s->status != SS_BUILT) { return -1; }
-	const auto it = s_state.find(s->id);
+	Params P;
+	if (!shieldParams(o, P)) { return -1; }
+	const auto it = s_state.find(o->id);
 	if (it == s_state.end()) { return 0; }
-	return std::clamp(it->second.hp * 100 / std::max(1, s->pStructureType->shieldHP), 0, 100);
+	return std::clamp(it->second.hp * 100 / std::max(1, P.hp), 0, 100);
 }
 
 void draw3D(const glm::mat4 &viewMatrix)
@@ -434,27 +478,22 @@ void draw3D(const glm::mat4 &viewMatrix)
 	if (dome == nullptr || s_state.empty()) { return; }
 	const float now = static_cast<float>(graphicsTime);
 	const glm::vec3 cam = glm::vec3(glm::inverse(viewMatrix)[3]);   // Kameraposition (Welt)
-	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
-	{
-		for (const STRUCTURE *s : gameWorld.objects.structures[p])
-		{
-			if (s->died || s->status != SS_BUILT || !hasShieldStats(s)) { continue; }
-			if (!s->visibleForLocalDisplay() || modlayer::hiddenInView(s)) { continue; }
+	forEachSource([&](const BASE_OBJECT *s, const Params &P) {
+			if (!s->visibleForLocalDisplay() || modlayer::hiddenInView(s)) { return; }
 			const auto it = s_state.find(s->id);
-			if (it == s_state.end()) { continue; }
+			if (it == s_state.end()) { return; }
 			const State &S = it->second;
-			const STRUCTURE_STATS *st = s->pStructureType;
-			const float frac = static_cast<float>(S.hp) / static_cast<float>(std::max(1, st->shieldHP));
+			const float frac = static_cast<float>(S.hp) / static_cast<float>(std::max(1, P.hp));
 			// Zusammenbruch: kurzes helles Aufflackern, dann aus; Aufbau: von unten "einblenden"
 			float collapse = 0.f;
 			if (S.down)
 			{
 				const float since = now - static_cast<float>(S.downAt);
-				if (since > 650.f) { continue; }
+				if (since > 650.f) { return; }
 				collapse = 1.f - since / 650.f;
 			}
-			else if (S.hp <= 0 || !S.powered || S.powerBackAt != 0) { continue; }
-			const float R = static_cast<float>(st->shieldRadius);
+			else if (S.hp <= 0 || !S.powered || S.powerBackAt != 0) { return; }
+			const float R = static_cast<float>(P.radius);
 			const PIELIGHT team = pal_GetTeamColour(getPlayerColour(s->player));
 			// Kuppelfarbe: helles Blau mit etwas Spielerfarbe
 			const int cr = std::clamp(70 + team.byte.r / 4, 0, 255), cg = std::clamp(150 + team.byte.g / 6, 0, 255), cb = 255;
@@ -469,7 +508,7 @@ void draw3D(const glm::mat4 &viewMatrix)
 			int alpha = static_cast<int>((34.f + 46.f * hitBoost + 30.f * frac) * flick + 200.f * collapse);
 			alpha = std::clamp(alpha, 0, 255);
 			const glm::vec3 cGround(static_cast<float>(s->pos.x), static_cast<float>(s->pos.z), -static_cast<float>(s->pos.y));   // Boden
-			const glm::vec3 c = cGround - glm::vec3(0.f, R * static_cast<float>(SPHERE_DROP_NUM) / static_cast<float>(SPHERE_DROP_DEN), 0.f);   // Kugelmitte
+			const glm::vec3 c = cGround - glm::vec3(0.f, R * static_cast<float>(P.drop) / 1000.f, 0.f);   // Kugelmitte
 			const float rr = R / 100.f;   // Modelle haben Radius 100
 			// Kuppel: langsam drehend (Wabenmuster wandert), zweite Lage gegenlaeufig etwas groesser
 			const float yaw = now * 0.0060f + static_cast<float>(s->id % 360);
@@ -482,7 +521,8 @@ void draw3D(const glm::mat4 &viewMatrix)
 			// heller Saum am Boden (wo die Kuppel auf die Erde trifft)
 			if (ring != nullptr)
 			{
-				const float rg = rr * std::sqrt(1.f - (3.f / 13.f) * (3.f / 13.f));   // Bodenkreis der Kugel
+				const float dr = static_cast<float>(P.drop) / 1000.f;
+				const float rg = rr * std::sqrt(std::max(0.f, 1.f - dr * dr));   // Bodenkreis der Kugel
 				glm::mat4 mr = glm::translate(glm::mat4(1.f), cGround + glm::vec3(0.f, 2.f, 0.f)) * glm::scale(glm::mat4(1.f), glm::vec3(rg, 1.f, rg));
 				pie_Draw3DShape(ring->displayModel(), 0, 0, tint, pie_ADDITIVE, std::clamp(alpha * 3 / 2 + 30, 0, 255), mr, viewMatrix, 0.f, true);
 			}
@@ -524,8 +564,7 @@ void draw3D(const glm::mat4 &viewMatrix)
 					pie_Draw3DShape(shape->displayModel(), 0, 0, tint, pie_ADDITIVE, std::clamp(ea, 0, 255), me, viewMatrix, 0.f, true);
 				}
 			}
-		}
-	}
+	});
 	// Einschlaege: Aufblitzen auf der Kuppelwand (zur Wand ausgerichtet), waechst und verblasst in 0,45 s
 	if (flash != nullptr)
 	{
@@ -566,25 +605,20 @@ void drawDomes(const glm::mat4 &perspectiveMatrix, const glm::mat4 &viewMatrix)
 	const float pulseFast = std::sin(gpu::fractf(0.06 * tk) * glm::pi<float>());
 	auto &ctx = gfx_api::context::get();
 	bool bound = false;
-	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
-	{
-		for (const STRUCTURE *s : gameWorld.objects.structures[p])
-		{
-			if (s->died || s->status != SS_BUILT || !hasShieldStats(s)) { continue; }
-			if (!s->visibleForLocalDisplay() || modlayer::hiddenInView(s)) { continue; }
+	forEachSource([&](const BASE_OBJECT *s, const Params &P) {
+			if (!s->visibleForLocalDisplay() || modlayer::hiddenInView(s)) { return; }
 			const auto it = s_state.find(s->id);
-			if (it == s_state.end()) { continue; }
+			if (it == s_state.end()) { return; }
 			const State &S = it->second;
-			if (S.down || S.hp <= 0 || !S.powered || S.powerBackAt != 0) { continue; }   // aus: wie dort einfach weg
-			const STRUCTURE_STATS *st = s->pStructureType;
-			const float R = static_cast<float>(st->shieldRadius);
-			const glm::vec3 c(static_cast<float>(s->pos.x), static_cast<float>(s->pos.z) - R * static_cast<float>(SPHERE_DROP_NUM) / static_cast<float>(SPHERE_DROP_DEN),
+			if (S.down || S.hp <= 0 || !S.powered || S.powerBackAt != 0) { return; }   // aus: wie dort einfach weg
+			const float R = static_cast<float>(P.radius);
+			const glm::vec3 c(static_cast<float>(s->pos.x), static_cast<float>(s->pos.z) - R * static_cast<float>(P.drop) / 1000.f,
 			                  -static_cast<float>(s->pos.y));
 			const glm::mat4 model = glm::translate(glm::mat4(1.f), c) * glm::scale(glm::mat4(1.f), glm::vec3(R, R, R));
 			const glm::mat4 mv = viewMatrix * model;
 			cb.ModelViewProjectionMatrix = perspectiveMatrix * mv;
 			cb.ModelViewMatrix = mv;
-			const float frac = std::clamp(static_cast<float>(S.hp) / static_cast<float>(std::max(1, st->shieldHP)), 0.f, 1.f);
+			const float frac = std::clamp(static_cast<float>(S.hp) / static_cast<float>(std::max(1, P.hp)), 0.f, 1.f);
 			cb.params = glm::vec4(pulseSlow, pulseFast, frac, 0.f);
 			if (!bound)
 			{
@@ -596,8 +630,7 @@ void drawDomes(const glm::mat4 &perspectiveMatrix, const glm::mat4 &viewMatrix)
 			}
 			gfx_api::ModShieldDomePSO::get().bind_constants(cb);
 			gfx_api::ModShieldDomePSO::get().draw_elements(gpu::sphCount, 0);
-		}
-	}
+	});
 	if (bound)
 	{
 		gfx_api::ModShieldDomePSO::get().unbind_vertex_buffers(gpu::sphPos, gpu::sphUV);
