@@ -49,12 +49,12 @@ STRUCTURE_STATS *coreStats(const DROID *d)
 	return it->second >= 0 ? &asStructureStats[it->second] : nullptr;
 }
 
-/// Heck des Fahrzeugs (Modell: vorn = -z, hinten = +z)
+/// Heck des Fahrzeugs (Modell: vorn = -z, hinten = +z); Abstaende in Welteinheiten (DIST_TILE = 128, auch in der Viertel-Fassung)
 int rearDist(const DROID *d)
 {
 	const BODY_STATS *b = d->getBodyStats();
 	const int len = (b != nullptr && b->pIMD != nullptr) ? b->pIMD->max.z : 0;
-	return std::max(TILE_UNITS / 2, len);
+	return std::max(DIST_TILE / 2, len);
 }
 
 Vector2i corePos(const DROID *d)
@@ -67,7 +67,7 @@ Vector2i corePos(const DROID *d)
 
 Vector2i autoFlagPos(const DROID *d)
 {
-	Vector2i p = d->pos.xy() - iSinCosR(d->rot.direction, rearDist(d) + TILE_UNITS * 3 / 2);
+	Vector2i p = d->pos.xy() - iSinCosR(d->rot.direction, rearDist(d) + DIST_TILE * 3 / 2);
 	p.x = std::clamp(p.x, world_coord(2), world_coord(std::max(3, gameWorld.map.width - 2)) - 1);
 	p.y = std::clamp(p.y, world_coord(2), world_coord(std::max(3, gameWorld.map.height - 2)) - 1);
 	return p;
@@ -97,18 +97,18 @@ void followHost(STRUCTURE *core, const DROID *d)
 	if (it == s_autoFlag.end())
 	{
 		// neu (oder nach dem Laden): folgen, wenn der Punkt noch in der Naehe des Fahrzeugs liegt
-		following = iHypot(cur - want) < TILE_UNITS * 3;
+		following = iHypot(cur - want) < DIST_TILE * 3;
 	}
 	else
 	{
-		following = iHypot(cur - it->second) < TILE_UNITS / 2;   // weit weg von der zuletzt gesetzten Stelle = vom Spieler versetzt
+		following = iHypot(cur - it->second) < DIST_TILE / 2;   // weit weg von der zuletzt gesetzten Stelle = vom Spieler versetzt
 	}
 	if (!following)
 	{
 		s_autoFlag[core->id] = Vector2i(-100000, -100000);   // folgt nicht mehr
 		return;
 	}
-	if (it == s_autoFlag.end() || iHypot(want - it->second) > TILE_UNITS * 3 / 4)
+	if (it == s_autoFlag.end() || iHypot(want - it->second) > DIST_TILE * 3 / 4)
 	{
 		setAssemblyPoint(gameWorld, fp, want.x, want.y, core->player, true);
 		s_autoFlag[core->id] = fp->coords.xy();
