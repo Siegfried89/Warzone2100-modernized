@@ -43,7 +43,7 @@ constexpr float TILT = 0.16f;        // Kegel leicht nach unten (ca. 9 Grad)
 
 bool eligible(const DROID *d)
 {
-	if (d == nullptr || d->died || !d->visibleForLocalDisplay())
+	if (d == nullptr || d->died || d->visibleForLocalDisplay() != UBYTE_MAX)   // nur ganz sichtbare (keine Radar-Punkte)
 	{
 		return false;
 	}
