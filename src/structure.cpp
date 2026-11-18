@@ -816,6 +816,10 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->storageProvide = std::max(0, ini.value("storageProvide", 0).toInt());   // MOD: Energie-Obergrenze
 		psStats->incomeProvide = std::max(0, ini.value("incomeProvide", 0).toInt());   // MOD: Energie je Sekunde
 		psStats->infantryPassable = ini.value("infantryPassable", false).toBool();   // MOD
+		psStats->shieldRadius = std::max(0, ini.value("shieldRadius", 0).toInt());   // MOD: Schildkuppel (modshield)
+		psStats->shieldHP = std::max(0, ini.value("shieldHP", 0).toInt());
+		psStats->shieldRegen = std::max(0, ini.value("shieldRegen", 0).toInt());
+		psStats->shieldRecharge = std::max(0, ini.value("shieldRecharge", 12000).toInt());
 		psStats->passable = ini.value("passable", false).toBool();   // MOD (17.11.): Minen
 		psStats->infantryBuildable = ini.value("infantryBuildable", false).toBool();   // MOD
 		psStats->turretSpinMs = static_cast<unsigned>(std::max(500, ini.value("turretSpinMs", 3000).toInt()));   // MOD
@@ -4404,6 +4408,7 @@ int modBuildCategory(const STRUCTURE_STATS *st)
 	if (has("Cryo") || has("Crane") || has("LayerShaft") || has("Gantry") || has("Assembly") || has("Factory") || has("Research")) { return 1; }
 	if (has("Ammo") || has("Container") || has("Outpost") || has("ATC") || has("Beacon") || has("Relay") || has("Radar") || has("Uplink") || has("RocketSilo") || has("LaserSatellite")) { return 2; }
 	if (has("Trench") || has("Sandbag") || has("Hedgehog") || has("TankTrap") || has("DragonTeeth") || has("Wall")) { return 3; }
+	if (st->shieldRadius > 0) { return 4; }   // MOD (18.11.): Schildgeneratoren zu den Verteidigungen
 	if (st->type == REF_DEFENSE && st->numWeaps == 0)
 	{
 		// Sensortuerme zur Versorgung, leere Gruben/Stellungen zu den Hindernissen (pSensor hat jedes Bauwerk - Standardsensor)

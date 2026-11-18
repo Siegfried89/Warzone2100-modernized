@@ -46,6 +46,7 @@
 #include "order.h"
 #include "modincoming.h"
 #include "modpointdef.h"
+#include "modshield.h"
 #include "projectile.h"
 #include "modicbm.h"
 #include "lib/ivis_opengl/imd.h"   // MOD: modelGet (MG-Einschlag je Ziel)
@@ -1584,6 +1585,12 @@ PROJECTILE* PROJECTILE::update()
 			break;
 		}
 		spawnedProjectile = proj_InFlightFunc(psObj);
+		if ((psObj->state == PROJ_INFLIGHT || psObj->state == PROJ_IMPACT) && modshield::tryAbsorb(psObj))   // MOD: an einer Schildkuppel aufgehalten
+		{
+			setProjectileDestination(psObj, nullptr);
+			psObj->state = PROJ_INACTIVE;
+			break;
+		}
 		if (psObj->state != PROJ_IMPACT)
 		{
 			break;

@@ -113,6 +113,7 @@
 #include "modbigmap.h"
 #include "modoil.h"
 #include "modcrates.h"
+#include "modshield.h"
 #include "modrecover.h"
 #include "modnestcrew.h"
 #include "modwreck.h"
@@ -1557,6 +1558,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	modsat::draw3D(viewMatrix);      // MOD (17.11. 21:34): Satelliten-Start von der Orbit-Insel, Satelliten am Orbit-Himmel
 	modnuke::draw3D(viewMatrix);     // MOD (17.11. 21:13): Dampf ueber den Kuehltuermen laufender Atomkraftwerke
 	modicbm::draw3D(viewMatrix);     // MOD (18.11.): Atomrakete im Flug, Atompilz
+	modshield::draw3D(viewMatrix);   // MOD (18.11.): Schildkuppeln, Einschlag-Aufblitzen
 	modrocket::draw3D(viewMatrix);   // MOD (17.11. 20:56): Raketen im Silo, Countdown-Dampf, Start   // MOD (17.11. 20:44): warmweisse Nachtlichter an Masten, Kraenen, Tuermen, Gebaeuden
 	display3DProjectiles(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
 	wzPerfEnd(PERF_MODEL_INIT);
@@ -3909,6 +3911,24 @@ static void queueStructureHealth(STRUCTURE *psStruct, BatchedMultiRectRenderer& 
 			for (int k = 1; k < segs; ++k)
 			{
 				const int sx = x0 + full * k / segs;
+				batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(sx, y0, sx + 1, y0 + 2, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			}
+		}
+	}
+	// MOD (18.11.): Schildgenerator - Schildbalken (hellblau, 10 Abschnitte) ueber dem Lebensbalken
+	{
+		const int sp = modshield::shieldPercent(psStruct);
+		if (sp >= 0)
+		{
+			const int full = 2 * width;
+			const int fill = full * sp / 100;
+			const int x0 = scrX - scrR, y0 = scrY - 5;
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0 - 1, y0 - 1, x0 + full + 1, y0 + 3, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0, x0 + fill, y0 + 1, pal_RGBA(140, 215, 255, 255)), rectGroup);
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 2, pal_RGBA(60, 140, 220, 255)), rectGroup);
+			for (int k = 1; k < 10; ++k)
+			{
+				const int sx = x0 + full * k / 10;
 				batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(sx, y0, sx + 1, y0 + 2, WZCOL_RELOAD_BACKGROUND), rectGroup);
 			}
 		}

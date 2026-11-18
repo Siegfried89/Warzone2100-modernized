@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp> // Must come before WZ includes
 
 #include "modsave.h"
+#include "modshield.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/physfs_ext.h"
@@ -122,6 +123,9 @@ void write(const std::string &folder)
 		modterrain::saveState(terrain);
 		modfuel::saveState(fuel);
 		modoil::saveState(oil);
+		std::vector<int> shields;
+		modshield::saveState(shields);   // MOD (18.11.): Schildkuppeln
+		j["shields"] = shields;
 		j["craters"] = terrain;
 		j["fuel"] = fuel;
 		j["oil"] = oil;
@@ -187,6 +191,9 @@ void applyPending()
 		modterrain::loadState(terrain);
 		modfuel::loadState(fuel);
 		modoil::loadState(oil);
+		std::vector<int> shields;
+		readArray(*j, "shields", shields);
+		modshield::loadState(shields);
 		std::vector<modwreck::SavedWreck> wrecks;
 		const auto wr = j->find("wrecks");
 		if (wr != j->end() && wr->is_array())
