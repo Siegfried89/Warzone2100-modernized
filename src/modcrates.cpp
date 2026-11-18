@@ -89,7 +89,7 @@ bool isDepot(const STRUCTURE *s) { return idHas(s, "AmmoDepot"); }
 bool isBox(const STRUCTURE *s) { return idHas(s, "AmmoBox") && !isPile(s); }
 bool isFactory(const STRUCTURE *s)
 {
-	return s != nullptr && s->pStructureType != nullptr && (s->pStructureType->type == REF_FACTORY || s->pStructureType->type == REF_CYBORG_FACTORY);
+	return s != nullptr && s->pStructureType != nullptr && !s->pStructureType->mobileCore && (s->pStructureType->type == REF_FACTORY || s->pStructureType->type == REF_CYBORG_FACTORY);
 }
 int capOf(const STRUCTURE *s) { return isDepot(s) ? DEPOT_CAP : (isBox(s) ? BOX_CAP : PILE_CAP); }
 

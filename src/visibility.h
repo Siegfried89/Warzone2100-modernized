@@ -119,6 +119,10 @@ inline int objSensorRange(const BASE_OBJECT *psObj)
 	}
 	else if (psObj->type == OBJ_STRUCTURE)
 	{
+		if (((const STRUCTURE *)psObj)->pStructureType->mobileCore)
+		{
+			return 0;   // MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik sieht nichts (das Fahrzeug selbst sieht)
+		}
 		if (((const STRUCTURE *)psObj)->pStructureType->requiresPower && !modgrid::isPowered((const STRUCTURE *)psObj))
 		{
 			return 0;   // MOD: ohne Strom keine Sensorreichweite

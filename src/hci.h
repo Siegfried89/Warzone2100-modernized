@@ -375,6 +375,8 @@ void intCommanderGroupDamaged(const DROID *psCommander, uint64_t additionalDamag
 
 /* Sync the interface to an object */
 void intObjectSelected(BASE_OBJECT *psObj);
+/// MOD (18.11.): Bauliste einer fahrenden Fabrik (Fatboy) oeffnen - der Fabrik-Kern ist hervorgehoben, das Fahrzeug bleibt angewaehlt
+void intShowMobileFactory(STRUCTURE *psCore);
 
 bool intBuildSelectMode();
 bool intDemolishSelectMode();

@@ -540,6 +540,8 @@ struct BODY_STATS : public COMPONENT_STATS
 	int crewCost = 0;               ///< MOD (MF): Besatzung, die dieser Rumpf im Besatzungskonto bindet
 	int shieldMech = 0;             ///< MOD (MF): prozentualer Schild gegen mechanischen Schaden (0..90)
 	int shieldEnergy = 0;           ///< MOD (MF): prozentualer Schild gegen Energieschaden (0..90)
+	WzString mobileFactory;         ///< MOD (18.11.): fahrende Fabrik (Fatboy) - ID des Fabrik-Kerns (structure.json, "mobileFactoryCore": 1)
+	int collisionRadius = 0;        ///< MOD (18.11.): Ausweichradius fuer sehr grosse Rumpfe (0 = wie bisher)
 
 	std::vector<iIMDBaseShape *> ppIMDList;	///< list of IMDs to use for propulsion unit - up to numPropulsionStats
 	std::vector<iIMDBaseShape *> ppMoveIMDList;	///< list of IMDs to use when droid is moving - up to numPropulsionStats

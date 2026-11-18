@@ -810,6 +810,7 @@ bool loadStructureStats(WzConfig &ini)
 
 		psStats->combinesWithWall = ini.value("combinesWithWall", false).toBool();
 		psStats->requiresPower = ini.value("requiresPower", false).toBool();   // MOD
+		psStats->mobileCore = ini.value("mobileFactoryCore", false).toBool();   // MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik
 		psStats->crewCost = std::max(0, ini.value("crewCost", 0).toInt());   // MOD: Besatzungskonto
 		psStats->crewProvide = std::max(0, ini.value("crewProvide", 0).toInt());   // MOD: Besatzungskonto
 		psStats->crewStart = std::max(0, ini.value("crewStart", 0).toInt());   // MOD: Besatzungskonto
@@ -1652,8 +1653,12 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 
 		ASSERT_OR_RETURN(nullptr, max < numStructureStats, "Invalid structure type");
 
+		// MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik (Fatboy) - liegt auf keinem Feld, blockiert nichts, ebnet nichts ein,
+		// wird nicht gezeichnet (modmobilefactory haelt ihn am Fahrzeug); sonst eine ganz normale Fabrik (Bauliste, Sammelpunkt, Strom)
+		const bool mobileCore = pStructureType->mobileCore;
+
 		// Don't allow more than interface limits
-		if (!ignoreLimits && asStructureStats[max].curCount[player] + 1 > asStructureStats[max].upgrade[player].limit)
+		if (!ignoreLimits && !mobileCore && asStructureStats[max].curCount[player] + 1 > asStructureStats[max].upgrade[player].limit)
 		{
 			debug(LOG_ERROR, "Player %u: Building %s could not be built due to building limits (has %u, max %u)!",
 			      player, getStatsName(pStructureType), asStructureStats[max].curCount[player],
@@ -1662,24 +1667,33 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		}
 
 		// snap the coords to a tile
-		x = (x & ~TILE_MASK) + size.x % 2 * TILE_UNITS / 2;
-		y = (y & ~TILE_MASK) + size.y % 2 * TILE_UNITS / 2;
+		if (!mobileCore)
+		{
+			x = (x & ~TILE_MASK) + size.x % 2 * TILE_UNITS / 2;
+			y = (y & ~TILE_MASK) + size.y % 2 * TILE_UNITS / 2;
+		}
+		else
+		{
+			x = std::clamp<int>(x, world_coord(1), world_coord(std::max(2, world.map.width - 1)) - 1);
+			y = std::clamp<int>(y, world_coord(1), world_coord(std::max(2, world.map.height - 1)) - 1);
+		}
 
 		//check not trying to build too near the edge
-		if (map_coord(x) < TOO_NEAR_EDGE || map_coord(x) > (world.map.width - TOO_NEAR_EDGE))
+		if (mobileCore) {}
+		else if (map_coord(x) < TOO_NEAR_EDGE || map_coord(x) > (world.map.width - TOO_NEAR_EDGE))
 		{
 			debug(LOG_WARNING, "attempting to build too closely to map-edge, "
 			      "x coord (%u) too near edge (req. distance is %u)", x, TOO_NEAR_EDGE);
 			return nullptr;
 		}
-		if (map_coord(y) < TOO_NEAR_EDGE || map_coord(y) > (world.map.height - TOO_NEAR_EDGE))
+		if (!mobileCore && (map_coord(y) < TOO_NEAR_EDGE || map_coord(y) > (world.map.height - TOO_NEAR_EDGE)))
 		{
 			debug(LOG_WARNING, "attempting to build too closely to map-edge, "
 			      "y coord (%u) too near edge (req. distance is %u)", y, TOO_NEAR_EDGE);
 			return nullptr;
 		}
 		const StructureBounds footprint = getStructureBounds(pStructureType, Vector2i(x, y), direction);
-		if (footprint.map.x < 0 || footprint.map.y < 0 || footprint.map.x + footprint.size.x > world.map.width || footprint.map.y + footprint.size.y > world.map.height)
+		if (!mobileCore && (footprint.map.x < 0 || footprint.map.y < 0 || footprint.map.x + footprint.size.x > world.map.width || footprint.map.y + footprint.size.y > world.map.height))
 		{
 			debug(LOG_ERROR, "Structure %s at (%d, %d) would extend past the map edge", getStatsName(pStructureType), map_coord((int)x), map_coord((int)y));
 			return nullptr;
@@ -1704,7 +1718,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 
 		building.pos.x = x;
 		building.pos.y = y;
-		building.rot.direction = snapDirection(direction);
+		building.rot.direction = mobileCore ? direction : snapDirection(direction);
 		building.rot.pitch = 0;
 		building.rot.roll = 0;
 
@@ -1761,7 +1775,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		}
 
 		std::vector<STRUCTURE *> wallsToReplace;
-		for (int tileY = map.y; tileY < map.y + size.y; ++tileY)
+		for (int tileY = map.y; tileY < map.y + size.y && !mobileCore; ++tileY)
 		{
 			for (int tileX = map.x; tileX < map.x + size.x; ++tileX)
 			{
@@ -1817,7 +1831,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		{
 			modlayer::assignLayer(psBuilding, modlayermap::resident());   // MOD: Ebenen - das Bauwerk gehoert zur Ebene, in deren Karte es gerade eingetragen wird
 		}
-		for (int tileY = map.y; tileY < map.y + size.y; ++tileY)
+		for (int tileY = map.y; tileY < map.y + size.y && !mobileCore; ++tileY)
 		{
 			for (int tileX = map.x; tileX < map.x + size.x; ++tileX)
 			{
@@ -1832,7 +1846,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 				}
 			}
 		}
-		if (&world == &gameWorld)
+		if (&world == &gameWorld && !mobileCore)
 		{
 			modconcrete::footprintChanged(psBuilding, map.x, map.y, size.x, size.y);   // MOD: Betonboden
 			// MOD (18.11. 12:18 "beim Gebaeudebau erscheinen ein oder zwei unserer Erdhaufen daneben"): Krater unter dem Bauplatz werden
@@ -1848,7 +1862,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		case REF_REARM_PAD:
 			break;  // Not blocking.
 		default:
-			if (!pStructureType->passable)   // MOD (17.11.): Minen blockieren nicht
+			if (!pStructureType->passable && !mobileCore)   // MOD (17.11.): Minen blockieren nicht; Fabrik-Kern liegt auf keinem Feld
 			{
 				auxStructureBlocking(psBuilding, world.map);
 			}
@@ -1872,7 +1886,15 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		psBuilding->status = SS_BEING_BUILT;
 		psBuilding->currentBuildPts = 0;
 
-		alignStructure(psBuilding, world.map);
+		if (mobileCore)
+		{
+			psBuilding->pos.z = map_Height(world.map, psBuilding->pos.x, psBuilding->pos.y);   // MOD: Kern ebnet den Boden nicht ein
+			psBuilding->foundationDepth = psBuilding->pos.z;
+		}
+		else
+		{
+			alignStructure(psBuilding, world.map);
+		}
 
 		/* Store the weapons */
 		psBuilding->numWeaps = 0;
@@ -2009,7 +2031,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 
 		// Move any delivery points under the new structure.
 		StructureBounds bounds = getStructureBounds(psBuilding);
-		for (unsigned playerNum = 0; playerNum < MAX_PLAYERS; ++playerNum)
+		for (unsigned playerNum = 0; playerNum < MAX_PLAYERS && !mobileCore; ++playerNum)
 		{
 			for (const STRUCTURE *psStruct : world.objects.structures[playerNum])
 			{
@@ -2038,7 +2060,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 			}
 		}
 
-		if (!FromSave)
+		if (!FromSave && !mobileCore)
 		{
 			displayConstructionCloud(world.map, psBuilding->pos);
 		}
@@ -2186,6 +2208,12 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		}
 		intNotifyResearchButton(prevResearchState);
 	}
+	if (pStructureType->mobileCore)
+	{
+		// MOD: Fabrik-Kern - keine Statistik, keine Felder
+	}
+	else
+	{
 	if (pStructureType->type != REF_WALL && pStructureType->type != REF_WALLCORNER)
 	{
 		if (player == selectedPlayer)
@@ -2196,6 +2224,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 
 	/* why is this necessary - it makes tiles under the structure visible */
 	setUnderTilesVis(psBuilding, world.map, player);
+	}
 
 	psBuilding->prevTime = gameTime - deltaGameTime;  // Structure hasn't been updated this tick, yet.
 	psBuilding->time = psBuilding->prevTime - 1;      // -1, so the times are different, even before updating.
@@ -2810,9 +2839,11 @@ bool placeDroid(STRUCTURE *psStructure, const DROID_TEMPLATE * psTempl, UDWORD *
 	{
 		// MOD (17.11., NTW-Schiffe): Schiffe (Propellor) entstehen auf dem naechsten freien Wasserfeld in der Naehe der Fabrik
 		// (bis 12 Felder weit; Viertel-Raster entsprechend mehr Feinfelder) - eine Fabrik am Ufer kann so Schiffe bauen.
-		if (psTempl->getPropulsionStats()->propulsionType == PROPULSION_TYPE_PROPELLOR)
+		// MOD (18.11.): die fahrende Fabrik (Fatboy) setzt ihre Einheiten auf das naechste freie Feld hinter sich (bis 4 Felder weit)
+		const bool mobileCore = psStructure->isMobileCore();
+		if (psTempl->getPropulsionStats()->propulsionType == PROPULSION_TYPE_PROPELLOR || mobileCore)
 		{
-			const int R = 12 * DIST_TILE / TILE_UNITS;
+			const int R = (mobileCore ? 4 : 12) * DIST_TILE / TILE_UNITS;
 			const int cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
 			int best = -1, bx = 0, by = 0;
 			for (int y = std::max(0, cy - R); y <= std::min(gameWorld.map.height - 1, cy + R); ++y)
@@ -2824,7 +2855,7 @@ bool placeDroid(STRUCTURE *psStructure, const DROID_TEMPLATE * psTempl, UDWORD *
 					{
 						continue;
 					}
-					if (structClearTile(gameWorld, x, y, PROPULSION_TYPE_PROPELLOR))
+					if (structClearTile(gameWorld, x, y, mobileCore ? psTempl->getPropulsionStats()->propulsionType : PROPULSION_TYPE_PROPELLOR))
 					{
 						best = d; bx = x; by = y;
 					}
@@ -5061,6 +5092,10 @@ void modMoveStructureToLayerMap(STRUCTURE *psStruct, int layer)
 //remove a structure from the map
 void removeStructFromMap(STRUCTURE *psStruct, WorldMapState& mapState)
 {
+	if (psStruct->isMobileCore())
+	{
+		return;   // MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik liegt auf keinem Feld
+	}
 	auxStructureNonblocking(psStruct, mapState);
 
 	/* set tiles drawing */
@@ -6221,6 +6256,13 @@ bool validTemplateForFactory(const DROID_TEMPLATE *psTemplate, STRUCTURE *psFact
 	if (!bMultiPlayer && isTransporter(psTemplate))
 	{
 		debug(level, "Cannot build transporter in campaign.");
+		return false;
+	}
+
+	// MOD (18.11.): eine fahrende Fabrik (Fatboy) baut keine weiteren fahrenden Fabriken (wie in Supreme Commander: keine Experimentellen)
+	if (psFactory->isMobileCore() && psTemplate->asParts[COMP_BODY] && !psTemplate->getBodyStats()->mobileFactory.isEmpty())
+	{
+		debug(level, "A mobile factory cannot build another mobile factory.");
 		return false;
 	}
 

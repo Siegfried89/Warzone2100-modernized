@@ -137,6 +137,7 @@ struct STRUCTURE_STATS : public BASE_STATS
 	int shieldDrop = 231;           // MOD: Kugelmitte unter dem Boden in Tausendsteln des Radius (SupCom-Schildgenerator: 3/13)
 	bool passable = false;			// MOD (17.11.): blockiert das Feld nicht - alle Einheiten fahren darueber (Minen)
 	bool requiresPower = false;		// MOD: arbeitet nur im Versorgungsbereich eines gespeisten Strommastes (siehe modgrid)
+	bool mobileCore = false;		// MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik (Fatboy, modmobilefactory) - liegt auf keinem Feld, unsichtbar, faehrt mit
 	int crewCost = 0;				// MOD (MF): bindet so viel Besatzung (Besatzungskonto, siehe modgrid)
 	int crewProvide = 0;			// MOD (MF): stellt bis zu so viel Besatzung (Kryo-Farm)
 	int crewStart = 0;				// MOD (MF): Besatzung direkt nach dem Fertigstellen; waechst danach um 1/s bis crewProvide; > 0 schaltet das Besatzungskonto ein
@@ -309,6 +310,8 @@ struct STRUCTURE : public BASE_OBJECT
 	bool isBlueprint() const;
 
 	STRUCTURE_STATS     *pStructureType;            /* pointer to the structure stats for this type of building */
+	uint32_t            modHostId = 0;              ///< MOD (18.11.): fahrende Fabrik - ID des Fahrzeugs, das diesen Fabrik-Kern traegt
+	bool isMobileCore() const { return pStructureType != nullptr && pStructureType->mobileCore; }
 	STRUCT_STATES       status;                     /* defines whether the structure is being built, doing nothing or performing a function */
 	uint32_t            currentBuildPts;            /* the build points currently assigned to this structure */
 	int                 resistance;                 /* current resistance points, 0 = cannot be attacked electrically */
