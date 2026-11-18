@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Fahrspuren (siehe modtracks.h)
+// MOD: Fahrspuren (siehe modtracks.h) - Abdruck aus der WZ-Bodenkachel "Panzerspuren" (Arizona/Rockies Kachel 51)
 #include "modtracks.h"
 
 #include "lib/framework/frame.h"
@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <unordered_map>
 #include <vector>
 
@@ -31,7 +32,7 @@ namespace
 {
 enum Kind : uint8_t { TANK = 0, HALF = 1, TYRE = 2 };
 
-constexpr float SEG = 20.f;                 // Abschnittslaenge (Welteinheiten) - eine Musterlaenge
+constexpr float SEG = 16.f;                 // Abschnittslaenge (Welteinheiten) = ein Viertel der WZ-Kettenkachel (Muster 64 Einheiten)
 constexpr size_t MAX_MARKS = 20000;         // Ringspeicher (je Laufwerk ein Eintrag); bei sehr vielen Fahrzeugen verschwinden die aeltesten zuerst
 constexpr float DRAW_RANGE = 5200.f;        // weiter weg nicht zeichnen
 constexpr uint32_t LIFE_MS[3] = { 120000, 100000, 80000 };   // Kette, Halbkette, Reifen
@@ -45,12 +46,14 @@ struct Mark
 	uint32_t t;
 	uint8_t kind;
 	uint8_t layer;
+	uint8_t phase;          // welches Viertel der WZ-Kachel (fortlaufend je Fahrzeug -> nahtloses Muster)
 };
 
 struct Last
 {
 	int32_t x, y;
 	uint32_t seen;
+	uint8_t phase;
 };
 
 std::vector<Mark> s_marks;
@@ -96,7 +99,7 @@ void push(const Mark &m)
 }
 
 /// ein Abschnitt fuer ein Laufwerk: Mitte (Welt x/y), Richtung, Breite
-void addMark(float wx, float wy, float dirX, float dirY, float len, float width, Kind kind, uint8_t layer)
+void addMark(float wx, float wy, float dirX, float dirY, float len, float width, Kind kind, uint8_t layer, uint8_t phase)
 {
 	const float gf = groundFactor(wx, wy);
 	if (gf <= 0.f) { return; }
@@ -117,10 +120,11 @@ void addMark(float wx, float wy, float dirX, float dirY, float len, float width,
 	m.t = graphicsTime;
 	m.kind = static_cast<uint8_t>(kind);
 	m.layer = layer;
+	m.phase = static_cast<uint8_t>(phase & 3);
 	push(m);
 }
 
-void emit(const DROID *d, float x0, float y0, float x1, float y1)
+void emit(const DROID *d, float x0, float y0, float x1, float y1, uint8_t phase)
 {
 	const PROPULSION_STATS *ps = d->getPropulsionStats();
 	if (ps == nullptr) { return; }
@@ -147,7 +151,7 @@ void emit(const DROID *d, float x0, float y0, float x1, float y1)
 	for (const auto &side : { std::make_pair(lc, lw), std::make_pair(rc, rw) })
 	{
 		const float off = side.first, w = std::max(2.f, side.second * k);
-		addMark(mx + qx * off, my + qy * off, ux, uy, dist, w, kind, layer);
+		addMark(mx + qx * off, my + qy * off, ux, uy, dist, w, kind, layer, phase);
 	}
 }
 
@@ -168,7 +172,7 @@ void update()
 			auto it = s_last.find(d->id);
 			if (it == s_last.end())
 			{
-				s_last[d->id] = { d->pos.x, d->pos.y, now };
+				s_last[d->id] = { d->pos.x, d->pos.y, now, 0 };
 				continue;
 			}
 			Last &L = it->second;
@@ -182,7 +186,8 @@ void update()
 				L.x = d->pos.x; L.y = d->pos.y;
 				continue;
 			}
-			emit(d, static_cast<float>(L.x), static_cast<float>(L.y), static_cast<float>(d->pos.x), static_cast<float>(d->pos.y));
+			emit(d, static_cast<float>(L.x), static_cast<float>(L.y), static_cast<float>(d->pos.x), static_cast<float>(d->pos.y), L.phase);
+			L.phase = static_cast<uint8_t>((L.phase + 1) & 3);
 			L.x = d->pos.x; L.y = d->pos.y;
 		}
 	}
@@ -201,18 +206,28 @@ void update()
 
 void draw3D(const glm::mat4 &viewMatrix)
 {
-	static iIMDBaseShape *pieces[3] = { nullptr, nullptr, nullptr };
-	static bool tried = false;
+	// je Art 4 Stuecke = die 4 Viertel der WZ-Kettenkachel (tracks.py)
+	static iIMDBaseShape *pieces[3][4] = {};
+	static bool tried = false, ok = false;
 	static unsigned gen = 0;
-	if (modelCacheStale(gen)) { tried = false; pieces[0] = pieces[1] = pieces[2] = nullptr; }
+	if (modelCacheStale(gen)) { tried = false; }
 	if (!tried)
 	{
 		tried = true;
-		pieces[TANK] = modelGet("modtrack_tank.pie");
-		pieces[HALF] = modelGet("modtrack_half.pie");
-		pieces[TYRE] = modelGet("modtrack_tyre.pie");
+		ok = true;
+		static const char *names[3] = { "tank", "half", "tyre" };
+		for (int k = 0; k < 3; ++k)
+		{
+			for (int q = 0; q < 4; ++q)
+			{
+				char nm[40];
+				snprintf(nm, sizeof(nm), "modtrack_%s_%d.pie", names[k], q);
+				pieces[k][q] = modelGet(nm);
+				ok = ok && pieces[k][q] != nullptr;
+			}
+		}
 	}
-	if (pieces[TANK] == nullptr || pieces[HALF] == nullptr || pieces[TYRE] == nullptr) { return; }
+	if (!ok) { return; }
 	if (!gamePaused()) { update(); }
 	if (s_marks.empty()) { return; }
 	const uint32_t now = graphicsTime;
@@ -233,9 +248,9 @@ void draw3D(const glm::mat4 &viewMatrix)
 		glm::mat4 M(1.f);
 		M[0] = glm::vec4(m.right * (m.width / 100.f), 0.f);
 		M[1] = glm::vec4(m.up, 0.f);
-		M[2] = glm::vec4(m.fwd * (m.len / 100.f * 1.08f), 0.f);   // 8 % Ueberlappung, keine Luecken in Kurven
+		M[2] = glm::vec4(m.fwd * (m.len / 100.f * 1.04f), 0.f);   // 4 % Ueberlappung, keine Luecken in Kurven
 		M[3] = glm::vec4(m.c, 1.f);
-		pie_Draw3DShape(pieces[m.kind]->displayModel(), 0, 0, WZCOL_WHITE, pie_TRANSLUCENT, a, M, viewMatrix, 0.f, true);
+		pie_Draw3DShape(pieces[m.kind][m.phase & 3]->displayModel(), 0, 0, WZCOL_WHITE, pie_TRANSLUCENT, a, M, viewMatrix, 0.f, true);
 	}
 }
 
