@@ -2565,7 +2565,51 @@ static void displayCraterPiles(const glm::mat4 &viewMatrix)
 		const iIMDBaseShape *b = modelGet("craterpile.pie");
 		pile = b != nullptr ? b->displayModel() : nullptr;
 	}
-	if (pile == nullptr || selectedPlayer >= MAX_PLAYERS) { return; }
+	if (selectedPlayer >= MAX_PLAYERS) { return; }
+	// (Wunsch 18.11. 13:04) Kraterfleck: ein Viertel Kachel in der Kachelmitte, weicher Rand, folgt der Trichter-Mulde (Mitte tiefer)
+	{
+		static const iIMDShape *decal = nullptr;
+		static bool dTried = false;
+		if (!dTried)
+		{
+			dTried = true;
+			const iIMDBaseShape *b = modelGet("modcraterdecal.pie");
+			decal = b != nullptr ? b->displayModel() : nullptr;
+		}
+		static std::vector<modterrain::CraterDecal> decals;
+		if (decal != nullptr)
+		{
+			modterrain::craterDecals(decals);
+			for (const modterrain::CraterDecal &d : decals)
+			{
+				if (!quickClipXYToMaximumTilesFromCurrentPosition(d.worldX, d.worldY)) { continue; }
+				if (!tileOnMap(gameWorld.map, d.tileX, d.tileY) || !tileOnMap(gameWorld.map, d.tileX + 1, d.tileY + 1)) { continue; }
+				MAPTILE *t = mapTile(gameWorld.map, d.tileX, d.tileY);
+				if (t == nullptr || !TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(t)) { continue; }
+				// Kachelecken (ohne Krater) -> Grundhoehe und Neigung; Mitte = Trichterboden
+				const float h00 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX, d.tileY));
+				const float h10 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX + 1, d.tileY));
+				const float h01 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX, d.tileY + 1));
+				const float h11 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX + 1, d.tileY + 1));
+				const float base = (h00 + h10 + h01 + h11) * 0.25f;
+				const float sink = static_cast<float>(modterrain::centerSink(gameWorld.map, d.tileX, d.tileY));
+				const float gx = ((h10 + h11) - (h00 + h01)) / (2.f * TILE_UNITS);
+				const float gyW = ((h01 + h11) - (h00 + h10)) / (2.f * TILE_UNITS);
+				glm::mat4 shear(1.f);
+				shear[0][1] = gx;      // Hoehe nimmt mit x zu
+				shear[2][1] = -gyW;    // Modell-z = -Karten-y
+				const float ys = std::clamp(sink / 26.f, 0.f, 1.5f);
+				const glm::mat4 modelMatrix = glm::translate(glm::vec3(static_cast<float>(d.worldX), base - sink + 1.5f, -static_cast<float>(d.worldY)))
+					* shear * glm::scale(glm::vec3(d.scale, ys, d.scale)) * glm::rotate(UNDEG(DEG(d.rotDeg)), glm::vec3(0.f, 1.f, 0.f));
+				const int alpha = std::clamp(static_cast<int>(d.alpha * 255.f), 0, 255);
+				if (alpha > 0)
+				{
+					pie_Draw3DShape(decal, 0, 0, WZCOL_WHITE, pie_TRANSLUCENT, alpha, modelMatrix, viewMatrix);
+				}
+			}
+		}
+	}
+	if (pile == nullptr) { return; }
 	static std::vector<modterrain::CraterPile> piles;
 	modterrain::craterPiles(piles);
 	for (const modterrain::CraterPile &p : piles)
