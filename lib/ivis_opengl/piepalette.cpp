@@ -121,6 +121,7 @@ PIELIGHT pal_GetTeamColour(int team)
 	case 13: return WZCOL_TEAM14;
 	case 14: return WZCOL_TEAM15;
 	case 15: return WZCOL_TEAM16;
+	case MOD_COLOUR_DESERT_CAMO: return PIELIGHT{ 196, 174, 132, 255 };   // MOD: Wuestentarn (Mittelton des Musters)
 	default:
 		STATIC_ASSERT(MAX_PLAYERS <= 16);
 		ASSERT(false, "Attempting to get colour for non-existing team %u", (unsigned int)team);

@@ -54,6 +54,7 @@ layout(location = 2) out vec3 lightDir;
 layout(location = 3) out vec3 halfVec;
 layout(location = 4) out vec2 texCoord;
 layout(location = 5) out mat3 TangentSpaceMatrix; // occupies locations 5, 6, 7
+layout(location = 8) out vec3 posLocal; // MOD: Punkt im Modell (Wuestentarn)
 
 #include "mesh_shading_normal.glsl"
 
@@ -105,6 +106,7 @@ void main()
 	gl_Position = gposition;
 
 	posViewSpace = (ViewMatrix * ModelMatrix * position).xyz;
+	posLocal = vertex.xyz;
 	gl_Position.y *= -1.;
 	gl_Position.z = (gl_Position.z + gl_Position.w) / 2.0;
 }

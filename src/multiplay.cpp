@@ -2950,6 +2950,7 @@ const char *getPlayerColourName(int player)
 		N_("Infrared"),
 		N_("Ultraviolet"),
 		N_("Brown"),
+		N_("Desert camo"),   // MOD (18.11.): Farbe 16
 	};
 	STATIC_ASSERT(MAX_PLAYERS <= ARRAY_SIZE(playerColors));
 
@@ -2960,7 +2961,8 @@ const char *getPlayerColourName(int player)
 		return "";
 	}
 
-	return gettext(playerColors[getPlayerColour(player)]);
+	const unsigned colour = getPlayerColour(player);
+	return colour < ARRAY_SIZE(playerColors) ? gettext(playerColors[colour]) : "";
 }
 
 bool shouldSkipReadyResetOnPlayerJoinLeaveEvent()

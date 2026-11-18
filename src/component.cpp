@@ -53,6 +53,7 @@
 #include "modlayer.h"
 #include "modcrew.h"
 #include "modgdiart.h"
+#include "lib/ivis_opengl/piepalette.h"
 #include "modbuild.h"
 #include "modduel.h"
 #include "modrecoil.h"
@@ -85,8 +86,8 @@ bool setPlayerColour(UDWORD player, UDWORD col)
 		NetPlay.players[player].colour = MAX_PLAYERS;
 		return true;
 	}
-	// Allow color values from 0 to 15
-	ASSERT_OR_RETURN(false, col < 16, "Bad colour setting");
+	// Allow color values from 0 to 15 (MOD: and 16 = Wuestentarn)
+	ASSERT_OR_RETURN(false, col < MOD_NUM_PLAYER_COLOURS, "Bad colour setting");
 	NetPlay.players[player].colour = col;
 	return true;
 }
@@ -942,14 +943,14 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 						localModelMatrix *= glm::translate(glm::vec3(psShapeBody->connectors[bodyConnectorIndex].xzy()));
 						localHeightAboveTerrain += psShapeBody->connectors[bodyConnectorIndex].z;
 					}
-					if (!bButton)
-					{
-						const float lift = modgdiart::torsoLift(psDroid, graphicsTime);   // MOD (18.11.): Rumpf hebt sich beim Verankern
-						if (lift != 0.f) { localModelMatrix *= glm::translate(glm::vec3(0.f, lift, 0.f)); localHeightAboveTerrain += lift; }
-					}
 					else
 					{
 						debug(LOG_INFO, "Model lacks sufficient connectors?: %s", psShapeBody->modelName.toUtf8().c_str());
+					}
+					if (!bButton)
+					{
+						const float lift = modgdiart::torsoLift(psDroid, graphicsTime);   // MOD (18.11.): Aufbau hebt sich beim Verankern
+						if (lift != 0.f) { localModelMatrix *= glm::translate(glm::vec3(0.f, lift, 0.f)); localHeightAboveTerrain += lift; }
 					}
 					localModelMatrix *= glm::rotate(UNDEG(-rot.direction), glm::vec3(0.f, 1.f, 0.f));
 
@@ -989,6 +990,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					{
 						localModelMatrix *= glm::translate(glm::vec3(psShape->connectors[0].xzy()));
 						localHeightAboveTerrain += psShape->connectors[0].z;
+					}
+					// MOD (18.11.): GDI Juggernaut - Turm der mittleren Kanone am Drehpunkt der Rohre (dreht mit, neigt sich nicht)
+					if (modgdiart::drawHousing(psDroid, localModelMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, iPieData, localHeightAboveTerrain))
+					{
+						didDrawSomething = true;
 					}
 
 					/* vtol weapons inverted */

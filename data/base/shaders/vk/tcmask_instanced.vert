@@ -26,6 +26,7 @@ layout(location = 12) out vec3 uvLightmap; // uvLightmap in .xy, heightAboveTerr
 // For Shadows
 layout(location = 13) out vec3 posModelSpace;
 layout(location = 14) out vec3 posViewSpace;
+layout(location = 15) out vec3 posLocal; // MOD: Punkt im Modell (Wuestentarn)
 
 float when_gt(float x, float y) {
   return max(sign(x - y), 0.0);
@@ -61,6 +62,7 @@ void main()
 
 	// Lighting
 	posModelSpace = vec3(instanceModelMatrix * vertex);
+	posLocal = vertex.xyz;
 	vec3 cameraVec = normalize(cameraPos.xyz - posModelSpace.xyz);
 	lightDir = -normalize(lightPosition.xyz);
 	halfVec = lightDir + cameraVec;

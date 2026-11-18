@@ -125,6 +125,7 @@ PIELIGHT clanColours[] =
 	{{128, 0, 0, 255}},             // infrared    Player D
 	{{64, 0, 128, 255}},            // ultraviolet Player E
 	{{128, 128, 0, 255}},           // brown       Player F
+	{{214, 186, 128, 255}},         // MOD: Wuestentarn (Farbe 16)
 };
 
 static PIELIGHT flashColours[] =
@@ -146,6 +147,7 @@ static PIELIGHT flashColours[] =
 	{{254, 37, 37, 200}},   // Player D
 	{{254, 37, 37, 200}},   // Player E
 	{{254, 37, 37, 200}},   // Player F
+	{{254, 37, 37, 200}},   // MOD: Wuestentarn (Farbe 16)
 };
 
 static size_t radarWidth, radarHeight, radarTexWidth, radarTexHeight;

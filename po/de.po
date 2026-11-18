@@ -12176,3 +12176,7 @@ msgstr "SIE WURDEN BESIEGT!"
 
 msgid "Script Debugger"
 msgstr "Skript Debugger"
+
+#: src/multiplay.cpp src/modcolour.cpp
+msgid "Desert camo"
+msgstr "Wüstentarn"

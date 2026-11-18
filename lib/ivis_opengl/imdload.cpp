@@ -170,6 +170,13 @@ const iIMDShapeTextures& iIMDShape::getTextures() const
 
 PIELIGHT iIMDShape::getTeamColourForModel(int team) const
 {
+	if (team == MOD_COLOUR_DESERT_CAMO)
+	{
+		// MOD (18.11.): Wuestentarn - Alpha 1/255 meldet dem Shader "Tarnmuster statt fester Farbe" (modcamo.glsl)
+		PIELIGHT c = pal_GetTeamColour(team);
+		c.byte.a = 1;
+		return c;
+	}
 	return pal_GetTeamColour(team);
 }
 

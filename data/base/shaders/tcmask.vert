@@ -73,11 +73,13 @@ out vec3 posViewSpace;
 out vec3 normal, lightDir, halfVec;
 out vec2 texCoord;
 out mat3 TangentSpaceMatrix;
+out vec3 posLocal; // MOD: Punkt im Modell (Wuestentarn)
 #else
 varying vec3 posViewSpace;
 varying vec3 normal, lightDir, halfVec;
 varying vec2 texCoord;
 varying mat3 TangentSpaceMatrix;
+varying vec3 posLocal;
 #endif
 
 #include "mesh_shading_normal.glsl"
@@ -130,4 +132,5 @@ void main()
 	gl_Position = gposition;
 
 	posViewSpace = (ViewMatrix * ModelMatrix * position).xyz;
+	posLocal = vertex.xyz;
 }
