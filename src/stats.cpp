@@ -718,6 +718,15 @@ bool loadBodyStats(WzConfig &ini)
 		psStats->shieldEnergy = std::clamp(ini.value("shieldEnergy", 0).toInt(), 0, 90);   // MOD
 		psStats->mobileFactory = ini.value("mobileFactory", "").toWzString();   // MOD (18.11.): fahrende Fabrik (Fatboy)
 		psStats->collisionRadius = std::clamp(ini.value("collisionRadius", 0).toInt(), 0, 512);   // MOD (18.11.)
+		if (ini.contains("headlight"))   // MOD (18.11.): Scheinwerfer (modheadlights)
+		{
+			const nlohmann::json hl = ini.json("headlight");
+			if (hl.is_array() && hl.size() == 3 && hl[0].is_number() && hl[1].is_number() && hl[2].is_number())
+			{
+				psStats->hasHeadlight = true;
+				for (int k = 0; k < 3; ++k) { psStats->headlight[k] = hl[k].get<float>(); }
+			}
+		}
 		psStats->base.thermal = ini.value("armourHeat").toInt();
 		psStats->base.armour = ini.value("armourKinetic").toInt();
 		psStats->base.power = ini.value("powerOutput").toInt();

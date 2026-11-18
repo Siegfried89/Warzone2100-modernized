@@ -103,6 +103,7 @@
 #include "modgrid.h"
 #include "modpaint.h"
 #include "modferry.h"
+#include "modheadlights.h"
 #include "modnightlights.h"
 #include "modrocket.h"
 #include "modnuke.h"
@@ -1556,6 +1557,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	displayDelivPoints(viewMatrix, perspectiveViewMatrix);
 	modferry::draw3D(viewMatrix);   // MOD (17.11. 18:18): Landezonen-Lichter rot / blau / gruen
 	modnightlights::draw3D(viewMatrix);
+	modheadlights::draw3D(viewMatrix);   // MOD (18.11. 17:09): Scheinwerfer an allen Bodenfahrzeugen bei Nacht
 	modsat::draw3D(viewMatrix);      // MOD (17.11. 21:34): Satelliten-Start von der Orbit-Insel, Satelliten am Orbit-Himmel
 	modnuke::draw3D(viewMatrix);     // MOD (17.11. 21:13): Dampf ueber den Kuehltuermen laufender Atomkraftwerke
 	modicbm::draw3D(viewMatrix);     // MOD (18.11.): Atomrakete im Flug, Atompilz
