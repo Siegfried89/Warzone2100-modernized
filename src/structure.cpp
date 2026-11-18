@@ -4400,6 +4400,7 @@ int modBuildCategory(const STRUCTURE_STATS *st)
 	if (has("Cryo") || has("Crane") || has("LayerShaft") || has("Gantry") || has("Assembly") || has("Factory") || has("Research")) { return 1; }
 	if (has("Ammo") || has("Container") || has("Outpost") || has("ATC") || has("Beacon") || has("Relay") || has("Radar") || has("Uplink") || has("RocketSilo") || has("LaserSatellite")) { return 2; }
 	if (has("Trench") || has("Sandbag") || has("Hedgehog") || has("TankTrap") || has("DragonTeeth") || has("Wall")) { return 3; }
+	if (st->shieldRadius > 0) { return 4; }   // MOD (18.11.): Schildgeneratoren zu den Verteidigungen
 	if (st->type == REF_DEFENSE && st->numWeaps == 0)
 	{
 		// Sensortuerme zur Versorgung, leere Gruben/Stellungen zu den Hindernissen (pSensor hat jedes Bauwerk - Standardsensor)
