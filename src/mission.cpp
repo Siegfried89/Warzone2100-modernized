@@ -1955,6 +1955,7 @@ void unloadTransporter(DROID *psTransporter, UDWORD x, UDWORD y)
 
 			droidSetPosition(psDroid, gameWorld.map, world_coord(droidX), world_coord(droidY));
 			updateDroidOrientation(psDroid, gameWorld.map);
+			modlayer::onUnloaded(psTransporter, psDroid);   // MOD (18.11.): Fracht liegt in der Ebene des Transporters (Orbit)
 
 			//reset droid orders
 			orderDroid(psDroid, DORDER_STOP, ModeImmediate);

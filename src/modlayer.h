@@ -66,10 +66,21 @@ void gameTick();
 /// Ebenen-Knopf gedrueckt: die ausgewaehlten Flieger (Hoverjets, Drohnen, VTOLs) steigen in den Orbit bzw. kehren zur Oberflaeche zurueck
 /// (der Wechsel selbst geschieht im naechsten Spielschritt; in den Untergrund koennen Flieger nicht)
 void sendSelectedFliers(Layer target);
-/// Flieger? (Hoverjets, VTOLs und Combots mit Sprungduesen/Jetpack)
+/// Flieger? (Hoverjets, VTOLs, Transporter mit Luftantrieb und Combots mit Sprungduesen/Jetpack)
 bool isFlier(const DROID *psDroid);
+/// (18.11.) Transporter entlaedt: die Fracht liegt in der Ebene des Transporters
+void onUnloaded(const DROID *psTransporter, const DROID *psCargo);
 /// Anzeige: Hoehenversatz beim fliessenden Ebenenwechsel (steigt aus dem Bild / taucht aus der verschwommenen Tiefe auf), 0 sonst
 float transitionOffset(const DROID *psDroid, UDWORD time);
+/// Anzeige (Antwort 18.11. 17:52 "das fast senkrechte Aufsteigen von Flugeinheiten in den Orbit"): Lage beim Ebenenwechsel - Hoehe,
+/// Versatz in Flugrichtung und Nickwinkel (WZ-Winkel, + = Nase hoch). Steigflug mit ca. 75 Grad, Nase hoch; Sinkflug mit der Nase nach unten.
+struct FlightPose
+{
+	float up = 0.f;
+	float forward = 0.f;
+	int pitch = 0;
+};
+FlightPose transitionPose(const DROID *psDroid, UDWORD time);
 /// wechselt die Einheit gerade die Ebene?
 bool inTransition(const DROID *psDroid);
 /// Spielschritt (z. B. KI): Flieger fliessend in eine andere Ebene schicken (Orbit <-> Oberflaeche)
