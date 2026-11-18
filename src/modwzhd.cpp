@@ -26,6 +26,7 @@ bool s_triedHd = false;
 std::vector<std::string> s_intfacNames;   // Bildnummer -> Dateiname ohne ".png"
 IMAGEFILE *s_intfacNamed = nullptr;       // fuer welches intfac die Liste gilt
 std::unordered_map<std::string, std::unique_ptr<WzText>> s_text;
+std::vector<int> s_hdOf, s_glowOf;           // intfac-Nummer -> HD-Nummer (-2 = noch nicht gesucht, -1 = keine)
 
 IMAGEFILE *intfac()
 {
@@ -102,6 +103,8 @@ void shutdown()
 	s_triedHd = false;
 	s_intfacNames.clear();
 	s_intfacNamed = nullptr;
+	s_hdOf.clear();
+	s_glowOf.clear();
 	s_text.clear();
 }
 
@@ -115,6 +118,25 @@ int intfacHeight(unsigned intfacId)
 {
 	IMAGEFILE *f = intfac();
 	return (f != nullptr && intfacId < f->imageDefs.size()) ? static_cast<int>(f->imageDefs[intfacId].Height) : 0;
+}
+
+bool drawIntfacHd(unsigned intfacId, int x, int y, int w, int h, bool glow, unsigned char alpha)
+{
+	if (hd() == nullptr) { return false; }
+	IMAGEFILE *f = intfac();
+	if (f == nullptr || intfacId >= f->imageDefs.size()) { return false; }
+	if (s_hdOf.size() != f->imageDefs.size()) { s_hdOf.assign(f->imageDefs.size(), -2); s_glowOf.assign(f->imageDefs.size(), -2); }
+	if (s_hdOf[intfacId] == -2)
+	{
+		const std::string &n = nameOf(intfacId);
+		s_hdOf[intfacId] = n.empty() ? -1 : idOf(hd(), n + "_hd.png");
+		s_glowOf[intfacId] = n.empty() ? -1 : idOf(hd(), n + "_hdglow.png");
+	}
+	int hid = glow ? s_glowOf[intfacId] : s_hdOf[intfacId];
+	if (hid < 0 && glow) { hid = s_hdOf[intfacId]; glow = false; }
+	if (hid < 0) { return false; }
+	drawHd(hid, x, y, w, h, glow, alpha);
+	return true;
 }
 
 void drawIntfac(unsigned intfacId, int x, int y, int w, int h, bool glow, unsigned char alpha)

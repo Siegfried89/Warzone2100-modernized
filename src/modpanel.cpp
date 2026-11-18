@@ -399,6 +399,7 @@ void shutdown()
 	s_root = nullptr;
 	s_buttons.clear();
 	modui::shutdown();
+	modwzhd::shutdown();   // MOD (18.11.): HD-Knoepfe mit dem Spiel freigeben
 }
 
 }
