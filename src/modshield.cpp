@@ -682,27 +682,42 @@ void gpuShutdown()
 	gpu::shutdown();
 }
 
+// Spielstand: Fassung 2 = Kennung, dann je Schild 5 Zahlen (ID, Punkte, Rest-Ausfall oder -1, Rest-Wartezeit bis zur Aufladung,
+// Rest bis zum Wiedereinschalten nach Stromausfall oder -1). Fassung 1 (alte Spielstaende) = je Schild 3 Zahlen.
+constexpr int SAVE_V2 = -7771;
+
 void saveState(std::vector<int> &out)
 {
 	out.clear();
+	out.push_back(SAVE_V2);
 	for (const auto &kv : s_state)
 	{
 		const State &S = kv.second;
 		out.push_back(static_cast<int>(kv.first));
 		out.push_back(S.hp);
 		out.push_back(S.down ? static_cast<int>(S.downUntil > gameTime ? S.downUntil - gameTime : 0) : -1);
+		out.push_back(static_cast<int>(std::min<uint32_t>(gameTime - S.lastDamage, 3600000u)));
+		out.push_back(S.powerBackAt != 0 ? static_cast<int>(S.powerBackAt > gameTime ? S.powerBackAt - gameTime : 0) : -1);
 	}
 }
 
 void loadState(const std::vector<int> &in)
 {
 	s_state.clear();
-	for (size_t i = 0; i + 2 < in.size(); i += 3)
+	const bool v2 = !in.empty() && in[0] == SAVE_V2;
+	const size_t step = v2 ? 5 : 3;
+	for (size_t i = v2 ? 1 : 0; i + step - 1 < in.size(); i += step)
 	{
 		State S;
 		S.init = true;
 		S.hp = std::max(0, in[i + 1]);
 		if (in[i + 2] >= 0) { S.down = true; S.downUntil = gameTime + static_cast<uint32_t>(in[i + 2]); }
+		if (v2)
+		{
+			const uint32_t since = static_cast<uint32_t>(std::max(0, in[i + 3]));
+			S.lastDamage = gameTime > since ? gameTime - since : 0;
+			if (in[i + 4] >= 0) { S.powerBackAt = gameTime + static_cast<uint32_t>(in[i + 4]); S.powered = true; }
+		}
 		s_state[static_cast<uint32_t>(in[i])] = S;
 	}
 }
