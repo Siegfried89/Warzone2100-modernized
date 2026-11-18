@@ -4515,6 +4515,12 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 				{
 					continue;
 				}
+				// MOD (Wunsch 18.11. 13:24 "im Baumenue gibt es noch alle 'Richtungen' der Scav-Ecktuerme - da brauchen wir nur einen"):
+				// gedrehte Kopien (...R90/R180/R270: Raketen-/Moerserstellungen) nicht anbieten - gedreht wird beim Platzieren
+				if (psBuilding->id.endsWith("R90") || psBuilding->id.endsWith("R180") || psBuilding->id.endsWith("R270"))
+				{
+					continue;
+				}
 				if (!psBuilding->pIMD.empty() && psBuilding->pIMD[0] != nullptr)
 				{
 					std::string mn = psBuilding->pIMD[0]->filename.toUtf8();

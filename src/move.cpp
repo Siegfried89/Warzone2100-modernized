@@ -1969,8 +1969,19 @@ static void moveUpdateDroidPos(DROID *psDroid, int32_t dx, int32_t dy)
 		return;
 	}
 
+	const int modOldX = psDroid->pos.x, modOldY = psDroid->pos.y;
 	psDroid->pos.x += gameTimeAdjustedAverage(dx, EXTRA_PRECISION);
 	psDroid->pos.y += gameTimeAdjustedAverage(dy, EXTRA_PRECISION);
+	// MOD (18.11. 13:17): Infanterie bleibt in Stellungen im freien Gang/Innenraum - keine Bewegung durch die Waende (modfort)
+	if (psDroid->droidType == DROID_PERSON || psDroid->isCyborg())
+	{
+		int nx = psDroid->pos.x, ny = psDroid->pos.y;
+		if (modfort::clampInfantry(psDroid, modOldX, modOldY, nx, ny))
+		{
+			psDroid->pos.x = nx;
+			psDroid->pos.y = ny;
+		}
+	}
 
 	/* impact if about to go off map else update coordinates */
 	if (worldOnMap(gameWorld.map, psDroid->pos.x, psDroid->pos.y) == false)

@@ -23,13 +23,14 @@ namespace modradio
 {
 namespace
 {
-constexpr int NUM_CLIPS = 4;
-const char *const CLIP_FILES[NUM_CLIPS] = {"atc_a.ogg", "atc_b.ogg", "atc_c.ogg", "atc_d.ogg"};
+// (18.11. 13:12 "ATC-Funk klingt zu robotisch") acht echte Funkgespraeche mit menschlichen Stimmen; fehlende Dateien werden uebersprungen
+constexpr int NUM_CLIPS = 8;
+const char *const CLIP_FILES[NUM_CLIPS] = {"atc_a.ogg", "atc_b.ogg", "atc_c.ogg", "atc_d.ogg", "atc_e.ogg", "atc_f.ogg", "atc_g.ogg", "atc_h.ogg"};
 constexpr int HEAR_RANGE = 14 * DIST_TILE;     // Kamera hoechstens so weit entfernt (Weltkoordinaten)
 constexpr unsigned MIN_GAP_MS = 6000;           // kleinste Pause zwischen zwei Durchsagen
 constexpr unsigned MAX_EXTRA_MS = 11000;        // dazu zufaellig 0..MAX_EXTRA_MS
 
-int s_track[NUM_CLIPS] = {-2, -2, -2, -2};      // -2 = Sound noch nicht gesucht, -1 = nicht vorhanden
+int s_track[NUM_CLIPS] = {-2, -2, -2, -2, -2, -2, -2, -2};      // -2 = Sound noch nicht gesucht, -1 = nicht vorhanden
 unsigned s_next = 0;                            // fruehester Zeitpunkt der naechsten Durchsage (gameTime)
 unsigned s_rng = 0x2545F491u;                   // eigener Zufall (nur Ton, nicht synchronisationsrelevant)
 int s_last = -1;
@@ -91,7 +92,7 @@ void tick(GameWorld &world)
 	s_last = clip;
 	if (s_track[clip] == -2) { s_track[clip] = audio_GetTrackID(CLIP_FILES[clip]); }
 	if (s_track[clip] >= 0) { audio_PlayStaticTrack(src.x, src.y, s_track[clip]); }
-	// langes Stueck: naechste Durchsage erst danach
-	s_next += 4000;
+	// langes Stueck (ein Gespraech dauert bis zu 12 s): naechste Durchsage erst danach
+	s_next += 10000;
 }
 }
