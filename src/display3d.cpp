@@ -4763,8 +4763,73 @@ static void renderSurroundings(const glm::mat4& projectionMatrix, const glm::mat
 			const float islandY = static_cast<float>(map_Height(gameWorld.map, world_coord(W) / 2, world_coord(H) / 2));
 			constexpr float MODV_DEPTH = 4600.f;   // wie im Gelaende-Shader
 			const glm::mat4 worldView = skyboxViewMatrix * glm::translate(glm::vec3(-playerPos.p.x, 0, playerPos.p.z));
-			pie_DrawOrbitGround(tex.c_str(), hazeTint, 0.22f, cx, cz, halfDiag + 2.f * DIST_TILE, halfDiag + 42000.f, islandY - MODV_DEPTH,
-			                    static_cast<float>(DIST_TILE) * 4.f, projectionMatrix, worldView, glm::vec4(lightC, 1.f), hazeColour);
+			// (Wunsch 18.11. 01:14) "die verwaschene Planetenoberflaeche weit ueber die Kartengrenze hinaus - sonst sieht man die Kante und es geht
+			// ploetzlich runter": der Boden beginnt schon innerhalb der Karte (darunter, das Gelaende zeichnet darueber) statt erst ausserhalb
+			// der Kartenecken (dazwischen klaffte eine Luecke) und reicht bis weit an die Sichtgrenze
+			const float innerR = std::max(static_cast<float>(DIST_TILE), std::min(cx, -cz) * 0.85f);
+			// (18.11.) Bild: die verwaschene echte Oberflaeche (wie unter den Leere-Feldern) als 2 x 2 gespiegelter Block - wiederholt ergibt das
+			// eine endlose Spiegelung ohne Naht, die am Kartenrand nahtlos an das Gelaende anschliesst
+			static iV_Image s_floorImg;
+			static int s_floorW = 0, s_floorH = 0, s_floorGen = 0;
+			static UDWORD s_floorAt = 0;
+			bool haveFloor = false;
+			if (W <= 512 && H <= 512)
+			{
+				uint8_t probe[3];
+				if (modlayermap::orbitFloorColour(0, 0, probe) && (s_floorW != W || s_floorH != H || realTime - s_floorAt > 60000))
+				{
+					const int IW = 2 * W, IH = 2 * H;
+					std::vector<float> buf(static_cast<size_t>(IW) * IH * 3);
+					for (int y = 0; y < H; ++y)
+					{
+						for (int x = 0; x < W; ++x)
+						{
+							uint8_t c[3];
+							modlayermap::orbitFloorColour(x, y, c);
+							const int xs[2] = {x, IW - 1 - x}, ys[2] = {y, IH - 1 - y};
+							for (int a = 0; a < 2; ++a) { for (int b = 0; b < 2; ++b) { for (int k = 0; k < 3; ++k) { buf[(static_cast<size_t>(xs[a]) + static_cast<size_t>(ys[b]) * IW) * 3 + k] = c[k]; } } }
+						}
+					}
+					// weichzeichnen (Kastenfilter, je 2 Durchgaenge waagrecht/senkrecht, wrap = nahtlos)
+					std::vector<float> tmp(buf.size());
+					for (int pass = 0; pass < 2; ++pass)
+					{
+						for (int y = 0; y < IH; ++y) { for (int x = 0; x < IW; ++x) { for (int k = 0; k < 3; ++k) {
+							float s = 0.f; for (int d = -2; d <= 2; ++d) { s += buf[(static_cast<size_t>((x + d + IW) % IW) + static_cast<size_t>(y) * IW) * 3 + k]; }
+							tmp[(static_cast<size_t>(x) + static_cast<size_t>(y) * IW) * 3 + k] = s / 5.f; } } }
+						for (int y = 0; y < IH; ++y) { for (int x = 0; x < IW; ++x) { for (int k = 0; k < 3; ++k) {
+							float s = 0.f; for (int d = -2; d <= 2; ++d) { s += tmp[(static_cast<size_t>(x) + static_cast<size_t>((y + d + IH) % IH) * IW) * 3 + k]; }
+							buf[(static_cast<size_t>(x) + static_cast<size_t>(y) * IW) * 3 + k] = s / 5.f; } } }
+					}
+					if (s_floorImg.allocate(static_cast<unsigned>(IW), static_cast<unsigned>(IH), 4, false))
+					{
+						unsigned char *px = s_floorImg.bmp_w();
+						for (size_t i = 0; i < static_cast<size_t>(IW) * IH; ++i)
+						{
+							for (int k = 0; k < 3; ++k)
+							{
+								const float v = buf[i * 3 + k] / 255.f * 0.78f + hazeTint[k] * 0.22f;   // Dunst wie im Gelaende-Shader
+								px[i * 4 + k] = static_cast<unsigned char>(std::clamp(v * 255.f + 0.5f, 0.f, 255.f));
+							}
+							px[i * 4 + 3] = 255;
+						}
+						s_floorW = W; s_floorH = H; s_floorAt = realTime; ++s_floorGen;
+					}
+				}
+				haveFloor = s_floorW == W && s_floorH == H && s_floorImg.width() > 0;
+			}
+			if (haveFloor)
+			{
+				const std::string key = astringf("orbitfloor:%d", s_floorGen);
+				pie_DrawOrbitGround(key.c_str(), hazeTint, 0.f, cx, cz, innerR, halfDiag + 90000.f, islandY - MODV_DEPTH,
+				                    static_cast<float>(DIST_TILE) * 4.f, projectionMatrix, worldView, glm::vec4(lightC, 1.f), hazeColour,
+				                    &s_floorImg, 2.f * static_cast<float>(world_coord(W)), 2.f * static_cast<float>(world_coord(H)));
+			}
+			else
+			{
+				pie_DrawOrbitGround(tex.c_str(), hazeTint, 0.22f, cx, cz, innerR, halfDiag + 90000.f, islandY - MODV_DEPTH,
+				                    static_cast<float>(DIST_TILE) * 4.f, projectionMatrix, worldView, glm::vec4(lightC, 1.f), hazeColour);
+			}
 		}
 		return;
 	}

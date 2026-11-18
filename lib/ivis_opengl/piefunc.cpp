@@ -375,9 +375,23 @@ void pie_OrbitGround_Shutdown()
 // Die Hoehe kommt aus der Modellmatrix (y-Skalierung 0). UV = Weltkoordinaten / uvScale, genau wie die Orbit-Leere im Gelaende-Shader.
 void pie_DrawOrbitGround(const char *texFile, const glm::vec3 &hazeTint, float hazeMix, float centerX, float centerZ, float rClear, float rFull,
                          float groundY, float uvScale, const glm::mat4 &projectionMatrix, const glm::mat4 &worldViewMatrix,
-                         const glm::vec4 &colourMul, const glm::vec4 &hazeColour)
+                         const glm::vec4 &colourMul, const glm::vec4 &hazeColour,
+                         const iV_Image *customImage, float uvPeriodX, float uvPeriodZ)
 {
 	if (texFile == nullptr || uvScale <= 0.f || rFull <= rClear) { return; }
+	// MOD (18.11.): eigenes Bild (die verwaschene echte Planetenoberflaeche, endlos gespiegelt) statt der Bilddatei; texFile ist dann der Schluessel
+	if (customImage != nullptr && orbitGroundTex != texFile)
+	{
+		if (orbitGroundGfx == nullptr) { orbitGroundGfx = new GFX(GFX_TEXTURE, 3); }
+		orbitGroundTex = texFile;
+		orbitGroundTexOk = false;
+		iV_Image img;
+		if (img.duplicate(*customImage) && img.width() > 0)
+		{
+			orbitGroundGfx->loadTexture(std::move(img), gfx_api::texture_type::game_texture, std::string("orbitground:custom"));
+			orbitGroundTexOk = true;
+		}
+	}
 	const glm::vec4 key(centerX, centerZ, rClear, rFull);
 	if (orbitGroundGfx == nullptr)
 	{
@@ -412,10 +426,11 @@ void pie_DrawOrbitGround(const char *texFile, const glm::vec3 &hazeTint, float h
 		}
 	}
 	if (!orbitGroundTexOk) { return; }
-	if (key != orbitGroundKey || uvScale != orbitGroundUvScale)
+	const float uvKey = uvScale + uvPeriodX * 1.7f + uvPeriodZ * 3.1f;
+	if (key != orbitGroundKey || uvKey != orbitGroundUvScale)
 	{
 		orbitGroundKey = key;
-		orbitGroundUvScale = uvScale;
+		orbitGroundUvScale = uvKey;
 		constexpr int SEG = 72;
 		const float radii[3] = { 0.f, rClear, rFull };
 		const float flag[3] = { 1.f, 1.f, 0.f };   // 1 = klar, 0 = voller Dunst
@@ -427,6 +442,10 @@ void pie_DrawOrbitGround(const char *texFile, const glm::vec3 &hazeTint, float h
 			const float a = static_cast<float>(seg % SEG) * 6.2831853f / SEG;
 			const float x = centerX + std::cos(a) * radii[ring];
 			const float z = centerZ + std::sin(a) * radii[ring];
+			if (uvPeriodX > 0.f && uvPeriodZ > 0.f)
+			{
+				return { Vector3f(x, flag[ring], z), Vector2f(x / uvPeriodX, -z / uvPeriodZ) };
+			}
 			return { Vector3f(x, flag[ring], z), Vector2f(x / uvScale, -z / uvScale) };
 		};
 		auto tri = [&](const std::pair<Vector3f, Vector2f> &a, const std::pair<Vector3f, Vector2f> &b, const std::pair<Vector3f, Vector2f> &c) {

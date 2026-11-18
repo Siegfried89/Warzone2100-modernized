@@ -70,7 +70,7 @@ static void applyMinimapOverlay();
 
 bool bEnemyAllyRadarColor = false;     			/**< Enemy/ally radar color. */
 RADAR_DRAW_MODE	radarDrawMode = RADAR_MODE_DEFAULT;	/**< Current mini-map mode. */
-bool rotateRadar = true; ///< Rotate the radar?
+bool rotateRadar = false; ///< Rotate the radar?  MOD (18.11.): Minikarte dreht sich nicht mit
 bool radarRotationArrow = true; ///< display arrow when radar rotation enabled?
 
 static PIELIGHT		colRadarAlly, colRadarMe, colRadarEnemy;

@@ -111,8 +111,20 @@ UDWORD getComponentDroidRadius(const DROID *)
 }
 
 
-UDWORD getComponentDroidTemplateRadius(const DROID_TEMPLATE *)
+UDWORD getComponentDroidTemplateRadius(const DROID_TEMPLATE *psTemplate)
 {
+	// MOD (18.11.): grosse Ruempfe (Schiffe, ueberlange/superschwere Ruempfe) ragten aus der Vorschau im Designer - ab einer gewissen
+	// Rumpfgroesse wird die Vorschau kleiner gezeichnet (normale Ruempfe bleiben wie bisher)
+	if (psTemplate != nullptr && psTemplate->asParts[COMP_BODY] < asBodyStats.size())
+	{
+		const BODY_STATS *psBody = psTemplate->getBodyStats();
+		const iIMDShape *imd = (psBody != nullptr && psBody->pIMD != nullptr) ? psBody->pIMD->displayModel() : nullptr;
+		if (imd != nullptr)
+		{
+			const int ext = std::max({std::abs(imd->min.x), std::abs(imd->max.x), std::abs(imd->min.z), std::abs(imd->max.z)});
+			return static_cast<UDWORD>(std::max(100, ext * 100 / 60));
+		}
+	}
 	return 100;
 }
 

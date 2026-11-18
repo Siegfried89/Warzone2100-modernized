@@ -279,7 +279,8 @@ void layout()
 	const std::shared_ptr<WIDGET> radar = getRadarWidget();
 	if (radar && radar->visible() && radar->width() > 0)
 	{
-		x = std::max(4, radar->x() - w - 6);
+		const int m = rotateRadar ? static_cast<int>(radar->width() * 0.21f) : 0;   // (18.11.) Abstand zur gedrehten Minikarte
+		x = std::max(4, radar->x() - w - 6 - m);
 		y = std::max(4, static_cast<int>(screenHeight) - h - 8);
 	}
 	s_root->setGeometry(x, y, w, h);

@@ -429,8 +429,11 @@ void layout()
 	const std::shared_ptr<WIDGET> radar = getRadarWidget();
 	if (radar && radar->width() > 0)
 	{
+		// (18.11. 01:14 "Das Menue rechts liegt teilweise uebereinander"): die gedrehte Minikarte ragt mit den Ecken bis zu 21 % ueber ihren
+		// Rahmen hinaus - die Knoepfe liegen darueber mit Abstand
+		const int m = rotateRadar ? static_cast<int>(radar->height() * 0.21f) : 0;
 		rx = radar->x() + std::max(0, (radar->width() - (2 * bw + gap)) / 2);
-		ry = radar->y() - bh - gap;
+		ry = radar->y() - bh - gap - m;
 	}
 	s_btn[B_MAP]->setGeometry(rx, ry, bw, bh);
 	s_btn[B_SYM]->setGeometry(rx + bw + gap, ry, bw, bh);
