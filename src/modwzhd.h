@@ -17,6 +17,8 @@ void shutdown();
 /// Original-WZ-Bild (Nummer aus intfac.h, z. B. IMAGE_DES_BODY) in das Rechteck zeichnen - HD-Fassung, wenn vorhanden, sonst das Original
 /// (vergroessert). glow: Fassung mit Lichthof (ragt etwas ueber das Rechteck hinaus)
 void drawIntfac(unsigned intfacId, int x, int y, int w, int h, bool glow = false, unsigned char alpha = 255);
+/// nur HD: false, wenn es fuer dieses WZ-Bild keine HD-Fassung gibt (dann zeichnet der Aufrufer das Original)
+bool drawIntfacHd(unsigned intfacId, int x, int y, int w, int h, bool glow, unsigned char alpha = 255);
 /// eigenes Bild im WZ-Stil ("wz_new", "wz_rename", "wz_globe", "wz_left", "wz_right"); false = nicht vorhanden
 bool drawNamed(const char *base, int x, int y, int w, int h, bool glow = false, unsigned char alpha = 255);
 

@@ -49,6 +49,7 @@
 #include "lib/sound/audio.h"
 
 #include "intdisplay.h"
+#include "modwzhd.h"   // MOD (18.11.)
 
 #include "objects.h"
 #include "loop.h"
@@ -749,12 +750,24 @@ void IntFormAnimated::display(int xOffset, int yOffset)
 
 // Display an image for a widget.
 //
+/// MOD (Wunsch 18.11. 12:03 "die Original-WZ-Knoepfe nicht neu machen, nur verschoenern - mit Glow usw."): WZ-Bild in HD (images/wzhd.img),
+/// bei Maus darueber mit Lichthof; ohne HD-Fassung genau wie bisher
+static void modDrawIntImage(UWORD id, int x, int y, bool glow = false)
+{
+	if (IntImages != nullptr && id < IntImages->imageDefs.size() && modwzhd::ready())
+	{
+		const AtlasImageDef &d = IntImages->imageDefs[id];
+		if (modwzhd::drawIntfacHd(id, x + d.XOffset, y + d.YOffset, static_cast<int>(d.Width), static_cast<int>(d.Height), glow)) { return; }
+	}
+	iV_DrawImage(IntImages, id, x, y);
+}
+
 void intDisplayImage(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
 	int x = xOffset + psWidget->x();
 	int y = yOffset + psWidget->y();
 
-	iV_DrawImage(IntImages, psWidget->UserData, x, y);
+	modDrawIntImage(static_cast<UWORD>(psWidget->UserData), x, y);
 }
 
 
@@ -830,10 +843,10 @@ void intDisplayImageHilight(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	}
 	else
 	{
-		iV_DrawImage(IntImages, ImageID, x, y);
+		modDrawIntImage(ImageID, x, y, Hilight);
 		if (Hilight)
 		{
-			iV_DrawImage(IntImages, UNPACKDWORD_TRI_B(psWidget->UserData), x, y);
+			modDrawIntImage(UNPACKDWORD_TRI_B(psWidget->UserData), x, y);
 		}
 	}
 }
@@ -859,10 +872,10 @@ void intDisplayButtonHilight(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		ImageID = UNPACKDWORD_TRI_C(psWidget->UserData) + down;
 	}
 
-	iV_DrawImage(IntImages, ImageID, x, y);
+	modDrawIntImage(ImageID, x, y, highlight || down);
 	if (highlight)
 	{
-		iV_DrawImage(IntImages, UNPACKDWORD_TRI_B(psWidget->UserData), x, y);
+		modDrawIntImage(UNPACKDWORD_TRI_B(psWidget->UserData), x, y);
 	}
 
 }
