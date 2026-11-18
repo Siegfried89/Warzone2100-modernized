@@ -284,8 +284,15 @@ size_t getModelTextureLoadingFailuresCount()
 	return modelTextureLoadingFailures;
 }
 
+static unsigned s_modelGeneration = 1;
+unsigned modelGeneration()
+{
+	return s_modelGeneration;
+}
+
 void modelShutdown()
 {
+	++s_modelGeneration;   // MOD (18.11.): gemerkte Modellzeiger sind ab jetzt ungueltig
 	models.clear();
 	modelsBeingLoaded.clear();
 	modelLoadingErrors = 0;

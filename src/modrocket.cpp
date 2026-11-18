@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <map>
 #include <vector>
+#include <set>
 
 #include "lib/framework/frame.h"
 #include "lib/framework/trig.h"
@@ -162,6 +163,19 @@ void tick()
 			live.push_back(s->id);
 			if (s->status != SS_BUILT) { continue; }   // z. B. Satelliten-Modul im Bau: Rakete wartet
 			Silo &S = s_silo[s->id];
+			// (Wunsch 18.11. 13:20 "Ich konnte auf das Raketensilo draufbauen, weiss aber nicht, was das gebracht hat"): Hinweis, sobald das
+			// Satelliten-Modul fertig ist, und solange es auf die Rakete wartet
+			{
+				static std::set<uint32_t> s_satTold;
+				if (s->capacity > 0 && !S.sat && p == selectedPlayer && s_satTold.insert(s->id).second)
+				{
+					addConsoleMessage(S.stage == ST_READY
+						? "Raketensilo: NASDA-Satellit eingebaut - die Rakete steht bereit und bringt ihn jetzt in die Umlaufbahn."
+						: "Raketensilo: NASDA-Satellit eingebaut. Er fliegt mit der naechsten fertigen Rakete in die Umlaufbahn - danach kann die Satelliten-Uplink-Zentrale den Laser abfeuern (Zentrale waehlen, Ziel anklicken).",
+						DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+				}
+				if (s->capacity == 0) { s_satTold.erase(s->id); }
+			}
 			switch (S.stage)
 			{
 			case ST_ASSEMBLE:
@@ -349,10 +363,9 @@ void drawArrivals(const glm::mat4 &viewMatrix)
 void draw3D(const glm::mat4 &viewMatrix)
 {
 	if (s_silo.empty()) { return; }
-	static bool s_tried = false;
-	if (!s_tried)
+	static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(s_tried))
 	{
-		s_tried = true;
 		s_rocket = modelGet(WzString::fromUtf8("modrocket.pie"));
 		s_flame = modelGet(WzString::fromUtf8("fxicbm.pie"));
 		s_booster = modelGet(WzString::fromUtf8("modrocket_booster.pie"));

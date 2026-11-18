@@ -1375,10 +1375,9 @@ static void proj_ImpactFunc(PROJECTILE *psObj)
 				if (psStats->weaponSubClass == WSC_MGUN && imd != nullptr)
 				{
 					static iIMDBaseShape *s_metal = nullptr, *s_rock = nullptr;
-					static bool s_tried = false;
-					if (!s_tried)
+					static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+					if (modelCacheStale(s_tried))
 					{
-						s_tried = true;
 						s_metal = modelGet("fxmgimp_metal.pie");
 						s_rock = modelGet("fxmgimp_rock.pie");
 					}

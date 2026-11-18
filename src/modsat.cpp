@@ -244,10 +244,9 @@ void draw3D(const glm::mat4 &viewMatrix)
 {
 	const modlayer::Layer view = modlayer::current();
 	static const iIMDBaseShape *s_model = nullptr;
-	static bool s_tried = false;
-	if (!s_tried)
+	static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(s_tried))
 	{
-		s_tried = true;
 		s_model = modelGet(WzString::fromUtf8("modsatellite.pie"));
 		s_glowShape = modelGet(WzString::fromUtf8("modnightlight.pie"));
 		s_beamShape = modelGet(WzString::fromUtf8("modlaserbeam.pie"));

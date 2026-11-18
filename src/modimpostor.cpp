@@ -74,6 +74,8 @@ std::string nameOf(const iIMDBaseShape *s)
 const Imp *find(const iIMDBaseShape *body, const iIMDBaseShape *prop, const iIMDBaseShape *turret)
 {
 	const auto key = std::make_tuple(static_cast<const void *>(body), static_cast<const void *>(prop), static_cast<const void *>(turret));
+	static unsigned cacheGen = 0;
+	if (modelCacheStale(cacheGen)) { s_cache.clear(); }   // MOD (18.11.): Modelle wurden neu geladen (Zeiger als Schluessel ungueltig)
 	auto it = s_cache.find(key);
 	if (it == s_cache.end())
 	{

@@ -379,10 +379,9 @@ void draw3D(const glm::mat4 &viewMatrix)
 {
 	if (selectedPlayer >= MAX_PLAYERS || modlayer::current() != modlayer::SURFACE) { return; }
 	static const iIMDBaseShape *s_shape[3] = { nullptr, nullptr, nullptr };
-	static bool s_tried = false;
-	if (!s_tried)
+	static unsigned s_tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(s_tried))
 	{
-		s_tried = true;
 		s_shape[0] = modelGet(WzString::fromUtf8("modlzbeacon_red.pie"));
 		s_shape[1] = modelGet(WzString::fromUtf8("modlzbeacon_blue.pie"));
 		s_shape[2] = modelGet(WzString::fromUtf8("modrallybeacon.pie"));   // Gruen der Reparaturstation

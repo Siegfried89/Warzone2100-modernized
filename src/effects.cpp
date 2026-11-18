@@ -2719,8 +2719,8 @@ bool readFXData(const char *fileName, WorldMapState& mapState)
 void modEjectCasings(const Vector3i &worldPos, uint16_t weaponDir, int count)
 {
 	static iIMDBaseShape *casing = nullptr;
-	static bool tried = false;
-	if (!tried) { tried = true; casing = modelGet("brasscasing.pie"); }
+	static unsigned tried = 0;   // MOD (18.11.): Modell-Generation (Neuladen zwischen Spielen)
+	if (modelCacheStale(tried)) { casing = modelGet("brasscasing.pie"); }
 	if (casing == nullptr || casing->displayModel() == nullptr) { return; }
 	int alive = 0;
 	for (const EFFECT &e : gActiveEffects)

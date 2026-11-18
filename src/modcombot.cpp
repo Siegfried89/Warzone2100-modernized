@@ -896,6 +896,8 @@ static const Part s_fxAttached;    // Kennung: leuchtender Anbau, mit dem Knoche
 static const iIMDShape *glowShape(const std::string &name)
 {
 	static std::map<std::string, const iIMDShape *> cache;
+	static unsigned cacheGen = 0;
+	if (modelCacheStale(cacheGen)) { cache.clear(); }   // MOD (18.11.): Modelle wurden neu geladen
 	auto it = cache.find(name);
 	if (it != cache.end()) { return it->second; }
 	const iIMDBaseShape *b = name.empty() ? nullptr : modelGet(WzString::fromUtf8(name));
