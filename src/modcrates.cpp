@@ -587,6 +587,8 @@ bool loadOrderSelected(unsigned player, const STRUCTURE *s)
 bool isCrateTarget(const DROID *d, const STRUCTURE *s)
 {
 	if (d == nullptr || s == nullptr || capacity(d) <= 0 || s->player != d->player || !alive(s)) { return false; }
+	// beschaedigte Gebaeude: der normale Klick des Lkw repariert wie bisher (Laden dann mit Strg + Klick)
+	if ((d->droidType == DROID_CONSTRUCT || d->droidType == DROID_CYBORG_CONSTRUCT) && s->body < s->structureBody()) { return false; }
 	if (isFactory(s)) { return facPile(s) != nullptr && crates(d) < capacity(d); }
 	if (isPile(s)) { return crates(d) < capacity(d) && stockRef(s) > 0; }
 	if (isDepot(s) || isBox(s))

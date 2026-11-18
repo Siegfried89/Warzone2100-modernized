@@ -1057,7 +1057,12 @@ void IntFancyButton::displayIMD(AtlasImage image, ImdObject imdObject, int xOffs
 		{
 			model.scale = DROID_BUT_SCALE * 48 / std::max<int>(static_cast<int>(Radius), 12);
 		}
-		ASSERT(Radius <= 128, "create PIE button big component found");
+		// MOD (18.11., Log: 150 Meldungen je Sekunde "create PIE button big component found"): grosse Einheiten (Atomraketen-Traeger,
+		// schwere MF-Panzer ...) werden im Knopf verkleinert statt ueber den Rand zu ragen
+		if (Radius > 128)
+		{
+			model.scale = DROID_BUT_SCALE * 128 / static_cast<int>(Radius);
+		}
 
 		displayClear(xOffset, yOffset);
 

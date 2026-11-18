@@ -7859,7 +7859,7 @@ bool canStructureHaveAModuleAdded(const STRUCTURE* const structure)
 	}
 }
 
-LineBuild calcLineBuild(Vector2i size, STRUCTURE_TYPE type, Vector2i worldPos, Vector2i worldPos2)
+LineBuild calcLineBuild(Vector2i size, STRUCTURE_TYPE type, Vector2i worldPos, Vector2i worldPos2, int minPitchTiles)
 {
 	ASSERT_OR_RETURN({}, size.x > 0 && size.y > 0, "Zero-size building");
 
@@ -7867,6 +7867,10 @@ LineBuild calcLineBuild(Vector2i size, STRUCTURE_TYPE type, Vector2i worldPos, V
 	Vector2i tile = {TILE_UNITS, TILE_UNITS};
 	Vector2i padding = packed? Vector2i{0, 0} : Vector2i{1, 1};
 	Vector2i paddedSize = size + padding;
+	if (minPitchTiles > 0)
+	{
+		paddedSize = Vector2i(std::max(paddedSize.x, minPitchTiles), std::max(paddedSize.y, minPitchTiles));
+	}
 	Vector2i worldSize = world_coord(size);
 	Vector2i worldPaddedSize = world_coord(paddedSize);
 
@@ -7898,7 +7902,9 @@ LineBuild calcLineBuild(Vector2i size, STRUCTURE_TYPE type, Vector2i worldPos, V
 
 LineBuild calcLineBuild(STRUCTURE_STATS const *stats, uint16_t direction, Vector2i pos, Vector2i pos2)
 {
-	return calcLineBuild(stats->size(direction), stats->type, pos, pos2);
+	// MOD (Wunsch 12.11. "Strommasten wie Mauern in einer Linie ziehbar"): Masten beim Ziehen alle 4 Felder (Verbindung bis 6 Felder)
+	const int pitch = modgrid::isPole(stats) ? 4 * (DIST_TILE / TILE_UNITS) : 0;
+	return calcLineBuild(stats->size(direction), stats->type, pos, pos2, pitch);
 }
 
 StructContainer& GlobalStructContainer()

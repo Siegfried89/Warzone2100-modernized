@@ -718,10 +718,22 @@ static void HandleDrag()
 			const int dy = (int)mouseY() - (int)dragY;
 			if (dx * dx + dy * dy > 20 * 20)
 			{
-				int q;
-				if ((dy < 0 ? -dy : dy) >= (dx < 0 ? -dx : dx)) { q = dy > 0 ? 0 : 2; }
-				else { q = dx > 0 ? 1 : 3; }
-				sBuildDetails.directionShift = (uint16_t)(q * 0x4000);
+				// (18.11. 12:42 "directional drag funktioniert noch nicht mit allen Stellungen und Gebaeuden"): die Richtung kommt aus der
+				// Zugrichtung AUF DER KARTE (Ankerpunkt -> Punkt unter der Maus), nicht aus der Bildschirmrichtung - sonst stimmt sie bei
+				// gedrehter Kamera (Q/E) nicht. Gebaeuderichtung = snapDirection(Kameradrehung + directionShift).
+				const int wdx = mousePos.x - buildRotateAnchorX, wdy = mousePos.y - buildRotateAnchorY;
+				if (wdx * wdx + wdy * wdy > 16 * 16)
+				{
+					const uint16_t worldDir = iAtan2(wdx, wdy);
+					sBuildDetails.directionShift = (uint16_t)(worldDir - playerPos.r.y);   // Cast wrapping intended.
+				}
+				else
+				{
+					int q;
+					if ((dy < 0 ? -dy : dy) >= (dx < 0 ? -dx : dx)) { q = dy > 0 ? 0 : 2; }
+					else { q = dx > 0 ? 1 : 3; }
+					sBuildDetails.directionShift = (uint16_t)(q * 0x4000);
+				}
 			}
 			return;
 		}

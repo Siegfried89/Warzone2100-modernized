@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: dramatische Rufe bei Gefechten (siehe moddrama.h)
 #include "moddrama.h"
+#include "lib/framework/frameresource.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
@@ -66,6 +67,8 @@ void probe(Tracks &t, const char *kind)
 		char n[64], f[64];
 		std::snprintf(n, sizeof(n), "drama_%s_%d_n.ogg", kind, i);
 		std::snprintf(f, sizeof(f), "drama_%s_%d_f.ogg", kind, i);
+		// (18.11., Log: "Unable to find data for drama_start_10_n.ogg") erst pruefen, ob die Datei geladen ist - das Ende der Liste ist kein Fehler
+		if (!resPresent("WAV", n) || !resPresent("WAV", f)) { break; }
 		const int tn = audio_GetTrackID(n), tf = audio_GetTrackID(f);
 		if (tn < 0 || tf < 0) { break; }
 		t.n.push_back(tn);
