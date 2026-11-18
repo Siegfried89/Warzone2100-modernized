@@ -206,6 +206,7 @@ enum
 	FRONTEND_FASTPLAY,					//tutorial menu option
 	FRONTEND_CONTINUE,
 	FRONTEND_FLEETS,					// MOD (17.11.): Flotten-Menue (titleui/modfleets.cpp)
+	FRONTEND_ARGRAPHICS,				// MOD (18.11.): Grafik Standard / Art Revolution umschalten
 	FRONTEND_NEWGAME		= 20200,	// single player (menu)
 	FRONTEND_LOADGAME_MISSION,
 	FRONTEND_LOADGAME_SKIRMISH,

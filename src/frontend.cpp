@@ -310,6 +310,29 @@ static void addFactionChoice()
 	refreshFactionChoice();
 }
 
+// MOD (Wunsch 18.11. 01:58): "Mach einen Button im Hauptmenue, dass man per Knopfdruck zwischen AR-Grafik und normaler Grafik wechseln kann."
+// Das Paket mods/grafik/ARGrafik.wz (Modelle + Texturen der Art-Revolution-Mod, auf die Groessen des Mods gebracht) wird beim naechsten
+// Spielstart ueber alle Mods gelegt (init.cpp rebuildSearchPath) - die bisherigen Dateien bleiben unveraendert.
+static bool artRevolutionInstalled()
+{
+	return PHYSFS_exists("mods/grafik/ARGrafik.wz") != 0;
+}
+
+static std::string artRevolutionLabel()
+{
+	return war_getArtRevolution() ? std::string(_("Graphics: Art Revolution")) : std::string(_("Graphics: Standard"));
+}
+
+static void addArtRevolutionButton()
+{
+	const bool have = artRevolutionInstalled();
+	auto b = addTextButton(FRONTEND_ARGRAPHICS, FRONTEND_POS1X, FRONTEND_POS9Y - 6, artRevolutionLabel(), WBUT_TXTCENTRE | (have ? 0 : WBUT_DISABLE));
+	b->FontID = font_regular;
+	b->setGeometry(FRONTEND_POS1X, FRONTEND_POS9Y - 6, FRONTEND_BUTWIDTH, 26);
+	widgSetTip(psWScreen, FRONTEND_ARGRAPHICS, have ? _("Switch between the standard graphics and the Art Revolution models and textures (takes effect when the next game starts)")
+	                                                : _("The Art Revolution graphics package is not installed"));
+}
+
 void startTitleMenu()
 {
 	intRemoveReticule();
@@ -352,6 +375,7 @@ void startTitleMenu()
 	addSideText(FRONTEND_SIDETEXT, FRONTEND_SIDEX, FRONTEND_SIDEY, _("MAIN MENU"));
 
 	// MOD (Wunsch 18.11. 01:58): keine gelben Links/Schriftzuege mehr im Hauptmenue (Webseite, Spenden, Discord/IRC, Versionspruefung)
+	addArtRevolutionButton();
 }
 
 void runContinue()
@@ -423,6 +447,11 @@ bool runTitleMenu()
 		break;
 	case FRONTEND_FLEETS:   // MOD (17.11.)
 		changeTitleUI(std::make_shared<WzFleetTitleUI>());
+		break;
+	case FRONTEND_ARGRAPHICS:   // MOD (18.11.): Grafik Standard / Art Revolution
+		war_setArtRevolution(!war_getArtRevolution());
+		widgSetString(psWScreen, FRONTEND_ARGRAPHICS, artRevolutionLabel().c_str());
+		saveConfig();
 		break;
 	case FRONTEND_FACTION_0:
 	case FRONTEND_FACTION_1:

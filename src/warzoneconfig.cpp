@@ -91,6 +91,7 @@ struct WARZONE_GLOBALS
 	WzString videoDecoderBackend = "auto";
 	JS_BACKEND jsBackend = (JS_BACKEND)0;
 	bool autoAdjustDisplayScale = true;
+	bool artRevolution = false;   // MOD (18.11.): Grafik "Art Revolution" (Paket mods/grafik/ARGrafik.wz)
 	int autoLagKickSeconds = 60;
 	int autoLagKickAggressiveness = 3;
 	int autoDesyncKickSeconds = 10;
@@ -670,6 +671,16 @@ bool war_getAutoAdjustDisplayScale()
 void war_setAutoAdjustDisplayScale(bool autoAdjustDisplayScale)
 {
 	warGlobs.autoAdjustDisplayScale = autoAdjustDisplayScale;
+}
+
+bool war_getArtRevolution()
+{
+	return warGlobs.artRevolution;
+}
+
+void war_setArtRevolution(bool enabled)
+{
+	warGlobs.artRevolution = enabled;
 }
 
 int war_getAutoLagKickSeconds()
