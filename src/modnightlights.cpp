@@ -87,7 +87,7 @@ void draw3D(const glm::mat4 &viewMatrix)
 	{
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
-			if (s->died || s->status != SS_BUILT || !s->visibleForLocalDisplay() || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+			if (s->died || s->status != SS_BUILT || !s->visibleForLocalDisplay() || modlayer::layerOf(s) != modlayer::SURFACE || s->isMobileCore()) { continue; }
 			const Kind kd = kindOf(s);
 			if (kd == K_NONE) { continue; }
 			const iIMDShape *imd = (s->sDisplay.imd != nullptr) ? s->sDisplay.imd->displayModel() : nullptr;

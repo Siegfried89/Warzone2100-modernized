@@ -618,7 +618,7 @@ void draw()
 		const PIELIGHT tc = pal_GetTeamColour(getPlayerColour(pl));
 		for (const STRUCTURE *s : gameWorld.objects.structures[pl])
 		{
-			if (!visibleObj(s) || modlayer::layerOf(s) != view || s->pStructureType == nullptr) { continue; }
+			if (!visibleObj(s) || modlayer::layerOf(s) != view || s->pStructureType == nullptr || s->isMobileCore()) { continue; }
 			const glm::vec2 c = toScreen(static_cast<float>(s->pos.x), static_cast<float>(s->pos.y));
 			if (!inRect(a, c.x, c.y)) { continue; }
 			const STRUCTURE_TYPE t = s->pStructureType->type;

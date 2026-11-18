@@ -2336,7 +2336,7 @@ static void effectStructureUpdates()
 				continue;
 			}
 
-			if (psStructure->status != SS_BUILT || !psStructure->visibleForLocalDisplay())
+			if (psStructure->status != SS_BUILT || !psStructure->visibleForLocalDisplay() || psStructure->isMobileCore())   // MOD: Fabrik-Kern (Fatboy) qualmt nicht
 			{
 				continue;
 			}

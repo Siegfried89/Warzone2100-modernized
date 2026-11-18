@@ -98,6 +98,7 @@
 #include "modai.h"
 #include "modpointdef.h"
 #include "modshield.h"
+#include "modmobilefactory.h"
 #include "modtracks.h"
 #include "modoutpost.h"
 #include "modconcrete.h"
@@ -786,6 +787,7 @@ void interfaceShutDown()
 	modpointdef::reset();    // MOD: Punktverteidigung
 	modshield::reset();      // MOD: Schildkuppeln
 	modtracks::reset();      // MOD: Fahrspuren
+	modmobilefactory::reset();   // MOD: fahrende Fabrik (Fatboy)
 	modoutpost::reset();     // MOD: Aussenposten-Teleport
 	modrocket::reset();      // MOD (17.11. 20:56): Raketensilo
 	modapc::reset();         // MOD (17.11. 21:01): Schuetzenpanzer
@@ -2688,6 +2690,25 @@ static bool intAddManufacture()
 {
 	if (bMultiPlayer && NetPlay.players[selectedPlayer].isSpectator) { return false; }
 	return setController(std::make_shared<ManufactureController>(), INT_STAT, IOBJ_MANUFACTURE);
+}
+
+/// MOD (18.11.): fahrende Fabrik (Fatboy) - Klick auf das Fahrzeug oeffnet seine Bauliste wie bei einer Fabrik
+void intShowMobileFactory(STRUCTURE *psCore)
+{
+	if (psCore == nullptr || psCore->died || psCore->status != SS_BUILT || !psCore->isFactory() || psCore->player != selectedPlayer)
+	{
+		return;
+	}
+	if (bMultiPlayer && NetPlay.players[selectedPlayer].isSpectator) { return; }
+	for (STRUCTURE *s : gameWorld.objects.structures[selectedPlayer])
+	{
+		s->selected = false;   // eine sonst angewaehlte Fabrik haette beim Hervorheben Vorrang
+	}
+	ManufactureController::preselectFactory(psCore);
+	intResetScreen(true);
+	widgSetButtonState(psWScreen, IDRET_MANUFACTURE, WBUT_CLICKLOCK);
+	intAddManufacture();
+	reticuleCallback(RETBUT_FACTORY);
 }
 
 /* Add the research widgets to the widget screen */

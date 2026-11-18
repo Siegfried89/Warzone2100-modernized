@@ -131,6 +131,7 @@
 #include "modrecover.h"
 #include "modnestcrew.h"
 #include "modfort.h"
+#include "modmobilefactory.h"
 #include "modshield.h"
 #include "modcrates.h"
 #include "modincoming.h"
@@ -624,6 +625,7 @@ static void gameStateUpdate()
 	modnestcrew::tick();         // MOD: leere MG-Stellungen neu besetzen
 	modfort::tick();             // MOD (17.11.): Stellungsnetz (offene Seiten, Oeffnungen nach innen)
 	modshield::tick();           // MOD (18.11.): Schildkuppeln aufladen / Ausfall
+	modmobilefactory::update();  // MOD (18.11.): fahrende Fabrik (Fatboy) - Fabrik-Kern anlegen / mitfuehren / entfernen
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)

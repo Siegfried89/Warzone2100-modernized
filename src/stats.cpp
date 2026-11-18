@@ -716,6 +716,8 @@ bool loadBodyStats(WzConfig &ini)
 		psStats->crewCost = std::max(0, ini.value("crewCost", 0).toInt());   // MOD: Besatzungskonto
 		psStats->shieldMech = std::clamp(ini.value("shieldMech", 0).toInt(), 0, 90);   // MOD
 		psStats->shieldEnergy = std::clamp(ini.value("shieldEnergy", 0).toInt(), 0, 90);   // MOD
+		psStats->mobileFactory = ini.value("mobileFactory", "").toWzString();   // MOD (18.11.): fahrende Fabrik (Fatboy)
+		psStats->collisionRadius = std::clamp(ini.value("collisionRadius", 0).toInt(), 0, 512);   // MOD (18.11.)
 		psStats->base.thermal = ini.value("armourHeat").toInt();
 		psStats->base.armour = ini.value("armourKinetic").toInt();
 		psStats->base.power = ini.value("powerOutput").toInt();

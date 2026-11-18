@@ -5992,9 +5992,10 @@ static bool loadSaveDroid(const char *pFileName, GameWorld& world, PerPlayerDroi
 			templ.asParts[COMP_ECM] = getCompFromName_NullCompOnFail<uint8_t>(COMP_ECM, ini.value("ecm", "ZNULLECM").toWzString());
 			templ.asParts[COMP_SENSOR] = getCompFromName_NullCompOnFail<uint8_t>(COMP_SENSOR, ini.value("sensor", "ZNULLSENSOR").toWzString());
 			templ.asParts[COMP_CONSTRUCT] = getCompFromName_NullCompOnFail<uint8_t>(COMP_CONSTRUCT, ini.value("construct", "ZNULLCONSTRUCT").toWzString());
-			templ.asWeaps[0] = getCompFromName_NullCompOnFail<uint32_t>(COMP_WEAPON, ini.value("weapon/1", "ZNULLWEAPON").toWzString());
-			templ.asWeaps[1] = getCompFromName_NullCompOnFail<uint32_t>(COMP_WEAPON, ini.value("weapon/2", "ZNULLWEAPON").toWzString());
-			templ.asWeaps[2] = getCompFromName_NullCompOnFail<uint32_t>(COMP_WEAPON, ini.value("weapon/3", "ZNULLWEAPON").toWzString());
+			for (int w = 0; w < MAX_WEAPONS; ++w)   // MOD (18.11.): alle Waffenplaetze (Fatboy 8), vorher nur 3
+			{
+				templ.asWeaps[w] = getCompFromName_NullCompOnFail<uint32_t>(COMP_WEAPON, ini.value("weapon/" + WzString::number(w + 1), "ZNULLWEAPON").toWzString());
+			}
 			ini.endGroup();
 			psTemplate = &templ;
 		}
@@ -6812,6 +6813,7 @@ static bool loadSaveStructure2(const char *pFileName, GameWorld& world)
 		}
 		// common BASE_OBJECT info
 		loadSaveObject(ini, psStructure);
+		psStructure->modHostId = ini.value("modHost", 0).toUInt();   // MOD (18.11.): Fabrik-Kern -> Fahrzeug (Fatboy)
 
 		if (psStructure->pStructureType->type == REF_HQ)
 		{
@@ -7056,6 +7058,10 @@ bool writeStructFile(const char *pFileName, const WorldObjectState& objState)
 
 			writeSaveObject(ini, psCurr);
 
+			if (psCurr->modHostId != 0)
+			{
+				ini.setValue("modHost", psCurr->modHostId);   // MOD (18.11.): Fabrik-Kern -> Fahrzeug (Fatboy)
+			}
 			if (psCurr->resistance > 0)
 			{
 				ini.setValue("resistance", psCurr->resistance);

@@ -777,6 +777,10 @@ SDWORD moveObjRadius(const BASE_OBJECT *psObj)
 			else
 			{
 				const BODY_STATS *psBdyStats = psDroid->getBodyStats();
+				if (psBdyStats->collisionRadius > 0)
+				{
+					return psBdyStats->collisionRadius;   // MOD (18.11.): sehr grosse Rumpfe (Fatboy)
+				}
 				switch (psBdyStats->size)
 				{
 				case SIZE_LIGHT:

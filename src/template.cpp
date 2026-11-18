@@ -280,9 +280,11 @@ bool loadTemplateCommon(const nlohmann::json& obj, DROID_TEMPLATE &outputTemplat
 	}
 	ASSERT(weapons.size() <= MAX_WEAPONS, "Number of weapons (%zu) exceeds MAX_WEAPONS (%d)", weapons.size(), MAX_WEAPONS);
 	design.numWeaps = (weapons.size() <= MAX_WEAPONS) ? (int8_t)weapons.size() : MAX_WEAPONS;
-	if (!droidTemplate_LoadWeapByName(0, (weapons.size() >= 1) ? weapons[0] : "ZNULLWEAPON", design)) return false;
-	if (!droidTemplate_LoadWeapByName(1, (weapons.size() >= 2) ? weapons[1] : "ZNULLWEAPON", design)) return false;
-	if (!droidTemplate_LoadWeapByName(2, (weapons.size() >= 3) ? weapons[2] : "ZNULLWEAPON", design)) return false;
+	// MOD (18.11.): alle Waffenplaetze laden (vorher nur 3 - der Fatboy hat 8)
+	for (size_t w = 0; w < MAX_WEAPONS; ++w)
+	{
+		if (!droidTemplate_LoadWeapByName(w, (weapons.size() > w) ? weapons[w] : "ZNULLWEAPON", design)) return false;
+	}
 
 	return true;
 }

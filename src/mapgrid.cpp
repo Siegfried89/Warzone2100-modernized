@@ -97,7 +97,7 @@ void gridReset(GameWorld& world)
 		}
 		for (BASE_OBJECT* psObj : world.objects.structures[player])
 		{
-			if (!psObj->died)
+			if (!psObj->died && !static_cast<STRUCTURE *>(psObj)->isMobileCore())   // MOD (18.11.): Fabrik-Kern ist kein Ziel, nicht treffbar
 			{
 				gridPointTree->insert(psObj, psObj->pos.x, psObj->pos.y);
 				for (unsigned char& viewer : psObj->seenThisTick)

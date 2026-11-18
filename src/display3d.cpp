@@ -2171,6 +2171,7 @@ static void displayStaticObjects(const glm::mat4 &viewMatrix, const glm::mat4 &p
 		{
 			/* Worth rendering the structure? */
 			if (obj->type != OBJ_STRUCTURE || (obj->died != 0 && obj->died < graphicsTime)
+				|| static_cast<STRUCTURE *>(obj)->isMobileCore()   // MOD (18.11.): Fabrik-Kern der fahrenden Fabrik ist unsichtbar
 				|| !quickClipXYToMaximumTilesFromCurrentPosition(obj->pos.x, obj->pos.y))
 			{
 				continue;
@@ -2193,6 +2194,7 @@ static void displayStaticObjects(const glm::mat4 &viewMatrix, const glm::mat4 &p
 	{
 		/* Worth rendering the structure? */
 		if (obj->type != OBJ_STRUCTURE || (obj->died != 0 && obj->died < graphicsTime)
+			|| static_cast<STRUCTURE *>(obj)->isMobileCore()   // MOD (18.11.): Fabrik-Kern unsichtbar
 			|| !quickClipXYToMaximumTilesFromCurrentPosition(obj->pos.x, obj->pos.y))
 		{
 			continue;

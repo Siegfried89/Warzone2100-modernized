@@ -539,7 +539,7 @@ void refreshOrbitBase()
 		const PIELIGHT pc = pal_GetTeamColour(getPlayerColour(p));
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
-			if (s->died || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+			if (s->died || modlayer::layerOf(s) != modlayer::SURFACE || s->isMobileCore()) { continue; }
 			const bool known = selectedPlayer < MAX_PLAYERS && (aiCheckAlliances(p, selectedPlayer) || s->visible[selectedPlayer] > 0);
 			if (!known) { continue; }
 			const StructureBounds b = getStructureBounds(s);
@@ -571,7 +571,7 @@ void refreshOrbitBase()
 	{
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
-			if (s->died || s->status != SS_BUILT || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+			if (s->died || s->status != SS_BUILT || modlayer::layerOf(s) != modlayer::SURFACE || s->isMobileCore()) { continue; }
 			const bool known = selectedPlayer < MAX_PLAYERS && (aiCheckAlliances(p, selectedPlayer) || s->visible[selectedPlayer] > 0);
 			const STRUCTURE_TYPE ty = s->pStructureType->type;
 			if (!known || ty == REF_WALL || ty == REF_WALLCORNER || ty == REF_DEFENSE) { continue; }

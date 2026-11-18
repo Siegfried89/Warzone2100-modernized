@@ -732,7 +732,7 @@ void autoTrain(int p, const Snap &sn)
 	std::vector<STRUCTURE *> idle;
 	for (STRUCTURE *f : gameWorld.objects.structures[p])
 	{
-		if (f == nullptr || f->died || f->status != SS_BUILT || f->pStructureType == nullptr || f->pStructureType->type != REF_FACTORY || f->pFunctionality == nullptr) { continue; }
+		if (f == nullptr || f->died || f->status != SS_BUILT || f->pStructureType == nullptr || f->pStructureType->type != REF_FACTORY || f->pFunctionality == nullptr || f->isMobileCore()) { continue; }
 		const FACTORY &fac = f->pFunctionality->factory;
 		const DROID_TEMPLATE *sub = fac.psSubject != nullptr ? fac.psSubject : fac.psSubjectPending;
 		if (sub == nullptr) { idle.push_back(f); continue; }

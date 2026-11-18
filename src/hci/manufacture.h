@@ -84,6 +84,11 @@ public:
 	}
 
 	void setHighlightedObject(BASE_OBJECT *object, bool jumpToHighlightedStatsObject) override;
+	/// MOD (18.11.): fahrende Fabrik - diese Fabrik beim naechsten Oeffnen hervorheben
+	static void preselectFactory(STRUCTURE *factory)
+	{
+		highlightedFactory = factory;
+	}
 
 	bool getQueuedJumpToHighlightedStatsObject() const override
 	{

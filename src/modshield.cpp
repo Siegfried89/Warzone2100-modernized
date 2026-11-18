@@ -113,7 +113,8 @@ bool shieldParams(const BASE_OBJECT *o, Params &P)
 	if (o->type == OBJ_DROID)
 	{
 		const DROID *d = static_cast<const DROID *>(o);
-		if (d->droidType != DROID_SENSOR || d->isVtol() || d->isTransporter()) { return false; }
+		// fahrender Schildgenerator (Sensor-Turm mit Schild) oder ein eingebauter Schild-Sensor (Fatboy: Kampffahrzeug mit Schildkuppel)
+		if (d->isVtol() || d->isTransporter() || d->died) { return false; }
 		const SENSOR_STATS *ss = d->getSensorStats();
 		if (ss == nullptr || ss->shieldRadius <= 0 || ss->shieldHP <= 0) { return false; }
 		P.radius = ss->shieldRadius; P.hp = ss->shieldHP; P.regen = ss->shieldRegen; P.recharge = ss->shieldRecharge;

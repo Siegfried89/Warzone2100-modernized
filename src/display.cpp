@@ -41,6 +41,7 @@
 
 #include "action.h"
 #include "display.h"
+#include "modmobilefactory.h"
 #include "modsound.h"
 #include "modlayer.h"
 #include "modpaint.h"
@@ -2060,6 +2061,7 @@ void dealWithDroidSelect(DROID *psDroid, bool bDragBox)
 			SelectDroid(psDroid);
 		}
 		if (modIsCombot(psDroid)) { modPlayCombotClick(); }
+		if (!bDragBox) { modmobilefactory::onDroidClicked(psDroid); }   // MOD (18.11.): Fatboy - Bauliste oeffnen
 	}
 }
 
