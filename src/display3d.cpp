@@ -3476,6 +3476,9 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 		strImd = strImd->objanimpie[psStructure->animationEvent]->displayModel();
 	}
 
+	// MOD (19.11.): hat die zweite Ebene eine eigene Animation (Skelett-Weg in drawShape, z. B. das schwenkende Solarpaneel), zeichnet
+	// drawShape mit der ersten Ebene bereits ALLE Ebenen - die folgenden Ebenen hier nicht noch einmal zeichnen (nur Anbauten/Tuerme)
+	bool allLevelsDrawn = false;
 	while (strImd)
 	{
 		float stretch = 0.f;
@@ -3483,7 +3486,11 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 		{
 			stretch = psStructure->pos.z - psStructure->foundationDepth;
 		}
-		drawShape(strImd, psStructure->timeAnimationStarted, colour, buildingBrightness, pieFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
+		if (!allLevelsDrawn)
+		{
+			drawShape(strImd, psStructure->timeAnimationStarted, colour, buildingBrightness, pieFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
+			allLevelsDrawn = strImd->next && strImd->next->objanimframes > 0;
+		}
 		if (modFortConnImd != nullptr)   // MOD (17.11. 16:10): Netz-Grube mit Waffe
 		{
 			if (modFortConnImd->connectors.size() > 0 && psStructure->numWeaps > 0 && !modnestcrew::unmanned(psStructure))

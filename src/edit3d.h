@@ -90,7 +90,9 @@ static inline bool canLineBuild()
 		return true;
 	}
 	// (18.11.) Strommasten und Minen werden wieder in einer Linie gezogen (Masten mit Abstand, Minen dicht als Minenfeld)
-	if (s->id.startsWith("A0PowerPole") || s->id.startsWith("A0Mine"))
+	// (19.11. 17:11 "Solarpanele sollen sich nicht nach drag direction ausrichten sondern wieder in Reihe bauen lassen. Das drehen
+	// soll dann automatisch per animation kommen"): Solarpaneele ebenfalls als Reihe; das Paneel schwenkt per MF-Animation (solarfix.py)
+	if (s->id.startsWith("A0PowerPole") || s->id.startsWith("A0Mine") || s->id.startsWith("A0SolarPanel"))
 	{
 		return true;
 	}
