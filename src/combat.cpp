@@ -366,7 +366,10 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	const bool groundShot = modgroundfire::isMarker(psTarget);
 	if (groundShot)
 	{
-		const Vector2i hitPoint = modgroundfire::scatterPoint(psTarget->pos.xy(), modgroundfire::scatterRadius(*psStats));
+		// (Wunsch 19.11. 20:14 "Flaechenbombardement"): Panzer im Steilfeuermodus streuen mit der Entfernung breiter (nah 2,5 Felder, bei
+		// voller Reichweite gut 7 Felder)
+		const int scatter = modgroundfire::scatterRadius(*psStats) + (modarty::isArtyWeapon(psWeap->nStat) ? dist / 20 : 0);
+		const Vector2i hitPoint = modgroundfire::scatterPoint(psTarget->pos.xy(), scatter);
 		predict = Vector3i(hitPoint.x, hitPoint.y, 0);
 		CLIP(predict.x, 0, world_coord(gameWorld.map.width - 1));
 		CLIP(predict.y, 0, world_coord(gameWorld.map.height - 1));
