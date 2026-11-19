@@ -40,6 +40,7 @@
 #include "radar.h"
 #include "modcover.h"   // MOD 17.11.: Take cover
 #include "modmines.h"   // MOD 17.11.: Minen raeumen
+#include "modoil.h"     // MOD 19.11.: isInfantry (Minen raeumen im Gebiet)
 #include "order.h"
 #include "ordersource.h"
 #include "stats.h"
@@ -59,7 +60,7 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -88,8 +89,11 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Minefield", "Minefield: drag an area - builders lay hidden mines in it; they blow up enemy ground units that drive over them", "Minefield: drag the area (right click cancels)", 255, 90, 40, true },
 	// MOD (Wunsch 17.11. 18:37): Offensivlinie (rot) - wie die Verteidigungslinie, aber auf Angriff ausgerichtet
 	{ "Offense", "Offensive line: many combat units mass on the line in two ranks, ready to push forward (they pursue enemies); builders add only a few short trenches and MG posts", "Offense: drag the offensive line (right click cancels)", 240, 45, 45, false },
-	// MOD (Wunsch 17.11. 19:36): Faehigkeit der Infanterie - Minen raeumen (Sofort-Befehl)
-	{ "Clear mines", "Clear mines: the selected infantry (or all infantry) walks to the known enemy mines and disarms them (3 s each). Infantry spots mines within 2.5 tiles and does not set off anti-tank mines", "", 230, 200, 60, false },
+	// MOD (Wunsch 17.11. 19:36): Faehigkeit der Infanterie - Minen raeumen; (19.11. 17:34 "konnte keinen minenraeumkreis ziehen? der sollte
+	// auch funktionieren wenn es keine Minen dort gibt"): jetzt ein Gebiet - Raeumpanzer (Walze an) und Infanterie durchkaemmen es in Bahnen
+	{ "Clear mines", "Clear mines: drag a circle - mine flails (drum on) and infantry sweep the whole area lane by lane, also where no mines are known. Infantry spots mines within 2.5 tiles, disarms them (3 s each) and does not set off anti-tank mines; flails beat them off ahead", "Clear mines: drag a circle around the area to sweep (right click cancels)", 230, 200, 60, true },
+	// MOD (Wunsch 19.11. 17:34 "Neue kreis ziehen = demolish alles in diesem Gebiet")
+	{ "Demolish", "Demolish: drag a circle - builders tear down all your own structures in it (nearest first, spread over all builders)", "Demolish: drag a circle around what should be torn down (right click cancels)", 200, 90, 60, true },
 };
 
 constexpr int BTN_W = 66;
@@ -174,14 +178,6 @@ void ensureScreen()
 		b->UserData = static_cast<UDWORD>(m);
 		b->setTip(kModes[m].tip);
 		b->addOnClickHandler([m](W_BUTTON &) { widgScheduleTask([m]() {
-			if (m == M_CLEARMINES)
-			{
-				if (selectedPlayer < MAX_PLAYERS) { modmines::clearMines(selectedPlayer); }
-				s_mode = -1;
-				s_drawing = false;
-				s_cur.clear();
-				return;
-			}
 			if (m == M_COVER)
 			{
 				// MOD (Wunsch 17.11.): Sofort-Befehl "Take cover" - Infanterie bemannt Graeben/Gruben/Haeuser in der Naehe
@@ -359,7 +355,8 @@ Vector2i spread(const Vector2i &c, size_t i)
 // ------------------------------------------------------------------------------------------------- Einheiten-Klassen
 
 bool isAir(const DROID *d) { return d->isVtol() || modlayer::isFlier(d); }
-bool isTruck(const DROID *d) { return d->droidType == DROID_CONSTRUCT || d->droidType == DROID_CYBORG_CONSTRUCT; }
+// (19.11.) Pickups/Oeltanker sind DROID_CONSTRUCT, bauen aber nicht (DROID::isConstructionDroid) - nie als Bauer einplanen
+bool isTruck(const DROID *d) { return (d->droidType == DROID_CONSTRUCT || d->droidType == DROID_CYBORG_CONSTRUCT) && d->isConstructionDroid(); }
 bool hasWeapon(const DROID *d) { return d->numWeaps > 0 && d->asWeaps[0].nStat > 0; }
 bool isArty(const DROID *d)
 {
@@ -389,6 +386,8 @@ bool fits(Mode m, const DROID *d)
 	case M_TRAPS:
 	case M_MINES: return isBuilder(d);
 	case M_OFFENSE: return isCombat(d) || isBuilder(d) || modcombot::isModular(d);
+	case M_CLEARMINES: return (modmines::isFlail(d) || modoil::isInfantry(d)) && !isAir(d);
+	case M_DEMOLISH: return isBuilder(d);
 	default: return false;
 	}
 }
@@ -753,6 +752,129 @@ void planTick()
 		}
 		++it;
 	}
+}
+
+// MOD (19.11. 17:34): Minen raeumen im Gebiet. Jede Einheit faehrt/laeuft ihre Bahnen (Wegpunkte) ab, einer nach dem anderen. Infanterie
+// sieht eine feindliche Mine (2,5 Felder), geht hin und bleibt stehen, bis sie entschaerft ist (modmines: 3 s), dann geht es weiter.
+// Raeumpanzer fahren mit drehender Walze. Ein eigener Spielerbefehl (modcontrol) beendet den Auftrag der Einheit.
+struct SweepJob
+{
+	std::vector<Vector2i> wp;
+	size_t idx = 0;
+	uint32_t mine = 0;          // Infanterie: gerade angesteuerte Mine
+	unsigned lastSend = 0;
+	bool flail = false;
+};
+std::map<uint32_t, SweepJob> s_sweep;
+unsigned s_nextSweep = 0;
+
+bool insidePoly(const std::vector<Vector2i> &poly, int64_t x, int64_t y);
+
+const STRUCTURE *enemyMineNear(const DROID *d, int r, const std::map<uint32_t, SweepJob> &jobs)
+{
+	static int s_mineIdx = -2;
+	if (s_mineIdx == -2) { s_mineIdx = getStructStatFromName(WzString::fromUtf8("A0Mine")); }
+	if (s_mineIdx < 0) { return nullptr; }
+	const STRUCTURE_STATS *ms = &asStructureStats[s_mineIdx];
+	const STRUCTURE *best = nullptr;
+	int64_t bestD = static_cast<int64_t>(r) * r;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		if (p == d->player || aiCheckAlliances(p, d->player)) { continue; }
+		for (const STRUCTURE *st : gameWorld.objects.structures[p])
+		{
+			if (st == nullptr || st->died || st->pStructureType != ms || st->visible[d->player] == 0) { continue; }
+			const int64_t dd = dist2(d->pos.xy(), st->pos.xy());
+			if (dd >= bestD) { continue; }
+			bool taken = false;
+			for (const auto &kv : jobs) { if (kv.first != d->id && kv.second.mine == st->id) { taken = true; break; } }
+			if (!taken) { best = st; bestD = dd; }
+		}
+	}
+	return best;
+}
+
+void sweepTick()
+{
+	if (s_sweep.empty() || gameTime < s_nextSweep || selectedPlayer >= MAX_PLAYERS) { return; }
+	s_nextSweep = gameTime + 400;
+	const int64_t reach2 = static_cast<int64_t>(DIST_TILE * 6 / 5) * (DIST_TILE * 6 / 5);
+	for (auto it = s_sweep.begin(); it != s_sweep.end();)
+	{
+		DROID *d = IdToDroid(gameWorld.objects, it->first, selectedPlayer);
+		SweepJob &j = it->second;
+		if (d == nullptr || d->died || modcontrol::manual(d)) { it = s_sweep.erase(it); continue; }
+		// Infanterie: entdeckte Mine zuerst
+		if (!j.flail)
+		{
+			if (j.mine != 0)
+			{
+				const STRUCTURE *ms = IdToStruct(j.mine, ANYPLAYER);
+				if (ms == nullptr || ms->died) { j.mine = 0; j.lastSend = 0; }
+				else { ++it; continue; }   // steht an der Mine und entschaerft
+			}
+			if (const STRUCTURE *mine = enemyMineNear(d, DIST_TILE * 5 / 2, s_sweep))
+			{
+				j.mine = mine->id;
+				send(d, DroidOrder(DORDER_MOVE, mine->pos.xy()), false);
+				++it;
+				continue;
+			}
+		}
+		while (j.idx < j.wp.size() && dist2(d->pos.xy(), j.wp[j.idx]) <= reach2) { ++j.idx; j.lastSend = 0; }
+		if (j.idx >= j.wp.size())
+		{
+			if (j.flail && modmines::flailing(d)) { secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_NONE); }
+			it = s_sweep.erase(it);
+			if (s_sweep.empty()) { addConsoleMessage(_("Mine sweep finished"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+			continue;
+		}
+		// naechsten Wegpunkt ansteuern (neu senden, wenn die Einheit steht, oder alle 8 s als Sicherheit)
+		if (j.lastSend == 0 || (d->order.type == DORDER_NONE && gameTime - j.lastSend > 1500) || gameTime - j.lastSend > 8000)
+		{
+			send(d, DroidOrder(DORDER_MOVE, j.wp[j.idx]), false);
+			j.lastSend = gameTime;
+		}
+		++it;
+	}
+}
+
+/// Bahnen durch die Flaeche (hin und her, Abstand `lane`), nur Punkte im Gebiet; Bahnen reihum auf `n` Einheiten verteilt
+std::vector<std::vector<Vector2i>> sweepLanes(const std::vector<Vector2i> &poly, int lane, size_t n)
+{
+	std::vector<std::vector<Vector2i>> out(std::max<size_t>(1, n));
+	int x0 = INT32_MAX, y0 = INT32_MAX, x1 = INT32_MIN, y1 = INT32_MIN;
+	for (const Vector2i &p : poly) { x0 = std::min(x0, p.x); y0 = std::min(y0, p.y); x1 = std::max(x1, p.x); y1 = std::max(y1, p.y); }
+	if (x1 <= x0 || y1 <= y0) { return out; }
+	const bool alongX = (x1 - x0) >= (y1 - y0);   // Bahnen laengs der laengeren Seite
+	const int a0 = alongX ? y0 : x0, a1 = alongX ? y1 : x1;    // quer
+	const int b0 = alongX ? x0 : y0, b1 = alongX ? x1 : y1;    // laengs
+	std::vector<std::vector<Vector2i>> lanes;
+	for (int a = a0 + lane / 2; a <= a1; a += lane)
+	{
+		std::vector<Vector2i> ln;
+		for (int b = b0; b <= b1; b += DIST_TILE)
+		{
+			const int x = alongX ? b : a, y = alongX ? a : b;
+			if (insidePoly(poly, x, y)) { ln.emplace_back(x, y); }
+		}
+		if (ln.empty()) { continue; }
+		// nur Anfang und Ende jeder Bahn (gerade Strecke), lange Bahnen in Stuecken von 6 Feldern (Wegsuche bleibt kurz)
+		std::vector<Vector2i> pts;
+		for (size_t k = 0; k < ln.size(); k += 6) { pts.push_back(ln[k]); }
+		if (pts.back() != ln.back()) { pts.push_back(ln.back()); }
+		if (lanes.size() % 2 == 1) { std::reverse(pts.begin(), pts.end()); }
+		lanes.push_back(pts);
+	}
+	if (lanes.empty()) { out[0].push_back(centroid(poly)); return out; }
+	// zusammenhaengende Bahnbloecke je Einheit (kurze Wege zwischen den Bahnen)
+	const size_t per = (lanes.size() + out.size() - 1) / out.size();
+	for (size_t i = 0; i < lanes.size(); ++i)
+	{
+		auto &dst = out[std::min(out.size() - 1, i / std::max<size_t>(1, per))];
+		dst.insert(dst.end(), lanes[i].begin(), lanes[i].end());
+	}
+	return out;
 }
 
 void opTick()
@@ -1146,6 +1268,68 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 			send(units[i], DroidOrder(units[i]->isVtol() ? DORDER_PATROL : DORDER_SCOUT, spread(c, i)), false);
 		}
 		break;
+	case M_CLEARMINES:
+	{
+		// Raeumpanzer: Walze an, Bahnen im Abstand von 1,5 Feldern (die Walze erfasst gut 1,5 Felder vor dem Bug);
+		// Infanterie: Bahnen im Abstand von 4 Feldern (sie sieht Minen 2,5 Felder weit)
+		std::vector<DROID *> flails, crew;
+		for (DROID *d : units) { (modmines::isFlail(d) ? flails : crew).push_back(d); }
+		for (DROID *d : units) { s_sweep.erase(d->id); }
+		const auto give = [](std::vector<DROID *> &grp, const std::vector<std::vector<Vector2i>> &lanes, bool flail) {
+			// jedem Bahnblock die naechste Einheit
+			std::vector<bool> used(grp.size(), false);
+			for (const auto &ln : lanes)
+			{
+				if (ln.empty()) { continue; }
+				int best = -1; int64_t bd = INT64_MAX;
+				for (size_t i = 0; i < grp.size(); ++i) { if (!used[i]) { const int64_t dd = dist2(grp[i]->pos.xy(), ln.front()); if (dd < bd) { bd = dd; best = static_cast<int>(i); } } }
+				if (best < 0) { break; }
+				used[static_cast<size_t>(best)] = true;
+				DROID *d = grp[static_cast<size_t>(best)];
+				SweepJob j; j.wp = ln; j.flail = flail;
+				s_sweep[d->id] = j;
+				if (flail && !modmines::flailing(d)) { secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_MINECLEAR_SET); }
+			}
+		};
+		if (!flails.empty()) { give(flails, sweepLanes(raw, DIST_TILE * 3 / 2, flails.size()), true); }
+		if (!crew.empty()) { give(crew, sweepLanes(raw, DIST_TILE * 4, std::min<size_t>(crew.size(), 12)), false); }
+		s_nextSweep = 0;
+		addConsoleMessage(_("Mine sweep: the area is combed lane by lane"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		break;
+	}
+	case M_DEMOLISH:
+	{
+		// eigene Bauwerke im Gebiet; jeder Bauer nimmt reihum das naechstgelegene noch freie Bauwerk (Kette), erster Befehl ersetzt
+		std::vector<STRUCTURE *> todo;
+		const modlayer::Layer view = modlayer::current();
+		for (STRUCTURE *st : gameWorld.objects.structures[selectedPlayer])
+		{
+			if (st == nullptr || st->died || modlayer::layerOf(st) != view) { continue; }
+			if (insidePoly(raw, st->pos.x, st->pos.y)) { todo.push_back(st); }
+		}
+		if (todo.empty()) { addConsoleMessage(_("Demolish: none of your structures in this area"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); break; }
+		std::vector<Vector2i> at;
+		for (DROID *d : units) { at.push_back(d->pos.xy()); }
+		std::vector<bool> done(todo.size(), false);
+		std::vector<int> count(units.size(), 0);
+		size_t left = todo.size();
+		while (left > 0)
+		{
+			for (size_t u = 0; u < units.size() && left > 0; ++u)
+			{
+				int best = -1; int64_t bd = INT64_MAX;
+				for (size_t i = 0; i < todo.size(); ++i) { if (!done[i]) { const int64_t dd = dist2(at[u], todo[i]->pos.xy()); if (dd < bd) { bd = dd; best = static_cast<int>(i); } } }
+				if (best < 0) { left = 0; break; }
+				done[static_cast<size_t>(best)] = true; --left;
+				STRUCTURE *st = todo[static_cast<size_t>(best)];
+				send(units[u], DroidOrder(DORDER_DEMOLISH, st), count[u] > 0);
+				++count[u];
+				at[u] = st->pos.xy();
+			}
+		}
+		addConsoleMessage(_("Demolish: builders tear down the structures in the area"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		break;
+	}
 	case M_COMBOT:
 	{
 		// zum Gebiet vorruecken, dann zwischen zwei entfernten Punkten des Gebiets patrouillieren
@@ -1444,7 +1628,7 @@ void tick()
 	// (17.11. 14:14) Mod-Rosette: der Schlachtplan-Knopf blendet die Leiste ein/aus; "Infantry: build" liegt jetzt in der Rosette
 	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS && modrosette::planOpen() && intMode != INT_DESIGN;
 	infButtonTick(false);
-	if (!want && !s_screen) { opTick(); planTick(); faceTick(); return; }
+	if (!want && !s_screen) { opTick(); planTick(); faceTick(); sweepTick(); return; }
 	ensureScreen();
 	if (!s_root) { return; }
 	s_root->show(want);
@@ -1454,6 +1638,7 @@ void tick()
 	opTick();   // Bergetrupp (laeuft auch, wenn die Knoepfe verborgen sind)
 	planTick(); // Oberbefehle wieder aufnehmen
 	faceTick(); // Verteidigungslinie: am Platz zur Feindseite drehen
+	sweepTick(); // Minen raeumen im Gebiet
 	// alte Zeichnungen entfernen
 	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [](const Stroke &st) { return realTime - st.born > SHOW_MS; }), s_done.end());
 }
@@ -1610,6 +1795,7 @@ void shutdown()
 	s_append = false;
 	s_op = SalvageOp();
 	s_plan.clear();
+	s_sweep.clear();
 	s_nextPlanCheck = 0;
 }
 }
