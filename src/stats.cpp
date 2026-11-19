@@ -719,6 +719,8 @@ bool loadBodyStats(WzConfig &ini)
 		psStats->mobileFactory = ini.value("mobileFactory", "").toWzString();   // MOD (18.11.): fahrende Fabrik (Fatboy)
 		psStats->collisionRadius = std::clamp(ini.value("collisionRadius", 0).toInt(), 0, 512);   // MOD (18.11.)
 		psStats->gaitStride = std::clamp(ini.value("gaitStride", 0).toInt(), 0, 4096);   // MOD (19.11.): Fuesse bleiben beim Laufen am Boden
+		psStats->gaitRunStride = std::clamp(ini.value("gaitRunStride", 0).toInt(), 0, 4096);   // MOD (19.11. 22:33): Rennen
+		psStats->gaitBlends = std::clamp(ini.value("gaitBlends", 1).toInt(), 1, 16);
 		if (ini.contains("headlight"))   // MOD (18.11.): Scheinwerfer (modheadlights)
 		{
 			const nlohmann::json hl = ini.json("headlight");

@@ -543,6 +543,8 @@ struct BODY_STATS : public COMPONENT_STATS
 	WzString mobileFactory;         ///< MOD (18.11.): fahrende Fabrik (Fatboy) - ID des Fabrik-Kerns (structure.json, "mobileFactoryCore": 1)
 	int collisionRadius = 0;        ///< MOD (18.11.): Ausweichradius fuer sehr grosse Rumpfe (0 = wie bisher)
 	int gaitStride = 0;             ///< MOD (19.11.): Laufanimation folgt der zurueckgelegten Strecke - Weg je Schrittzyklus (0 = nach Zeit wie bisher)
+	int gaitRunStride = 0;          ///< MOD (19.11. 22:33): Weg je Zyklus beim Rennen (0 = wie gaitStride)
+	int gaitBlends = 1;             ///< MOD (19.11. 22:33): Stufen Gehen->Rennen in der Lauf-Animation (je Stufe gleich viele Bilder hintereinander)
 	bool hasHeadlight = false;      ///< MOD (18.11.): Scheinwerfer-Position aus body.json ("headlight": [x, y, z], Modell; links = -x gespiegelt)
 	float headlight[3] = {0.f, 0.f, 0.f};
 

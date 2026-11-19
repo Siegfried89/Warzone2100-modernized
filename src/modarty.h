@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Artillerie-Modus fuer Panzer und Laeufer mit normalen Kanonen (Wunsch 14.11., Punkt 21); seit 19.11. 22:04 auch Battle Mechs.
+// MOD: Artillerie-Modus fuer Panzer und Laeufer mit normalen Kanonen (Wunsch 14.11., Punkt 21); seit 19.11. 22:04 auch Battle Mechs,
+// seit 22:33 fuer alle bodengebundenen Einheiten mit Waffe (Reichweite im Mod: Grundreichweite x Prozentsatz der Panzer-Kanone).
 //  - Neuer Knopf im Befehlsmenue (Zweitbefehl DSO_ARTILLERY). Eingeschaltet richtet der Panzer das Rohr steil auf wie ein
 //    Artilleriepanzer und schiesst im Bogen (indirekt) mit groesserer Reichweite, langsamerer Feuerfolge und mehr Streuung.
 //    Die Geschosse sind die normalen, sichtbaren WZ-Kanonengeschosse; der Rueckstoss (modrecoil) bleibt.
