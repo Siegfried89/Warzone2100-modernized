@@ -577,11 +577,25 @@ static bool OverRadarAndNotDragging()
 	return isMouseOverRadar() && dragBox3D.status != DRAG_DRAGGING && wallDrag.status != DRAG_DRAGGING;
 }
 
+static int s_modTinyDragClicks = 0;   // MOD: Zaehler fuer die Klick-Diagnose
+
 static void CheckFinishedDrag(SELECTION_TYPE selection)
 {
 	if (mouseReleased(MOUSE_LMB) || mouseDown(MOUSE_RMB))
 	{
 		selectAttempt = false;
+		// MOD (Wunsch 19.11. 23:59 "es gibt manchmal Geisterklicks"): zittert die Maus beim Klicken nur ein paar Bildpunkte (ab 6 Punkten
+		// zaehlt WZ das schon als Ziehen), wurde aus dem Klick ein winziger Auswahlrahmen - der traf die Einheit unter der Maus meist
+		// nicht (ihr Mittelpunkt lag ausserhalb), die alte Auswahl war trotzdem weg: "Klick ohne Wirkung". Ein Rahmen kleiner als
+		// 14 x 14 Punkte gilt jetzt als normaler Klick.
+		if (dragBox3D.status == DRAG_DRAGGING && mouseReleased(MOUSE_LMB) && wallDrag.status == DRAG_INACTIVE
+		    && std::abs(static_cast<int>(mouseX()) - static_cast<int>(dragBox3D.x1)) < 14
+		    && std::abs(static_cast<int>(mouseY()) - static_cast<int>(dragBox3D.y1)) < 14)
+		{
+			dragBox3D.status = DRAG_INACTIVE;
+			s_modTinyDragClicks++;
+			return;
+		}
 		if (dragBox3D.status == DRAG_DRAGGING)
 		{
 			if (wallDrag.status == DRAG_DRAGGING)
@@ -996,7 +1010,7 @@ void processMouseClickInput()
 	// im Log (Ordner logs). Reine Anzeige-/Protokoll-Zeile, aendert nichts am Ablauf.
 	{
 		static int s_modClickLog = 0;
-		if (mouseReleased(MOUSE_LMB) && s_modClickLog < 40)
+		if (mouseReleased(MOUSE_LMB) && s_modClickLog < 150)
 		{
 			++s_modClickLog;
 			BASE_OBJECT *psDiag = mouseTarget();
@@ -1009,12 +1023,34 @@ void processMouseClickInput()
 					else if (DrawnInLastFrame(d->sDisplay.frameNumber)) { ++ownDrawn; }
 				}
 			}
-			debug(LOG_INFO, "MOD-Klick %d: Maus %d/%d Feld %d/%d, Ueberlagerung=%d Radar=%d Ziehen=%d Bauort=%d Konsole=%d, Ebene=%d, "
-			      "eigene Einheiten gezeichnet=%d verborgen=%d, Ziel=%s (Spieler %d)",
-			      s_modClickLog, mouseX(), mouseY(), mouseTileX, mouseTileY, isMouseOverScreenOverlayChild(mouseX(), mouseY()) ? 1 : 0,
-			      OverRadar ? 1 : 0, static_cast<int>(dragBox3D.status), ignoreOrder ? 1 : 0, mouseOverConsole ? 1 : 0,
-			      static_cast<int>(modlayer::current()), ownDrawn, ownHidden,
-			      psDiag ? objInfo(psDiag) : "nichts", psDiag ? static_cast<int>(psDiag->player) : -1);
+			// (20.11.) mehr Angaben: Bildgroesse, Rahmengroesse beim Ziehen, Fenster unter der Maus, Zahl gewaehlter Einheiten, und welche
+			// eigene Einheit der Maus am naechsten war (Abstand zum Mittelpunkt und Trefferradius) - so laesst sich ein Fehlklick erklaeren
+			const DROID *psNear = nullptr; int nearD = 1 << 30;
+			int nSel = 0;
+			if (selectedPlayer < MAX_PLAYERS)
+			{
+				for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
+				{
+					if (d->selected) { ++nSel; }
+					if (!d->visibleForLocalDisplay() || !DrawnInLastFrame(d->sDisplay.frameNumber)) { continue; }
+					const int dx = static_cast<int>(d->sDisplay.screenX) - mouseX(), dy = static_cast<int>(d->sDisplay.screenY) - mouseY();
+					const int dd = dx * dx + dy * dy;
+					if (dd < nearD) { nearD = dd; psNear = d; }
+				}
+			}
+			auto overScreen = widgGetMouseOverScreen();
+			const std::string diagName = psDiag ? std::string(objInfo(psDiag)) : std::string("nichts");   // objInfo hat nur einen Puffer
+			debug(LOG_INFO, "MOD-Klick %d: Maus %d/%d (Bild %dx%d) Feld %d/%d, Ueberlagerung=%d Fenster=%s Radar=%d Ziehen=%d (Rahmen %dx%d, Kleinklicks %d) Bauort=%d Konsole=%d, Ebene=%d, "
+			      "eigene Einheiten gezeichnet=%d verborgen=%d gewaehlt=%d, Ziel=%s (Spieler %d), naechste eigene=%s Abstand %d Radius %d",
+			      s_modClickLog, mouseX(), mouseY(), static_cast<int>(screenWidth), static_cast<int>(screenHeight), mouseTileX, mouseTileY,
+			      isMouseOverScreenOverlayChild(mouseX(), mouseY()) ? 1 : 0, overScreen ? (overScreen == psWScreen ? "Haupt" : "Ueberlagerung") : "keins",
+			      OverRadar ? 1 : 0, static_cast<int>(dragBox3D.status),
+			      std::abs(static_cast<int>(dragBox3D.x2) - static_cast<int>(dragBox3D.x1)), std::abs(static_cast<int>(dragBox3D.y2) - static_cast<int>(dragBox3D.y1)), s_modTinyDragClicks,
+			      ignoreOrder ? 1 : 0, mouseOverConsole ? 1 : 0,
+			      static_cast<int>(modlayer::current()), ownDrawn, ownHidden, nSel,
+			      diagName.c_str(), psDiag ? static_cast<int>(psDiag->player) : -1,
+			      psNear ? objInfo(psNear) : "-", psNear ? static_cast<int>(std::sqrt(static_cast<double>(nearD))) : -1,
+			      psNear ? std::max(static_cast<int>(psNear->sDisplay.screenR), psNear->sDisplay.modPickR) : -1);
 		}
 	}
 
