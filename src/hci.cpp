@@ -92,6 +92,7 @@
 #include "modnuke.h"
 #include "modicbm.h"
 #include "modsat.h"
+#include "modrailbeam.h"
 #include "modmines.h"
 #include "modbigmap.h"
 #include "modfuel.h"
@@ -800,6 +801,7 @@ void interfaceShutDown()
 	modnuke::reset();        // MOD (17.11. 21:13): Atomkraftwerk
 	modicbm::reset();        // MOD (18.11.): Atomraketen-Silo
 	modsat::reset();         // MOD (17.11. 21:34): Lasersatelliten
+	modrailbeam::reset();    // MOD (19.11.): Railgun-Strahlen
 	modconcrete::reset();    // MOD: Betonboden unter Gebaeuden
 	modweather::reset();     // MOD
 	modinvade::reset();

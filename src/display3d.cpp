@@ -109,6 +109,7 @@
 #include "modnuke.h"
 #include "modicbm.h"
 #include "modsat.h"
+#include "modrailbeam.h"
 #include "modmines.h"
 #include "modtactical.h"
 #include "modbigmap.h"
@@ -1560,6 +1561,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	modheadlights::draw3D(viewMatrix);   // MOD (18.11. 17:09): Scheinwerfer an allen Bodenfahrzeugen bei Nacht
 	modsat::draw3D(viewMatrix);      // MOD (17.11. 21:34): Satelliten-Start von der Orbit-Insel, Satelliten am Orbit-Himmel
 	modnuke::draw3D(viewMatrix);     // MOD (17.11. 21:13): Dampf ueber den Kuehltuermen laufender Atomkraftwerke
+	modrailbeam::draw3D(viewMatrix); // MOD (19.11.): blaue Railgun-Strahlen (Zone Trooper, Kommando)
 	modicbm::draw3D(viewMatrix);     // MOD (18.11.): Atomrakete im Flug, Atompilz
 	modshield::draw3D(viewMatrix);   // MOD (18.11.): Schildkuppeln, Einschlag-Aufblitzen
 	modtracks::draw3D(viewMatrix);   // MOD (18.11.): Fahrspuren
