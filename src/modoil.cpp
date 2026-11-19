@@ -919,6 +919,7 @@ void logistics()
 				for (STRUCTURE *r : sn.refs)
 				{
 					if (s_refIn[r->id] >= REF_CAP) { continue; }
+					if (modgrid::isPoweredDown(r)) { continue; }   // (19.11.) ohne Strom kein Veredeln: Fass lieber ins Kraftwerk
 					if (!shares(rd, touch(r->pos.x, r->pos.y))) { continue; }
 					const int64_t dd = d2(r->pos.x, r->pos.y, der->pos.x, der->pos.y);
 					if (dd < bd) { bd = dd; br = r; }
@@ -1108,6 +1109,26 @@ void logistics()
 					}
 					if (bs != nullptr) { go(2, 4, bs->id, bs->pos.x, bs->pos.y); continue; }
 				}
+				// (Wunsch 19.11. 16:44 "Ich dachte es hatte alles gebaut, es tat sich aber nichts"): Vorrang hat ein Kraftwerk, dem das Oel
+				// ausgeht - sonst fuellten die Lkw erst die Raffinerie (10 Faesser), das Kraftwerk lief leer, das Netz fiel aus und die
+				// Raffinerie stand ohne Strom still: es kam nie Energie an.
+				{
+					STRUCTURE *hungry = nullptr;
+					int64_t hd = INT64_MAX;
+					for (STRUCTURE *g : activeGens)
+					{
+						if (s_fuel[g->id] > 2 * PULL_BELOW) { continue; }
+						bool stocked = false;   // Lager in der Naehe mit Faessern versorgt es selbst
+						for (BASE_OBJECT *t : towers)
+						{
+							if (s_store[t->id] + s_storeR[t->id] > 0 && d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y) <= SR2) { stocked = true; break; }
+						}
+						if (stocked) { continue; }
+						const int64_t dd = d2(d->pos.x, d->pos.y, g->pos.x, g->pos.y);
+						if (dd < hd) { hd = dd; hungry = g; }
+					}
+					if (hungry != nullptr) { go(2, 0, hungry->id, hungry->pos.x, hungry->pos.y); continue; }
+				}
 				if (!c.tank)
 				{
 					STRUCTURE *br = nullptr;
@@ -1115,6 +1136,7 @@ void logistics()
 					for (STRUCTURE *r : sn.refs)
 					{
 						if (s_refIn[r->id] >= REF_CAP) { continue; }
+						if (modgrid::isPoweredDown(r)) { continue; }   // (19.11.) ohne Strom veredelt sie nicht
 						const int64_t dd = d2(d->pos.x, d->pos.y, r->pos.x, r->pos.y);
 						if (dd < bd) { bd = dd; br = r; }
 					}
@@ -1258,6 +1280,7 @@ void ledgerReport()
 		const int64_t delta = now - s_ledgerPower[p];
 		const int64_t known = s_ledger[p][INC_BARRELS] + s_ledger[p][INC_SOLAR] + s_ledger[p][INC_LAVA] + s_ledger[p][INC_SALVAGE] + s_ledger[p][INC_NUCLEAR];
 		int derricks = 0, linked = 0, barrels = 0, gens = 0, fuelled = 0, standby = 0, refs = 0, trucks = 0, tankers = 0, nukes = 0, nukesOn = 0;
+		int refIn = 0, refOut = 0, refsDown = 0;   // (19.11.) genauere Angaben zur Fehlersuche
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->died || s->status != SS_BUILT) { continue; }
@@ -1275,18 +1298,28 @@ void ledgerReport()
 				if (generatorRunning(s)) { fuelled++; }
 				if (modgrid::generatorStandby(s)) { standby++; }
 			}
-			else if (isRefinery(st)) { refs++; }
+			else if (isRefinery(st))
+			{
+				refs++;
+				refIn += s_refIn[s->id]; refOut += s_refOut[s->id];
+				if (modgrid::isPoweredDown(s)) { refsDown++; }
+			}
 			else if (modnuke::isPlant(st)) { nukes++; if (modnuke::running(s)) { nukesOn++; } }
 		}
+		int loaded = 0, driving = 0, waiting = 0;
 		for (const auto &kv : s_cargo)
 		{
 			if (kv.second.player != p) { continue; }
 			if (kv.second.tank) { tankers++; } else { trucks++; }
+			loaded += kv.second.n;
+			if (kv.second.mode != 0) { driving++; }
+			else if (kv.second.manualWait) { waiting++; }
 		}
-		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Faesser %lld, Solar %lld, Lava %lld, Bergung %lld, Atom %lld, sonstige %lld) | Fass-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (mit Brennstoff %d, Bereitschaft %d) | Raffinerien %d | Lkw %d, Tanker %d | Atomkraftwerke %d (laufend %d), Uran %d",
+		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Faesser %lld, Solar %lld, Lava %lld, Bergung %lld, Atom %lld, sonstige %lld) | Fass-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (mit Brennstoff %d, Bereitschaft %d) | Raffinerien %d (ohne Strom %d, Eingang %d, Ausgang %d) | Lkw %d, Tanker %d (unterwegs %d, wartend %d, geladen %d) | Atomkraftwerke %d (laufend %d), Uran %d",
 		      p, static_cast<long long>(now), static_cast<long long>(delta), static_cast<long long>(s_ledger[p][INC_BARRELS]), static_cast<long long>(s_ledger[p][INC_SOLAR]),
 		      static_cast<long long>(s_ledger[p][INC_LAVA]), static_cast<long long>(s_ledger[p][INC_SALVAGE]), static_cast<long long>(s_ledger[p][INC_NUCLEAR]), static_cast<long long>(delta - known),
-		      manages(p) ? "ja" : "NEIN", derricks, linked, barrels, gens, fuelled, standby, refs, trucks, tankers, nukes, nukesOn, modnuke::uranium(p));
+		      manages(p) ? "ja" : "NEIN", derricks, linked, barrels, gens, fuelled, standby, refs, refsDown, refIn, refOut, trucks, tankers, driving, waiting, loaded,
+		      nukes, nukesOn, modnuke::uranium(p));
 		s_ledgerPower[p] = now;
 		for (int k = 0; k < INC_COUNT; k++) { s_ledger[p][k] = 0; }
 	}

@@ -1037,7 +1037,9 @@ LoadingTask<> loadSaveGameResourceTaskImpl(ResourceLoadingController &controller
 	// devForceOldSavegameLoad config option (or the temporary --tmp-prefer-old-save CLI flag) forces the
 	// legacy loadGameInit even for a dual-written folder (its legacy .json files are present unless one could not be
 	// written); a folder without a blob always takes the legacy path.
-	if (!war_getDevForceOldSavegameLoad() && !gamestate::savegame::preferLegacyLoadOverride() && gamestate::savegame::isNewFormatSaveFolder(saveGameName))
+	// MOD (19.11.): nach einem Mod-Update (andere Pruefsumme) den namensbasierten klassischen Lader nehmen, wenn dessen Dateien da sind
+	const bool modChanged = gamestate::savegame::isNewFormatSaveFolder(saveGameName) && gamestate::savegame::savedModsDifferFromLoaded(saveGameName);
+	if (!war_getDevForceOldSavegameLoad() && !gamestate::savegame::preferLegacyLoadOverride() && gamestate::savegame::isNewFormatSaveFolder(saveGameName) && !modChanged)
 	{
 		if (!(co_await gamestate::savegame::coldLoadGameInit(controller, saveGameName))) {
 			co_return load_fail();

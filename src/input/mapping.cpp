@@ -439,6 +439,32 @@ bool KeyMappings::load(const char* path, const KeyFunctionConfiguration& keyFunc
 		add(KeyCombination(KEY_IGNORE, KeyMappingInput(key), action), *rot, KeyMappingSlot::SECONDARY);
 		bDirty = true;
 	};
+	// MOD (Wunsch 19.11. 16:44 "Zeit erhoehen und verringern Tasten funktionieren nicht richtig, ausserdem Doppelbelegung mit Zoom"):
+	// Ziffernblock + und - steuern jetzt nur die Zeit (+ schneller, - langsamer, * bleibt zusaetzlich "schneller"); Zoom liegt auf dem
+	// Mausrad und Bild auf/ab. Alte Belegungen von Ziffernblock +/-/* fuer Zoom werden entfernt, Bild auf wird "Zoom naeher".
+	bool zoomInKey = false;
+	for (auto it = keyMappings.begin(); it != keyMappings.end();)
+	{
+		const bool kp = (it->keys.input.is(KEY_KP_PLUS) || it->keys.input.is(KEY_KP_MINUS) || it->keys.input.is(KEY_KP_STAR)) && !it->hasMeta();
+		if (kp && (it->info.name == "ZoomIn" || it->info.name == "ZoomOut" || it->info.name == "RadarZoomIn" || it->info.name == "RadarZoomOut"))
+		{
+			it = keyMappings.erase(it);
+			bDirty = true;
+			continue;
+		}
+		if (it->info.name == "ZoomIn" && it->keys.input.is(KEY_PAGEUP)) { zoomInKey = true; }
+		++it;
+	}
+	if (!zoomInKey)
+	{
+		auto zi = keyFuncConfig.keyFunctionInfoByName("ZoomIn");
+		if (zi.has_value())
+		{
+			add(KeyCombination(KEY_IGNORE, KeyMappingInput(KEY_PAGEUP), KeyAction::DOWN), *zi, KeyMappingSlot::PRIMARY);
+			bDirty = true;
+		}
+	}
+	bindOnce(KEY_KP_PLUS, "ModTimeFaster", KeyAction::PRESSED);
 	bindOnce(KEY_Q, "RotateLeft");     // (18.11. 12:41) Q dreht nach links, E nach rechts
 	bindOnce(KEY_E, "RotateRight");
 	bindOnce(KEY_INSERT, "ToggleArtRevolution", KeyAction::PRESSED);   // (18.11.) AR-Grafik im Spiel umschalten

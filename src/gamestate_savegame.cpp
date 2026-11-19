@@ -1615,6 +1615,56 @@ bool isNewFormatSaveFolder(const std::string &folderPath)
 	return PHYSFS_exists(blobPath.c_str()) != 0;
 }
 
+// MOD (19.11. 16:44 "Failed to load a save game": research topic count mismatch): der GameState-Block speichert Forschung,
+// Freischaltungen und Bau-Grenzen nach LAGE in den Werte-Tabellen. Sobald der Mod neue Forschungen/Teile/Gebaeude bekommt,
+// verschiebt sich die Lage und der Block passt nicht mehr. Die klassischen Dateien im selben Ordner (resstate.json, complist.json,
+// strtype.json, templates.json ...) ordnen alles nach NAMEN zu und ueberstehen solche Updates. Deshalb: wurde der Spielstand mit
+// einer anderen Fassung eines geladenen Mods geschrieben (Pruefsumme in gamestate-info.json), den klassischen Lader nehmen.
+// Ohne Angabe oder ohne geladenen Mod gleichen Namens bleibt es beim GameState-Lader.
+bool savedModsDifferFromLoaded(const std::string &folderPath)
+{
+	const std::string infoPath = saveFolderPathFromName(folderPath) + "/gamestate-info.json";
+	if (!PHYSFS_exists(infoPath.c_str()))
+	{
+		return false;
+	}
+	std::vector<char> buf;
+	if (!loadFileToBufferVector(infoPath.c_str(), buf, false, false) || buf.empty())
+	{
+		return false;
+	}
+	try
+	{
+		const auto j = nlohmann::json::parse(buf.begin(), buf.end());
+		if (!j.contains("mods") || !j["mods"].is_array())
+		{
+			return false;
+		}
+		std::map<std::string, std::string> loaded;
+		for (const SavegameMod &m : collectLoadedMods())
+		{
+			loaded[m.name] = m.hash;
+		}
+		for (const auto &m : j["mods"])
+		{
+			const std::string name = m.value("name", std::string());
+			const std::string hash = m.value("hash", std::string());
+			const auto it = loaded.find(name);
+			if (!name.empty() && !hash.empty() && it != loaded.end() && !it->second.empty() && it->second != hash)
+			{
+				debug(LOG_INFO, "MOD: Spielstand '%s' stammt von einer anderen Fassung von %s - lade ihn mit dem namensbasierten Lader",
+				      folderPath.c_str(), name.c_str());
+				return true;
+			}
+		}
+	}
+	catch (const std::exception &e)
+	{
+		debug(LOG_WARNING, "MOD: gamestate-info.json nicht lesbar (%s)", e.what());
+	}
+	return false;
+}
+
 static bool g_preferLegacyLoadOverride = false;
 
 void setPreferLegacyLoadOverride(bool prefer)

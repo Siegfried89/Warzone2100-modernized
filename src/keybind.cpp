@@ -2564,7 +2564,7 @@ static void modSetTimeFactor(int percent)
 		}
 		return;
 	}
-	percent = std::clamp(percent, 0, 100);
+	percent = std::clamp(percent, 0, 300);
 	gameTimeSetMod(Rational(percent, 100));
 	if (percent == 0)
 	{
@@ -2576,17 +2576,31 @@ static void modSetTimeFactor(int percent)
 	}
 }
 
+// MOD (19.11.): ueber 100 % hinaus beschleunigen (Einzelspieler): 125, 150, 200, 300 %; darunter weiter in 10er-Schritten bis 0 %
+static const int kFastSteps[] = { 100, 125, 150, 200, 300 };
+
 void kf_ModTimeFaster()
 {
 	const int p = modTimeFactorPercent();
-	if (p >= 100) { CONPRINTF("%s", _("Time factor: 100 % (normal)")); return; }
-	modSetTimeFactor(((p / 10) + 1) * 10);
+	if (p < 100) { modSetTimeFactor(((p / 10) + 1) * 10); return; }
+	for (int s : kFastSteps)
+	{
+		if (s > p) { modSetTimeFactor(s); return; }
+	}
+	CONPRINTF(_("Time factor: %d %%"), p);   // schon am schnellsten
 }
 
 void kf_ModTimeSlower()
 {
 	const int p = modTimeFactorPercent();
 	if (p <= 0) { return; }
+	if (p > 100)
+	{
+		int best = 100;
+		for (int s : kFastSteps) { if (s < p) { best = s; } }
+		modSetTimeFactor(best);
+		return;
+	}
 	modSetTimeFactor(((p + 9) / 10 - 1) * 10);
 }
 
