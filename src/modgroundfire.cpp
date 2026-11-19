@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Boden beschiessen (siehe modgroundfire.h)
 
+#include "modicbm.h"
 #include "modgroundfire.h"
 
 #include "lib/framework/frame.h"
@@ -205,7 +206,7 @@ bool orderSelected(unsigned player, int worldX, int worldY)
 	bool any = false;
 	for (DROID *d : gameWorld.objects.droids[player])
 	{
-		if (d == nullptr || !d->selected || !canFireOnGround(d)) { continue; }
+		if (d == nullptr || !d->selected || (!canFireOnGround(d) && !modicbm::isTelDroid(d))) { continue; }   // (19.11.) Atomraketen-Werfer immer
 		// Ebenen: ausserhalb der Oberflaeche nur Ebenen-Sonderwaffen (Orbitalbombe, Tektonik-Torpedo); diese wirken nur in eine ANDERE Ebene
 		// als die eigene (Orbitalbombe aus dem Orbit auf die Oberflaeche, Torpedo von der Oberflaeche in den Untergrund)
 		const WEAPON_STATS *ws = d->getWeaponStats(0);

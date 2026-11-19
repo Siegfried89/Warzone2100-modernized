@@ -4,6 +4,7 @@
 
 #include "lib/framework/frame.h"
 #include "lib/framework/fixedpoint.h"
+#include "lib/framework/math_ext.h"
 #include "lib/framework/trig.h"
 #include "lib/gamelib/gtime.h"
 #include "lib/ivis_opengl/imd.h"
@@ -40,6 +41,8 @@
 
 #include "droid.h"
 #include "move.h"
+#include "action.h"
+#include "order.h"
 
 namespace modicbm
 {
@@ -328,6 +331,9 @@ struct Tel
 	float from = 0.f;    // Aufrichte-Stand beim Einfahren (abgebrochen: von dort zurueck)
 };
 std::unordered_map<uint32_t, Tel> s_tel;
+// (19.11. 20:38) Boden-Ziel, fuer das der Werfer erst in Reichweite faehrt: Einheit -> (Zielpunkt, Anfahrpunkt)
+struct TelPending { Vector2i target; Vector2i approach; };
+std::unordered_map<uint32_t, TelPending> s_telPending;
 constexpr UDWORD TEL_ERECT_MS = 8000;      // Stuetzen (erste 1,8 s), dann aufrichten, kurz stehen
 constexpr UDWORD TEL_LOWER_MS = 5000;      // leeren Aufrichter hinlegen, Stuetzen ein
 constexpr UDWORD TEL_RELOAD_MS = 360000;   // 6 min Nachladen
@@ -420,8 +426,62 @@ void telLaunch(DROID *d, Tel &t)
 	t.from = 1.f;
 }
 
+void telStartErect(DROID *d, const Vector2i &target)
+{
+	Tel t;
+	t.mode = TEL_ERECT;
+	t.since = gameTime;
+	t.target = Vector3i(target.x, target.y, map_Height(gameWorld.map, target.x, target.y));
+	s_tel[d->id] = t;
+}
+
+void tickTelPending()
+{
+	if (s_telPending.empty()) { return; }
+	for (auto it = s_telPending.begin(); it != s_telPending.end();)
+	{
+		DROID *d = nullptr;
+		for (unsigned p = 0; p < MAX_PLAYERS && d == nullptr; ++p)
+		{
+			for (DROID *c : gameWorld.objects.droids[p])
+			{
+				if (c->id == it->first) { d = c; break; }
+			}
+		}
+		if (d == nullptr || d->died)
+		{
+			it = s_telPending.erase(it);
+			continue;
+		}
+		const Vector2i target = it->second.target;
+		const bool movingThere = d->order.type == DORDER_MOVE && d->order.pos == it->second.approach;
+		const WEAPON_STATS *ws = d->getWeaponStats(0);
+		const int dist = iHypot(target - d->pos.xy());
+		const bool inRange = ws != nullptr && dist <= proj_GetLongRange(*ws, d->player) && dist >= proj_GetMinRange(*ws, d->player);
+		// angekommen (Fahrbefehl erledigt) oder unterwegs schon stehen geblieben und in Reichweite
+		const bool arrived = (d->order.type == DORDER_NONE || (movingThere && !telWantsMove(d))) && inRange;
+		if (arrived && s_tel.count(d->id) == 0)
+		{
+			it = s_telPending.erase(it);
+			d->order = DroidOrder(DORDER_NONE);
+			actionDroid(d, DACTION_NONE);
+			moveStopDroid(d);
+			telStartErect(d, target);
+			continue;
+		}
+		// abgebrochen: der Spieler hat etwas anderes befohlen, oder die Fahrt endete ausser Reichweite
+		if (!movingThere)
+		{
+			it = s_telPending.erase(it);
+			continue;
+		}
+		++it;
+	}
+}
+
 void tickTel()
 {
+	tickTelPending();
 	if (s_tel.empty()) { return; }
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
@@ -504,6 +564,53 @@ bool telIntercept(DROID *psDroid, const BASE_OBJECT *psTarget)
 	return true;
 }
 
+bool telGroundOrder(DROID *psDroid, const Vector2i &pos)
+{
+	if (!telStat(psDroid)) { return false; }
+	s_telPending.erase(psDroid->id);
+	const bool own = psDroid->player == selectedPlayer;
+	const WEAPON &w = psDroid->asWeaps[0];
+	if (w.lastFired != 0 && gameTime - w.lastFired < TEL_RELOAD_MS)
+	{
+		if (own)
+		{
+			const unsigned left = (TEL_RELOAD_MS - (gameTime - w.lastFired) + 59999u) / 60000u;
+			addConsoleMessage(astringf(_("Nuclear missile is being reloaded (about %u min)"), left).c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+		return true;
+	}
+	if (s_tel.count(psDroid->id) != 0) { return true; }   // richtet sich gerade auf / legt sich hin
+	const WEAPON_STATS *ws = psDroid->getWeaponStats(0);
+	const int range = std::max(256, proj_GetLongRange(*ws, psDroid->player));
+	const int minRange = proj_GetMinRange(*ws, psDroid->player);
+	const Vector2i d2 = pos - psDroid->pos.xy();
+	const int dist = iHypot(d2);
+	if (dist < minRange)
+	{
+		if (own) { addConsoleMessage(_("Target too close for the nuclear missile"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+		return true;
+	}
+	if (dist > range)
+	{
+		// erst in Reichweite fahren (knapp eine Kachel innerhalb), dort anhalten und starten
+		const int keep = range - TILE_UNITS;
+		Vector2i approach(pos.x - static_cast<int>(int64_t(d2.x) * keep / dist), pos.y - static_cast<int>(int64_t(d2.y) * keep / dist));
+		approach.x = clip(approach.x, TILE_UNITS, world_coord(gameWorld.map.width - 2));
+		approach.y = clip(approach.y, TILE_UNITS, world_coord(gameWorld.map.height - 2));
+		psDroid->order = DroidOrder(DORDER_MOVE, approach);
+		actionDroid(psDroid, DACTION_MOVE, approach.x, approach.y);
+		TelPending tp; tp.target = pos; tp.approach = approach;
+		s_telPending[psDroid->id] = tp;
+		return true;
+	}
+	// in Reichweite: anhalten, Stuetzen aus, aufrichten (tickTel startet nach TEL_ERECT_MS)
+	psDroid->order = DroidOrder(DORDER_NONE);
+	actionDroid(psDroid, DACTION_NONE);
+	moveStopDroid(psDroid);
+	telStartErect(psDroid, pos);
+	return true;
+}
+
 bool telHalted(const DROID *psDroid)
 {
 	return !s_tel.empty() && s_tel.count(psDroid->id) != 0;
@@ -550,7 +657,7 @@ bool drawTelJacks(const DROID *psDroid, const glm::mat4 &bodyMatrix, const glm::
 	}
 	if (s_cyl == nullptr || s_pis == nullptr || s_foot == nullptr) { return false; }
 	// vier senkrechte Stuetzen seitlich am Rahmen (vorn hinter dem Fuehrerhaus, hinten am Heck)
-	constexpr float X = 15.5f, TOP = 13.f, K = 1.5f, CYL = 8.5f;
+	constexpr float X = 19.f, TOP = 13.f, K = 1.5f, CYL = 8.5f;   // (19.11. 20:38) Fahrzeug breiter: halbe Breite 15 (vorher 11,5)
 	bool drew = false;
 	for (int sx = -1; sx <= 1; sx += 2)
 	{
