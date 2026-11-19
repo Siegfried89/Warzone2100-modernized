@@ -17,7 +17,10 @@
 #include "modlayer.h"
 #include "modlayerdig.h"
 #include "modlayermap.h"
+#include "modnuke.h"
 #include "modoil.h"
+#include "effects.h"
+#include "fpath.h"
 #include "multiplay.h"
 #include "order.h"
 #include "orderdef.h"
@@ -35,13 +38,19 @@ namespace modlava
 {
 namespace
 {
-constexpr int LAVA_MJ = 4000;              // Vorrat je Feld
-constexpr int MINE_RATE = 3;               // MJ je Sekunde je Hover-Truck
 constexpr int BASE_CAP = 4000;             // Grundobergrenze (MJ) mit Fass-Wirtschaft
 constexpr int REACH = 128 + 192;           // Abstand Truck - Feldmitte, ab dem geschuerft wird (halbes Feld + 1,5 Felder)
 constexpr int MIN_START_DIST = 12 * 128;   // Mindestabstand zu Gebaeuden bei der Verteilung
 
-std::map<uint32_t, int> s_left;            // Feld-Id -> Rest (MJ)
+std::map<uint32_t, int> s_left;            // Feld-Id -> Rest (MJ; seit 19.11. Uran-Einheiten)
+// (19.11.) Uran: Harvester (C&C3) schuerfen an den Lavafeldern im Untergrund
+constexpr int FIELD_URANIUM = 30;          // Uran-Einheiten je Lavafeld
+constexpr int HARVEST_SECONDS = 20;        // ein Harvester am Feld foerdert eine Einheit je 20 s
+constexpr unsigned SEEK_IDLE_MS = 4000;    // so lange untaetig, dann faehrt er von selbst zum naechsten erreichbaren Feld
+std::map<uint32_t, int> s_harvestSec;      // Harvester -> Sekunden seit der letzten Einheit
+std::map<uint32_t, unsigned> s_idleSince;  // Harvester -> Spielzeit, seit der er untaetig ist
+std::map<uint32_t, bool> s_hint;           // Hinweis "nur im Untergrund" je Harvester gegeben
+std::map<uint32_t, bool> s_shaftDone;      // Schacht -> eigenes Start-Lavafeld angelegt
 unsigned s_lastSec = 0;
 unsigned s_sec = 0;                        // Sekundenzaehler ("unter Tage nur jede vierte Sekunde")
 bool s_placed = false;
@@ -91,7 +100,7 @@ bool nearAnyStructure(GameWorld &world, int wx, int wy)
 	return false;
 }
 
-void placeFields(GameWorld &world)
+[[maybe_unused]] void placeFields(GameWorld &world)
 {
 	FEATURE_STATS *fs = lavaStats();
 	if (fs == nullptr) { return; }
@@ -116,6 +125,82 @@ void placeFields(GameWorld &world)
 
 // Untergrund-Haelfte der Lavafelder: wird erst beim ersten fertigen Schacht angelegt (vorher aendert sich im Spiel nichts, die Ebenen bleiben unbenutzt).
 // Die Felder liegen im Fels (nur dort, wo noch nichts gebohrt ist); erst ein angrenzender Gang macht sie sichtbar und erreichbar.
+// (19.11.) Lavafelder als Uranquelle im Untergrund: jedes Feld liegt in einer kleinen gebohrten Felstasche (4 x 4 Felder, MF: nur durch
+// Bohren erreichbar). Neben jedem fertigen Schacht entsteht ausserdem ein Start-Feld, mit einem gebohrten Gang an die Schachtkammer
+// angeschlossen - so kann der erste Harvester gleich loslegen. Alles ueber gameRand (alle Rechner gleich), Gaenge im Bohr-Protokoll
+// (Spielstand).
+bool rockBlock(const WorldMapState &m, int tx, int ty, int w, int h)
+{
+	for (int y = ty; y < ty + h; y++)
+	{
+		for (int x = tx; x < tx + w; x++)
+		{
+			const MAPTILE *t = mapTile(m, x, y);
+			if (t == nullptr || TileIsOccupied(t) || terrainType(t) != TER_CLIFFFACE) { return false; }
+		}
+	}
+	return true;
+}
+
+FEATURE *fieldInPocket(GameWorld &world, int tx, int ty, int player, int reveal)
+{
+	FEATURE_STATS *fs = lavaStats();
+	if (fs == nullptr) { return nullptr; }
+	for (int y = ty - 1; y <= ty + 2; y++)
+	{
+		for (int x = tx - 1; x <= tx + 2; x++) { modlayermap::drillTile(x, y, player, reveal); }
+	}
+	FEATURE *f = nullptr;
+	{
+		modlayermap::Scope sc(modlayer::UNDERGROUND);
+		f = buildFeature(world, fs, static_cast<UDWORD>(world_coord(tx + 1)), static_cast<UDWORD>(world_coord(ty + 1)), false);
+	}
+	if (f != nullptr) { modlayer::assignLayer(f, modlayer::UNDERGROUND); }
+	return f;
+}
+
+bool fieldNear(GameWorld &world, int wx, int wy, int radTiles)
+{
+	for (const FEATURE *f : world.objects.features[0])
+	{
+		if (f->died || !isLavaStats(f->psStats) || modlayer::layerOf(f) != modlayer::UNDERGROUND) { continue; }
+		const int64_t dx = f->pos.x - wx, dy = f->pos.y - wy;
+		if (dx * dx + dy * dy <= static_cast<int64_t>(world_coord(radTiles)) * world_coord(radTiles)) { return true; }
+	}
+	return false;
+}
+
+void starterField(GameWorld &world, const STRUCTURE *shaft)
+{
+	const int sx = map_coord(shaft->pos.x), sy = map_coord(shaft->pos.y);
+	const int w = world.map.width, h = world.map.height;
+	for (int attempt = 0; attempt < 60; attempt++)
+	{
+		const int ang = static_cast<int>(gameRand(360));
+		const int dist = 7 + static_cast<int>(gameRand(4));
+		const int tx = sx + static_cast<int>(std::lround(std::cos(ang * M_PI / 180.0) * dist)) - 1;
+		const int ty = sy + static_cast<int>(std::lround(std::sin(ang * M_PI / 180.0) * dist)) - 1;
+		if (tx < 6 || ty < 6 || tx > w - 8 || ty > h - 8) { continue; }
+		bool ok = false;
+		{
+			modlayermap::Scope sc(modlayer::UNDERGROUND);
+			ok = rockBlock(world.map, tx - 1, ty - 1, 4, 4);
+		}
+		if (!ok) { continue; }
+		// Gang von der Schachtkammer zur Tasche (1 Feld breit, gerade Linie)
+		const int ex = tx, ey = ty;
+		const int steps = std::max(std::abs(ex - sx), std::abs(ey - sy));
+		for (int k = 0; k <= steps; k++)
+		{
+			const int x = sx + (ex - sx) * k / std::max(1, steps);
+			const int y = sy + (ey - sy) * k / std::max(1, steps);
+			modlayermap::drillTile(x, y, shaft->player, 1);
+		}
+		fieldInPocket(world, tx, ty, shaft->player, 2);
+		return;
+	}
+}
+
 void placeUnderground(GameWorld &world)
 {
 	FEATURE_STATS *fs = lavaStats();
@@ -124,30 +209,20 @@ void placeUnderground(GameWorld &world)
 	if (w < 24 || h < 24) { return; }
 	const int wanted = std::clamp(w * h / 1500, 3, 40) / 2;
 	int placed = 0;
-	std::vector<FEATURE *> made;
+	for (int attempt = 0; attempt < wanted * 80 && placed < wanted; attempt++)
 	{
-		modlayermap::Scope sc(modlayer::UNDERGROUND);
-		for (int attempt = 0; attempt < wanted * 80 && placed < wanted; attempt++)
+		const int tx = 6 + static_cast<int>(gameRand(static_cast<uint32_t>(w - 12)));
+		const int ty = 6 + static_cast<int>(gameRand(static_cast<uint32_t>(h - 12)));
+		bool ok = false;
 		{
-			const int tx = 6 + static_cast<int>(gameRand(static_cast<uint32_t>(w - 12)));
-			const int ty = 6 + static_cast<int>(gameRand(static_cast<uint32_t>(h - 12)));
-			bool ok = true;
-			for (int y = ty; y < ty + 2 && ok; y++)
-			{
-				for (int x = tx; x < tx + 2 && ok; x++)
-				{
-					const MAPTILE *t = mapTile(world.map, x, y);
-					ok = t != nullptr && !TileIsOccupied(t) && terrainType(t) == TER_CLIFFFACE;   // massiver Fels
-				}
-			}
-			if (!ok) { continue; }
-			const int wx = world_coord(tx + 1), wy = world_coord(ty + 1);
-			if (nearAnyStructure(world, wx, wy)) { continue; }   // Aufzugskammern und Basen bleiben frei
-			FEATURE *f = buildFeature(world, fs, static_cast<UDWORD>(wx), static_cast<UDWORD>(wy), false);
-			if (f != nullptr) { made.push_back(f); placed++; }
+			modlayermap::Scope sc(modlayer::UNDERGROUND);
+			ok = rockBlock(world.map, tx - 1, ty - 1, 4, 4);
 		}
+		if (!ok) { continue; }
+		const int wx = world_coord(tx + 1), wy = world_coord(ty + 1);
+		if (nearAnyStructure(world, wx, wy) || fieldNear(world, wx, wy, 6)) { continue; }   // Aufzugskammern und Basen bleiben frei
+		if (fieldInPocket(world, tx, ty, -1, 0) != nullptr) { placed++; }
 	}
-	for (FEATURE *f : made) { modlayer::assignLayer(f, modlayer::UNDERGROUND); }
 }
 
 // (16.11. 19:37) Landfill-Kulissen (Mauerring mit Schrotthaufen und Autowracks, Mod-Features Landfill4/6/9) auf jeder Karte:
@@ -304,9 +379,10 @@ bool isLava(const BASE_OBJECT *psObj)
 
 bool isMiner(const DROID *d)
 {
-	if (d == nullptr || d->died || !d->isConstructionDroid() || modbuild::isInfantryBuilder(d) || modlayerdig::isDrill(d)) { return false; }
-	const PROPULSION_STATS *p = d->getPropulsionStats();
-	return p != nullptr && p->propulsionType == PROPULSION_TYPE_HOVER;
+	// (19.11.) nur noch der Harvester (C&C3) schuerft - Uran fuer das Atomkraftwerk
+	if (d == nullptr || d->died) { return false; }
+	const BODY_STATS *b = d->getBodyStats();
+	return b != nullptr && b->id.startsWith("HarvesterBody");
 }
 
 bool orderSelected(unsigned player, FEATURE *psLava)
@@ -332,7 +408,7 @@ int remaining(const FEATURE *f)
 {
 	if (f == nullptr || !isLava(f)) { return -1; }
 	const auto it = s_left.find(f->id);
-	return it == s_left.end() ? LAVA_MJ : it->second;
+	return it == s_left.end() ? FIELD_URANIUM : it->second;
 }
 
 int energyCap(unsigned player)
@@ -348,36 +424,31 @@ void tick(GameWorld &world)
 	s_lastSec = sec;
 	s_sec++;
 
-	// (16.11. 19:28) "Lass die Lava komplett draussen. Das passt nicht zu WZ." -> keine Lavafelder mehr (Solar/Energiebank bleiben)
-	constexpr bool LAVA_ENABLED = false;
-	// einmal am Anfang (nach 3 s, damit Karte und Gebaeude stehen) Lavafelder verteilen
-	if (LAVA_ENABLED && !s_placed && gameTime >= 3000)
-	{
-		s_placed = true;
-		placeFields(world);   // unabhaengig vom eigenen Spieler (alle Rechner muessen gleich rechnen)
-	}
-
 	if (!s_landfill && gameTime >= 3000)
 	{
 		s_landfill = true;
 		if (game.type != LEVEL_TYPE::CAMPAIGN) { placeLandfills(world); placeIntroDeco(world); }
 	}
 
-	// Untergrund-Lavafelder: beim ersten fertigen Schacht
-	if (LAVA_ENABLED && !s_placedUnder && s_placed)
+	// (16.11. 19:28) "Lass die Lava komplett draussen" (Oberflaeche) - (19.11.) "Als Uranquelle werden wir die MF Lavafelder im Untergrund
+	// anlegen": nur im Untergrund, in Felstaschen. Beim ersten fertigen Schacht die verstreuten Felder, an jedem Schacht ein Start-Feld.
+	if (modlayermap::worldsExist())
 	{
-		bool shaft = false;
-		for (int p = 0; p < MAX_PLAYERS && !shaft; p++)
+		for (int p = 0; p < MAX_PLAYERS; p++)
 		{
 			for (const STRUCTURE *s : world.objects.structures[p])
 			{
-				if (!s->died && s->status == SS_BUILT && s->pStructureType->id.startsWith("A0LayerShaft")) { shaft = true; break; }
+				if (s->died || s->status != SS_BUILT || !s->pStructureType->id.startsWith("A0LayerShaft") || s_shaftDone.count(s->id)) { continue; }
+				s_shaftDone[s->id] = true;
+				if (!s_placedUnder)
+				{
+					s_placedUnder = true;
+					bool any = false;
+					for (const FEATURE *f : world.objects.features[0]) { if (!f->died && isLavaStats(f->psStats)) { any = true; break; } }
+					if (!any) { placeUnderground(world); }   // Spielstand hat sie schon
+				}
+				if (!fieldNear(world, s->pos.x, s->pos.y, 14)) { starterField(world, s); }
 			}
-		}
-		if (shaft)
-		{
-			s_placedUnder = true;
-			placeUnderground(world);
 		}
 	}
 
@@ -413,23 +484,81 @@ void tick(GameWorld &world)
 		}
 	}
 
-	// Schuerfen
+	// (19.11.) Harvester schuerfen Uran: steht er untaetig am Rand eines Lavafelds (gleiche Ebene), foerdert er eine Einheit je 20 s
+	// ins Uranlager (modnuke, hoechstens 20). Untaetige Harvester fahren nach kurzer Zeit von selbst zum naechsten erreichbaren Feld
+	// (wie in C&C). An der Oberflaeche gibt es kein Uran: einmaliger Hinweis.
 	std::vector<uint32_t> empty;
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		for (DROID *d : world.objects.droids[p])
 		{
-			if (!isMiner(d) || d->order.type != DORDER_NONE || d->action != DACTION_NONE) { continue; }
+			if (!isMiner(d)) { continue; }
+			const bool idle = d->order.type == DORDER_NONE && (d->action == DACTION_NONE || d->action == DACTION_ATTACK);
+			if (!idle) { s_idleSince.erase(d->id); continue; }
+			const unsigned since = s_idleSince.emplace(d->id, gameTime).first->second;
 			FEATURE *f = nearestLava(world, d);
-			if (f == nullptr) { continue; }
-			if (s_cap[p] > 0 && getPower(static_cast<unsigned>(p)) >= s_cap[p]) { continue; }   // Konto voll: nichts schuerfen, nichts verschwenden
-			int &left = s_left.emplace(f->id, LAVA_MJ).first->second;
-			const int take = std::min(left, MINE_RATE);
-			if (take <= 0) { continue; }
-			left -= take;
-			addPower(p, take);
-			modoil::noteIncome(p, modoil::INC_LAVA, take);
-			if (left <= 0) { empty.push_back(f->id); }
+			if (f == nullptr)
+			{
+				if (modlayer::layerOf(d) != modlayer::UNDERGROUND)
+				{
+					bool &told = s_hint[d->id];
+					if (!told && static_cast<unsigned>(p) == selectedPlayer)
+					{
+						told = true;
+						addConsoleMessage(_("Harvester: uranium is mined at the lava fields underground - drive the harvester down a shaft"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+					}
+					continue;
+				}
+				if (gameTime - since < SEEK_IDLE_MS) { continue; }
+				// naechstes erreichbares Feld auf dieser Ebene suchen und hinfahren
+				FEATURE *best = nullptr;
+				int64_t bestD = INT64_MAX;
+				const PROPULSION_STATS *ps = d->getPropulsionStats();
+				for (FEATURE *g : world.objects.features[0])
+				{
+					if (g->died || !isLavaStats(g->psStats) || modlayer::layerOf(g) != modlayer::layerOf(d)) { continue; }
+					const int64_t dx = g->pos.x - d->pos.x, dy = g->pos.y - d->pos.y;
+					const int64_t dd = dx * dx + dy * dy;
+					if (dd >= bestD) { continue; }
+					bool reach = true;
+					if (ps != nullptr)
+					{
+						modlayermap::Scope sc(modlayer::layerOf(d));
+						double ux = static_cast<double>(d->pos.x - g->pos.x), uy = static_cast<double>(d->pos.y - g->pos.y);
+						const double len = std::max(1.0, std::sqrt(ux * ux + uy * uy));
+						const Position rim(g->pos.x + static_cast<int>(ux / len * 200.0), g->pos.y + static_cast<int>(uy / len * 200.0), 0);
+						reach = fpathCheck(world.map, d->pos, rim, ps->propulsionType);
+					}
+					if (reach) { bestD = dd; best = g; }
+				}
+				s_idleSince[d->id] = gameTime;   // naechster Versuch erst nach SEEK_IDLE_MS
+				if (best != nullptr)
+				{
+					double dx = d->pos.x - best->pos.x, dy = d->pos.y - best->pos.y;
+					const double len = std::max(1.0, std::sqrt(dx * dx + dy * dy));
+					orderDroidLoc(d, DORDER_MOVE, static_cast<UDWORD>(best->pos.x + dx / len * 200.0), static_cast<UDWORD>(best->pos.y + dy / len * 200.0), ModeImmediate);
+				}
+				continue;
+			}
+			if (modnuke::uraniumFull(p)) { continue; }   // Lager voll: warten
+			int &hsec = s_harvestSec.emplace(d->id, 0).first->second;
+			// Staub und Funken an den Krallen (nur Anzeige, wenn sichtbar und auf der angezeigten Ebene)
+			if (d->visibleForLocalDisplay() && modlayer::layerOf(d) == modlayer::current() && (s_sec + d->id) % 2 == 0)
+			{
+				const int dir = static_cast<int>(d->rot.direction);
+				const double a = dir * (2.0 * M_PI / 65536.0);
+				Vector3i pp(d->pos.x + static_cast<int>(std::sin(a) * 48.0), d->pos.z + 10, d->pos.y + static_cast<int>(std::cos(a) * 48.0));
+				addEffect(&pp, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_SMALL, false, nullptr, 0);
+			}
+			if (++hsec < HARVEST_SECONDS) { continue; }
+			hsec = 0;
+			int &left = s_left.emplace(f->id, FIELD_URANIUM).first->second;
+			if (left <= 0) { continue; }
+			if (modnuke::addUranium(p, 1))
+			{
+				left--;
+				if (left <= 0) { empty.push_back(f->id); }
+			}
 		}
 	}
 	for (uint32_t id : empty)
@@ -440,16 +569,29 @@ void tick(GameWorld &world)
 			{
 				removeFeature(f, world);
 				s_left.erase(id);
-				addConsoleMessage("Lava field exhausted.", DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+				addConsoleMessage(_("Lava field exhausted - harvesters move on to the next field."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 				break;
 			}
 		}
+	}
+	// abgerissene Harvester vergessen (alle 30 s)
+	if (s_sec % 30 == 0)
+	{
+		std::map<uint32_t, bool> alive;
+		for (int p = 0; p < MAX_PLAYERS; p++) { for (const DROID *d : world.objects.droids[p]) { if (!d->died) { alive[d->id] = true; } } }
+		for (auto it = s_harvestSec.begin(); it != s_harvestSec.end();) { it = alive.count(it->first) ? std::next(it) : s_harvestSec.erase(it); }
+		for (auto it = s_idleSince.begin(); it != s_idleSince.end();) { it = alive.count(it->first) ? std::next(it) : s_idleSince.erase(it); }
+		for (auto it = s_hint.begin(); it != s_hint.end();) { it = alive.count(it->first) ? std::next(it) : s_hint.erase(it); }
 	}
 }
 
 void reset()
 {
 	s_left.clear();
+	s_harvestSec.clear();
+	s_idleSince.clear();
+	s_hint.clear();
+	s_shaftDone.clear();
 	s_lastSec = 0;
 	s_sec = 0;
 	s_placed = false;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Atomkraftwerk und Uranbergwerk (siehe modnuke.h)
+// MOD: Atomkraftwerk; Uran kommt von den Harvestern (modlava) - siehe modnuke.h
 #include "modnuke.h"
 
 #include <algorithm>
@@ -34,7 +34,6 @@ constexpr int INCOME_1 = 3;             // Energie je Sekunde mit 1 Kuehlturm, T
 constexpr int INCOME_2 = 5;             // mit 2 Kuehltuermen (Ausbau)
 constexpr int GRID_1 = 100, GRID_2 = 150;
 constexpr int HYDRO_INCOME = 2, HYDRO_GRID = 60;   // (22:42) Wasserkraftwerk
-constexpr int MINE_SECONDS = 30;        // ein Bergwerk im Untergrund foerdert eine Einheit je 30 s
 constexpr int STOCK_MAX = 20;           // Uranlager je Spieler
 constexpr unsigned WARN_EVERY_S = 60;   // Hinweis "kein Uran" hoechstens jede Minute
 
@@ -45,7 +44,6 @@ unsigned s_lastSec = 0;
 unsigned s_sec = 0;
 int s_stock[MAX_PLAYERS] = {};
 std::map<uint32_t, int> s_fuel;         // Kraftwerk -> verbleibende Sekunden der aktuellen Uran-Einheit
-std::map<uint32_t, int> s_mineSec;      // Bergwerk -> Sekunden bis zur naechsten Einheit
 std::map<uint32_t, bool> s_told;        // Hinweise je Bauwerk schon gegeben
 unsigned s_warnAt[MAX_PLAYERS] = {};
 
@@ -93,11 +91,6 @@ int gridCapacity(const STRUCTURE *psStruct)
 	return running(psStruct) ? (twoTowers(psStruct->pStructureType) ? GRID_2 : GRID_1) : 0;
 }
 
-bool isMine(const STRUCTURE_STATS *psStats)
-{
-	return psStats != nullptr && psStats->id.startsWith("A0UraniumMine");
-}
-
 bool running(const STRUCTURE *psStruct)
 {
 	if (psStruct == nullptr || psStruct->died || psStruct->status != SS_BUILT || !isPlant(psStruct->pStructureType)) { return false; }
@@ -110,6 +103,18 @@ int uranium(int player)
 	return (player >= 0 && player < MAX_PLAYERS) ? s_stock[player] : 0;
 }
 
+bool uraniumFull(int player)
+{
+	return player < 0 || player >= MAX_PLAYERS || s_stock[player] >= STOCK_MAX;
+}
+
+bool addUranium(int player, int units)
+{
+	if (uraniumFull(player) || units <= 0) { return false; }
+	s_stock[player] = std::min(STOCK_MAX, s_stock[player] + units);
+	return true;
+}
+
 void tick()
 {
 	const unsigned sec = gameTime / 1000;
@@ -118,21 +123,6 @@ void tick()
 	s_sec++;
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
 	{
-		// Bergwerke: nur im Untergrund
-		for (const STRUCTURE *s : gameWorld.objects.structures[p])
-		{
-			if (s->died || s->status != SS_BUILT || !isMine(s->pStructureType)) { continue; }
-			if (modlayer::layerOf(s) != modlayer::UNDERGROUND)
-			{
-				bool &told = s_told[s->id];
-				if (!told) { told = true; say(p, _("Uranium mine: uranium is only found underground - build the mine on the underground level")); }
-				continue;
-			}
-			int &left = s_mineSec.emplace(s->id, MINE_SECONDS).first->second;
-			if (--left > 0) { continue; }
-			left = MINE_SECONDS;
-			if (s_stock[p] < STOCK_MAX) { s_stock[p]++; }
-		}
 		// Kraftwerke: Uran nachladen, Energie liefern
 		int gain = 0;
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
@@ -153,7 +143,7 @@ void tick()
 				else
 				{
 					it = s_fuel.emplace(s->id, FIRST_LOAD * FUEL_SECONDS).first;   // Erstbeladung
-					say(p, _("Nuclear power plant online - steady power day and night (uranium comes from uranium mines underground)"));
+					say(p, _("Nuclear power plant online - steady power day and night (uranium comes from harvesters at the lava fields underground)"));
 				}
 			}
 			if (it->second <= 0 && s_stock[p] > 0)
@@ -166,7 +156,7 @@ void tick()
 				if (sec >= s_warnAt[p])
 				{
 					s_warnAt[p] = sec + WARN_EVERY_S;
-					say(p, _("Nuclear power plant: out of uranium - build uranium mines underground"));
+					say(p, _("Nuclear power plant: out of uranium - send harvesters to the lava fields underground"));
 				}
 				continue;
 			}
@@ -188,7 +178,6 @@ void tick()
 			for (const STRUCTURE *s : gameWorld.objects.structures[p]) { if (!s->died) { alive[s->id] = true; } }
 		}
 		for (auto it = s_fuel.begin(); it != s_fuel.end();) { it = alive.count(it->first) ? std::next(it) : s_fuel.erase(it); }
-		for (auto it = s_mineSec.begin(); it != s_mineSec.end();) { it = alive.count(it->first) ? std::next(it) : s_mineSec.erase(it); }
 		for (auto it = s_told.begin(); it != s_told.end();) { it = alive.count(it->first) ? std::next(it) : s_told.erase(it); }
 	}
 }
@@ -229,7 +218,6 @@ void reset()
 	std::fill(std::begin(s_stock), std::end(s_stock), 0);
 	std::fill(std::begin(s_warnAt), std::end(s_warnAt), 0u);
 	s_fuel.clear();
-	s_mineSec.clear();
 	s_told.clear();
 }
 }
