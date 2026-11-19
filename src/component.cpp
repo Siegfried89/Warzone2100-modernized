@@ -25,6 +25,7 @@
 #include "lib/framework/frame.h"
 #include "lib/framework/trig.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <map>
 #include <tuple>
@@ -153,6 +154,16 @@ UDWORD getComponentDroidTemplateRadius(const DROID_TEMPLATE *psTemplate)
 }
 
 
+// MOD (20.11. Log mit 2060 gleichen Asserts "No ComponentIMD" in 2,5 Minuten, Konstrukteur/Fabrikliste): Bauteil ohne Modell nur EINMAL
+// melden, mit Namen und Kennung - so ist im Log zu sehen, welches Bauteil fehlt, und das Log laeuft nicht voll
+static void modWarnNoComponentImd(const BASE_STATS *psStat, const char *where)
+{
+	static std::unordered_set<const BASE_STATS *> s_warned;
+	if (psStat == nullptr || !s_warned.insert(psStat).second) { return; }
+	debug(LOG_INFO, "MOD: Bauteil ohne Modell (%s): %s [%s]", where, getStatsName(psStat), psStat->id.toUtf8().c_str());
+}
+
+
 UDWORD getComponentRadius(const BASE_STATS *psComponent) // DISPLAY ONLY
 {
 	const iIMDShape *ComponentIMD = nullptr;
@@ -174,7 +185,7 @@ UDWORD getComponentRadius(const BASE_STATS *psComponent) // DISPLAY ONLY
 	    || (((const WEAPON_STATS *)psComponent)->weaponSubClass != WSC_BOMB
 	        && ((const WEAPON_STATS *)psComponent)->weaponSubClass != WSC_EMP))
 	{
-		ASSERT(ComponentIMD, "No ComponentIMD!");
+		modWarnNoComponentImd(psComponent, "Radius");   // MOD (20.11.): einmal je Bauteil mit Namen statt Assert in jedem Bild
 	}
 
 	return COMPONENT_RADIUS;
@@ -385,7 +396,7 @@ void displayComponentButton(const BASE_STATS *Stat, const Vector3i *Rotation, co
 	    || (((const WEAPON_STATS *)Stat)->weaponSubClass != WSC_BOMB
 	        && ((const WEAPON_STATS *)Stat)->weaponSubClass != WSC_EMP))
 	{
-		ASSERT(ComponentIMD, "No ComponentIMD");
+		if (!ComponentIMD) { modWarnNoComponentImd(Stat, "Knopf"); }   // MOD (20.11.): einmal je Bauteil mit Namen statt Assert in jedem Bild
 	}
 
 	if (MountIMD)
