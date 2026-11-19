@@ -192,22 +192,69 @@ void rebuildList()
 	const auto &parts = modcombot::parts();
 	if (s_tab == TAB_ALL)
 	{
-		for (const Part &t : parts)
+		// MOD (Wunsch 19.11. 15:17 "Texturen passen nicht zu den MF Fraktionen, alle Teile sind durcheinander kombinierbar und nicht klar
+		// nach Fraktionen im UI gegliedert" + "3 Combots ... so nah wie moeglich an diesem Bild, Bewaffnung aus dem ersten Bild"):
+		// fertige Combots nach Konzern geordnet. Zuerst die drei Konzern-Combots der MF-Bilder, dann je Konzern ein Combot je
+		// Torso-Art - Torso, Beine und Arme IMMER vom selben Konzern (nie gemischt).
+		static const char *kCorp[3] = { "Rimtech", "Mil-Agro", "Neuropa" };
+		struct Hero { const char *name, *t, *l, *r, *a; };
+		static const Hero kHero[3] = {
+			{ "Rimtech: Laser Sword + Missiles", "Basic_T0", "Basic_L0", "LaserSword_A1", "HomingMissile_A1" },
+			{ "Mil-Agro: Gatling + Axe (Jetpack)", "JetPack_T1", "Basic_L1", "GattlingGun_A3", "Axe_A3" },
+			{ "Neuropa: Electro Grip + Claws", "Basic_T2", "Basic_L2", "ElectroGrip_A4", "BladeArm_A5" },
+		};
+		auto armOf = [&](const std::string &file, int corp, int side) -> const Part * {
+			for (const Part &a : parts) { if (a.kind == modcombot::KIND_ARM && a.file == file && a.corp == corp && a.side == side) { return &a; } }
+			return nullptr;
+		};
+		for (const Hero &h : kHero)
 		{
-			if (t.kind != modcombot::KIND_TORSO || t.id.size() < 3 || t.id.compare(t.id.size() - 3, 3, "_T0") != 0) { continue; }
 			Entry e;
 			e.preset = true;
-			e.name = spaced(t.file);
-			e.set[modcombot::SLOT_TORSO] = &t;
-			e.set[modcombot::SLOT_LEGS] = modcombot::find(t.file + "_L0") ? modcombot::find(t.file + "_L0") : modcombot::find("Basic_L0");
-			for (const Part &a : parts)
+			e.name = h.name;
+			e.set[modcombot::SLOT_TORSO] = modcombot::find(h.t);
+			e.set[modcombot::SLOT_LEGS] = modcombot::find(h.l);
+			e.set[modcombot::SLOT_RARM] = modcombot::find(h.r);
+			e.set[modcombot::SLOT_LARM] = modcombot::find(h.a);
+			e.part = e.set[modcombot::SLOT_TORSO];
+			if (e.part != nullptr && e.set[modcombot::SLOT_LEGS] != nullptr) { s_list.push_back(e); }
+		}
+		for (int corp = 0; corp < 3; ++corp)
+		{
+			for (const Part &t : parts)
 			{
-				if (a.kind != modcombot::KIND_ARM || a.file != t.file) { continue; }
-				if (a.side > 0 && e.set[modcombot::SLOT_RARM] == nullptr) { e.set[modcombot::SLOT_RARM] = &a; }
-				if (a.side < 0 && e.set[modcombot::SLOT_LARM] == nullptr) { e.set[modcombot::SLOT_LARM] = &a; }
+				if (t.kind != modcombot::KIND_TORSO || t.corp != corp) { continue; }
+				Entry e;
+				e.preset = true;
+				e.name = std::string(kCorp[corp]) + ": " + spaced(t.file);
+				e.set[modcombot::SLOT_TORSO] = &t;
+				const std::string sfx = "_L" + std::to_string(corp);
+				const Part *legs = modcombot::find(t.file + sfx);
+				e.set[modcombot::SLOT_LEGS] = legs != nullptr ? legs : modcombot::find("Basic" + sfx);
+				for (int side : { 1, -1 })
+				{
+					const Part *a = armOf(t.file, corp, side);
+					if (a == nullptr) { a = armOf("Basic", corp, side); }
+					e.set[side > 0 ? modcombot::SLOT_RARM : modcombot::SLOT_LARM] = a;
+				}
+				e.part = &t;
+				if (e.set[modcombot::SLOT_LEGS] != nullptr) { s_list.push_back(e); }
 			}
-			e.part = &t;
-			s_list.push_back(e);
+		}
+	}
+	else if (s_tab == TAB_TORSO)
+	{
+		// MOD (19.11.): Torsi nach Konzern geordnet (Rimtech, Mil-Agro, Neuropa)
+		for (int corp = -1; corp < 3; ++corp)
+		{
+			for (const Part &p : parts)
+			{
+				if (p.kind != modcombot::KIND_TORSO || p.corp != corp) { continue; }
+				Entry e;
+				e.name = p.name;
+				e.part = &p;
+				s_list.push_back(e);
+			}
 		}
 	}
 	else
@@ -286,7 +333,31 @@ void applyEntry(const Entry &e)
 	if (e.part == nullptr) { return; }
 	switch (e.part->kind)
 	{
-	case modcombot::KIND_TORSO: assign(modcombot::SLOT_TORSO, e.part); break;
+	case modcombot::KIND_TORSO:
+		assign(modcombot::SLOT_TORSO, e.part);
+		// MOD (19.11. "alle Teile sind durcheinander kombinierbar"): neuer Konzern -> Beine und Arme werden zu den gleichen Teilen dieses
+		// Konzerns (gleiche Art, gleiche Seite; sonst die Grundteile), damit ein Combot nie gemischt ist
+		if (e.part->corp >= 0)
+		{
+			const int corp = e.part->corp;
+			for (int slot : { modcombot::SLOT_LEGS, modcombot::SLOT_RARM, modcombot::SLOT_LARM })
+			{
+				const Part *cur = s_target[slot];
+				if (cur != nullptr && cur->corp == corp) { continue; }
+				const modcombot::Kind kind = slot == modcombot::SLOT_LEGS ? modcombot::KIND_LEG : modcombot::KIND_ARM;
+				const int side = slot == modcombot::SLOT_RARM ? 1 : (slot == modcombot::SLOT_LARM ? -1 : 0);
+				const Part *best = nullptr, *basic = nullptr;
+				for (const Part &p : modcombot::parts())
+				{
+					if (p.kind != kind || p.corp != corp || (kind == modcombot::KIND_ARM && p.side != side)) { continue; }
+					if (cur != nullptr && p.file == cur->file && best == nullptr) { best = &p; }
+					if (p.file == "Basic" && basic == nullptr) { basic = &p; }
+				}
+				if (cur == nullptr && kind == modcombot::KIND_ARM) { continue; }   // leerer Arm bleibt leer
+				assign(slot, best != nullptr ? best : basic);
+			}
+		}
+		break;
 	case modcombot::KIND_LEG: assign(modcombot::SLOT_LEGS, e.part); break;
 	default: assign(slotOfArm(e.part), e.part); break;
 	}
