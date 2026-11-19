@@ -10,6 +10,7 @@
 //    Gefechtsstand (Fahne), Transport (Rad), Combots (Oval + X = mechanisiert), Flugzeug (Flugzeugsymbol), Hubschrauber (Rotor).
 //  - Groesse ueber dem Rahmen: Punkte nach Rumpfgroesse (leicht 1, mittel 2, schwer 3).
 // Umschalten ueber den Knopf "Symbols" an der Minikarte. Eingeschaltet ersetzen die Symbole ab mittlerer Zoomstufe die Modelle/Sprites.
+// (19.11. 20:27) Solange die Alt-Taste gedrueckt ist, sind die Symbole immer an (auch nah herangezoomt).
 // Nur Anzeige.
 #pragma once
 
