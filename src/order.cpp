@@ -389,8 +389,18 @@ static bool isRepairlikeAction(DROID_ACTION action)
 	}
 }
 
+// MOD (Wunsch 19.11. 16:45 "Die Pickups und Oeltanker bauen immer noch mit ... das soll nicht sein"): Pickup/Pritsche/Tanker sind
+// technisch Baufahrzeuge (die Ladeflaeche ist ein "Bauteil"), transportieren aber nur. isConstructionDroid() schliesst sie schon aus;
+// hier auch die Stellen, die direkt nach DROID_CONSTRUCT fragen (Mithelfen von selbst, Rechtsklick auf eine Baustelle, Bau-/Reparatur-/
+// Abriss-Befehle der Auswahl).
+static bool modCargoOnly(const DROID *psDroid)
+{
+	return psDroid != nullptr && psDroid->droidType == DROID_CONSTRUCT && !psDroid->isConstructionDroid();
+}
+
 static bool tryDoRepairlikeAction(DROID *psDroid)
 {
+	if (modCargoOnly(psDroid)) { return false; }
 	if (isRepairlikeAction(psDroid->action))
 	{
 		return true;  // Already doing something.
@@ -418,6 +428,7 @@ static bool tryDoRepairlikeAction(DROID *psDroid)
 		case DROID_CONSTRUCT:
 		case DROID_CYBORG_CONSTRUCT:
 		{
+			if (modCargoOnly(psDroid)) { break; }   // MOD: Transport-Lkw helpen nicht von selbst mit
 			//construct droids default to repairing and helping structures within a given range
 			auto damaged = checkForDamagedStruct(psDroid);
 			if (damaged.second == DACTION_REPAIR)
@@ -1471,6 +1482,17 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 
 	// MOD: Bohrfahrzeug im Untergrund bohrt sich zum Ziel (uebernimmt Bewegungsbefehle; jeder andere Befehl verwirft das Bohrziel)
 	if (modlayerdig::onOrder(psDroid, psOrder)) { return; }
+	// MOD (19.11.): Transport-Lkw nehmen keine Bau-, Hilfs-, Reparatur- oder Abrissbefehle an
+	if (modCargoOnly(psDroid))
+	{
+		switch (psOrder->type)
+		{
+		case DORDER_BUILD: case DORDER_HELPBUILD: case DORDER_LINEBUILD: case DORDER_BUILDMODULE:
+		case DORDER_REPAIR: case DORDER_DEMOLISH: case DORDER_RESTORE:
+			return;
+		default: break;
+		}
+	}
 
 	if (psOrder->type != DORDER_TRANSPORTIN         // transporters special
 	    && psOrder->psObj == nullptr			// location-type order
@@ -3067,8 +3089,8 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 		ASSERT_OR_RETURN(DroidOrder(DORDER_NONE), psObj != nullptr, "Invalid structure pointer");
 
 		/* check whether construction droid */
-		if (psDroid->droidType == DROID_CONSTRUCT ||
-		    psDroid->droidType == DROID_CYBORG_CONSTRUCT)
+		if ((psDroid->droidType == DROID_CONSTRUCT ||
+		    psDroid->droidType == DROID_CYBORG_CONSTRUCT) && !modCargoOnly(psDroid))   // MOD: Transport-Lkw helfen nicht mit
 		{
 			int moduleIndex = nextModuleToBuild(psStruct, ctrlShiftDown() ? highestQueuedModule(psDroid, psStruct) : -1);
 			if (moduleIndex > 0 && !moduleAvailableToPlayer(psStruct, psDroid->player))

@@ -316,7 +316,10 @@ PassGraphTopologyBlueprint buildTitleBlueprint(const RenderTopologySnapshot& sna
 	const AttachmentLoadOp titleColorLoad = (snapshot.features & RenderFeatures::Backdrop)
 		? AttachmentLoadOp::Load
 		: AttachmentLoadOp::Clear;
-	addSwapchainPassToBuilder(builder, PassId::TitleUI, "TitleUI", snapshot.swapchainMsaa, titleColorLoad);
+	// MOD (19.11. 16:44 "Die Grafikfehler gibt es im Flotteneditor ueberall und bei allem"): mit Hintergrund lud TitleUI die Tiefe
+	// aus dem Backdrop-Durchgang, der sie nicht speichert (StoreOp DontCare) -> Tiefentest gegen Muell, die 3D-Vorschau im
+	// Einheiteneditor zerfiel. Wie InGameUI: Tiefe immer leeren.
+	addSwapchainPassToBuilder(builder, PassId::TitleUI, "TitleUI", snapshot.swapchainMsaa, titleColorLoad, AttachmentLoadOp::Clear);
 
 	return builder.build();
 }

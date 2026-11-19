@@ -519,6 +519,8 @@ struct PlanTask
 	DroidOrder order = DroidOrder(DORDER_NONE);
 	Vector2i anchor;
 	unsigned born = 0;
+	int face = -1;        // (19.11. 16:44) Verteidigungslinie: Blickrichtung am Ziel (Richtung der Querstriche), -1 = keine
+	bool faced = false;   // schon eingedreht (bis die Einheit ihren Platz wieder verlaesst)
 };
 std::map<uint32_t, PlanTask> s_plan;
 unsigned s_nextPlanCheck = 0;
@@ -697,13 +699,42 @@ void opPrune(std::vector<uint32_t> &v, bool dropCarriers)
 	}), v.end());
 }
 
-void rememberPlan(const DROID *d, const DroidOrder &o, const Vector2i &anchor)
+void rememberPlan(const DROID *d, const DroidOrder &o, const Vector2i &anchor, int face = -1)
 {
 	PlanTask t;
 	t.order = o;
 	t.anchor = anchor;
 	t.born = gameTime;
+	t.face = face;
 	s_plan[d->id] = t;
+}
+
+// MOD (Wunsch 19.11. 16:44): "Die Einheiten in der Defensive line sollen sich zum schluss in Richtung der Stäbe drehen."
+// Wer seinen Platz auf der Verteidigungslinie erreicht hat (kein Befehl, steht still, kaempft nicht, hoechstens 2 Felder vom Platz),
+// dreht sich sichtbar (gut 100 Grad pro Sekunde) in die Richtung der Querstriche - also zur Feindseite. Einmal pro Ankunft:
+// verlaesst die Einheit ihren Platz (Kampf, Spielerbefehl) und kommt zurueck, dreht sie sich wieder ein.
+unsigned s_nextFace = 0;
+void faceTick()
+{
+	if (gameTime < s_nextFace || selectedPlayer >= MAX_PLAYERS) { return; }
+	s_nextFace = gameTime + 150;
+	const int64_t near2 = static_cast<int64_t>(2 * DIST_TILE) * (2 * DIST_TILE);
+	for (auto &kv : s_plan)
+	{
+		PlanTask &t = kv.second;
+		if (t.face < 0) { continue; }
+		DROID *d = IdToDroid(gameWorld.objects, kv.first, selectedPlayer);
+		if (d == nullptr || d->died) { continue; }
+		const bool atSpot = dist2(d->pos.xy(), t.anchor) <= near2;
+		const bool idle = d->order.type == DORDER_NONE && d->action == DACTION_NONE && d->sMove.Status == MOVEINACTIVE && !modcontrol::manual(d);
+		if (!atSpot || !idle) { if (!atSpot) { t.faced = false; } continue; }
+		if (t.faced) { continue; }
+		const uint16_t want = static_cast<uint16_t>(t.face);
+		const int16_t diff = static_cast<int16_t>(want - d->rot.direction);
+		if (std::abs(static_cast<int>(diff)) <= DEG(2)) { d->rot.direction = want; t.faced = true; continue; }
+		const int step = std::clamp<int>(diff, -DEG(16), DEG(16));
+		d->rot.direction = static_cast<uint16_t>(d->rot.direction + step);
+	}
 }
 
 void planTick()
@@ -971,7 +1002,19 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		for (DROID *d : units) { (isBuilder(d) ? builders : fighters).push_back(d); }
 		// Kaempfer verteilen sich gleichmaessig auf der Linie
 		const std::vector<Vector2i> spots = resample(raw, std::max<size_t>(1, fighters.size()));
-		for (size_t i = 0; i < fighters.size(); ++i) { send(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), false); rememberPlan(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), spots[i]); }
+		// Blickrichtung am Platz = Richtung der Querstriche (Normale der Linie zur Feindseite, wie tickSegs sie zeichnet)
+		const int fside = defendSide(raw);
+		const std::vector<Vector2i> fline = resample(raw, std::max<size_t>(24, raw.size()));
+		auto faceAt = [&fline, fside](const Vector2i &p) {
+			size_t bi = 0;
+			int64_t bd = INT64_MAX;
+			for (size_t k = 0; k < fline.size(); ++k) { const int64_t dd = dist2(fline[k], p); if (dd < bd) { bd = dd; bi = k; } }
+			const Vector2i a = fline[bi > 0 ? bi - 1 : 0], b = fline[std::min(bi + 1, fline.size() - 1)];
+			const int64_t tx = b.x - a.x, ty = b.y - a.y;
+			if (tx == 0 && ty == 0) { return -1; }
+			return static_cast<int>(iAtan2(static_cast<int32_t>(-ty * fside), static_cast<int32_t>(tx * fside)));
+		};
+		for (size_t i = 0; i < fighters.size(); ++i) { send(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), false); rememberPlan(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), spots[i], faceAt(spots[i])); }
 		// Bauer heben Graeben entlang der Linie aus (Abschnitte reihum verteilt)
 		STRUCTURE_STATS *trench = firstAvailable({ "A0BaBaTrench", "A0BaBaTrenchEarth", "A0BaBaSandbagWall" });
 		if (trench != nullptr && !builders.empty())
@@ -1401,7 +1444,7 @@ void tick()
 	// (17.11. 14:14) Mod-Rosette: der Schlachtplan-Knopf blendet die Leiste ein/aus; "Infantry: build" liegt jetzt in der Rosette
 	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS && modrosette::planOpen() && intMode != INT_DESIGN;
 	infButtonTick(false);
-	if (!want && !s_screen) { opTick(); planTick(); return; }
+	if (!want && !s_screen) { opTick(); planTick(); faceTick(); return; }
 	ensureScreen();
 	if (!s_root) { return; }
 	s_root->show(want);
@@ -1410,6 +1453,7 @@ void tick()
 	if (s_mode >= 0 && keyPressed(KEY_ESC)) { s_mode = -1; s_drawing = false; s_cur.clear(); }
 	opTick();   // Bergetrupp (laeuft auch, wenn die Knoepfe verborgen sind)
 	planTick(); // Oberbefehle wieder aufnehmen
+	faceTick(); // Verteidigungslinie: am Platz zur Feindseite drehen
 	// alte Zeichnungen entfernen
 	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [](const Stroke &st) { return realTime - st.born > SHOW_MS; }), s_done.end());
 }

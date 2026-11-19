@@ -204,6 +204,8 @@ bool writeGameStateBlobToFolder(const std::string &folderPath, SaveType saveType
 /// True if folderPath looks like a new-format savegame folder (contains the state blob). Used by
 /// the load entry point to route new-format saves here while leaving legacy .gam saves untouched.
 bool isNewFormatSaveFolder(const std::string &folderPath);
+/// MOD: true, wenn der Spielstand mit einer anderen Fassung eines geladenen Mods geschrieben wurde (dann klassisch laden)
+bool savedModsDifferFromLoaded(const std::string &folderPath);
 
 /// Session-only override (set by the temporary --tmp-prefer-old-save CLI flag): when true, the load
 /// router uses the legacy loadGameInit even for a folder that also has the new-format blob. Unlike
