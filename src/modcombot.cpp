@@ -906,6 +906,44 @@ static const iIMDShape *glowShape(const std::string &name)
 	return sh;
 }
 
+void setEmitEffects(bool on)
+{
+	s_emitGlow = on;
+}
+
+bool drawEffectPiece(const iIMDShape *s, const glm::mat4 &m, const glm::mat4 &view, const Part *p, unsigned seed)
+{
+	if (p == &s_fxAttached)
+	{
+		// (Wunsch 19.11. 23:00 "Energieschilde sehe ich nicht ... Supreme-Commander-Schild, nur viel sichtbarer, deutlich blauer"):
+		// leuchtender Anbau mit dem Arm: zuerst eine durchscheinende blaue Flaeche (deckt auch auf hellem Boden), dann das Leuchten
+		// additiv darueber; beides pulsiert leicht und flackert wie ein Energiefeld
+		const float t = static_cast<float>(graphicsTime % 600000u) * 0.001f;
+		const float ph = static_cast<float>(seed % 53u);
+		const float pulse = std::sin(t * 3.7f + ph) * 0.6f + std::sin(t * 11.3f + ph * 0.7f) * 0.25f;
+		const int base = std::clamp(static_cast<int>(150.f + 25.f * pulse), 0, 255);
+		const int glow = std::clamp(static_cast<int>(215.f + 40.f * pulse), 0, 255);
+		pie_Draw3DShape(s, 0, 0, WZCOL_WHITE, pie_TRANSLUCENT, base, m, view, 0.f, true);
+		pie_Draw3DShape(s, 0, 0, WZCOL_WHITE, pie_ADDITIVE, glow, m, view, 0.f, true);
+		return true;
+	}
+	if (p == &s_fxBillboard)
+	{
+		// Lichthof des Auges: zur Kamera gedreht, langsam drehende kurze Strahlen, leichtes Flackern, additiv - nicht zu hell
+		const float t = static_cast<float>(graphicsTime % 600000u) * 0.001f;
+		const float ph = static_cast<float>(seed % 97u);
+		const float k = 1.f + 0.07f * std::sin(t * 7.3f + ph) + 0.04f * std::sin(t * 17.1f + ph * 0.5f);
+		const float sc = glm::length(glm::vec3(m[0])) * k;
+		const glm::mat3 camRot(view);
+		const glm::mat4 bb = glm::translate(glm::mat4(1.f), glm::vec3(m[3])) * glm::mat4(glm::transpose(camRot))
+		                     * glm::rotate(glm::mat4(1.f), t * 0.35f + ph, glm::vec3(0.f, 0.f, 1.f)) * glm::scale(glm::mat4(1.f), glm::vec3(sc));
+		const int alpha = std::clamp(static_cast<int>(165.f + 35.f * std::sin(t * 5.1f + ph)), 0, 255);
+		pie_Draw3DShape(s, 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, bb, view, 0.f, true);
+		return true;
+	}
+	return false;
+}
+
 void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVariant, const glm::mat4 &base, const DrawPiece &emit)
 {
 	if (!ready() || !lo.torso) { return; }
@@ -1050,28 +1088,7 @@ bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view,
 	}
 	s_emitGlow = !bButton && !(pieFlag & pie_TRANSLUCENT);
 	drawLoadout(lo, kind, elapsed, static_cast<int>(d->id), model, [&](const iIMDShape *s, const glm::mat4 &m, const Part *p) {
-		if (p == &s_fxAttached)
-		{
-			// leuchtender Anbau (Energieschild): bewegt sich mit dem Arm, pulsiert leicht, additiv
-			const float t = static_cast<float>(graphicsTime % 600000u) * 0.001f;
-			const int alpha = std::clamp(static_cast<int>(135.f + 30.f * std::sin(t * 3.7f + static_cast<float>(d->id % 53u))), 0, 255);
-			pie_Draw3DShape(s, 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, m, view, 0.f, true);
-			return;
-		}
-		if (p == &s_fxBillboard)
-		{
-			// Lichthof des Auges: zur Kamera gedreht, langsam drehende kurze Strahlen, leichtes Flackern, additiv - nicht zu hell
-			const float t = static_cast<float>(graphicsTime % 600000u) * 0.001f;
-			const float ph = static_cast<float>(d->id % 97u);
-			const float k = 1.f + 0.07f * std::sin(t * 7.3f + ph) + 0.04f * std::sin(t * 17.1f + ph * 0.5f);
-			const float sc = glm::length(glm::vec3(m[0])) * k;
-			const glm::mat3 camRot(view);
-			const glm::mat4 bb = glm::translate(glm::mat4(1.f), glm::vec3(m[3])) * glm::mat4(glm::transpose(camRot))
-			                     * glm::rotate(glm::mat4(1.f), t * 0.35f + ph, glm::vec3(0.f, 0.f, 1.f)) * glm::scale(glm::mat4(1.f), glm::vec3(sc));
-			const int alpha = std::clamp(static_cast<int>(165.f + 35.f * std::sin(t * 5.1f + ph)), 0, 255);
-			pie_Draw3DShape(s, 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, bb, view, 0.f, true);
-			return;
-		}
+		if (drawEffectPiece(s, m, view, p, d->id)) { return; }
 		if (pie_Draw3DShape(s, 0, colour, brightness, pieFlag, pieFlagData, m, view, stretch, true)) { drew = true; }
 	});
 	s_emitGlow = false;

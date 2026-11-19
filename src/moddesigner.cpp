@@ -94,7 +94,7 @@ struct Ctx
 bool s_open = false;
 std::shared_ptr<W_SCREEN> s_screen;
 std::shared_ptr<W_FULLSCREENOVERLAY_CLICKFORM> s_root;
-std::vector<std::shared_ptr<W_BUTTON>> s_tabBtn, s_rowBtn, s_arrBtn, s_sideBtn, s_hotBtn, s_actBtn;
+std::vector<std::shared_ptr<W_BUTTON>> s_tabBtn, s_rowBtn, s_arrBtn, s_sideBtn, s_hotBtn, s_actBtn, s_corpBtn;
 
 int s_tab = TAB_ARMS;
 int s_side = 1;                 // welcher Arm in der Reiterliste ARMS bearbeitet wird (+1 rechts, -1 links)
@@ -368,6 +368,27 @@ void setTab(int t)
 	if (t == s_tab) { return; }
 	s_tab = t;
 	s_scroll = 0;
+	rebuildList();
+}
+
+// MOD (Wunsch 19.11. 23:00 "die Neuropa und MilAgro Sektion nicht gefunden"): drei Konzern-Knoepfe - ein Klick stellt den ganzen Combot auf
+// diesen Konzern um (gleicher Torso-Typ, sonst Grund-Torso; Beine/Arme wie bei der Torso-Wahl zu den gleichen Teilen des Konzerns)
+void setCorp(int corp)
+{
+	const Part *cur = s_target[modcombot::SLOT_TORSO];
+	if (cur != nullptr && cur->corp == corp) { return; }
+	const Part *best = nullptr, *basic = nullptr;
+	for (const Part &p : modcombot::parts())
+	{
+		if (p.kind != modcombot::KIND_TORSO || p.corp != corp) { continue; }
+		if (cur != nullptr && p.file == cur->file && best == nullptr) { best = &p; }
+		if (p.file == "Basic" && basic == nullptr) { basic = &p; }
+	}
+	Entry e;
+	e.part = best != nullptr ? best : basic;
+	if (e.part == nullptr) { return; }
+	if (entryLocked(e)) { setStatus(lockReason(e), true); play("mfui_clank.ogg"); return; }
+	applyEntry(e);
 	rebuildList();
 }
 
@@ -683,6 +704,7 @@ void drawBay(const Ctx &c)
 	const float unit = BAY_DEPTH / 990.f / c.S;   // Punkte -> Modelleinheiten im Augenraum
 	// MOD (16.11.): Combots sind im Spiel groesser geworden - die Montagehalle zeigt sie weiter in der gewohnten Groesse
 	const glm::mat4 bodyBase = base * glm::scale(glm::mat4(1.f), glm::vec3(1.8f / std::max(0.5f, modcombot::modelScale())));
+	modcombot::setEmitEffects(true);   // (23:00) Energieschilde, Auge, Laserklinge auch in der Baustation zeigen
 	modcombot::drawLoadout(lo, modcombot::ANIM_IDLE, now, 0, bodyBase, [&](const iIMDShape *shape, const glm::mat4 &m, const Part *p) {
 		glm::mat4 mm = m;
 		for (int s = 0; s < modcombot::SLOT_COUNT; ++s)
@@ -695,8 +717,10 @@ void drawBay(const Ctx &c)
 				break;
 			}
 		}
+		if (modcombot::drawEffectPiece(shape, mm, view, p, 7u)) { return; }
 		pie_Draw3DShape(shape, 0, team, WZCOL_WHITE, pie_BUTTON, 0, mm, view);
 	});
+	modcombot::setEmitEffects(false);
 }
 
 void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -766,6 +790,26 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			box(x, y, x + w - 1, y + h - 1, modui::cyan(on ? 255 : 150));
 			const std::string t = k == 0 ? "RIGHT ARM" : "LEFT ARM";
 			modui::text(t, x + (w - modui::textWidth(t, sc)) / 2, y + c.L(4.f), on ? pal_RGBA(255, 255, 255, 255) : modui::cyan(), sc);
+		}
+	}
+
+	// Konzern-Knoepfe (23:00)
+	{
+		static const char *kCorpLbl[3] = { "RIMTECH", "MIL-AGRO", "NEUROPA" };
+		static const int kCorpCol[3][3] = { { 40, 110, 230 }, { 200, 40, 34 }, { 140, 70, 200 } };
+		const int curCorp = s_target[modcombot::SLOT_TORSO] != nullptr ? s_target[modcombot::SLOT_TORSO]->corp : -1;
+		for (int k = 0; k < 3; ++k)
+		{
+			const bool on = curCorp == k;
+			const bool hl = k < static_cast<int>(s_corpBtn.size()) && (s_corpBtn[static_cast<size_t>(k)]->getState() & WBUT_HIGHLIGHT) != 0;
+			const int x = c.X(6.f + k * 52.f), y = c.Y(320);
+			const int w = c.L(50.f), h = c.L(17.f);
+			const int *cc = kCorpCol[k];
+			pie_BoxFill_alpha(x, y, x + w, y + h, on ? pal_RGBA(cc[0], cc[1], cc[2], 200) : pal_RGBA(cc[0] / 5, cc[1] / 5, cc[2] / 5, hl ? 230 : 200));
+			box(x, y, x + w - 1, y + h - 1, on ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(std::min(255, cc[0] + 60), std::min(255, cc[1] + 60), std::min(255, cc[2] + 60), hl ? 255 : 180));
+			const std::string t = kCorpLbl[k];
+			const int tw = modui::textWidth(t, sc);
+			modui::text(t, x + std::max(1, (w - tw) / 2), y + c.L(4.f), on || hl ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(210, 220, 235, 255), sc);
 		}
 	}
 
@@ -934,6 +978,7 @@ void layout()
 	set(s_arrBtn[1], 137, 282, 23, 13);
 	set(s_sideBtn[0], 6, 300, 74, 17);
 	set(s_sideBtn[1], 86, 300, 74, 17);
+	for (size_t k = 0; k < s_corpBtn.size(); ++k) { set(s_corpBtn[k], 6.f + static_cast<float>(k) * 52.f, 320, 50, 17); }
 	// Diagramm-Felder (Bildkoordinaten + (476,6))
 	const float px = 476.f, py = 6.f;
 	set(s_hotBtn[0], px + 17, py + 25, 19, 50);     // rechter Arm
@@ -971,7 +1016,7 @@ void buildScreen()
 	screen->psForm->attach(root);
 	const std::shared_ptr<WIDGET> parent = root;
 
-	s_tabBtn.clear(); s_rowBtn.clear(); s_arrBtn.clear(); s_sideBtn.clear(); s_hotBtn.clear(); s_actBtn.clear();
+	s_tabBtn.clear(); s_rowBtn.clear(); s_arrBtn.clear(); s_sideBtn.clear(); s_hotBtn.clear(); s_actBtn.clear(); s_corpBtn.clear();
 	static const char *tabTips[4] = { "Arms: weapons and melee attachments", "Legs: movement", "Torso: body, armour and hit points", "Complete combot designs" };
 	for (int t = 0; t < 4; ++t) { s_tabBtn.push_back(makeBtn(parent, hotDisplay, static_cast<UDWORD>(t), tabTips[t], [t]() { setTab(t); })); }
 	for (int i = 0; i < ROWS; ++i)
@@ -987,6 +1032,9 @@ void buildScreen()
 	s_arrBtn.push_back(makeBtn(parent, hotDisplay, 1, "Scroll down", []() { scrollBy(5); }));
 	s_sideBtn.push_back(makeBtn(parent, hotDisplay, 0, "Edit the right arm", []() { setSide(1); }));
 	s_sideBtn.push_back(makeBtn(parent, hotDisplay, 1, "Edit the left arm", []() { setSide(-1); }));
+	s_corpBtn.push_back(makeBtn(parent, hotDisplay, 0, "Rimtech parts (blue / cream)", []() { setCorp(0); }));
+	s_corpBtn.push_back(makeBtn(parent, hotDisplay, 1, "Mil-Agro parts (red / grey)", []() { setCorp(1); }));
+	s_corpBtn.push_back(makeBtn(parent, hotDisplay, 2, "Neuropa parts (purple / olive)", []() { setCorp(2); }));
 	s_hotBtn.push_back(makeBtn(parent, hotDisplay, 0, "Right arm", []() { setSide(1); }));
 	s_hotBtn.push_back(makeBtn(parent, hotDisplay, 1, "Left arm", []() { setSide(-1); }));
 	s_hotBtn.push_back(makeBtn(parent, hotDisplay, 2, "Torso", []() { setTab(TAB_TORSO); }));
@@ -1048,7 +1096,7 @@ void close()
 		widgRemoveOverlayScreen(s_screen);
 		s_screen = nullptr;
 		s_root = nullptr;
-		s_tabBtn.clear(); s_rowBtn.clear(); s_arrBtn.clear(); s_sideBtn.clear(); s_hotBtn.clear(); s_actBtn.clear();
+		s_tabBtn.clear(); s_rowBtn.clear(); s_arrBtn.clear(); s_sideBtn.clear(); s_hotBtn.clear(); s_actBtn.clear(); s_corpBtn.clear();
 	}
 	modpanel::setSuppressed(false);
 	modlayer::setSuppressed(false);
@@ -1078,7 +1126,7 @@ void shutdown()
 		s_screen = nullptr;
 	}
 	s_root = nullptr;
-	s_tabBtn.clear(); s_rowBtn.clear(); s_arrBtn.clear(); s_sideBtn.clear(); s_hotBtn.clear(); s_actBtn.clear();
+	s_tabBtn.clear(); s_rowBtn.clear(); s_arrBtn.clear(); s_sideBtn.clear(); s_hotBtn.clear(); s_actBtn.clear(); s_corpBtn.clear();
 	for (int i = 0; i < modcombot::SLOT_COUNT; ++i) { s_target[i] = nullptr; s_shown[i] = nullptr; s_anim[i] = SlotAnim(); }
 	s_list.clear();
 }
