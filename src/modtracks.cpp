@@ -145,14 +145,23 @@ void emit(const DROID *d, float x0, float y0, float x1, float y1, uint8_t phase)
 	// quer zur Fahrtrichtung (in Weltkoordinaten); welche Seite links ist, spielt keine Rolle (beide Laufwerke)
 	const float qx = uy, qy = -ux;
 	const float mx = 0.5f * (x0 + x1), my = 0.5f * (y0 + y1);
-	// Spurbreite: Kette/Halbkette wie das Laufwerk, Reifen etwas schmaler als das Rad-Modell (Profil, nicht Felge)
-	const float k = kind == TYRE ? 0.75f : 0.9f;
+	// Spurbreite: Kette/Halbkette wie das Laufwerk (die WZ-Abdruck-Textur hat links und rechts einen schmalen leeren Rand, der sichtbare
+	// Abdruck ist damit gut 85 % des Laufwerks), Reifen etwas schmaler als das Rad-Modell (Profil, nicht Felge)
+	const float k = kind == TYRE ? 0.85f : 1.0f;
 	const uint8_t layer = static_cast<uint8_t>(modlayer::layerOf(d));
 	for (const auto &side : { std::make_pair(lc, lw), std::make_pair(rc, rw) })
 	{
 		const float off = side.first, w = std::max(2.f, side.second * k);
 		addMark(mx + qx * off, my + qy * off, ux, uy, dist, w, kind, layer, phase);
 	}
+}
+
+/// Abschnittslaenge relativ zur WZ-Kachel: die Kachel zeigt eine Kette von ~11 Einheiten Breite auf 16 Einheiten je Viertel
+float segScale(const DROID *d)
+{
+	float lc = 0.f, lw = 0.f, rc = 0.f, rw = 0.f;
+	if (!modDroidPropulsionSpan(d, lc, lw, rc, rw)) { return 1.f; }
+	return std::clamp(0.5f * (lw + rw) / 11.f, 1.f, 3.f);
 }
 
 void update()
@@ -179,8 +188,11 @@ void update()
 			L.seen = now;
 			const float dx = static_cast<float>(d->pos.x - L.x), dy = static_cast<float>(d->pos.y - L.y);
 			const float dd = dx * dx + dy * dy;
-			if (dd < SEG * SEG) { continue; }
-			if (dd > (6.f * SEG) * (6.f * SEG))
+			// (19.11. 17:06 "passen nicht zu den Kettengroessen"): das WZ-Muster waechst mit der Kette - breite Ketten (Fatboy, Mammut)
+			// bekommen laengere Abschnitte, damit die Glieder im Abdruck so gross wirken wie an der Kette selbst
+			const float seg = SEG * segScale(d);
+			if (dd < seg * seg) { continue; }
+			if (dd > (6.f * seg) * (6.f * seg))
 			{
 				// Sprung (Transporter, Ebenenwechsel, Laden): keine Spur ueber die Strecke
 				L.x = d->pos.x; L.y = d->pos.y;

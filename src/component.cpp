@@ -26,6 +26,8 @@
 #include "lib/framework/trig.h"
 #include <unordered_map>
 #include <algorithm>
+#include <map>
+#include <tuple>
 #include <cmath>
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/ivisdef.h"
@@ -440,29 +442,130 @@ static inline const iIMDBaseShape *getRightPropulsionIMD(const DROID *psDroid)
 }
 
 // MOD (18.11.): Lage der beiden Laufwerke quer zur Fahrtrichtung (Modell-x: Mitte und Breite links/rechts) fuer die Fahrspuren (modtracks)
+// (19.11. 17:06 "Die Kettenspuren sind zu klein und passen nicht zu den Kettengroessen"): Die WZ-Daten haben fuer beide Seiten EIN
+// gemeinsames Laufwerk-Modell (Schluessel "left", "right" leer) - bisher fiel deshalb jedes Fahrzeug auf eine Schaetzung aus dem Rumpf
+// zurueck (schmale Spur weit innen; beim Fatboy mit vier Kettensystemen besonders falsch). Jetzt: wie viele Flaechen des Laufwerk-Modells
+// (alle Ebenen) jeden halben x-Streifen bedecken; Streifen mit mindestens 20 % der staerksten Bedeckung bilden Gruppen, die aeusserste
+// Gruppe links und rechts = Lage und Breite der Ketten/Raeder (durchlaufende Querstreben zaehlen kaum). Ohne eigenes Laufwerk
+// (Scav-Fahrzeuge): dasselbe mit den bodennahen Flaechen des Rumpfs, erst danach die alte Schaetzung.
+static bool modSplitDrives(const iIMDShape *sh, bool lowOnly, float &lc, float &lw, float &rc, float &rw)
+{
+	if (sh == nullptr) { return false; }
+	float y0 = 1e9f, y1 = -1e9f;
+	for (const iIMDShape *lv = sh; lv != nullptr; lv = lv->next.get())
+	{
+		for (const Vector3f &p : lv->points) { y0 = std::min(y0, p.y); y1 = std::max(y1, p.y); }
+	}
+	if (y1 < y0) { return false; }
+	const float yCut = lowOnly ? y0 + 0.3f * (y1 - y0) : 1e9f;
+	std::vector<std::pair<float, float>> iv;
+	float xmin = 1e9f, xmax = -1e9f;
+	for (const iIMDShape *lv = sh; lv != nullptr; lv = lv->next.get())
+	{
+		for (const iIMDPoly &poly : lv->polys)
+		{
+			float a = 1e9f, b = -1e9f, ylo = 1e9f;
+			bool ok = true;
+			for (uint32_t k : poly.pindex)
+			{
+				if (k >= lv->points.size()) { ok = false; break; }
+				const Vector3f &p = lv->points[k];
+				a = std::min(a, p.x); b = std::max(b, p.x); ylo = std::min(ylo, p.y);
+			}
+			if (!ok || ylo > yCut) { continue; }
+			iv.emplace_back(a, b);
+			xmin = std::min(xmin, a); xmax = std::max(xmax, b);
+		}
+	}
+	const float span = xmax - xmin;
+	if (iv.size() < 4 || span < 4.f || span > 2000.f) { return false; }
+	constexpr float BIN = 0.5f;
+	const int nb = static_cast<int>(std::ceil(span / BIN)) + 1;
+	std::vector<int> cnt(static_cast<size_t>(nb), 0);
+	for (const auto &ab : iv)
+	{
+		const int i0 = std::clamp(static_cast<int>(std::floor((ab.first - xmin) / BIN)), 0, nb - 1);
+		const int i1 = std::clamp(static_cast<int>(std::ceil((ab.second - xmin) / BIN)), i0 + 1, nb);
+		for (int i = i0; i < i1; ++i) { ++cnt[static_cast<size_t>(i)]; }
+	}
+	const int peak = *std::max_element(cnt.begin(), cnt.end());
+	const int thr = std::max(1, (peak + 4) / 5);
+	int la = -1, lb = -1, ra = -1, rb = -1, groups = 0;
+	for (int i = 0; i < nb;)
+	{
+		if (cnt[static_cast<size_t>(i)] < thr) { ++i; continue; }
+		int j = i;
+		while (j + 1 < nb && cnt[static_cast<size_t>(j + 1)] >= thr) { ++j; }
+		if (groups == 0) { la = i; lb = j; }
+		ra = i; rb = j;
+		++groups;
+		i = j + 1;
+	}
+	if (groups < 2) { return false; }
+	const float L0 = xmin + la * BIN, L1 = xmin + (lb + 1) * BIN, R0 = xmin + ra * BIN, R1 = xmin + (rb + 1) * BIN;
+	// eine Gruppe breiter als 40 % des Ganzen ist kein Laufwerk mehr (Rumpfboden); beide Seiten etwa gleich weit von der Mitte
+	if (L1 - L0 > 0.4f * span || R1 - R0 > 0.4f * span || L1 - L0 < 1.f || R1 - R0 < 1.f) { return false; }
+	if (std::abs((L0 + L1) + (R0 + R1)) * 0.5f > 0.25f * span) { return false; }
+	lc = 0.5f * (L0 + L1); lw = L1 - L0;
+	rc = 0.5f * (R0 + R1); rw = R1 - R0;
+	return true;
+}
+
+namespace
+{
+struct ModDriveSpan { bool ok; float lc, lw, rc, rw; };
+}
+
 bool modDroidPropulsionSpan(const DROID *psDroid, float &leftCenter, float &leftWidth, float &rightCenter, float &rightWidth)
 {
 	if (psDroid == nullptr || psDroid->asBits[COMP_BODY] >= asBodyStats.size()) { return false; }
 	if (static_cast<size_t>(psDroid->asBits[COMP_PROPULSION]) * NUM_PROP_SIDES + RIGHT_PROP >= asBodyStats[psDroid->asBits[COMP_BODY]].ppIMDList.size()) { return false; }
-	auto span = [](const iIMDBaseShape *b, float &c, float &w) -> bool {
-		if (b == nullptr) { return false; }
-		const iIMDShape *sh = b->displayModel();
-		if (sh == nullptr) { return false; }
-		c = 0.5f * (static_cast<float>(sh->min.x) + static_cast<float>(sh->max.x));
-		w = static_cast<float>(sh->max.x) - static_cast<float>(sh->min.x);
-		return w > 0.5f;
-	};
-	const bool l = span(getLeftPropulsionIMD(psDroid), leftCenter, leftWidth);
-	const bool r = span(getRightPropulsionIMD(psDroid), rightCenter, rightWidth);
-	if (l && r) { return true; }
-	// Scav-Fahrzeuge u. a.: Raeder/Ketten sind Teil des Rumpf-Modells (kein eigenes Laufwerk) - Spuren unter den Rumpfkanten
+	auto disp = [](const iIMDBaseShape *b) -> const iIMDShape * { return b != nullptr ? b->displayModel() : nullptr; };
+	const iIMDShape *L = disp(getLeftPropulsionIMD(psDroid));
+	const iIMDShape *R = disp(getRightPropulsionIMD(psDroid));
 	const BODY_STATS *psBody = psDroid->getBodyStats();
-	if (psBody == nullptr || psBody->pIMD == nullptr || psBody->pIMD->displayModel() == nullptr) { return false; }
-	const iIMDShape *sh = psBody->pIMD->displayModel();
-	const float ex = std::max(std::abs(static_cast<float>(sh->min.x)), std::abs(static_cast<float>(sh->max.x)));
-	if (ex < 2.f) { return false; }
-	leftCenter = -0.74f * ex; rightCenter = 0.74f * ex;
-	leftWidth = rightWidth = 0.24f * ex;
+	const iIMDShape *B = (psBody != nullptr && psBody->pIMD != nullptr) ? psBody->pIMD->displayModel() : nullptr;
+	// Ergebnis je Modell-Kombination merken (die Flaechen-Auswertung laeuft so nur einmal je Fahrzeugtyp); neu, wenn Modelle neu geladen werden
+	static std::map<std::tuple<const void *, const void *, const void *>, ModDriveSpan> s_cache;
+	static unsigned s_gen = 0;
+	if (modelCacheStale(s_gen)) { s_cache.clear(); }
+	const auto key = std::make_tuple(static_cast<const void *>(L), static_cast<const void *>(R), static_cast<const void *>(B));
+	auto it = s_cache.find(key);
+	if (it == s_cache.end())
+	{
+		ModDriveSpan r{ false, 0.f, 0.f, 0.f, 0.f };
+		auto span = [](const iIMDShape *sh, float &c, float &w) -> bool {
+			if (sh == nullptr) { return false; }
+			c = 0.5f * (static_cast<float>(sh->min.x) + static_cast<float>(sh->max.x));
+			w = static_cast<float>(sh->max.x) - static_cast<float>(sh->min.x);
+			return w > 0.5f;
+		};
+		if (L != nullptr && R != nullptr && L != R)
+		{
+			// aeltere Daten: je Seite ein eigenes Modell (keins reicht ueber die Mitte)
+			const bool l = span(L, r.lc, r.lw), rr = span(R, r.rc, r.rw);
+			r.ok = l && rr && !(L->min.x < 0 && L->max.x > 0) && !(R->min.x < 0 && R->max.x > 0);
+		}
+		// ein gemeinsames Modell fuer beide Seiten: Laufwerke aus den Flaechen heraussuchen
+		if (!r.ok) { r.ok = modSplitDrives(L, false, r.lc, r.lw, r.rc, r.rw); }
+		if (!r.ok) { r.ok = modSplitDrives(R, false, r.lc, r.lw, r.rc, r.rw); }
+		// Scav-Fahrzeuge u. a.: Raeder/Ketten sind Teil des Rumpf-Modells - bodennahe Rumpfflaechen, sonst Schaetzung unter den Rumpfkanten
+		if (!r.ok) { r.ok = modSplitDrives(B, true, r.lc, r.lw, r.rc, r.rw); }
+		if (!r.ok && B != nullptr)
+		{
+			const float ex = std::max(std::abs(static_cast<float>(B->min.x)), std::abs(static_cast<float>(B->max.x)));
+			if (ex >= 2.f)
+			{
+				r.lc = -0.74f * ex; r.rc = 0.74f * ex;
+				r.lw = r.rw = 0.24f * ex;
+				r.ok = true;
+			}
+		}
+		it = s_cache.emplace(key, r).first;
+	}
+	if (!it->second.ok) { return false; }
+	leftCenter = it->second.lc; leftWidth = it->second.lw;
+	rightCenter = it->second.rc; rightWidth = it->second.rw;
 	return true;
 }
 
