@@ -34,6 +34,7 @@
 #include "console.h"
 
 #include "modarty.h"
+#include <unordered_map>
 #include "modfort.h"
 #include "modduel.h"
 #include "modlayer.h"
@@ -2398,6 +2399,39 @@ static void moveUpdateVtolModel(DROID *psDroid, SDWORD speed, uint16_t direction
 	}
 }
 
+// MOD (Wunsch 19.11. 22:33 "eine Traegheit einbauen, die die ersten Schritte langsamer machen laesst"): Laeufer mit gaitStride (Battle Mechs)
+// laufen mit rund 30 % an und erreichen die volle Geschwindigkeit nach gut 2 s; bremsen sofort (Wegpunkte/Ziel genau treffen).
+// Spiellogik (gameTime, fuer alle gleich); Zustand nur im Speicher (nach dem Laden laeuft ein Mech einfach neu an).
+namespace
+{
+struct ModGaitAccel { int32_t cur16 = 0; uint32_t t = 0; };
+std::unordered_map<uint32_t, ModGaitAccel> s_modGaitAccel;
+}
+static SDWORD modGaitAccel(const DROID *psDroid, SDWORD moveSpeed)
+{
+	const BODY_STATS *body = psDroid->getBodyStats();
+	if (body == nullptr || body->gaitStride <= 0) { return moveSpeed; }
+	if (s_modGaitAccel.size() > 4096) { s_modGaitAccel.clear(); }
+	ModGaitAccel &a = s_modGaitAccel[psDroid->id];
+	const int32_t vmax16 = std::max<int32_t>(16, static_cast<int32_t>(psDroid->baseSpeed) * 16);
+	const int32_t want16 = std::max<int32_t>(0, moveSpeed) * 16;
+	if (a.t == 0 || gameTime - a.t > 1000 || want16 == 0)
+	{
+		a.cur16 = std::min(want16, vmax16 * 30 / 100);
+	}
+	else if (want16 > a.cur16)
+	{
+		const int32_t dt = static_cast<int32_t>(std::min<uint32_t>(gameTime - a.t, 1000));
+		a.cur16 = std::min(want16, a.cur16 + std::max<int32_t>(1, vmax16 * dt / 2200));
+	}
+	else
+	{
+		a.cur16 = want16;
+	}
+	a.t = gameTime;
+	return a.cur16 / 16;
+}
+
 static void moveUpdateCyborgModel(DROID *psDroid, SDWORD moveSpeed, uint16_t moveDir, UBYTE oldStatus)
 {
 	CHECK_DROID(psDroid);
@@ -2419,7 +2453,7 @@ static void moveUpdateCyborgModel(DROID *psDroid, SDWORD moveSpeed, uint16_t mov
 	}
 
 	/* use baba person movement */
-	moveUpdatePersonModel(psDroid, moveSpeed, moveDir);
+	moveUpdatePersonModel(psDroid, modGaitAccel(psDroid, moveSpeed), moveDir);   // MOD (22:33): Mechs laufen langsam an
 
 	psDroid->rot.pitch = 0;
 	psDroid->rot.roll  = 0;
@@ -3075,7 +3109,7 @@ void moveUpdateDroid(DROID *psDroid)
 
 	if (psDroid->droidType == DROID_PERSON)
 	{
-		moveUpdatePersonModel(psDroid, moveSpeed, moveDir);
+		moveUpdatePersonModel(psDroid, modarty::halted(psDroid) ? 0 : moveSpeed, moveDir);   // MOD (22:33): Steilfeuer - steht
 	}
 	else if (psDroid->isCyborg())
 	{

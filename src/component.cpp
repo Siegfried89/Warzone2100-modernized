@@ -572,11 +572,49 @@ bool modDroidPropulsionSpan(const DROID *psDroid, float &leftCenter, float &left
 // MOD (19.11. "Die Walkeranimation von allen Mechs soll realistisch sein"): Laufzyklus nach der zurueckgelegten Strecke statt nach der Zeit.
 // Rumpf mit "gaitStride" (body.json, Weg je Schrittzyklus): der Kilometerzaehler der Einheit bestimmt das Bild - die Fuesse stehen in
 // der Standphase still auf dem Boden, egal wie schnell die Einheit gerade laeuft (Gelaende, Steigung, Anfahren). Nur Anzeige.
+// (19.11. 22:33 "Animation viel fluessiger, Traegheit, Rennanimation mit weichem Uebergang"): die Lauf-Animation hat gaitBlends Stufen
+// (Gehen ... Rennen) mit je gleich vielen Bildern hintereinander. Die Stufe folgt der gemessenen Geschwindigkeit im Verhaeltnis zur
+// Hoechstgeschwindigkeit (geglaettet, mit Schaltschwelle); die Phase laeuft mit dem Weg der Einheit durch die Schrittlaenge der Stufe.
 namespace
 {
-struct ModGait { int32_t x = 0, y = 0; double odo = 0.0; uint32_t seen = 0; uint32_t moved = 0; };
+struct ModGait { int32_t x = 0, y = 0; double phase = 0.0; float spd = 0.f; float blend = 0.f; int level = 0; uint32_t seen = 0; uint32_t moved = 0; };
 std::unordered_map<uint32_t, ModGait> s_modGait;
 uint32_t s_modGaitPrune = 0;
+}
+static double modGaitStrideOf(const BODY_STATS *body, int level)
+{
+	const int levels = std::max(1, body->gaitBlends);
+	if (levels <= 1 || body->gaitRunStride <= body->gaitStride) { return body->gaitStride; }
+	return body->gaitStride + (body->gaitRunStride - body->gaitStride) * static_cast<double>(level) / (levels - 1);
+}
+static void modGaitUpdate(const DROID *psDroid, const BODY_STATS *body)
+{
+	ModGait &g = s_modGait[psDroid->id];
+	if (g.seen == graphicsTime) { return; }
+	const int64_t dx = psDroid->pos.x - g.x, dy = psDroid->pos.y - g.y;
+	const double step = std::sqrt(static_cast<double>(dx * dx + dy * dy));
+	const int levels = std::max(1, body->gaitBlends);
+	if (g.seen != 0 && step < 3.0 * std::max(body->gaitStride, body->gaitRunStride))   // Spruenge (Transport, Laden) zaehlen nicht
+	{
+		const float dt = static_cast<float>(std::max<uint32_t>(1, graphicsTime - g.seen));
+		const float v = static_cast<float>(step) * 1000.f / dt;
+		g.spd += (v - g.spd) * (1.f - std::exp(-dt / 250.f));
+		const float vmax = static_cast<float>(std::max<uint32_t>(1, psDroid->baseSpeed));
+		const float target = std::clamp((g.spd / vmax - 0.55f) / 0.30f, 0.f, 1.f);       // ab 55 % der Hoechstgeschwindigkeit -> rennen
+		g.blend += (target - g.blend) * (1.f - std::exp(-dt / 450.f));
+		if (levels > 1)
+		{
+			const float want = g.blend * (levels - 1);
+			if (std::abs(want - static_cast<float>(g.level)) > 0.6f) { g.level = std::clamp(static_cast<int>(std::lround(want)), 0, levels - 1); }
+		}
+		else
+		{
+			g.level = 0;
+		}
+		g.phase = std::fmod(g.phase + step / std::max(1.0, modGaitStrideOf(body, g.level)), 1.0);
+		if (step > 0.5) { g.moved = graphicsTime; }
+	}
+	g.x = psDroid->pos.x; g.y = psDroid->pos.y; g.seen = graphicsTime;
 }
 static UDWORD modGaitAnimStart(const DROID *psDroid, const iIMDShape *animShape, UDWORD fallback)
 {
@@ -585,38 +623,39 @@ static UDWORD modGaitAnimStart(const DROID *psDroid, const iIMDShape *animShape,
 	{
 		return fallback;
 	}
-	ModGait &g = s_modGait[psDroid->id];
-	if (g.seen != graphicsTime)
-	{
-		const int64_t dx = psDroid->pos.x - g.x, dy = psDroid->pos.y - g.y;
-		const double step = std::sqrt(static_cast<double>(dx * dx + dy * dy));
-		if (g.seen != 0 && step < 3.0 * body->gaitStride) { g.odo += step; if (step > 0.5) { g.moved = graphicsTime; } }   // Spruenge (Transport, Laden) zaehlen nicht
-		g.x = psDroid->pos.x; g.y = psDroid->pos.y; g.seen = graphicsTime;
-	}
+	modGaitUpdate(psDroid, body);
 	if (graphicsTime - s_modGaitPrune > 10000)
 	{
 		s_modGaitPrune = graphicsTime;
 		for (auto it = s_modGait.begin(); it != s_modGait.end();) { if (graphicsTime - it->second.seen > 10000) { it = s_modGait.erase(it); } else { ++it; } }
 	}
-	const double cycleMs = static_cast<double>(animShape->objanimtime) * animShape->objanimframes;
-	const double phase = std::fmod(s_modGait[psDroid->id].odo / body->gaitStride, 1.0);
-	return graphicsTime - static_cast<UDWORD>(phase * cycleMs);
+	const ModGait &g = s_modGait[psDroid->id];
+	const int levels = std::max(1, body->gaitBlends);
+	const int perLevel = animShape->objanimframes / levels;
+	if (perLevel <= 0) { return fallback; }
+	const int level = std::clamp(g.level, 0, levels - 1);
+	const int frame = std::clamp(static_cast<int>(g.phase * perLevel), 0, perLevel - 1);
+	const int idx = level * perLevel + frame;
+	return graphicsTime - static_cast<UDWORD>(idx * animShape->objanimtime + animShape->objanimtime / 2);
 }
 
-// MOD (Wunsch 19.11. 21:25 "der Oberkoerper dreht sich ganz leicht auf der Mittelachse rechts/links pro links/rechts Schritt"):
-// Gier-Winkel (Bogenmass) des Oberkoerpers im Takt des Laufzyklus (rund 3 Grad je Seite); steht die Einheit, laeuft er weich auf 0 aus.
-// Nur Anzeige; nur Ruempfe mit gaitStride (Mechs). Muss nach modGaitAnimStart im selben Bild aufgerufen werden (Kilometerzaehler).
-static float modGaitTorsoYaw(const DROID *psDroid)
+// MOD (Wunsch 19.11. 21:25 "der Oberkoerper dreht sich ganz leicht auf der Mittelachse rechts/links pro links/rechts Schritt";
+// 22:33 "dreht sich nicht sichtbar" -> 5 Grad, beim Rennen 8 Grad; "beim Rennen ... Oberkoerper geduckter, ganz leicht nach vorne gebeugt"):
+// Gier-Winkel und Vorneigung (Bogenmass) des Oberkoerpers im Takt des Laufzyklus; steht die Einheit, laufen beide weich auf 0 aus.
+// Nur Anzeige; nur Ruempfe mit gaitStride (Mechs). Muss nach modGaitAnimStart im selben Bild aufgerufen werden.
+static void modGaitTorso(const DROID *psDroid, float &yaw, float &lean)
 {
+	yaw = 0.f; lean = 0.f;
 	const BODY_STATS *body = psDroid->getBodyStats();
-	if (body == nullptr || body->gaitStride <= 0) { return 0.f; }
+	if (body == nullptr || body->gaitStride <= 0) { return; }
 	const auto it = s_modGait.find(psDroid->id);
-	if (it == s_modGait.end() || it->second.moved == 0) { return 0.f; }
+	if (it == s_modGait.end() || it->second.moved == 0) { return; }
 	const float still = static_cast<float>(graphicsTime - it->second.moved);
-	const float amp = 0.052f * std::max(0.f, 1.f - still / 400.f);
-	if (amp <= 0.f) { return 0.f; }
-	const double phase = std::fmod(it->second.odo / body->gaitStride, 1.0);
-	return amp * static_cast<float>(std::sin(phase * 2.0 * M_PI));
+	const float fade = std::max(0.f, 1.f - still / 400.f);
+	if (fade <= 0.f) { return; }
+	const float run = std::clamp(it->second.blend, 0.f, 1.f);
+	yaw = fade * (0.087f + 0.053f * run) * static_cast<float>(std::sin(it->second.phase * 2.0 * M_PI));
+	lean = -fade * 0.14f * run;   // rund 8 Grad nach vorn beim Rennen
 }
 
 // MOD (19.11. "Die Walkeranimation von allen Mechs soll realistisch sein"): Blaetter-Animation (je Bild eine Ebene, ANIMOBJECT blendet die
@@ -1135,8 +1174,10 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					}
 					if (!bButton)
 					{
-						const float twist = modGaitTorsoYaw(psDroid);   // MOD (19.11. 21:25): Oberkoerper dreht sich je Schritt leicht mit
+						float twist = 0.f, lean = 0.f;
+						modGaitTorso(psDroid, twist, lean);   // MOD (19.11. 21:25/22:33): Oberkoerper dreht sich je Schritt mit, beim Rennen vorgebeugt
 						if (twist != 0.f) { localModelMatrix *= glm::rotate(twist, glm::vec3(0.f, 1.f, 0.f)); }
+						if (lean != 0.f) { localModelMatrix *= glm::rotate(lean, glm::vec3(1.f, 0.f, 0.f)); }
 					}
 					if (!bButton)
 					{

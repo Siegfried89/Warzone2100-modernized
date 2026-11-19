@@ -58,11 +58,16 @@ bool mechBody(const DROID *d)
 
 bool groundVehicle(const DROID *d)
 {
-	if (d == nullptr) { return false; }
-	if (mechBody(d)) { return true; }                       // (19.11. 22:04) Battle Mech: Steilfeuer mit den Raketenbatterien
-	if (d->droidType != DROID_WEAPON) { return false; }   // keine Cyborgs, Infanterie, Transporter, Bau-/Sensorfahrzeuge
-	if (d->isVtol() || d->isTransporter()) { return false; }
-	return true;
+	// (19.11. 22:33 "Diesen Prozentanteil fuer alle"): jede bodengebundene Einheit mit Waffe - Panzer, Mechs, Cyborgs, Kommandeure,
+	// Infanterie; ob es den Modus gibt, entscheidet die Waffe (Steilfeuer-Fassung "<ID>_ARTY" im Mod vorhanden)
+	if (d == nullptr || d->isVtol() || d->isTransporter()) { return false; }
+	switch (d->droidType)
+	{
+	case DROID_WEAPON: case DROID_CYBORG: case DROID_CYBORG_SUPER: case DROID_COMMAND: case DROID_PERSON:
+		return true;
+	default:
+		return false;
+	}
 }
 }
 
