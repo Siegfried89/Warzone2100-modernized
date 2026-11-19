@@ -49,13 +49,38 @@ void ensureTables()
 	}
 }
 
+bool mechBody(const DROID *d)
+{
+	if (d == nullptr || d->droidType != DROID_CYBORG_SUPER) { return false; }
+	const BODY_STATS *b = d->getBodyStats();
+	return b != nullptr && b->gaitStride > 0;   // Battle Mechs (Lauf nach Strecke); der GDI Juggernaut (eigene Artillerie) hat keinen
+}
+
 bool groundVehicle(const DROID *d)
 {
 	if (d == nullptr) { return false; }
+	if (mechBody(d)) { return true; }                       // (19.11. 22:04) Battle Mech: Steilfeuer mit den Raketenbatterien
 	if (d->droidType != DROID_WEAPON) { return false; }   // keine Cyborgs, Infanterie, Transporter, Bau-/Sensorfahrzeuge
 	if (d->isVtol() || d->isTransporter()) { return false; }
 	return true;
 }
+}
+
+bool isMech(const DROID *psDroid)
+{
+	return mechBody(psDroid);
+}
+
+uint16_t restPitch(const DROID *psDroid, uint32_t weaponStat)
+{
+	if (!isArtyWeapon(weaponStat)) { return 0; }
+	return static_cast<uint16_t>(mechBody(psDroid) ? DEG(30) : DEG(68));
+}
+
+uint16_t aimPitch(const DROID *psDroid, int dist, int longRange)
+{
+	const int a = shotAngle(dist, longRange);
+	return static_cast<uint16_t>(mechBody(psDroid) ? a * 45 / 100 : a);
 }
 
 bool supported(const DROID *psDroid)

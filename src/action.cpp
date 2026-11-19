@@ -304,7 +304,7 @@ void actionAlignTurret(BASE_OBJECT *psObj, int weapon_slot)
 
 	// align the turret pitch
 	// MOD: im Artillerie-Modus (modarty) bleibt das Rohr steil aufgerichtet wie bei einem Artilleriepanzer
-	const uint16_t restPitch = (psObj->type == OBJ_DROID) ? modarty::restPitch(((DROID *)psObj)->asWeaps[weapon_slot].nStat) : 0;
+	const uint16_t restPitch = (psObj->type == OBJ_DROID) ? modarty::restPitch((DROID *)psObj, ((DROID *)psObj)->asWeaps[weapon_slot].nStat) : 0;   // (22:04) Mech flacher
 	tPitch += clip(angleDelta(restPitch - tPitch), -rotation / 2, rotation / 2); // Addition wrapping intended.
 
 	switch (psObj->type)
@@ -434,7 +434,7 @@ bool actionTargetTurret(BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, WEAPON *
 		const int range = std::max(1, proj_GetLongRange(*psWeapStats, psAttacker->player));
 		const int dxy = iHypot((psTarget->pos - psAttacker->pos).xy());
 		const int frac = clip(dxy * 100 / range, 0, 100);
-		const uint16_t targetPitch = modarty::isArtyWeapon(psWeapon->nStat) ? static_cast<uint16_t>(modarty::shotAngle(dxy, range))
+		const uint16_t targetPitch = modarty::isArtyWeapon(psWeapon->nStat) ? modarty::aimPitch((const DROID *)psAttacker, dxy, range)
 		                                                                   : static_cast<uint16_t>(DEG(62) - DEG(16) * frac / 100);
 		tPitch += clip(angleDelta(targetPitch - tPitch), -pitchRate, pitchRate);  // Addition wrapping intended.
 	}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Artillerie-Modus fuer Panzer und Laeufer mit normalen Kanonen (Wunsch 14.11., Punkt 21).
+// MOD: Artillerie-Modus fuer Panzer und Laeufer mit normalen Kanonen (Wunsch 14.11., Punkt 21); seit 19.11. 22:04 auch Battle Mechs.
 //  - Neuer Knopf im Befehlsmenue (Zweitbefehl DSO_ARTILLERY). Eingeschaltet richtet der Panzer das Rohr steil auf wie ein
 //    Artilleriepanzer und schiesst im Bogen (indirekt) mit groesserer Reichweite, langsamerer Feuerfolge und mehr Streuung.
 //    Die Geschosse sind die normalen, sichtbaren WZ-Kanonengeschosse; der Rueckstoss (modrecoil) bleibt.
@@ -27,6 +27,13 @@ void refresh(DROID *psDroid);
 bool isArtyWeapon(uint32_t weaponStat);
 /// Ruhe-Neigung des Rohrs (16-Bit-Winkel) fuer diese Waffe: Artillerie-Fassung zeigt steil nach oben, sonst 0
 uint16_t restPitch(uint32_t weaponStat);
+/// (Wunsch 19.11. 22:04) Battle Mech (Laeufer-Rumpf mit gaitStride): kann den Steilfeuermodus auch; seine Waffen heben sich dabei
+/// nicht ganz so stark an wie ein Panzerrohr (etwa die Haelfte des Abschusswinkels) - der Bogen der Geschosse bleibt gleich steil
+bool isMech(const DROID *psDroid);
+/// Ruhe-Neigung fuer eine Waffe dieser Einheit (Mech: flacher)
+uint16_t restPitch(const DROID *psDroid, uint32_t weaponStat);
+/// angezeigte Neigung beim Zielen im Steilfeuermodus (Panzer: Abschusswinkel; Mech: etwa die Haelfte)
+uint16_t aimPitch(const DROID *psDroid, int dist, int longRange);
 /// Steilfeuermodus an? (Zweitbefehl gesetzt und eine Artillerie-Fassung montiert)
 bool active(const DROID *psDroid);
 /// steht die Einheit wegen des Steilfeuermodus still? (Modus an - oder gerade abgeschaltet, solange das Rohr herunterfaehrt)
