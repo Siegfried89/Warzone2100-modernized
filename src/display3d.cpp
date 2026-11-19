@@ -4791,12 +4791,25 @@ void screenCoordToWorld(Vector2i screenCoord, Vector2i &worldCoord, SDWORD &tile
 {
 	int nearestZ = INT_MAX;
 	Vector2i outMousePos(0, 0);
+	// MOD: erst nur sauber projizierte Kacheln; trifft keine, wie frueher alle (sonst landete die Maus bei 0,0)
+	for (int pass = 0; pass < 2 && nearestZ == INT_MAX; ++pass)
+	{
 	// Intentionally not the same range as in drawTiles()
 	for (int i = -visibleTiles.y / 2, idx = 0; i < visibleTiles.y / 2; i++, ++idx)
 	{
 		for (int j = -visibleTiles.x / 2, jdx = 0; j < visibleTiles.x / 2; j++, ++jdx)
 		{
-			const int tileZ = tileScreenInfo[idx][jdx].z;
+			// MOD (Wunsch 19.11. 20:53 "die Auswahl ist manchmal nicht richtig bei Hoehenunterschieden und schlechtem Kamerawinkel"):
+			// Kacheln mit einer Ecke hinter/zu nah an der Kamera ergeben riesige Bildschirm-Vierecke (Ecke "weit weg"), die die Maus
+			// enthielten und als "naechste" gewaehlt wurden -> ueberspringen; Tiefe = Mittel der vier Ecken statt nur einer Ecke
+			// (an Haengen und Kuppen war eine einzelne Ecke oft naeher als die wirklich sichtbare Kachel)
+			const Vector3i &c00 = tileScreenInfo[idx][jdx], &c01 = tileScreenInfo[idx][jdx + 1], &c11 = tileScreenInfo[idx + 1][jdx + 1], &c10 = tileScreenInfo[idx + 1][jdx];
+			if (pass == 0 && (c00.z <= 0 || c01.z <= 0 || c11.z <= 0 || c10.z <= 0
+			    || c00.x >= LONG_WAY / 2 || c01.x >= LONG_WAY / 2 || c11.x >= LONG_WAY / 2 || c10.x >= LONG_WAY / 2))
+			{
+				continue;
+			}
+			const int tileZ = pass == 0 ? (c00.z + c01.z + c11.z + c10.z) / 4 : c00.z;
 
 			if (tileZ <= nearestZ)
 			{
@@ -4843,6 +4856,7 @@ void screenCoordToWorld(Vector2i screenCoord, Vector2i &worldCoord, SDWORD &tile
 				}
 			}
 		}
+	}
 	}
 	worldCoord = outMousePos;
 }
