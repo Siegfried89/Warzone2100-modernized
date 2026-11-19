@@ -51,7 +51,6 @@ Kind kindOf(const STRUCTURE *s)
 	default: break;
 	}
 	if (has("Refinery") || has("Cryo") || has("LayerShaft") || has("Storage") || has("NuclearPlant") || has("RocketSilo") || has("HydroPlant") || has("Sat-link")) { return K_CORNERS; }
-	if (has("UraniumMine")) { return K_TOP; }
 	if (has("Tower")) { return K_TOP; }
 	return K_NONE;
 }

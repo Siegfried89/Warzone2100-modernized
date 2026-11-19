@@ -364,37 +364,43 @@ bool tryUnderground(GameWorld &w, unsigned p, const Vector2i &base)
 		return true;
 	}
 	if (shaft->status != SS_BUILT || modlayer::layerOf(shaft) != modlayer::SURFACE) { return false; }
-	int below = 0;
-	DROID *idleBelow = nullptr;
+	// (19.11.) Uran kommt von Harvestern an den Lavafeldern im Untergrund (das Uranbergwerk gibt es nicht mehr): einen Harvester bauen
+	// und durch den Schacht hinunterschicken; unten faehrt er von selbst zum Lavafeld (modlava).
+	int harvesters = 0;
+	DROID *idleUp = nullptr;
 	for (DROID *d : w.objects.droids[p])
 	{
-		if (d->died || !d->isConstructionDroid()) { continue; }
-		if (modlayer::layerOf(d) == modlayer::UNDERGROUND) { below++; if (idleBelow == nullptr && idleIn(d, modlayer::UNDERGROUND)) { idleBelow = d; } }
-		else if (d->order.type == DORDER_MOVE && iHypot(d->order.pos - shaft->pos.xy()) < TILE_UNITS) { below++; }   // schon unterwegs
+		if (d->died || d->getBodyStats() == nullptr || !d->getBodyStats()->id.startsWith("HarvesterBody")) { continue; }
+		harvesters++;
+		if (idleUp == nullptr && modlayer::layerOf(d) == modlayer::SURFACE && d->order.type == DORDER_NONE) { idleUp = d; }
 	}
-	if (below == 0)
+	if (idleUp != nullptr && modlayer::isPortalTile(static_cast<int>(p), map_coord(shaft->pos.x), map_coord(shaft->pos.y)))
 	{
-		int trucks = 0;
-		for (const DROID *d : w.objects.droids[p]) { if (!d->died && d->isConstructionDroid()) { trucks++; } }
-		DROID *t = trucks >= 3 ? idleTruck(w, p) : nullptr;
-		if (t == nullptr || !modlayer::isPortalTile(static_cast<int>(p), map_coord(shaft->pos.x), map_coord(shaft->pos.y))) { return false; }
-		orderDroidLoc(t, DORDER_MOVE, shaft->pos.x, shaft->pos.y, ModeImmediate);
+		orderDroidLoc(idleUp, DORDER_MOVE, shaft->pos.x, shaft->pos.y, ModeImmediate);
 		s_nextDown[p] = gameTime + 40000;
 		return true;
 	}
-	if (idleBelow == nullptr) { return false; }
-	STRUCTURE_STATS *mine = available(p, "A0UraniumMine");
-	if (mine == nullptr || countOwn(w, p, "A0UraniumMine") >= 2 || !affordable(p, mine)) { return false; }
-	Vector2i at;
-	if (!findSpotIn(w, modlayer::UNDERGROUND, p, mine, idleBelow->pos.xy(), 2, 9, at)) { s_nextDown[p] = gameTime + 120000; return false; }
-	orderDroidStatsLocDir(idleBelow, DORDER_BUILD, mine, at.x, at.y, 0, ModeImmediate);
-	s_nextDown[p] = gameTime + 60000;
-	return true;
+	if (harvesters >= 2) { return false; }
+	DROID_TEMPLATE *t = findTemplate(p, "Harvester");
+	if (t == nullptr || !researchedTemplate(t, static_cast<int>(p), true) || getPower(p) < static_cast<int>(calcTemplatePower(t)) + 150) { return false; }
+	for (STRUCTURE *s : w.objects.structures[p])
+	{
+		if (s->died || s->status != SS_BUILT || !s->isFactory() || !s->isIdle() || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+		if (!validTemplateForFactory(t, s, false)) { continue; }
+		if (structSetManufacture(s, t, ModeImmediate)) { s_nextDown[p] = gameTime + 60000; return true; }
+	}
+	return false;
 }
 
 bool tryNuclear(GameWorld &w, unsigned p, const Vector2i &base)
 {
-	if (countOwn(w, p, "A0UraniumMine", true, modlayer::UNDERGROUND) == 0) { return false; }
+	// (19.11.) erst wenn ein Harvester im Untergrund Uran schuerft
+	bool harvester = false;
+	for (const DROID *d : w.objects.droids[p])
+	{
+		if (!d->died && d->getBodyStats() != nullptr && d->getBodyStats()->id.startsWith("HarvesterBody") && modlayer::layerOf(d) == modlayer::UNDERGROUND) { harvester = true; break; }
+	}
+	if (!harvester) { return false; }
 	STRUCTURE *plant = firstOwn(w, p, "A0NuclearPlant", false);
 	if (plant == nullptr)
 	{
