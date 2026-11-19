@@ -31,6 +31,7 @@
 #include "lib/framework/strres.h"
 #include "lib/netplay/netplay.h"
 #include "template.h"
+#include <cctype>
 #include "cmddroiddef.h"
 #include "mission.h"
 #include "objects.h"
@@ -772,7 +773,14 @@ bool loadDroidTemplates(const char *filename)
 		design.enabled = true;
 		bool available = ini.value("available", false).toBool();
 		char const *droidResourceName = getDroidResourceName(list[i].toUtf8().c_str());
-		design.name = WzString::fromUtf8(droidResourceName != nullptr ? droidResourceName : GetDefaultTemplateName(&design));
+		// MOD (19.11. 17:34 "sinnlose Eintraege im UI von Einheiten"): Mod-Vorlagen tragen einen echten Namen ("Zone Trooper", "Fatboy",
+		// "Combot Shield" ...) - den nehmen statt des zusammengesetzten "Waffe Rumpf Antrieb" ("Zone Trooper Railgun Zone Trooper Legs").
+		// Kennungs-artige Namen der Kampagnen-Vorlagen ("CO-M-HMG-T TR", "NP-L-HMG- HT") behalten den zusammengesetzten Namen.
+		const std::string iniName = design.name.toUtf8();
+		const bool idLike = iniName.size() >= 3 && std::isupper(static_cast<unsigned char>(iniName[0])) && std::isupper(static_cast<unsigned char>(iniName[1]))
+		                    && (iniName[2] == '-' || (iniName.size() >= 4 && std::isupper(static_cast<unsigned char>(iniName[2])) && iniName[3] == '-'));
+		if (droidResourceName != nullptr) { design.name = WzString::fromUtf8(droidResourceName); }
+		else if (iniName.empty() || idLike || (iniName.find('-') != std::string::npos && iniName.find(' ') == std::string::npos)) { design.name = WzString::fromUtf8(GetDefaultTemplateName(&design)); }
 		truncateTemplateName(design.name);
 		ini.endGroup();
 

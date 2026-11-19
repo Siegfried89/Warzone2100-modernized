@@ -4541,7 +4541,9 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 				}
 
 				// MOD: Original-Duplikate der Kampagnen-Gegner ("-Orig"), die klobigen Project-Betonfestungen und -Stellungen (Sechseck-Sockel) nie im Baumenue anbieten
-				if (psBuilding->id.endsWith("-Orig") || psBuilding->type == REF_FORTRESS)
+				// (19.11. 17:34 "Es gibt noch einige sinnlose Eintraege im UI"): der Fabrik-Kern der fahrenden Fabrik (Fatboy, "Kosten: 0") gehoert
+				// zum Fahrzeug und wird nie von Hand gebaut
+				if (psBuilding->id.endsWith("-Orig") || psBuilding->type == REF_FORTRESS || psBuilding->mobileCore)
 				{
 					continue;
 				}
