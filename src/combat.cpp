@@ -49,6 +49,7 @@
 #include "effects.h"
 #include "display3ddef.h"
 #include "campaigninfo.h"
+#include "modarty.h"
 #include "modgroundfire.h"
 #include "modlayer.h"
 #include "modgdiart.h"
@@ -242,6 +243,13 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	if (min_angle > DEG(PROJ_MAX_PITCH))
 	{
 		baseHitChance = baseHitChance * iCos(min_angle) / iCos(DEG(PROJ_MAX_PITCH));
+	}
+
+	// MOD (Wunsch 19.11. 19:43): Steilfeuermodus der Panzer - der Bogen ist steiler als beim Moerser (nah 75, weit 65 Grad).
+	// Erst hier gesetzt: Reichweite und Treffsicherheit stehen in den Werten der Artillerie-Fassung (arty.py), nicht im Winkel.
+	if (psAttacker->type == OBJ_DROID && !proj_Direct(psStats) && modarty::isArtyWeapon(psWeap->nStat))
+	{
+		min_angle = std::max(min_angle, modarty::shotAngle(dist, longRange));
 	}
 
 	// apply experience accuracy modifiers to the base

@@ -1509,6 +1509,20 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		return;
 	}
 
+	// MOD (Wunsch 19.11. 19:43): im Steilfeuermodus steht der Panzer - ein Fahrbefehl schaltet den Modus ab;
+	// nach ca. 1 s (Rohr faehrt herunter, modarty::halted) faehrt er los
+	if (modarty::isMoveOrder(psOrder->type) && modarty::active(psDroid))
+	{
+		psDroid->secondaryOrder &= ~DSS_ARTY_MASK;
+		psDroid->secondaryOrderPending &= ~DSS_ARTY_MASK;
+		modarty::apply(psDroid, false);
+		modarty::noteChanged(psDroid, false);
+		if (psDroid->player == selectedPlayer)
+		{
+			intRefreshScreen();
+		}
+	}
+
 	// deal with a droid receiving a primary order
 	if (!psDroid->isTransporter() && psOrder->type != DORDER_NONE && psOrder->type != DORDER_STOP && psOrder->type != DORDER_GUARD)
 	{
@@ -4252,9 +4266,23 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 		CurrState = (CurrState & ~DSS_ACCREP_MASK) | State;
 		break;
 	case DSO_ARTILLERY:   // MOD: Waffen zwischen Kanone und Artillerie-Fassung umschalten
+	{
+		const bool artyWasOn = (CurrState & DSS_ARTY_MASK) != 0;
+		const bool artyOn = (State & DSS_ARTY_MASK) != 0;
 		CurrState = (CurrState & ~DSS_ARTY_MASK) | (State & DSS_ARTY_MASK);
-		modarty::apply(psDroid, (State & DSS_ARTY_MASK) != 0);
+		modarty::apply(psDroid, artyOn);
+		if (artyOn != artyWasOn && modarty::supported(psDroid))
+		{
+			modarty::noteChanged(psDroid, artyOn);
+			// (Wunsch 19.11. 19:43) im Steilfeuermodus steht der Panzer: laufende Fahrbefehle (auch eingereihte) verwerfen
+			if (artyOn && modarty::isMoveOrder(psDroid->order.type))
+			{
+				orderClearDroidList(psDroid);
+				orderDroid(psDroid, DORDER_STOP, ModeImmediate);
+			}
+		}
 		break;
+	}
 	case DSO_MINECLEAR:   // MOD: Minenraeumer-Walze an/aus (nur Minenraeumer - bei Kommandeuren ist das Bit eine Fabrik-Zuordnung)
 		if (modmines::isFlail(psDroid) || modapc::isApc(psDroid) || modcombot::isModular(psDroid))   // Schuetzenpanzer: Absitzen / Combot: Aussteigen (modapc/modcrew setzen das Bit danach zurueck)
 		{
