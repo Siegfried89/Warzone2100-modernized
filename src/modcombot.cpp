@@ -56,6 +56,7 @@ struct Anim
 bool s_loaded = false;
 bool s_ok = false;
 float s_scale = 1.8f;
+float s_show = 1.f;   // MOD (19.11. 23:00 "die Groessenordnung auch"): Anzeige-Vergroesserung im Spiel (parts.json "show"), Baustation unveraendert
 int s_armb[2][3] = {{9, 10, 11}, {12, 13, 14}};
 std::vector<Part> s_parts;
 std::map<std::string, std::vector<Anim>> s_filesAnims;   // je RobotParts-Datei, in Dateireihenfolge
@@ -119,6 +120,7 @@ bool loadAll()
 	nlohmann::json pj = nlohmann::json::parse(buf.begin(), buf.end(), nullptr, false);
 	if (pj.is_discarded() || !pj.contains("parts")) { return false; }
 	s_scale = pj.value("scale", 1.8f);
+	s_show = std::clamp(pj.value("show", 1.f), 0.25f, 4.f);
 	if (pj.contains("armb") && pj["armb"].is_array() && pj["armb"].size() == 2)
 	{
 		for (int s = 0; s < 2; ++s) { for (int i = 0; i < 3; ++i) { s_armb[s][i] = pj["armb"][s][i].get<int>(); } }
@@ -877,7 +879,7 @@ unsigned walkPhaseMs(const DROID *d)
 	if (w.last == 0 || now < w.last || now - w.last > 1000) { w.last = now; }
 	const float cycleMs = a != nullptr ? static_cast<float>(a->nf * a->ms) : 1100.f;
 	const float spd = std::fabs(static_cast<float>(d->sMove.speed));
-	const float strideWorld = WALK_STRIDE_MF * s_scale;
+	const float strideWorld = WALK_STRIDE_MF * s_scale * s_show;   // (23:00) groesser angezeigt -> laengere Schritte
 	float rate = spd > 1.f ? spd * cycleMs / 1000.f / strideWorld : 0.5f;
 	rate = std::clamp(rate, 0.25f, 3.f);
 	w.ms += static_cast<double>(now - w.last) * static_cast<double>(rate);
@@ -1087,7 +1089,8 @@ bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view,
 		pieFlagData = 110;
 	}
 	s_emitGlow = !bButton && !(pieFlag & pie_TRANSLUCENT);
-	drawLoadout(lo, kind, elapsed, static_cast<int>(d->id), model, [&](const iIMDShape *s, const glm::mat4 &m, const Part *p) {
+	const glm::mat4 shown = (bButton || s_show == 1.f) ? model : model * glm::scale(glm::mat4(1.f), glm::vec3(s_show));   // (23:00) im Spiel groesser
+	drawLoadout(lo, kind, elapsed, static_cast<int>(d->id), shown, [&](const iIMDShape *s, const glm::mat4 &m, const Part *p) {
 		if (drawEffectPiece(s, m, view, p, d->id)) { return; }
 		if (pie_Draw3DShape(s, 0, colour, brightness, pieFlag, pieFlagData, m, view, stretch, true)) { drew = true; }
 	});
@@ -1121,7 +1124,8 @@ bool drawCorpse(unsigned id, const glm::mat4 &model, const glm::mat4 &view, int 
 	const Corpse &c = it->second;
 	const unsigned elapsed = graphicsTime > c.birth ? graphicsTime - c.birth : 0u;
 	const PIELIGHT light = pal_SetBrightness(255);
-	drawLoadout(c.lo, ANIM_DIE, elapsed, c.variant, model, [&](const iIMDShape *s, const glm::mat4 &m, const Part *) {
+	const glm::mat4 shown = s_show == 1.f ? model : model * glm::scale(glm::mat4(1.f), glm::vec3(s_show));
+	drawLoadout(c.lo, ANIM_DIE, elapsed, c.variant, shown, [&](const iIMDShape *s, const glm::mat4 &m, const Part *) {
 		pie_Draw3DShape(s, 0, colour, light, pie_SHADOW, 0, m, view, 0.f, true);
 	});
 	return true;
