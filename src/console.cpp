@@ -39,6 +39,9 @@
 #include "hci.h"
 #include "mission.h" //for TIMER_Y
 #include "challenge.h" //for challengeActive
+#include "display.h"         // MOD: gInputManager (Debug-Modus)
+#include "wzscriptdebug.h"   // MOD: Debug-Fenster schliessen
+#include <algorithm>
 #include <string>
 #include <sstream>
 #include <array>
@@ -75,6 +78,7 @@ struct CONSOLE_MESSAGE
 	int		player;			// Player who sent this message or SYSTEM_MESSAGE
 	std::string modKey;		// MOD (19.11.): Text ohne Zahlen - gleichartige Meldungen werden zu einem Eintrag zusammengefasst
 	int		modRepeat = 1;	// MOD (19.11.): wie oft die Meldung schon kam
+	bool	modDebug = false;	// MOD (19.11. 20:53): im Debug-Modus entstanden - verschwindet sofort, wenn er ausgeschaltet wird
 	CONSOLE_MESSAGE(const std::string &text, iV_fonts fontID, UDWORD time, UDWORD duration, CONSOLE_TEXT_JUSTIFICATION justify, int plr)
 	                : display(WzString::fromUtf8(text), fontID), timeAdded(time), duration(duration), JustifyType(justify), player(plr) {}
 
@@ -87,6 +91,7 @@ struct CONSOLE_MESSAGE
 		player = input.player;
 		modKey = std::move(input.modKey);
 		modRepeat = input.modRepeat;
+		modDebug = input.modDebug;
 		return *this;
 	}
 
@@ -294,12 +299,14 @@ bool addConsoleMessage(const char *Text, CONSOLE_TEXT_JUSTIFICATION jusType, SDW
 			InfoMessages.emplace_back(modShown, font_regular, realTime, newMsgDuration, jusType, player);
 			InfoMessages.back().modKey = modKey;
 			InfoMessages.back().modRepeat = modRepeat;
+			InfoMessages.back().modDebug = gInputManager.debugManager().debugMappingsAllowed();
 		}
 		else
 		{
 			ActiveMessages.emplace_back(modShown, font_regular, realTime, newMsgDuration, jusType, player);	// everything gets logged here for a specific period of time
 			ActiveMessages.back().modKey = modKey;
 			ActiveMessages.back().modRepeat = modRepeat;
+			ActiveMessages.back().modDebug = gInputManager.debugManager().debugMappingsAllowed();
 			if (team)
 			{
 				TeamMessages.push_back({WzString::fromUtf8(FitText), jusType, player});	// persistent team specific logs
@@ -322,6 +329,20 @@ int	getNumberConsoleMessages()
 */
 void	updateConsoleMessages()
 {
+	// MOD (Wunsch 19.11. 20:53 "Sobald der Debug-Modus aus ist, sollen SOFORT alle von ihm erzeugten blauen Nachrichtenfelder und
+	// Nachrichten weg sein"): beim Ausschalten alle im Debug-Modus entstandenen Meldungen entfernen und das Debug-Fenster schliessen
+	{
+		static bool s_wasDebug = false;
+		const bool dbg = gInputManager.debugManager().debugMappingsAllowed();
+		if (s_wasDebug && !dbg)
+		{
+			auto isDebug = [](const CONSOLE_MESSAGE &m) { return m.modDebug; };
+			ActiveMessages.erase(std::remove_if(ActiveMessages.begin(), ActiveMessages.end(), isDebug), ActiveMessages.end());
+			InfoMessages.erase(std::remove_if(InfoMessages.begin(), InfoMessages.end(), isDebug), InfoMessages.end());
+			jsDebugShutdown();
+		}
+		s_wasDebug = dbg;
+	}
 	// If there are no messages or we're on permanent (usually for scripts) then exit
 	if ((!getNumberConsoleMessages() && InfoMessages.empty()) || mainConsole.permanent)
 	{

@@ -785,6 +785,11 @@ static bool _imd_load_level_settings(const WzString &filename, const char **ppFi
  * \param s Pointer to shape level
  * \return false on error (memory allocation failure/bad file format), true otherwise
  */
+// MOD (Wunsch 19.11. 21:02 "das Spiel erlaubt nur Dreiecke ... bitte moeglich machen, dass beides erkannt wird und geht"):
+// Polygone mit 3 bis MOD_MAX_POLY_POINTS Ecken (Vierecke usw.) werden beim Laden in Dreiecke zerlegt (Faecher um die erste Ecke).
+// Die zusaetzlichen Dreiecke kommen hinten an die Polygonliste; Dateien mit reinen Dreiecken laden genau wie bisher.
+#define MOD_MAX_POLY_POINTS 32
+
 static bool _imd_load_polys(const WzString &filename, const char **ppFileData, const char *FileDataEnd, iIMDShape *s, int pieVersion, const uint32_t npoints, bool shadowPolys = false)
 {
 	const char *pFileData = *ppFileData;
@@ -793,7 +798,10 @@ static bool _imd_load_polys(const WzString &filename, const char **ppFileData, c
 	s->numFrames = 0;
 	s->animInterval = 0;
 
-	for (unsigned i = 0; i < s->polys.size(); i++)
+	std::vector<iIMDPoly> modExtraTris;   // MOD: weitere Dreiecke aus Vielecken
+	const size_t numPolyLines = s->polys.size();
+
+	for (unsigned i = 0; i < numPolyLines; i++)
 	{
 		iIMDPoly *poly = &s->polys[i];
 		unsigned int flags, npnts;
@@ -820,41 +828,22 @@ static bool _imd_load_polys(const WzString &filename, const char **ppFileData, c
 		}
 
 		poly->flags = flags;
-		ASSERT_OR_RETURN(false, npnts == 3, "Invalid polygon size (%d)", npnts);
-		if (sscanf(pRestOfLine, "%" PRIu32 "%" PRIu32 "%" PRIu32 "%n", &poly->pindex[0], &poly->pindex[1], &poly->pindex[2], &cnt) != 3)
+		ASSERT_OR_RETURN(false, npnts >= 3 && npnts <= MOD_MAX_POLY_POINTS, "Invalid polygon size (%d)", npnts);
+		uint32_t pindex[MOD_MAX_POLY_POINTS] = {};
+		for (unsigned k = 0; k < npnts; ++k)
 		{
-			debug(LOG_ERROR, "failed reading triangle, point %d", i);
-			return false;
-		}
-		pRestOfLine += cnt;
-
-		// sanity check
-		for (size_t pIdx = 0; pIdx < 3; pIdx++)
-		{
-			ASSERT_OR_RETURN(false, (poly->pindex[pIdx] < npoints), "Point index (%" PRIu32 ") exceeds max index (%" PRIu32 ")", poly->pindex[pIdx], (npoints - 1));
-		}
-
-		// calc poly normal
-		{
-			Vector3f p0, p1, p2;
-
-			//assumes points already set
-			p0.x = s->points[poly->pindex[0]].x;
-			p0.y = s->points[poly->pindex[0]].y;
-			p0.z = s->points[poly->pindex[0]].z;
-
-			p1.x = s->points[poly->pindex[1]].x;
-			p1.y = s->points[poly->pindex[1]].y;
-			p1.z = s->points[poly->pindex[1]].z;
-
-			p2.x = s->points[poly->pindex[2]].x;
-			p2.y = s->points[poly->pindex[2]].y;
-			p2.z = s->points[poly->pindex[2]].z;
-
-			poly->normal = pie_SurfaceNormal3fv(p0, p1, p2);
+			if (sscanf(pRestOfLine, "%" PRIu32 "%n", &pindex[k], &cnt) != 1)
+			{
+				debug(LOG_ERROR, "failed reading polygon %d, point %u", i, k);
+				return false;
+			}
+			pRestOfLine += cnt;
+			// sanity check
+			ASSERT_OR_RETURN(false, (pindex[k] < npoints), "Point index (%" PRIu32 ") exceeds max index (%" PRIu32 ")", pindex[k], (npoints - 1));
 		}
 
 		// texture coord routine
+		Vector2f texCoord[MOD_MAX_POLY_POINTS];
 		if (poly->flags & iV_IMD_TEX)
 		{
 			int nFrames, pbRate;
@@ -909,7 +898,7 @@ static bool _imd_load_polys(const WzString &filename, const char **ppFileData, c
 				poly->texAnim.y = 0;
 			}
 
-			for (unsigned j = 0; j < 3; j++)
+			for (unsigned j = 0; j < npnts; j++)
 			{
 				float VertexU, VertexV;
 
@@ -926,9 +915,7 @@ static bool _imd_load_polys(const WzString &filename, const char **ppFileData, c
 					VertexV /= OLD_TEXTURE_SIZE_FIX;
 				}
 
-				Vector2f *c = &poly->texCoord[j];
-				c->x = VertexU;
-				c->y = VertexV;
+				texCoord[j] = Vector2f(VertexU, VertexV);
 			}
 		}
 		else
@@ -936,7 +923,31 @@ static bool _imd_load_polys(const WzString &filename, const char **ppFileData, c
 			ASSERT_OR_RETURN(false, !(poly->flags & iV_IMD_TEXANIM), "Polygons with texture animation must have textures!");
 		}
 
+		// Dreiecke: (0, 1, 2) an diese Stelle, (0, k, k+1) fuer k >= 2 hinten an
+		for (unsigned k = 1; k + 1 < npnts; ++k)
+		{
+			iIMDPoly tri = *poly;
+			tri.pindex[0] = pindex[0]; tri.pindex[1] = pindex[k]; tri.pindex[2] = pindex[k + 1];
+			tri.texCoord[0] = texCoord[0]; tri.texCoord[1] = texCoord[k]; tri.texCoord[2] = texCoord[k + 1];
+			// calc poly normal
+			tri.normal = pie_SurfaceNormal3fv(s->points[tri.pindex[0]], s->points[tri.pindex[1]], s->points[tri.pindex[2]]);
+			if (k == 1)
+			{
+				*poly = tri;
+			}
+			else
+			{
+				modExtraTris.push_back(tri);
+			}
+		}
+
 		pFileData = lineToProcess.pNextLineBegin;
+	}
+
+	if (!modExtraTris.empty())
+	{
+		ASSERT_OR_RETURN(false, s->polys.size() + modExtraTris.size() <= static_cast<size_t>((UINT16_MAX - 1) / 3), "%s: too many triangles after splitting polygons (%zu)", filename.toUtf8().c_str(), s->polys.size() + modExtraTris.size());
+		s->polys.insert(s->polys.end(), modExtraTris.begin(), modExtraTris.end());
 	}
 
 	*ppFileData = pFileData;
@@ -1529,9 +1540,13 @@ static inline uint16_t addVertex(iIMDShape &s, size_t i, const iIMDPoly *p, size
  			}
 		}
 	}
-	else
+	else if (polyIdx * 3 + i < pie_level_normals.size())
 	{
 		normal = &pie_level_normals[polyIdx * 3 + i];
+	}
+	else
+	{
+		normal = &p->normal;   // MOD: Zusatz-Dreieck aus einem Vieleck (keine eigene Normale in der Datei)
 	}
 
 	// We don't have it, add it.
