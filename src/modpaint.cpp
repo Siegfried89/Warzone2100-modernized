@@ -520,6 +520,7 @@ struct PlanTask
 	unsigned born = 0;
 	int face = -1;        // (19.11. 16:44) Verteidigungslinie: Blickrichtung am Ziel (Richtung der Querstriche), -1 = keine
 	bool faced = false;   // schon eingedreht (bis die Einheit ihren Platz wieder verlaesst)
+	unsigned sent = 0;    // letzter eigener Befehl (Linienbefehl oder Rueckkehr) - spaetere Befehle sind Eingriffe des Spielers
 };
 std::map<uint32_t, PlanTask> s_plan;
 unsigned s_nextPlanCheck = 0;
@@ -705,6 +706,7 @@ void rememberPlan(const DROID *d, const DroidOrder &o, const Vector2i &anchor, i
 	t.anchor = anchor;
 	t.born = gameTime;
 	t.face = face;
+	t.sent = gameTime;
 	s_plan[d->id] = t;
 }
 
@@ -725,7 +727,10 @@ void faceTick()
 		DROID *d = IdToDroid(gameWorld.objects, kv.first, selectedPlayer);
 		if (d == nullptr || d->died) { continue; }
 		const bool atSpot = dist2(d->pos.xy(), t.anchor) <= near2;
-		const bool idle = d->order.type == DORDER_NONE && d->action == DACTION_NONE && d->sMove.Status == MOVEINACTIVE && !modcontrol::manual(d);
+		// (der Linienbefehl selbst zaehlt als Spielerbefehl - nur ein spaeterer Befehl des Spielers hebt die Blickrichtung auf)
+		const unsigned sincePlayer = modcontrol::sincePlayerOrder(d);
+		if (sincePlayer != 0xffffffffu && sincePlayer + 800u < gameTime - t.sent) { t.face = -1; continue; }
+		const bool idle = d->order.type == DORDER_NONE && d->action == DACTION_NONE && d->sMove.Status == MOVEINACTIVE;
 		if (!atSpot || !idle) { if (!atSpot) { t.faced = false; } continue; }
 		if (t.faced) { continue; }
 		const uint16_t want = static_cast<uint16_t>(t.face);
@@ -749,6 +754,7 @@ void planTick()
 		    && dist2(d->pos.xy(), it->second.anchor) > far2)
 		{
 			send(d, it->second.order, false);   // zurueck zum Oberbefehl
+			it->second.sent = gameTime;
 		}
 		++it;
 	}
@@ -763,6 +769,7 @@ struct SweepJob
 	size_t idx = 0;
 	uint32_t mine = 0;          // Infanterie: gerade angesteuerte Mine
 	unsigned lastSend = 0;
+	bool resend = false;
 	bool flail = false;
 };
 std::map<uint32_t, SweepJob> s_sweep;
@@ -803,25 +810,30 @@ void sweepTick()
 	{
 		DROID *d = IdToDroid(gameWorld.objects, it->first, selectedPlayer);
 		SweepJob &j = it->second;
-		if (d == nullptr || d->died || modcontrol::manual(d)) { it = s_sweep.erase(it); continue; }
+		if (d == nullptr || d->died) { it = s_sweep.erase(it); continue; }
+		// eigene Befehle kommen ueber die Befehlswarteschlange zurueck und zaehlen dort als Spielerbefehl - nur ein Befehl, der
+		// deutlich nach unserem letzten kam, ist ein Eingriff des Spielers (dann endet der Raeumauftrag dieser Einheit)
+		const unsigned sincePlayer = modcontrol::sincePlayerOrder(d);
+		if (j.lastSend != 0 && sincePlayer != 0xffffffffu && sincePlayer + 800u < gameTime - j.lastSend) { it = s_sweep.erase(it); continue; }
 		// Infanterie: entdeckte Mine zuerst
 		if (!j.flail)
 		{
 			if (j.mine != 0)
 			{
 				const STRUCTURE *ms = IdToStruct(j.mine, ANYPLAYER);
-				if (ms == nullptr || ms->died) { j.mine = 0; j.lastSend = 0; }
+				if (ms == nullptr || ms->died) { j.mine = 0; j.resend = true; }
 				else { ++it; continue; }   // steht an der Mine und entschaerft
 			}
 			if (const STRUCTURE *mine = enemyMineNear(d, DIST_TILE * 5 / 2, s_sweep))
 			{
 				j.mine = mine->id;
 				send(d, DroidOrder(DORDER_MOVE, mine->pos.xy()), false);
+				j.lastSend = gameTime;
 				++it;
 				continue;
 			}
 		}
-		while (j.idx < j.wp.size() && dist2(d->pos.xy(), j.wp[j.idx]) <= reach2) { ++j.idx; j.lastSend = 0; }
+		while (j.idx < j.wp.size() && dist2(d->pos.xy(), j.wp[j.idx]) <= reach2) { ++j.idx; j.resend = true; }
 		if (j.idx >= j.wp.size())
 		{
 			if (j.flail && modmines::flailing(d)) { secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_NONE); }
@@ -830,10 +842,11 @@ void sweepTick()
 			continue;
 		}
 		// naechsten Wegpunkt ansteuern (neu senden, wenn die Einheit steht, oder alle 8 s als Sicherheit)
-		if (j.lastSend == 0 || (d->order.type == DORDER_NONE && gameTime - j.lastSend > 1500) || gameTime - j.lastSend > 8000)
+		if (j.resend || j.lastSend == 0 || (d->order.type == DORDER_NONE && gameTime - j.lastSend > 1500) || gameTime - j.lastSend > 8000)
 		{
 			send(d, DroidOrder(DORDER_MOVE, j.wp[j.idx]), false);
 			j.lastSend = gameTime;
+			j.resend = false;
 		}
 		++it;
 	}
