@@ -126,6 +126,11 @@ int severPercent(const DROID *attacker);
 using DrawPiece = std::function<void(const iIMDShape *, const glm::mat4 &, const Part *)>;
 /// Zusammenbau mit Skelett-Animation berechnen und jedes Einzelteil ueber das Callback zeichnen.
 void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVariant, const glm::mat4 &base, const DrawPiece &emit);
+/// (Wunsch 19.11. 23:00 "Energieschilde sehe ich nicht"): beim naechsten drawLoadout auch die Leucht-Anbauten (Energieschild, Auge,
+/// Laserklinge) ausgeben - fuer die Baustation; im Spiel macht das draw() selbst
+void setEmitEffects(bool on);
+/// zeichnet p, falls es ein Leucht-Anbau ist (Schild: blaue Flaeche + Leuchten, pulsierend; Auge: Lichthof) - true = war ein Anbau
+bool drawEffectPiece(const iIMDShape *s, const glm::mat4 &m, const glm::mat4 &view, const Part *p, unsigned seed);
 
 /// Todesanimation: Momentaufnahme des Combots (inkl. fehlender Teile) fuer den Engine-Todeseffekt.
 /// Gibt die Kennung zurueck, die als Effektgroesse (effectSetSize) uebergeben wird.
