@@ -92,6 +92,13 @@ struct DROID_ACTION_DATA
 /** Radius for search when looking for VTOL landing position */
 static const int vtolLandingRadius = 23;
 
+// MOD (Wunsch 19.11. 19:43): im Steilfeuermodus steht der Panzer - er verhaelt sich wie "Stellung halten"
+// (keine Verfolgung, kein Heranfahren an Ziele ausser Reichweite); ein Fahrbefehl schaltet den Modus ab (order.cpp)
+static bool modHoldPosition(const DROID *psDroid)
+{
+	return secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_HOLD || modarty::active(psDroid);
+}
+
 // Sanity checks
 static_assert(MAX_SULK_TIME > MIN_SULK_TIME, "MAX_SULK_TIME must be > MIN_SULK_TIME");
 
@@ -423,10 +430,12 @@ bool actionTargetTurret(BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, WEAPON *
 	else if (!bRepair && psAttacker->type == OBJ_DROID && (modarty::isArtyWeapon(psWeapon->nStat) || modgdiart::isGdiWeapon(psWeapon->nStat)))
 	{
 		// MOD (Wunsch 17.11. 20:38): Steilfeuer - das Rohr steht beim Feuern weit nach oben (nahe Ziele ~62 Grad, weite ~46 Grad)
+		// (19.11. 19:43) Steilfeuermodus der Panzer: Rohr im Abschusswinkel des Bogens (nah 75, weit 65 Grad - steiler als ein Moerser)
 		const int range = std::max(1, proj_GetLongRange(*psWeapStats, psAttacker->player));
 		const int dxy = iHypot((psTarget->pos - psAttacker->pos).xy());
 		const int frac = clip(dxy * 100 / range, 0, 100);
-		const uint16_t targetPitch = static_cast<uint16_t>(DEG(62) - DEG(16) * frac / 100);
+		const uint16_t targetPitch = modarty::isArtyWeapon(psWeapon->nStat) ? static_cast<uint16_t>(modarty::shotAngle(dxy, range))
+		                                                                   : static_cast<uint16_t>(DEG(62) - DEG(16) * frac / 100);
 		tPitch += clip(angleDelta(targetPitch - tPitch), -pitchRate, pitchRate);  // Addition wrapping intended.
 	}
 
@@ -827,7 +836,7 @@ void actionUpdateDroid(DROID *psDroid)
 	PROPULSION_STATS *psPropStats = psDroid->getPropulsionStats();
 	ASSERT_OR_RETURN(, psPropStats != nullptr, "Invalid propulsion stats pointer");
 
-	bool secHoldActive = secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_HOLD;
+	bool secHoldActive = modHoldPosition(psDroid);
 
 	actionSanity(psDroid);
 
@@ -1308,7 +1317,7 @@ void actionUpdateDroid(DROID *psDroid)
 		}
 
 		if (bHasTarget && !wallBlocked && psDroid->action == DACTION_ATTACK && modJetDogfighter(psDroid) && !secHoldActive
-		    && secondaryGetState(psDroid, DSO_HALTTYPE) != DSS_HALT_HOLD && order->type != DORDER_HOLD)
+		    && !modHoldPosition(psDroid) && order->type != DORDER_HOLD)
 		{
 			modJetPass(psDroid, psDroid->psActionTarget[0]);   // MOD: Angriffs-Ueberflug statt Stehenbleiben
 		}
@@ -1357,7 +1366,7 @@ void actionUpdateDroid(DROID *psDroid)
 					psDroid->action = DACTION_NONE;
 				}
 			}
-			else if (secondaryGetState(psDroid, DSO_HALTTYPE) != DSS_HALT_HOLD)
+			else if (!modHoldPosition(psDroid))
 			{
 				psDroid->action = DACTION_MOVETOATTACK;	// out of range - chase it
 			}
@@ -2461,7 +2470,7 @@ static void actionDroidBase(DROID *psDroid, DROID_ACTION_DATA *psAction)
 
 	CHECK_DROID(psDroid);
 
-	bool secHoldActive = secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_HOLD;
+	bool secHoldActive = modHoldPosition(psDroid);
 	bool actionIsInRange = false;
 	psDroid->actionStarted = gameTime;
 	syncDebugDroid(psDroid, '-');
@@ -2573,7 +2582,7 @@ static void actionDroidBase(DROID *psDroid, DROID_ACTION_DATA *psAction)
 					moveTurnDroid(psDroid, psDroid->psActionTarget[0]->pos.x, psDroid->psActionTarget[0]->pos.y);
 				}
 			}
-			else if (order->type != DORDER_HOLD && secondaryGetState(psDroid, DSO_HALTTYPE) != DSS_HALT_HOLD)
+			else if (order->type != DORDER_HOLD && !modHoldPosition(psDroid))
 			{
 				int pbx = 0;
 				int pby = 0;
@@ -2587,7 +2596,7 @@ static void actionDroidBase(DROID *psDroid, DROID_ACTION_DATA *psAction)
 			}
 		}
 		else if (order->type != DORDER_HOLD
-				&& secondaryGetState(psDroid, DSO_HALTTYPE) != DSS_HALT_HOLD
+				&& !modHoldPosition(psDroid)
 				&& !actionIsInRange) // approach closer?
 		{
 			psDroid->action = DACTION_MOVETOATTACK;
@@ -2595,7 +2604,7 @@ static void actionDroidBase(DROID *psDroid, DROID_ACTION_DATA *psAction)
 			moveDroidTo(psDroid, psAction->psObj->pos.x, psAction->psObj->pos.y);
 			turnOffMultiMsg(false);
 		}
-		else if (actionIsInRange || (order->type != DORDER_HOLD && secondaryGetState(psDroid, DSO_HALTTYPE) == DSS_HALT_HOLD))
+		else if (actionIsInRange || (order->type != DORDER_HOLD && modHoldPosition(psDroid)))
 		{
 			if (!psDroid->isVtol())
 			{

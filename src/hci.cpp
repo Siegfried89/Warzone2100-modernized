@@ -103,6 +103,7 @@
 #include "modairwar.h"
 #include "modcrew.h"
 #include "modgdiart.h"
+#include "modarty.h"
 #include "modtracks.h"
 #include "modoutpost.h"
 #include "modconcrete.h"
@@ -795,6 +796,7 @@ void interfaceShutDown()
 	modairwar::reset();      // MOD: Luftkampf
 	modcrew::reset();        // MOD: MF-Besatzung
 	modgdiart::reset();      // MOD: GDI-Artillerie
+	modarty::reset();        // MOD (19.11.): Steilfeuermodus der Panzer
 	modoutpost::reset();     // MOD: Aussenposten-Teleport
 	modrocket::reset();      // MOD (17.11. 20:56): Raketensilo
 	modapc::reset();         // MOD (17.11. 21:01): Schuetzenpanzer

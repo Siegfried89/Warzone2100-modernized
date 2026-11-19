@@ -5,10 +5,14 @@
 
 #include "lib/framework/frame.h"
 #include "lib/framework/fixedpoint.h"
+#include "lib/framework/math_ext.h"
 #include "droid.h"
 #include "order.h"
 #include "stats.h"
+#include "orderdef.h"
+#include "lib/gamelib/gtime.h"
 
+#include <unordered_map>
 #include <vector>
 
 namespace modarty
@@ -19,6 +23,8 @@ std::vector<int32_t> s_toArty;   // Waffennummer -> Artillerie-Fassung (-1 = kei
 std::vector<int32_t> s_toBase;   // Artillerie-Fassung -> normale Kanone (-1 = keine Artillerie-Fassung)
 const WEAPON_STATS *s_builtFor = nullptr;
 size_t s_builtSize = 0;
+std::unordered_map<uint32_t, uint32_t> s_leftAt;   // Einheit -> Spielzeit, zu der sie den Steilfeuermodus verlassen hat
+constexpr uint32_t PACK_MS = 1000;                  // so lange steht sie danach noch (Rohr faehrt herunter)
 
 void ensureTables()
 {
@@ -97,11 +103,61 @@ bool isArtyWeapon(uint32_t weaponStat)
 
 uint16_t restPitch(uint32_t weaponStat)
 {
-	return isArtyWeapon(weaponStat) ? static_cast<uint16_t>(DEG(48)) : 0;   // (20:38) steiler, wie Artilleriepanzer
+	return isArtyWeapon(weaponStat) ? static_cast<uint16_t>(DEG(68)) : 0;   // (19.11. 19:43) Steilfeuer: Rohr steil nach oben
+}
+
+bool active(const DROID *psDroid)
+{
+	if (!groundVehicle(psDroid) || (psDroid->secondaryOrder & DSS_ARTY_MASK) == 0) { return false; }
+	for (unsigned i = 0; i < psDroid->numWeaps && i < MAX_WEAPONS; ++i)
+	{
+		if (isArtyWeapon(psDroid->asWeaps[i].nStat)) { return true; }
+	}
+	return false;
+}
+
+bool halted(const DROID *psDroid)
+{
+	if (psDroid == nullptr) { return false; }
+	if (active(psDroid)) { return true; }
+	if (s_leftAt.empty()) { return false; }
+	const auto it = s_leftAt.find(psDroid->id);
+	if (it == s_leftAt.end()) { return false; }
+	if (gameTime - it->second < PACK_MS) { return true; }
+	s_leftAt.erase(it);
+	return false;
+}
+
+int shotAngle(int dist, int longRange)
+{
+	const int range = std::max(1, longRange);
+	const int frac = clip(dist * 100 / range, 0, 100);
+	return DEG(75) - DEG(10) * frac / 100;
+}
+
+bool isMoveOrder(int orderType)
+{
+	switch (orderType)
+	{
+	case DORDER_MOVE: case DORDER_SCOUT: case DORDER_PATROL: case DORDER_CIRCLE:
+	case DORDER_RTB: case DORDER_RTR: case DORDER_RTR_SPECIFIED: case DORDER_EMBARK:
+	case DORDER_RECYCLE: case DORDER_RECOVER: case DORDER_COMMANDERSUPPORT:
+		return true;
+	default:
+		return false;
+	}
+}
+
+void noteChanged(const DROID *psDroid, bool on)
+{
+	if (psDroid == nullptr) { return; }
+	if (on) { s_leftAt.erase(psDroid->id); }
+	else { s_leftAt[psDroid->id] = gameTime; }
 }
 
 void reset()
 {
+	s_leftAt.clear();
 	s_toArty.clear();
 	s_toBase.clear();
 	s_builtFor = nullptr;
