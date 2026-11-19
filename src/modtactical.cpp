@@ -3,6 +3,7 @@
 #include "modtactical.h"
 
 #include "lib/framework/frame.h"
+#include "lib/framework/input.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/piepalette.h"
@@ -272,6 +273,9 @@ void toggle() { s_on = !s_on; }
 
 bool active()
 {
+	// MOD (Wunsch 19.11. 20:27): solange die Alt-Taste gedrueckt ist, zeigt das Spiel die taktischen Symbole - unabhaengig vom Knopf
+	// "Symbols" und von der Zoomstufe; beim Loslassen wieder wie eingestellt (nur Anzeige)
+	if (keyDown(KEY_LALT) || keyDown(KEY_RALT)) { return true; }
 	return s_on && getViewDistance() >= SYMBOL_DIST;
 }
 
