@@ -34,6 +34,7 @@
 
 #include "objects.h"
 #include "order.h"
+#include "modicbm.h"
 #include "modarty.h"
 #include "modauto.h"
 #include "modmines.h"   // MOD: Minenraeumer-Walze
@@ -1648,6 +1649,11 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	case DORDER_ATTACKGROUND:
 		{
 			// MOD: Boden beschiessen - Ortsbefehl wird zum Angriff auf einen unsichtbaren Zielpunkt
+			// (19.11. 20:38) der mobile Atomraketen-Werfer fuehrt den Bodenbefehl selbst aus (anhalten, aufrichten, starten)
+			if (modicbm::telGroundOrder(psDroid, psOrder->pos))
+			{
+				break;
+			}
 			if (!modgroundfire::canFireOnGround(psDroid))
 			{
 				break;

@@ -34,6 +34,10 @@ bool telIntercept(DROID *psDroid, const BASE_OBJECT *psTarget);
 bool isTelDroid(const DROID *psDroid);
 /// steht fest (Stuetzen aus, richtet sich auf, legt sich hin)
 bool telHalted(const DROID *psDroid);
+/// (Wunsch 19.11. 20:38 "kann immer noch nicht auf den Boden angreifen"): Boden-Beschuss-Befehl (Strg + Rechtsklick) fuer den mobilen
+/// Werfer direkt ausfuehren - anhalten, Stuetzen aus, aufrichten, starten; liegt der Punkt zu weit weg, faehrt er erst in Reichweite.
+/// true = Befehl uebernommen (auch wenn er gerade nachlaedt oder das Ziel zu nah ist - dann mit Meldung)
+bool telGroundOrder(DROID *psDroid, const Vector2i &pos);
 /// Anzeige: Winkel des Aufrichters (statt des Zielwinkels)
 uint16_t telPitch(const DROID *psDroid, uint16_t aimPitch, UDWORD time);
 /// ist eine Rakete auf dem Fahrzeug (nicht abgeschossen / nachgeladen)?
