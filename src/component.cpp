@@ -569,6 +569,40 @@ bool modDroidPropulsionSpan(const DROID *psDroid, float &leftCenter, float &left
 	return true;
 }
 
+// MOD (19.11. "Die Walkeranimation von allen Mechs soll realistisch sein"): Laufzyklus nach der zurueckgelegten Strecke statt nach der Zeit.
+// Rumpf mit "gaitStride" (body.json, Weg je Schrittzyklus): der Kilometerzaehler der Einheit bestimmt das Bild - die Fuesse stehen in
+// der Standphase still auf dem Boden, egal wie schnell die Einheit gerade laeuft (Gelaende, Steigung, Anfahren). Nur Anzeige.
+namespace
+{
+struct ModGait { int32_t x = 0, y = 0; double odo = 0.0; uint32_t seen = 0; };
+std::unordered_map<uint32_t, ModGait> s_modGait;
+uint32_t s_modGaitPrune = 0;
+}
+static UDWORD modGaitAnimStart(const DROID *psDroid, const iIMDShape *animShape, UDWORD fallback)
+{
+	const BODY_STATS *body = psDroid->getBodyStats();
+	if (body == nullptr || body->gaitStride <= 0 || animShape == nullptr || animShape->objanimframes <= 0 || animShape->objanimtime <= 0)
+	{
+		return fallback;
+	}
+	ModGait &g = s_modGait[psDroid->id];
+	if (g.seen != graphicsTime)
+	{
+		const int64_t dx = psDroid->pos.x - g.x, dy = psDroid->pos.y - g.y;
+		const double step = std::sqrt(static_cast<double>(dx * dx + dy * dy));
+		if (g.seen != 0 && step < 3.0 * body->gaitStride) { g.odo += step; }   // Spruenge (Transport, Laden) zaehlen nicht
+		g.x = psDroid->pos.x; g.y = psDroid->pos.y; g.seen = graphicsTime;
+	}
+	if (graphicsTime - s_modGaitPrune > 10000)
+	{
+		s_modGaitPrune = graphicsTime;
+		for (auto it = s_modGait.begin(); it != s_modGait.end();) { if (graphicsTime - it->second.seen > 10000) { it = s_modGait.erase(it); } else { ++it; } }
+	}
+	const double cycleMs = static_cast<double>(animShape->objanimtime) * animShape->objanimframes;
+	const double phase = std::fmod(s_modGait[psDroid->id].odo / body->gaitStride, 1.0);
+	return graphicsTime - static_cast<UDWORD>(phase * cycleMs);
+}
+
 // MOD (19.11. "Die Walkeranimation von allen Mechs soll realistisch sein"): Blaetter-Animation (je Bild eine Ebene, ANIMOBJECT blendet die
 // Ebenen der Reihe nach ein): die gerade sichtbare Ebene. Hat sie eigene Anschlusspunkte, sitzen Torso/Waffen daran - so wippt der
 // Oberkoerper eines Mechs mit jedem Schritt mit (Becken senkt sich beim Auftreten, hebt sich in der Standphase).
@@ -943,9 +977,10 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		{
 			bodyMatrix = modifiedModelMatrix * glm::rotate(glm::radians(wobblePitch), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(wobbleRoll), glm::vec3(0.f, 0.f, 1.f));
 		}
+		const UDWORD bodyAnimStart = bButton ? psDroid->timeAnimationStarted : modGaitAnimStart(psDroid, strImd, psDroid->timeAnimationStarted);   // MOD (19.11.)
 		while (strImd)
 		{
-			if (drawShape(strImd, psDroid->timeAnimationStarted, colour, brightness, pieFlag, iPieData, bodyMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+			if (drawShape(strImd, bodyAnimStart, colour, brightness, pieFlag, iPieData, bodyMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 			{
 				didDrawSomething = true;
 			}
@@ -956,6 +991,8 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					didDrawSomething = true;
 				}
 			}
+			// MOD (19.11.): mit Ebenen-Animation (Blaetter/Skelett) hat drawShape schon alle Ebenen gezeichnet - nicht jede Ebene erneut
+			if (strImd->next && strImd->next->objanimframes > 0) { break; }
 			strImd = strImd->next.get();
 		}
 		// MOD (18.11. 19:09): GDI-Artillerie - Hydraulikstuetzen an den Beinen (nur beim Verankern/verankert)
@@ -1041,7 +1078,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		if (!bButton && (psDroid->droidType == DROID_CYBORG_SUPER || psDroid->droidType == DROID_CYBORG))
 		{
 			const iIMDShape *animBody = psShapeBody->objanimpie[psDroid->animationEvent] ? psShapeBody->objanimpie[psDroid->animationEvent]->displayModel() : psShapeBody;
-			const iIMDShape *vis = modVisibleFlipLevel(animBody, psDroid->timeAnimationStarted);
+			const iIMDShape *vis = modVisibleFlipLevel(animBody, modGaitAnimStart(psDroid, animBody, psDroid->timeAnimationStarted));
 			if (vis != nullptr && vis->connectors.size() >= psShapeBody->connectors.size()) { connBody = vis; }
 		}
 		switch (psDroid->droidType)
