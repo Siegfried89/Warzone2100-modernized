@@ -327,9 +327,10 @@ static std::string artRevolutionLabel()
 static void addArtRevolutionButton()
 {
 	const bool have = artRevolutionInstalled();
-	auto b = addTextButton(FRONTEND_ARGRAPHICS, FRONTEND_POS1X, FRONTEND_POS9Y - 6, artRevolutionLabel(), WBUT_TXTCENTRE | (have ? 0 : WBUT_DISABLE));
+	// (19.11. 19:33) lag 6 Pixel ueber "Spiel beenden" -> ein Klick auf den oberen Rand beendete das Spiel; jetzt mit Abstand darunter
+	auto b = addTextButton(FRONTEND_ARGRAPHICS, FRONTEND_POS1X, FRONTEND_POS9Y + 3, artRevolutionLabel(), WBUT_TXTCENTRE | (have ? 0 : WBUT_DISABLE));
 	b->FontID = font_regular;
-	b->setGeometry(FRONTEND_POS1X, FRONTEND_POS9Y - 6, FRONTEND_BUTWIDTH, 26);
+	b->setGeometry(FRONTEND_POS1X, FRONTEND_POS9Y + 3, FRONTEND_BUTWIDTH, 21);
 	widgSetTip(psWScreen, FRONTEND_ARGRAPHICS, have ? _("Switch between the standard graphics and the Art Revolution models and textures (also in game with the Insert key)")
 	                                                : _("The Art Revolution graphics package is not installed"));
 }
