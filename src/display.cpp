@@ -595,7 +595,9 @@ static void CheckFinishedDrag(SELECTION_TYPE selection)
 			dragBox3D.status = DRAG_RELEASED;
 			dragBox3D.x2 = mouseX();
 			dragBox3D.y2 = mouseY();
-			if (selection == SC_DROID_DEMOLISH && ctrlShiftDown())
+			// MOD (Wunsch 19.11. 17:45 "Demolish soll auch per shift + drag funktionieren"): im Abriss-Modus genuegt Umschalt/Strg + Ziehen,
+			// auch wenn ausser den Bauern noch andere Einheiten gewaehlt sind (die Auswahl-Klasse ist dann nicht SC_DROID_DEMOLISH)
+			if ((selection == SC_DROID_DEMOLISH || intDemolishSelectMode()) && ctrlShiftDown())
 			{
 				handleAreaDemolition();
 			}
@@ -628,14 +630,48 @@ static void handleAreaDemolition()
 	worldCoord2.y = worldCoord2.y > tmp.y ? worldCoord2.y : tmp.y;
 
 	debug(LOG_INFO, "demolish everything in the area (%i %i) -> (%i %i)", worldCoord1.x, worldCoord1.y, worldCoord2.x, worldCoord2.y);
+	// MOD (19.11. 17:45): nur die gewaehlten echten Bauer (keine Pickups/Oeltanker, keine Kampfeinheiten) bekommen Abriss-Befehle;
+	// die Bauwerke werden auf sie verteilt - jeder nimmt reihum das naechstgelegene noch freie (kurze Wege statt alle zu allen)
+	if (selectedPlayer >= MAX_PLAYERS) { return; }
+	std::vector<DROID *> builders;
+	for (DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d != nullptr && !d->died && d->selected && d->isConstructionDroid()) { builders.push_back(d); }
+	}
+	std::vector<STRUCTURE *> todo;
 	for (BASE_OBJECT *psObj : gridStartIterateArea(worldCoord1.x, worldCoord1.y, worldCoord2.x, worldCoord2.y))
 	{
-		if (psObj->type == OBJ_STRUCTURE && psObj->player == selectedPlayer)
+		if (psObj->type == OBJ_STRUCTURE && psObj->player == selectedPlayer && !psObj->died
+		    && static_cast<STRUCTURE *>(psObj)->status != SS_BLUEPRINT_PLANNED)
 		{
-			// add demolish order to queue for every selected unit
-			orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psObj, true);
+			todo.push_back(static_cast<STRUCTURE *>(psObj));
 		}
 	}
+	if (builders.empty() || todo.empty()) { return; }
+	std::vector<Vector2i> at;
+	for (const DROID *d : builders) { at.push_back(d->pos.xy()); }
+	std::vector<bool> done(todo.size(), false);
+	size_t left = todo.size();
+	while (left > 0)
+	{
+		for (size_t u = 0; u < builders.size() && left > 0; ++u)
+		{
+			int best = -1;
+			int64_t bestD = INT64_MAX;
+			for (size_t i = 0; i < todo.size(); ++i)
+			{
+				if (done[i]) { continue; }
+				const int64_t dx = at[u].x - todo[i]->pos.x, dy = at[u].y - todo[i]->pos.y;
+				if (dx * dx + dy * dy < bestD) { bestD = dx * dx + dy * dy; best = static_cast<int>(i); }
+			}
+			if (best < 0) { left = 0; break; }
+			done[static_cast<size_t>(best)] = true;
+			--left;
+			sendDroidInfo(builders[u], DroidOrder(DORDER_DEMOLISH, todo[static_cast<size_t>(best)]), true, currentOrderSource());
+			at[u] = todo[static_cast<size_t>(best)]->pos.xy();
+		}
+	}
+	addConsoleMessage(_("Demolish: builders tear down the structures in the box"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 }
 
 static void CheckStartWallDrag()
