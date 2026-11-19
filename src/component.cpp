@@ -569,6 +569,22 @@ bool modDroidPropulsionSpan(const DROID *psDroid, float &leftCenter, float &left
 	return true;
 }
 
+// MOD (19.11. "Die Walkeranimation von allen Mechs soll realistisch sein"): Blaetter-Animation (je Bild eine Ebene, ANIMOBJECT blendet die
+// Ebenen der Reihe nach ein): die gerade sichtbare Ebene. Hat sie eigene Anschlusspunkte, sitzen Torso/Waffen daran - so wippt der
+// Oberkoerper eines Mechs mit jedem Schritt mit (Becken senkt sich beim Auftreten, hebt sich in der Standphase).
+static const iIMDShape *modVisibleFlipLevel(const iIMDShape *shape, UDWORD timeAnimationStarted)
+{
+	for (const iIMDShape *lvl = shape; lvl != nullptr; lvl = lvl->next.get())
+	{
+		if (lvl->objanimframes <= 0 || lvl->objanimtime <= 0 || lvl->objanimdata.empty()) { return nullptr; }
+		int elapsed = static_cast<int>(graphicsTime - timeAnimationStarted);
+		if (elapsed < 0) { elapsed = 0; }
+		const size_t frame = static_cast<size_t>((elapsed / lvl->objanimtime) % lvl->objanimframes);
+		if (frame < lvl->objanimdata.size() && lvl->objanimdata[frame].scale.x != -1.0f) { return lvl; }
+	}
+	return nullptr;
+}
+
 int modDroidFootprintRadius(const DROID *psDroid)
 {
 	if (psDroid == nullptr) { return 0; }
@@ -1020,6 +1036,14 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 			iConnector = 0;
 		}
 
+		// MOD (19.11.): Laufende Mechs/Cyborgs mit Blaetter-Animation - Anschlusspunkte der gerade sichtbaren Ebene (Oberkoerper wippt mit)
+		const iIMDShape *connBody = psShapeBody;
+		if (!bButton && (psDroid->droidType == DROID_CYBORG_SUPER || psDroid->droidType == DROID_CYBORG))
+		{
+			const iIMDShape *animBody = psShapeBody->objanimpie[psDroid->animationEvent] ? psShapeBody->objanimpie[psDroid->animationEvent]->displayModel() : psShapeBody;
+			const iIMDShape *vis = modVisibleFlipLevel(animBody, psDroid->timeAnimationStarted);
+			if (vis != nullptr && vis->connectors.size() >= psShapeBody->connectors.size()) { connBody = vis; }
+		}
 		switch (psDroid->droidType)
 		{
 		case DROID_DEFAULT:
@@ -1047,10 +1071,10 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 
 					//to skip number of VTOL_CONNECTOR_START ground unit connectors
 					size_t bodyConnectorIndex = (iConnector < VTOL_CONNECTOR_START) ? i : iConnector + i;
-					if (bodyConnectorIndex < psShapeBody->connectors.size())
+					if (bodyConnectorIndex < connBody->connectors.size())
 					{
-						localModelMatrix *= glm::translate(glm::vec3(psShapeBody->connectors[bodyConnectorIndex].xzy()));
-						localHeightAboveTerrain += psShapeBody->connectors[bodyConnectorIndex].z;
+						localModelMatrix *= glm::translate(glm::vec3(connBody->connectors[bodyConnectorIndex].xzy()));
+						localHeightAboveTerrain += connBody->connectors[bodyConnectorIndex].z;
 					}
 					else
 					{

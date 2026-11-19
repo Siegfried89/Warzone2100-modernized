@@ -1322,7 +1322,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 				if (best < 0) { left = 0; break; }
 				done[static_cast<size_t>(best)] = true; --left;
 				STRUCTURE *st = todo[static_cast<size_t>(best)];
-				send(units[u], DroidOrder(DORDER_DEMOLISH, st), count[u] > 0);
+				send(units[u], DroidOrder(DORDER_DEMOLISH, st), count[u] > 0 || s_append);   // (17:45) mit Shift: an die Warteschlange anhaengen
 				++count[u];
 				at[u] = st->pos.xy();
 			}
