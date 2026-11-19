@@ -73,6 +73,8 @@ struct CONSOLE_MESSAGE
 	UDWORD	duration;
 	CONSOLE_TEXT_JUSTIFICATION JustifyType;	// text justification
 	int		player;			// Player who sent this message or SYSTEM_MESSAGE
+	std::string modKey;		// MOD (19.11.): Text ohne Zahlen - gleichartige Meldungen werden zu einem Eintrag zusammengefasst
+	int		modRepeat = 1;	// MOD (19.11.): wie oft die Meldung schon kam
 	CONSOLE_MESSAGE(const std::string &text, iV_fonts fontID, UDWORD time, UDWORD duration, CONSOLE_TEXT_JUSTIFICATION justify, int plr)
 	                : display(WzString::fromUtf8(text), fontID), timeAdded(time), duration(duration), JustifyType(justify), player(plr) {}
 
@@ -83,6 +85,8 @@ struct CONSOLE_MESSAGE
 		duration = input.duration;
 		JustifyType = input.JustifyType;
 		player = input.player;
+		modKey = std::move(input.modKey);
+		modRepeat = input.modRepeat;
 		return *this;
 	}
 
@@ -243,19 +247,43 @@ bool addConsoleMessage(const char *Text, CONSOLE_TEXT_JUSTIFICATION jusType, SDW
 
 	while (std::getline(stream, lines))
 	{
+		// MOD (Wunsch 19.11. 19:54 "die blauen Eintraege sollen sich nicht so stapeln - am besten nur ein Eintrag"): eine Meldung, die
+		// (bis auf Zahlen) schon angezeigt wird, ersetzt den alten Eintrag; ab der zweiten Wiederholung steht die Anzahl dahinter
+		std::string modKey;
+		modKey.reserve(lines.size());
+		for (char ch : lines)
+		{
+			const bool digit = ch >= '0' && ch <= '9';
+			if (!digit) { modKey.push_back(ch); }
+			else if (modKey.empty() || modKey.back() != '#') { modKey.push_back('#'); }
+		}
+		int modRepeat = 1;
+		std::deque<CONSOLE_MESSAGE> &modTarget = (player == INFO_MESSAGE) ? InfoMessages : ActiveMessages;
+		for (auto it = modTarget.begin(); it != modTarget.end(); ++it)
+		{
+			if (!modKey.empty() && it->modKey == modKey && it->player == player)
+			{
+				modRepeat = it->modRepeat + 1;
+				modTarget.erase(it);
+				break;
+			}
+		}
+		const std::string modSuffix = (modRepeat > 1) ? astringf("  (%d\xC3\x97)", modRepeat) : std::string();
+
 		// We got one "line" from the total string, now we must check
 		// to see if it fits, if not, we truncate it. (Full text is in the logs)
 		// NOTE: may want to break up line into multi-line so it matches the log
 		std::string FitText(lines);
 		while (!FitText.empty())
 		{
-			unsigned pixelWidth = iV_GetTextWidth(FitText.c_str(), font_regular);
+			unsigned pixelWidth = iV_GetTextWidth((FitText + modSuffix).c_str(), font_regular);
 			if (pixelWidth <= mainConsole.width)
 			{
 				break;
 			}
 			FitText.resize(FitText.length() - 1);	// Erase last char.
 		}
+		const std::string modShown = FitText + modSuffix;
 
 		debug(LOG_CONSOLE, "(to player %d): %s", (int)player, FitText.c_str());
 
@@ -263,11 +291,15 @@ bool addConsoleMessage(const char *Text, CONSOLE_TEXT_JUSTIFICATION jusType, SDW
 
 		if (player == INFO_MESSAGE)
 		{
-			InfoMessages.emplace_back(FitText, font_regular, realTime, newMsgDuration, jusType, player);
+			InfoMessages.emplace_back(modShown, font_regular, realTime, newMsgDuration, jusType, player);
+			InfoMessages.back().modKey = modKey;
+			InfoMessages.back().modRepeat = modRepeat;
 		}
 		else
 		{
-			ActiveMessages.emplace_back(FitText, font_regular, realTime, newMsgDuration, jusType, player);	// everything gets logged here for a specific period of time
+			ActiveMessages.emplace_back(modShown, font_regular, realTime, newMsgDuration, jusType, player);	// everything gets logged here for a specific period of time
+			ActiveMessages.back().modKey = modKey;
+			ActiveMessages.back().modRepeat = modRepeat;
 			if (team)
 			{
 				TeamMessages.push_back({WzString::fromUtf8(FitText), jusType, player});	// persistent team specific logs

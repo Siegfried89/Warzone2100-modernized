@@ -44,6 +44,7 @@
 #include "effects.h"
 #include "map.h"
 #include "order.h"
+#include "modarty.h"
 #include "modincoming.h"
 #include "modpointdef.h"
 #include "modshield.h"
@@ -1139,7 +1140,9 @@ static PROJECTILE* proj_InFlightFunc(PROJECTILE *psProj)
 				break;
 			default:
 				// Add smoke trail to indirect weapons, even if firing directly.
-				if (!proj_Direct(psStats))
+				// MOD (Wunsch 19.11. 19:54): Granaten der Langstrecken-Artillerie (Haubitzen, Panzer im Steilfeuermodus) ziehen
+				// keine Rauchspur - nur das vorhandene Muendungsfeuer
+				if (!proj_Direct(psStats) && psStats->weaponSubClass != WSC_HOWITZERS && !modarty::isArtyWeapon(static_cast<uint32_t>(psStats->index)))
 				{
 					posFlip.z += 4;  // Why?
 					addEffect(&posFlip, EFFECT_SMOKE, SMOKE_TYPE_TRAIL, false, nullptr, 0, effectTime);

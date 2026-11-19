@@ -240,6 +240,17 @@ void animateToViewDistance(float target, float speed)
 		.start();
 }
 
+// MOD (19.11.): ist ein frei steuerbarer Transporter (Gefecht, oder das Intro-Dropship in der Kampagne) ausgewaehlt?
+static bool modFreeTransportSelected()
+{
+	if (selectedPlayer >= MAX_PLAYERS) { return false; }
+	for (const DROID *psDroid : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (psDroid->selected && transporterFreeControl(psDroid)) { return true; }
+	}
+	return false;
+}
+
 // MOD: stufenloser Zoom mit konstanter Geschwindigkeit (gleicher Schritt nah und fern).
 static const float MOD_ZOOM_MIN_DISTANCE = 40.0f;
 void incrementViewDistance(float amount)
@@ -1161,7 +1172,7 @@ void processMouseClickInput()
 				}
 			}
 			// in multiPlayer check for what kind of unit can use it (TODO)
-			else if (bMultiPlayer && item == MT_TRANDROID)
+			else if (item == MT_TRANDROID && (bMultiPlayer || transporterFreeControl(castDroid(ObjUnderMouse))))
 			{
 				if (ObjUnderMouse->player != selectedPlayer)
 				{
@@ -1263,7 +1274,7 @@ void processMouseClickInput()
 			}
 
 			if (specialOrderKeyDown() && (selection == SC_DROID_TRANSPORTER || selection == SC_DROID_SUPERTRANSPORTER) &&
-			    arnMPointers[item][selection] == CURSOR_MOVE && bMultiPlayer)
+			    arnMPointers[item][selection] == CURSOR_MOVE && (bMultiPlayer || modFreeTransportSelected()))
 			{
 				// Alt+move = disembark transporter
 				wzSetCursor(CURSOR_DISEMBARK);
@@ -2208,7 +2219,7 @@ static void dealWithLMBDroid(DROID *psDroid, SELECTION_TYPE selection)
 		if (selection == SC_INVALID)
 		{
 			//in multiPlayer mode we RMB to get the interface up
-			if (bMultiPlayer && !bEffectiveRightClickOrders)
+			if (transporterFreeControl(psDroid) && !bEffectiveRightClickOrders)
 			{
 				psDroid->selected = true;
 				triggerEventSelected();
@@ -2825,7 +2836,7 @@ static void dealWithRMB()
 				// Transporter
 				else
 				{
-					if (bMultiPlayer)
+					if (transporterFreeControl(psDroid))
 					{
 						if (bEffectiveRightClickOrders && !(psDroid->selected))
 						{

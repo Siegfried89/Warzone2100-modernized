@@ -198,7 +198,7 @@ bool intAddTransporter(DROID *psSelected, bool offWorld)
 
 	/*if transporter has died - close the interface - this can only happen in
 	multiPlayer where the transporter can be killed*/
-	if (bMultiPlayer && psCurrTransporter && isDead((BASE_OBJECT *)psCurrTransporter))
+	if (psCurrTransporter && (bMultiPlayer || transporterFreeControl(psCurrTransporter)) && isDead((BASE_OBJECT *)psCurrTransporter))
 	{
 		intRemoveTransNoAnim();
 		return true;
@@ -302,7 +302,7 @@ bool intAddTransporterContents()
 	{
 		return false;
 	}
-	if (bMultiPlayer)
+	if (bMultiPlayer || transporterFreeControl(psCurrTransporter))
 	{
 		//add the capacity label
 		W_LABINIT sLabInit;
@@ -360,7 +360,7 @@ bool intAddTransporterLaunch(DROID *psDroid)
 {
 	UDWORD          capacity;
 
-	if (bMultiPlayer)
+	if (bMultiPlayer || transporterFreeControl(psDroid))   // MOD: frei steuerbare Transporter haben keinen Startknopf (kein Flug aus der Karte)
 	{
 		return true;
 	}
@@ -961,7 +961,7 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 	else
 	{
 		Vector2i droidPos;
-		if (bMultiPlayer)
+		if (bMultiPlayer || transporterFreeControl(psTransport))
 		{
 			//set the units next to the transporter's current location
 			droidPos = map_coord(psTransport->pos.xy());
@@ -1484,11 +1484,11 @@ bool transporterFlying(const DROID *psTransporter)
 	       psTransporter->order.type == DORDER_TRANSPORTIN ||
 	       psTransporter->order.type == DORDER_TRANSPORTRETURN ||
 	       //in multiPlayer mode the Transporter can be moved around
-	       (bMultiPlayer && psTransporter->order.type == DORDER_MOVE) ||
+	       (transporterFreeControl(psTransporter) && psTransporter->order.type == DORDER_MOVE) ||
 	       //in multiPlayer mode the Transporter can be moved and emptied!
-	       (bMultiPlayer && psTransporter->order.type == DORDER_DISEMBARK) ||
+	       (transporterFreeControl(psTransporter) && psTransporter->order.type == DORDER_DISEMBARK) ||
 	       //in multiPlayer, descending still counts as flying
-	       (bMultiPlayer && psTransporter->order.type == DORDER_NONE &&
+	       (transporterFreeControl(psTransporter) && psTransporter->order.type == DORDER_NONE &&
 	        psTransporter->sMove.iVertSpeed != 0);
 }
 
@@ -1496,4 +1496,12 @@ bool transporterFlying(const DROID *psTransporter)
 void initFirstTransporterFlag()
 {
 	bFirstTransporter = true;
+}
+
+bool transporterFreeControl(const DROID *psDroid)
+{
+	if (psDroid == nullptr || !psDroid->isTransporter()) { return false; }
+	if (bMultiPlayer || game.type == LEVEL_TYPE::SKIRMISH) { return true; }
+	const BODY_STATS *psBody = psDroid->getBodyStats();
+	return psBody != nullptr && psBody->id == WzString::fromUtf8("IntroVTOLBody");
 }

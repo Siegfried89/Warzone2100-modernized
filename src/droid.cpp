@@ -324,7 +324,7 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 	CHECK_DROID(psDroid);
 
 	// VTOLs (and transporters in MP) on the ground take triple damage
-	if ((psDroid->isVtol() || (psDroid->isTransporter() && bMultiPlayer)) && (psDroid->sMove.Status == MOVEINACTIVE))
+	if ((psDroid->isVtol() || transporterFreeControl(psDroid)) && (psDroid->sMove.Status == MOVEINACTIVE))
 	{
 		damage *= 3;
 	}
@@ -4035,7 +4035,8 @@ bool isSelectable(DROID const *psDroid)
 	}
 
 	// we shouldn't ever control the transporter in SP games
-	if (psDroid->isTransporter() && !bMultiPlayer)
+	// MOD (19.11.): ausser dem Intro-Dropship (frei steuerbar wie im Gefecht)
+	if (psDroid->isTransporter() && !transporterFreeControl(psDroid))
 	{
 		return false;
 	}

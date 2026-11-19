@@ -104,6 +104,9 @@ void flashMissionButton(UDWORD buttonID);
 void stopMissionButtonFlash(UDWORD buttonID);
 /*checks the order of the droid to see if its currently flying*/
 bool transporterFlying(const DROID *psTransporter);
+/// MOD (Wunsch 19.11. 19:54): darf dieser Transporter frei gesteuert werden (hinfliegen, landen, ausladen) wie im Gefecht?
+/// Im Gefecht alle Transporter, in der Kampagne das Intro-Dropship (Rumpf IntroVTOLBody); Kampagnen-Transporter bleiben Skriptsache.
+bool transporterFreeControl(const DROID *psDroid);
 //initialise the flag to indicate the first transporter has arrived - set in startMission()
 void initFirstTransporterFlag();
 

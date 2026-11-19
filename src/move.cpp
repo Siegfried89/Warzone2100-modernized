@@ -78,6 +78,7 @@
 #include "combat.h"
 #include "movebench.h"
 #include "perfcounters.h"
+#include "transporter.h"   // MOD (19.11.): frei steuerbare Transporter
 
 /* max and min vtol heights above terrain */
 #define	VTOL_HEIGHT_MIN				250
@@ -2294,7 +2295,7 @@ static void moveUpdatePersonModel(DROID *psDroid, SDWORD speed, uint16_t directi
 static void moveAdjustVtolHeight(DROID *psDroid, int32_t iMapHeight)
 {
 	int32_t	iMinHeight, iMaxHeight, iLevelHeight;
-	if (psDroid->isTransporter() && !bMultiPlayer)
+	if (psDroid->isTransporter() && !transporterFreeControl(psDroid))
 	{
 		iMinHeight   = 2 * VTOL_HEIGHT_MIN;
 		iLevelHeight = 2 * VTOL_HEIGHT_LEVEL;
