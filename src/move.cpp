@@ -3079,9 +3079,10 @@ void moveUpdateDroid(DROID *psDroid)
 	}
 	else if (psDroid->isCyborg())
 	{
-		if (modgdiart::halted(psDroid))
+		if (modgdiart::halted(psDroid) || modarty::halted(psDroid))
 		{
 			// MOD (18.11.): GDI Juggernaut verankert / faehrt ein - steht still, Beine in Ruhe (kein Laufen auf der Stelle)
+			// (19.11. 22:04) ebenso der Battle Mech im Steilfeuermodus
 			psDroid->sMove.speed = 0;
 			if (psDroid->animationEvent == ANIM_EVENT_ACTIVE) { resetObjectAnimationState(psDroid); }
 		}
