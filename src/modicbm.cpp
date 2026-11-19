@@ -253,13 +253,31 @@ void drawClouds(const glm::mat4 &viewMatrix)
 		const float stemH = 1700.f * grow + 6.f * t;
 		const float capR = 240.f + 660.f * (1.f - std::exp(-t / 5.f)) + 3.f * t;
 		const float ringR = 380.f + 1500.f * (1.f - std::exp(-t / 2.5f));
-		const float heat = std::exp(-t / 4.f);                                     // 1 = weissglueheend .. 0 = kalter Rauch
+		// (Wunsch 19.11. 19:54 "Die nukleare Wolke soll am Anfang rot und orangegelb gluehen"): die ersten 3 s voll gluehend,
+		// danach langsam abkuehlend (orangegelb -> orange -> rot -> grau-braun, ca. 20 s); vorher kuehlte sie ab, bevor sie gross war
+		const float heat = t < 3.f ? 1.f : std::exp(-(t - 3.f) / 6.f);             // 1 = gluehend .. 0 = kalter Rauch
 		const float life = static_cast<float>(CLOUD_MS) / 1000.f;
 		const float fade = 1.f - smooth01(life - 22.f, life, t);                    // verblassen am Ende
 		const float yaw = 0.035f * t;
 		const glm::vec3 base(static_cast<float>(c.pos.x), static_cast<float>(c.pos.z), -static_cast<float>(c.pos.y));
-		// Farbe: gluehend orange -> grau-braun
-		const PIELIGHT smoke = rgb(140.f + 115.f * heat, 128.f + 50.f * heat, 118.f - 40.f * heat);
+		// Gluehfarbe nach Temperatur: orangegelb -> orange -> rot -> (kalt) grau-braun
+		auto hotColour = [](float h, float &r, float &g, float &b)
+		{
+			struct K { float h, r, g, b; };
+			static const K k[] = {{0.f, 140.f, 128.f, 118.f}, {0.18f, 205.f, 70.f, 35.f}, {0.45f, 255.f, 120.f, 35.f}, {0.75f, 255.f, 185.f, 70.f}, {1.f, 255.f, 225.f, 140.f}};
+			for (int i = 1; i < 5; ++i)
+			{
+				if (h <= k[i].h || i == 4)
+				{
+					const float a = std::clamp((h - k[i - 1].h) / (k[i].h - k[i - 1].h), 0.f, 1.f);
+					r = k[i - 1].r + (k[i].r - k[i - 1].r) * a; g = k[i - 1].g + (k[i].g - k[i - 1].g) * a; b = k[i - 1].b + (k[i].b - k[i - 1].b) * a;
+					return;
+				}
+			}
+		};
+		float hr = 0.f, hg = 0.f, hb = 0.f;
+		hotColour(heat, hr, hg, hb);
+		const PIELIGHT smoke = rgb(hr, hg, hb);
 		const int alpha = static_cast<int>(235.f * fade);
 		if (alpha <= 2) { continue; }
 		const glm::mat4 R = glm::rotate(yaw, glm::vec3(0.f, 1.f, 0.f));
@@ -270,13 +288,20 @@ void drawClouds(const glm::mat4 &viewMatrix)
 		// Kappe (Modell Radius 100, Hoehe ~70) auf dem Stamm
 		const glm::mat4 Mc = glm::translate(base + glm::vec3(0.f, stemH - 0.22f * capR, 0.f)) * R * glm::scale(glm::vec3(capR / 100.f, capR * 0.72f / 100.f, capR / 100.f));
 		pie_Draw3DShape(s_cCap->displayModel(), 0, 0, smoke, pie_TRANSLUCENT, alpha, Mc, viewMatrix, 0.f, true);
-		if (heat > 0.05f)
+		if (heat > 0.03f)
 		{
-			// gluehender Kern (additiv), anfangs grell
-			const PIELIGHT glow = rgb(255.f, 150.f + 90.f * heat, 60.f + 120.f * heat * heat);
+			// gluehender Kern (additiv, zweilagig): innen orangegelb, aussen rot - leuchtet aus der Wolke heraus
+			float ir = 0.f, ig = 0.f, ib = 0.f;
+			hotColour(std::min(1.f, heat + 0.25f), ir, ig, ib);
+			const PIELIGHT inner = rgb(ir, ig, ib);
+			const PIELIGHT outer = rgb(255.f, 70.f + 60.f * heat, 25.f);
+			const float hg2 = std::pow(heat, 0.7f);
 			const glm::mat4 Mg = glm::translate(base + glm::vec3(0.f, stemH - 0.25f * capR, 0.f)) * R * glm::scale(glm::vec3(capR * 0.86f / 100.f, capR * 0.6f / 100.f, capR * 0.86f / 100.f));
-			pie_Draw3DShape(s_cCap->displayModel(), 0, 0, glow, pie_ADDITIVE, static_cast<int>(230.f * heat * fade), Mg, viewMatrix, 0.f, true);
-			pie_Draw3DShape(s_cStem->displayModel(), 0, 0, glow, pie_ADDITIVE, static_cast<int>(160.f * heat * fade), Ms * glm::scale(glm::vec3(0.7f, 1.f, 0.7f)), viewMatrix, 0.f, true);
+			pie_Draw3DShape(s_cCap->displayModel(), 0, 0, inner, pie_ADDITIVE, static_cast<int>(255.f * hg2 * fade), Mg, viewMatrix, 0.f, true);
+			const glm::mat4 Mo = glm::translate(base + glm::vec3(0.f, stemH - 0.2f * capR, 0.f)) * R * glm::scale(glm::vec3(capR * 1.04f / 100.f, capR * 0.76f / 100.f, capR * 1.04f / 100.f));
+			pie_Draw3DShape(s_cCap->displayModel(), 0, 0, outer, pie_ADDITIVE, static_cast<int>(190.f * hg2 * fade), Mo, viewMatrix, 0.f, true);
+			pie_Draw3DShape(s_cStem->displayModel(), 0, 0, inner, pie_ADDITIVE, static_cast<int>(200.f * hg2 * fade), Ms * glm::scale(glm::vec3(0.7f, 1.f, 0.7f)), viewMatrix, 0.f, true);
+			pie_Draw3DShape(s_cStem->displayModel(), 0, 0, outer, pie_ADDITIVE, static_cast<int>(140.f * hg2 * fade), Ms * glm::scale(glm::vec3(1.05f, 1.f, 1.05f)), viewMatrix, 0.f, true);
 		}
 		// Staubring am Boden (breitet sich schnell aus, verblasst nach ~30 s)
 		const int ra = static_cast<int>(220.f * fade * (1.f - smooth01(8.f, 32.f, t)));

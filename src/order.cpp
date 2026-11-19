@@ -502,7 +502,7 @@ bool orderUpdateDroid(DROID *psDroid)
 		{
 			orderDroidObj(psDroid, DORDER_GUARD, psDroid->psGroup->psCommander, ModeImmediate);
 		}
-		else if (psDroid->isTransporter() && !bMultiPlayer)
+		else if (psDroid->isTransporter() && !transporterFreeControl(psDroid))
 		{
 
 		}
@@ -1014,7 +1014,7 @@ bool orderUpdateDroid(DROID *psDroid)
 		break;
 	case DORDER_DISEMBARK:
 		//only valid in multiPlayer mode
-		if (bMultiPlayer)
+		if (bMultiPlayer || transporterFreeControl(psDroid))
 		{
 			//this order can only be given to Transporter droids
 			if (psDroid->isTransporter())
@@ -1571,7 +1571,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	// Campaign transporter selection is required for it to be tracked by the camera, and
 	// should be the only case when it does get selected.
 	if (psDroid->isTransporter() &&
-		!bMultiPlayer &&
+		!transporterFreeControl(psDroid) &&
 		psDroid->selected &&
 		(psOrder->type != DORDER_TRANSPORTOUT &&
 		psOrder->type != DORDER_TRANSPORTIN &&
@@ -1604,7 +1604,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 			break;
 		}
 		//in multiPlayer, cannot move Transporter to blocking tile either
-		if (game.type == LEVEL_TYPE::SKIRMISH
+		if (transporterFreeControl(psDroid)
 		    && psDroid->isTransporter()
 		    && fpathBlockingTile(gameWorld.map, map_coord(psOrder->pos), psDroid->getPropulsionStats()->propulsionType))
 		{
@@ -1834,7 +1834,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 
 				psDroid->order = *psOrder;
 				// Find a place to land for vtols. And Transporters in a multiPlay game.
-				if (psDroid->isVtol() || (game.type == LEVEL_TYPE::SKIRMISH && psDroid->isTransporter()))
+				if (psDroid->isVtol() || transporterFreeControl(psDroid))
 				{
 					actionVTOLLandingPos(psDroid, &pos);
 				}
@@ -1891,7 +1891,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 			psDroid->order.pos = psOrder->psObj->pos.xy();
 			/* If in multiPlayer, and the Transporter has been sent to be
 				* repaired, need to find a suitable location to drop down. */
-			if (game.type == LEVEL_TYPE::SKIRMISH && psDroid->isTransporter())
+			if (transporterFreeControl(psDroid))
 			{
 				Vector2i pos = psDroid->order.pos;
 				objTrace(psDroid->id, "Repair transport");
@@ -1937,7 +1937,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 				psDroid->order.pos = rtrData.psObj->pos.xy();
 				/* If in multiPlayer, and the Transporter has been sent to be
 					* repaired, need to find a suitable location to drop down. */
-				if (game.type == LEVEL_TYPE::SKIRMISH && psDroid->isTransporter())
+				if (transporterFreeControl(psDroid))
 				{
 					Vector2i pos = psDroid->order.pos;
 
@@ -1994,7 +1994,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		}
 	case DORDER_DISEMBARK:
 		//only valid in multiPlayer mode
-		if (bMultiPlayer)
+		if (bMultiPlayer || transporterFreeControl(psDroid))
 		{
 			//this order can only be given to Transporter droids
 			if (psDroid->isTransporter())
@@ -2705,9 +2705,9 @@ DROID_ORDER chooseOrderLoc(DROID *psDroid, UDWORD x, UDWORD y, bool altOrder)
 	DROID_ORDER		order = DORDER_NONE;
 	PROPULSION_TYPE		propulsion = psDroid->getPropulsionStats()->propulsionType;
 
-	if (psDroid->isTransporter() && game.type == LEVEL_TYPE::CAMPAIGN)
+	if (psDroid->isTransporter() && game.type == LEVEL_TYPE::CAMPAIGN && !transporterFreeControl(psDroid))
 	{
-		// transports can't be controlled in campaign
+		// transports can't be controlled in campaign (MOD: ausser dem Intro-Dropship)
 		return DORDER_NONE;
 	}
 
@@ -2752,7 +2752,7 @@ DROID_ORDER chooseOrderLoc(DROID *psDroid, UDWORD x, UDWORD y, bool altOrder)
 	}
 
 	// and now we want Transporters to fly! - in multiPlayer!!
-	if (psDroid->isTransporter() && game.type == LEVEL_TYPE::SKIRMISH)
+	if (transporterFreeControl(psDroid))
 	{
 		/* in MultiPlayer - if ALT-key is pressed then need to get the Transporter
 		 * to fly to location and all units disembark */
@@ -2957,7 +2957,7 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 	if (psDroid->isTransporter())
 	{
 		//in multiPlayer, need to be able to get Transporter repaired
-		if (bMultiPlayer)
+		if (transporterFreeControl(psDroid))
 		{
 			if (aiCheckAlliances(psObj->player, psDroid->player) &&
 			    psObj->type == OBJ_STRUCTURE)
