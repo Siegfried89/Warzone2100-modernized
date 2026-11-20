@@ -739,6 +739,18 @@ bool hasAbility(const DROID *d, const char *ability)
 	       || (lo.armR && lo.armR->hasAbility(ability)) || (lo.armL && lo.armL->hasAbility(ability));
 }
 
+int muzzleConnector(const DROID *d, int weaponSlot)
+{
+	if (d == nullptr || weaponSlot < 0 || weaponSlot >= static_cast<int>(d->numWeaps) || !isModular(d)) { return -1; }
+	const Loadout lo = loadoutOf(d);
+	if (weaponSlot == lo.slotR) { return 0; }
+	if (weaponSlot == lo.slotL) { return 1; }
+	// eingebaute Waffe ("MFB_<Teil>"): Torso oben, Beine unten vorn
+	const std::string wid = d->getWeaponStats(weaponSlot)->id.toUtf8();
+	if (wid.rfind("MFB_", 0) == 0 && lo.legs != nullptr && wid.compare(4, std::string::npos, lo.legs->id) == 0) { return 3; }
+	return 2;
+}
+
 bool canFly(const DROID *d)
 {
 	if (d == nullptr) { return false; }

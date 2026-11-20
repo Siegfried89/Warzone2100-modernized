@@ -2456,7 +2456,12 @@ bool calcDroidMuzzleBaseLocation(const DROID *psDroid, Vector3i *muzzle, int wea
 
 	CHECK_DROID(psDroid);
 
-	if (psBodyImd && static_cast<size_t>(weapon_slot) < psBodyImd->connectors.size())
+	// MOD (20.11. 23:03): modulare Combots - der Anker haengt am Teil (rechter/linker Arm, eingebaute Waffe von Torso/Beinen),
+	// nicht an der Reihenfolge der Waffen
+	const int modConn = modcombot::muzzleConnector(psDroid, weapon_slot);
+	const size_t conn = (modConn >= 0 && psBodyImd && static_cast<size_t>(modConn) < psBodyImd->connectors.size()) ? static_cast<size_t>(modConn) : static_cast<size_t>(weapon_slot);
+
+	if (psBodyImd && conn < psBodyImd->connectors.size())
 	{
 		Vector3i barrel(0, 0, 0);
 
@@ -2468,8 +2473,8 @@ bool calcDroidMuzzleBaseLocation(const DROID *psDroid, Vector3i *muzzle, int wea
 		af.RotY(psDroid->rot.direction);
 		af.RotX(psDroid->rot.pitch);
 		af.RotZ(-psDroid->rot.roll);
-		af.Trans(psBodyImd->connectors[weapon_slot].x, -psBodyImd->connectors[weapon_slot].z,
-				 -psBodyImd->connectors[weapon_slot].y);//note y and z flipped
+		af.Trans(psBodyImd->connectors[conn].x, -psBodyImd->connectors[conn].z,
+				 -psBodyImd->connectors[conn].y);//note y and z flipped
 
 		*muzzle = (af * barrel).xzy();
 		muzzle->z = -muzzle->z;
@@ -2493,7 +2498,11 @@ bool calcDroidMuzzleLocation(const DROID *psDroid, Vector3i *muzzle, int weapon_
 
 	CHECK_DROID(psDroid);
 
-	if (psBodyImd && static_cast<size_t>(weapon_slot) < psBodyImd->connectors.size())
+	// MOD (20.11. 23:03): modulare Combots - Anker nach Teil (siehe calcDroidMuzzleBaseLocation)
+	const int modConn = modcombot::muzzleConnector(psDroid, weapon_slot);
+	const size_t conn = (modConn >= 0 && psBodyImd && static_cast<size_t>(modConn) < psBodyImd->connectors.size()) ? static_cast<size_t>(modConn) : static_cast<size_t>(weapon_slot);
+
+	if (psBodyImd && conn < psBodyImd->connectors.size())
 	{
 		char debugStr[250];  // Each "(%d,%d,%d)" uses up to 34 bytes, for very large values. So 250 isn't exaggerating.
 		size_t debugLen = 0;
@@ -2515,9 +2524,9 @@ bool calcDroidMuzzleLocation(const DROID *psDroid, Vector3i *muzzle, int weapon_
 		af.RotY(psDroid->rot.direction);
 		af.RotX(psDroid->rot.pitch);
 		af.RotZ(-psDroid->rot.roll);
-		af.Trans(psBodyImd->connectors[weapon_slot].x, -psBodyImd->connectors[weapon_slot].z,
-				 -psBodyImd->connectors[weapon_slot].y);//note y and z flipped
-		debugLen += sprintf(debugStr + debugLen, "connect:body[%d]=(%d,%d,%d)", weapon_slot, psBodyImd->connectors[weapon_slot].x, -psBodyImd->connectors[weapon_slot].z, -psBodyImd->connectors[weapon_slot].y);
+		af.Trans(psBodyImd->connectors[conn].x, -psBodyImd->connectors[conn].z,
+				 -psBodyImd->connectors[conn].y);//note y and z flipped
+		debugLen += sprintf(debugStr + debugLen, "connect:body[%d]=(%d,%d,%d)", weapon_slot, psBodyImd->connectors[conn].x, -psBodyImd->connectors[conn].z, -psBodyImd->connectors[conn].y);
 
 		//matrix = the weapon[slot] mount on the body
 		af.RotY(psDroid->asWeaps[weapon_slot].rot.direction);  // +ve anticlockwise

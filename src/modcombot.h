@@ -153,6 +153,10 @@ unsigned registerCorpse(const DROID *d, unsigned birthTime);
 /// Wird aus dem Todeseffekt gezeichnet. true = gezeichnet.
 bool drawCorpse(unsigned id, const glm::mat4 &model, const glm::mat4 &view, int colour);
 
+/// (20.11. 23:03) Waffenanker am Huellkoerper fuer einen Waffenplatz: 0 rechter Arm, 1 linker Arm, 2 eingebaute Waffe des Torsos,
+/// 3 eingebaute Waffe der Beine; -1 = kein modularer Combot (Platz = Anker wie ueblich)
+int muzzleConnector(const DROID *d, int weaponSlot);
+
 /// Wird aus displayCompObj aufgerufen. true = gezeichnet (Standardpfad ueberspringen).
 bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view, int colour, PIELIGHT brightness, int pieFlag, int pieFlagData);
 

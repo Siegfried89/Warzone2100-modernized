@@ -219,6 +219,18 @@ void rebuildList()
 			e.part = e.set[modcombot::SLOT_TORSO];
 			if (e.part != nullptr && e.set[modcombot::SLOT_LEGS] != nullptr) { s_list.push_back(e); }
 		}
+		{
+			// (20.11. 23:03) Hedoth-Combot (MF: Alien-Teile, zu keinem Konzern gehoerend) - komplett aus Hedoth-Teilen
+			Entry e;
+			e.preset = true;
+			e.name = "Hedoth: Alien";
+			e.set[modcombot::SLOT_TORSO] = modcombot::find("Alien_T0");
+			e.set[modcombot::SLOT_LEGS] = modcombot::find("Alien_L0");
+			e.set[modcombot::SLOT_RARM] = modcombot::find("Alien_A0");
+			e.set[modcombot::SLOT_LARM] = modcombot::find("Alien_A1");
+			e.part = e.set[modcombot::SLOT_TORSO];
+			if (e.part != nullptr && e.set[modcombot::SLOT_LEGS] != nullptr) { s_list.push_back(e); }
+		}
 		for (int corp = 0; corp < 3; ++corp)
 		{
 			for (const Part &t : parts)
@@ -556,7 +568,22 @@ bool makeTemplate(DROID_TEMPLATE &tpl, std::string &err)
 	{
 		if (tpl.numWeaps >= MAX_WEAPONS || static_cast<unsigned>(tpl.numWeaps) >= tpl.getBodyStats()->weaponSlots) { break; }
 		const COMPONENT_STATS *w = getCompStatsFromName(WzString::fromUtf8("MFB_" + bp->id));
-		if (w != nullptr && w->compType == COMP_WEAPON) { tpl.asWeaps[tpl.numWeaps++] = static_cast<uint32_t>(w->index); }
+		if (w == nullptr || w->compType != COMP_WEAPON) { continue; }
+		// reicht die eingebaute Waffe weiter als alle Arme (Haubitze), steht sie vorn: die erste Waffe bestimmt, aus welcher Entfernung
+		// der Combot kaempft (Artillerie bleibt auf Abstand)
+		const int range = static_cast<int>(asWeaponStats[w->index].base.maxRange);
+		bool longest = true;
+		for (int i = 0; i < tpl.numWeaps; ++i) { if (static_cast<int>(asWeaponStats[tpl.asWeaps[i]].base.maxRange) >= range) { longest = false; } }
+		if (longest)
+		{
+			for (int i = tpl.numWeaps; i > 0; --i) { tpl.asWeaps[i] = tpl.asWeaps[i - 1]; }
+			tpl.asWeaps[0] = static_cast<uint32_t>(w->index);
+			++tpl.numWeaps;
+		}
+		else
+		{
+			tpl.asWeaps[tpl.numWeaps++] = static_cast<uint32_t>(w->index);
+		}
 	}
 	std::string name = "Combot " + t->file;
 	const std::string a0 = shortArm(arms[0]), a1 = shortArm(arms[1]);
