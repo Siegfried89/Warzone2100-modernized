@@ -81,6 +81,7 @@
 #include "modterrain.h"
 #include "modfort.h"
 #include "modbuild.h"
+#include "modpick.h"
 #include "modhelp.h"
 #include "modammo.h"
 #include "modauto.h"
@@ -780,6 +781,7 @@ void interfaceShutDown()
 	modterrain::reset();     // MOD
 	modfort::reset();        // MOD 17.11.
 	modbuild::reset();       // MOD
+	modpick::reset();        // MOD (20.11.): genaue Trefferflaeche
 	modhelp::reset();        // MOD
 	modammo::reset();        // MOD
 	modauto::reset();        // MOD: Fully autonomous

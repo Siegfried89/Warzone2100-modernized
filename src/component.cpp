@@ -64,6 +64,7 @@
 #include "modflail.h"   // MOD (17.11. 20:06): Minenraeumer vor dem Bug
 #include "modparts.h"
 #include "modrecover.h"
+#include "modpick.h"
 #include "featuredef.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
@@ -1598,7 +1599,10 @@ void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix, const g
 	{
 		//ingame not button object
 		//should render 3 mounted weapons now
-		if (displayCompObj(psDroid, false, modelMatrix, viewMatrix))
+		modpick::beginDroid(psDroid, perspectiveViewMatrix);   // MOD (20.11.): genaue Trefferflaeche - gezeichnete Modellteile merken
+		const bool modDrawn = displayCompObj(psDroid, false, modelMatrix, viewMatrix);
+		modpick::endDroid();
+		if (modDrawn)
 		{
 			// did draw something to the screen - update the framenumber
 			psDroid->sDisplay.frameNumber = frameGetFrameNumber();

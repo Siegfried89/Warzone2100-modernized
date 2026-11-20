@@ -1875,24 +1875,11 @@ BASE_OBJECT *mouseTarget()
 	}
 
 	/* First have a look through the droid lists */
-	for (int i = 0; i < MAX_PLAYERS; i++)
+	// MOD (20.11.): genaue Trefferflaeche - die vorderste Einheit, deren echtes Modell unter der Maus liegt
+	if (DROID *psDroid = modDroidUnderMouse(mouseX(), mouseY()))
 	{
-		for (DROID *psDroid : gameWorld.objects.droids[i])
-		{
-
-			// Has the droid been drawn since the start of the last frame
-			if (psDroid->visibleForLocalDisplay() && DrawnInLastFrame(psDroid->sDisplay.frameNumber))
-			{
-				if (modDroidHit(psDroid, mouseX(), mouseY()))   // MOD (17.11.): echte Bildgroesse
-				{
-					/* We HAVE clicked on droid! */
-					psReturn = (BASE_OBJECT *) psDroid;
-					/* There's no point in checking other object types */
-					return psReturn;
-				}
-			}
-		}
-	} // end of checking for droids
+		return (BASE_OBJECT *) psDroid;
+	}
 
 	/*	Not a droid, so maybe a structure or feature?
 		If still NULL after this then nothing */
@@ -3045,6 +3032,7 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 	retVal = MT_NOTARGET;
 
 	/* First have a look through the droid lists */
+	const DROID *psModUnder = modDroidUnderMouse(mouseX(), mouseY());   // MOD (20.11.): genaue Trefferflaeche, vorderste Einheit
 	for (i = 0; i < MAX_PLAYERS; i++)
 	{
 		for (DROID* psDroid : gameWorld.objects.droids[i])
@@ -3052,7 +3040,7 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 			/* Only check droids that're on screen */
 			if (psDroid->sDisplay.frameNumber + 1 == currentFrame && psDroid->visibleForLocalDisplay())
 			{
-				if (modDroidHit(psDroid, mouseX(), mouseY()))   // MOD (17.11.): echte Bildgroesse
+				if (psDroid == psModUnder)
 				{
 					/* We HAVE clicked on droid! */
 					if (selectedPlayer < MAX_PLAYERS && aiCheckAlliances(psDroid->player, selectedPlayer))
