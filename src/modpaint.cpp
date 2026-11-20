@@ -468,7 +468,7 @@ int artyBaseSize(const std::vector<Vector2i> &raw)
 	const Vector2i c = centroid(raw);
 	double sum = 0.0;
 	for (const Vector2i &q : raw) { sum += std::sqrt(static_cast<double>(dist2(q, c))); }
-	const double r = sum / static_cast<double>(raw.size()) / TILE_UNITS;
+	const double r = sum / static_cast<double>(raw.size()) / DIST_TILE;   // (20.11.) in Original-Kacheln (auch in der Viertel-Fassung)
 	return r < 2.5 ? 1 : (r < 4.5 ? 2 : 3);
 }
 
@@ -484,7 +484,9 @@ std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int s
 	STRUCTURE_STATS *sensor = firstAvailable({ "Sys-SensoTowerWS", "Sys-SensoTower02", "Sys-SensoTower01", "A0BaBaOutpost" });
 	STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall", "CollectiveWall", "NEXUSWall", "A0BaBaSandbagWall" });
 	STRUCTURE_STATS *hedge = firstAvailable({ "A0BaBaHedgehog", "A0TankTrapHeavy", "A0TankTrap" });
-	const Vector2i ct(map_coord(centerWorld.x), map_coord(centerWorld.y));
+	// (20.11.) in PLAN-Kacheln (DIST_TILE = Original-Kachel) wie der Befestigungsplan und seine Vorschau - in der Viertel-Fassung waren
+	// es Feinfelder: Vorschau an falscher Stelle, Stellungen nur ein Feinfeld auseinander (blockierten sich gegenseitig)
+	const Vector2i ct(std::max(0, centerWorld.x) / DIST_TILE, std::max(0, centerWorld.y) / DIST_TILE);
 	auto one = [&](STRUCTURE_STATS *st, int tx, int ty) { modbuild::Placement p; p.stats = st; p.tile = Vector2i(tx, ty); p.tile2 = p.tile; out.push_back(p); };
 	auto line = [&](STRUCTURE_STATS *st, int x0, int y0, int x1, int y1) {
 		modbuild::Placement p; p.stats = st; p.tile = Vector2i(x0, y0); p.tile2 = Vector2i(x1, y1); p.line = true; out.push_back(p);
@@ -1055,14 +1057,17 @@ std::vector<Vector2i> fieldSpots(const std::vector<Vector2i> &raw, bool mines)
 	if (raw.size() < 3) { return out; }
 	int x0 = INT32_MAX, y0 = INT32_MAX, x1 = INT32_MIN, y1 = INT32_MIN;
 	for (const Vector2i &p : raw) { x0 = std::min(x0, p.x); y0 = std::min(y0, p.y); x1 = std::max(x1, p.x); y1 = std::max(y1, p.y); }
-	const int tx0 = std::max(1, map_coord(x0)), ty0 = std::max(1, map_coord(y0));
-	const int tx1 = std::min(gameWorld.map.width - 2, map_coord(x1)), ty1 = std::min(gameWorld.map.height - 2, map_coord(y1));
+	// (20.11.) Raster in Plan-Kacheln (DIST_TILE = Original-Kachel): ein Igel/eine Mine belegt eine ganze Plan-Kachel - in der Viertel-Fassung
+	// lag das Schachbrett auf Feinfeldern und die Bauwerke ueberlappten (viele Bauauftraege schlugen fehl)
+	const int pw = world_coord(gameWorld.map.width) / DIST_TILE, ph = world_coord(gameWorld.map.height) / DIST_TILE;
+	const int tx0 = std::max(1, std::max(0, x0) / DIST_TILE), ty0 = std::max(1, std::max(0, y0) / DIST_TILE);
+	const int tx1 = std::min(pw - 2, std::max(0, x1) / DIST_TILE), ty1 = std::min(ph - 2, std::max(0, y1) / DIST_TILE);
 	if (tx1 < tx0 || ty1 < ty0 || (tx1 - tx0) * (ty1 - ty0) > 4096) { return out; }
 	for (int ty = ty0; ty <= ty1; ++ty)
 	{
 		for (int tx = tx0; tx <= tx1; ++tx)
 		{
-			const int cx = world_coord(tx) + TILE_UNITS / 2, cy = world_coord(ty) + TILE_UNITS / 2;
+			const int cx = tx * DIST_TILE + DIST_TILE / 2, cy = ty * DIST_TILE + DIST_TILE / 2;
 			if (!insidePoly(raw, cx, cy)) { continue; }
 			if (mines)
 			{
@@ -1071,8 +1076,16 @@ std::vector<Vector2i> fieldSpots(const std::vector<Vector2i> &raw, bool mines)
 				if ((h >> 16) % 100u >= 36u) { continue; }
 			}
 			else if ((tx + ty) % 2 != 0) { continue; }
-			const MAPTILE *t = mapTile(gameWorld.map, tx, ty);
-			if (t == nullptr || TileHasStructure(t) || TileHasFeature(t) || terrainType(t) == TER_WATER || terrainType(t) == TER_CLIFFFACE) { continue; }
+			bool ok = true;   // alle Kartenfelder der Plan-Kachel frei
+			for (int fy = map_coord(ty * DIST_TILE); ok && fy <= map_coord(ty * DIST_TILE + DIST_TILE - 1); ++fy)
+			{
+				for (int fx = map_coord(tx * DIST_TILE); ok && fx <= map_coord(tx * DIST_TILE + DIST_TILE - 1); ++fx)
+				{
+					const MAPTILE *t = mapTile(gameWorld.map, fx, fy);
+					ok = !(t == nullptr || TileHasStructure(t) || TileHasFeature(t) || terrainType(t) == TER_WATER || terrainType(t) == TER_CLIFFFACE);
+				}
+			}
+			if (!ok) { continue; }
 			out.emplace_back(cx, cy);
 		}
 	}
@@ -1322,7 +1335,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 	}
 	case M_ARTYBASE:
 	{
-		auto worldOf = [](const Vector2i &t) { return Vector2i(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2); };
+		auto worldOf = [](const Vector2i &t) { return Vector2i(t.x * DIST_TILE + DIST_TILE / 2, t.y * DIST_TILE + DIST_TILE / 2); };   // Plan-Kacheln
 		std::vector<DroidOrder> plan;
 		for (const modbuild::Placement &pl : artyBasePlan(c, artyBaseSize(raw)))
 		{
