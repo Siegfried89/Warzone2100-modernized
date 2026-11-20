@@ -24,10 +24,10 @@ void endDroid();
 /// Ergebnis einer Trefferpruefung
 enum Hit
 {
-	NO_DATA = -1,   ///< nichts gemerkt (z. B. Radar-Echo) - der Aufrufer nimmt die alte Kastenpruefung
-	MISS = 0,
-	NEAR = 1,       ///< knapp daneben (innerhalb des Randes)
-	EXACT = 2       ///< auf einem Dreieck des Modells
+	PICK_NO_DATA = -1,   ///< nichts gemerkt (z. B. Radar-Echo) - der Aufrufer nimmt die alte Kastenpruefung
+	PICK_MISS = 0,
+	PICK_NEAR = 1,       ///< knapp daneben (innerhalb des Randes)
+	PICK_EXACT = 2       ///< auf einem Dreieck des Modells
 };
 /// liegt der Bildpunkt (mx, my) auf der Einheit? depth = Entfernung der getroffenen Oberflaeche zur Kamera, dist = Abstand in Bildpunkten (NEAR)
 Hit test(const DROID *psDroid, int mx, int my, float &depth, float &dist);
