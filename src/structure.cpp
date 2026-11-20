@@ -7947,7 +7947,10 @@ LineBuild calcLineBuild(STRUCTURE_STATS const *stats, uint16_t direction, Vector
 {
 	// MOD (Wunsch 12.11. "Strommasten wie Mauern in einer Linie ziehbar"): Masten beim Ziehen alle 4 Felder (Verbindung bis 6 Felder)
 	const int pitch = modgrid::isPole(stats) ? 4 * (DIST_TILE / TILE_UNITS) : 0;
-	return calcLineBuild(stats->size(direction), stats->type, pos, pos2, pitch);
+	// MOD (Wunsch 20.11. "Es gibt noch 1 Einheit Ziehabstand bei den Solarpaneelen. Es soll eine durchgehende Reihe sein"): Solarpaneele
+	// (incomeProvide > 0) werden wie Mauern dicht an dicht gezogen - ohne freies Feld dazwischen (normale Gebaeude behalten 1 Feld Abstand)
+	const STRUCTURE_TYPE packType = (stats->incomeProvide > 0) ? REF_DEFENSE : stats->type;
+	return calcLineBuild(stats->size(direction), packType, pos, pos2, pitch);
 }
 
 StructContainer& GlobalStructContainer()

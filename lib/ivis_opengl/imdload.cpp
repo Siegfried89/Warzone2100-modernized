@@ -111,6 +111,8 @@ iIMDShape& iIMDShape::operator=(iIMDShape&& other) noexcept
 		std::swap(ocen, other.ocen);
 		std::swap(connectors, other.connectors);
 		std::swap(flags, other.flags);
+		std::swap(modPartCenter, other.modPartCenter);
+		std::swap(modPartRadius, other.modPartRadius);
 		std::swap(numFrames, other.numFrames);
 		std::swap(animInterval, other.animInterval);
 		std::swap(shadowEdgeList, other.shadowEdgeList);
@@ -752,10 +754,7 @@ static bool _imd_load_level_settings(const WzString &filename, const char **ppFi
 			{
 				return true;
 			}
-			if (pieVersion >= PIE_VER_4)
-			{
-				continue; // loop to allow multiple TEXTURE, TCMASK, NORMALMAP, and SPECULARMAP commands
-			}
+			continue; // loop to allow multiple TEXTURE, TCMASK, NORMALMAP, and SPECULARMAP commands (MOD: in PIE 3 in beliebiger Reihenfolge)
 		}
 
 		// SPECULARMAP
@@ -765,16 +764,15 @@ static bool _imd_load_level_settings(const WzString &filename, const char **ppFi
 			{
 				return true;
 			}
-			if (pieVersion >= PIE_VER_4)
-			{
-				continue; // loop to allow multiple TEXTURE, TCMASK, NORMALMAP, and SPECULARMAP commands
-			}
+			continue; // loop to allow multiple TEXTURE, TCMASK, NORMALMAP, and SPECULARMAP commands (MOD: in PIE 3 in beliebiger Reihenfolge)
 		}
 
 		// not one of the expected commands - exit loop
 		break;
 
-	} while (pieVersion >= PIE_VER_4); // there may be multiple TEXTURE, TCMASK, NORMALMAP, and SPECULARMAP commands when pieVersion >= PIE_VER_4
+	} while (true); // there may be multiple TEXTURE, TCMASK, NORMALMAP, and SPECULARMAP commands when pieVersion >= PIE_VER_4
+	// MOD (20.11., Ziel "flexibler laden, weniger Fehlermeldungen"): auch in PIE 3 duerfen NORMALMAP und SPECULARMAP in beliebiger Reihenfolge
+	// stehen - bisher blieb eine NORMALMAP-Zeile nach SPECULARMAP liegen und das Modell brach mit "Expecting 'LEVELS' directive" ab
 
 	return true;
 }
@@ -1148,7 +1146,13 @@ static void _imd_calc_bounds(iIMDShape &s, bool allLevels = false)
 	rad = sqrt((double)rad_sq);
 
 	// second pass (find tight sphere)
-	for (const Vector3f &p : s.points)
+	// MOD (20.11.): mit allLevels ueber die Punkte aller Ebenen (bisher nur die erste)
+	std::vector<Vector3f> allLevelPoints;
+	if (allLevels)
+	{
+		for (const iIMDShape *lvl = &s; lvl != nullptr; lvl = lvl->next.get()) { allLevelPoints.insert(allLevelPoints.end(), lvl->points.begin(), lvl->points.end()); }
+	}
+	for (const Vector3f &p : (allLevels ? allLevelPoints : s.points))
 	{
 		dx = p.x - cen.x;
 		dy = p.y - cen.y;
@@ -2223,6 +2227,18 @@ static std::unique_ptr<iIMDShape> iV_ProcessIMD(const WzString &filename, const 
 	}
 
 	// TODO: once all levels have been loaded, re-calculate the bounds of the first level using all the levels' points?
+	// MOD (20.11.): Modelle aus Einzelteilen je Ebene (iV_IMD_MOD_GROUNDLEVELS, z. B. fuenf Panzerigel je Feld): jede Ebene merkt sich ihre
+	// eigene Standflaeche (fuer die Anzeige auf dem Boden darunter), danach umfassen die Grenzen der ersten Ebene - und damit die
+	// Spielwerte des Modells (Ausrichtung am Gelaende, Zielhoehe, Radius) - alle Teile
+	if (firstLevel->flags & iV_IMD_MOD_GROUNDLEVELS)
+	{
+		for (iIMDShape *lvl = firstLevel.get(); lvl != nullptr; lvl = lvl->next.get())
+		{
+			lvl->modPartCenter = Vector3f(0.5f * static_cast<float>(lvl->min.x + lvl->max.x), static_cast<float>(lvl->min.y), 0.5f * static_cast<float>(lvl->min.z + lvl->max.z));
+			lvl->modPartRadius = 0.5f * static_cast<float>(std::max(lvl->max.x - lvl->min.x, lvl->max.z - lvl->min.z));
+		}
+		_imd_calc_bounds(*firstLevel, true);
+	}
 
 	*ppFileData = pFileData;
 	return firstLevel;

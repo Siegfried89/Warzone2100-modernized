@@ -116,6 +116,7 @@ void main()
 
 	float specularMapValue = 0.f;
 	float gaussianTerm = 0.f;
+	float modMirrorTerm = 0.f; // MOD (20.11.): Spiegelglanz (siehe unten)
 	float vanillaFactor = 0.0; // Classic models shouldn't use diffuse light
 	if (lambertTerm > 0.0 && specularmap != 0)
 	{
@@ -125,6 +126,12 @@ void main()
 		vec3 H = normalize(halfVec);
 		float exponent = acos(dot(H, N)) / 0.33; //0.33 is shininess
 		gaussianTerm = exp(-(exponent * exponent));
+		// MOD (Wunsch 20.11. "Die Specularmaps der Solarpanele deutlich kraeftiger machen ..., dass man deutliche Sonnenreflexionen sehen
+		// kann"): Glanzkarten-Werte ueber 0,75 sind Spiegelflaechen (Solarzellen, blanker Stahl) - zusaetzlich zum breiten Glanz ein
+		// scharfer, heller Sonnenreflex (bis 2,2-fach, Keulenbreite 0,11 statt 0,33). Werte bis 0,75 bleiben wie bisher.
+		float mirror = clamp((specularMapValue - 0.75) * 4.0, 0.0, 1.0);
+		float mirrorExp = acos(clamp(dot(H, N), -1.0, 1.0)) / 0.11;
+		modMirrorTerm = mirror * 2.2 * exp(-(mirrorExp * mirrorExp));
 
 		vanillaFactor = 1.0; // Neutralize factor for spec map
 	}
@@ -137,6 +144,7 @@ void main()
 		vec3 albedoD = wzLinearToSrgb(diffuseMap.rgb);
 		vec3 lightD = wzLinearToSrgb(sceneColor.rgb);
 		lightD += wzLinearToSrgb(specular.rgb) * gaussianTerm * lambertTerm * specularMapValue;
+		lightD += wzLinearToSrgb(specular.rgb) * modMirrorTerm * lambertTerm;
 		lightD += wzLinearToSrgb(diffuse.rgb) * lambertTerm * albedoD * vanillaFactor;
 		lightD += wzLinearToSrgb(ambient.rgb) * albedoD * ambientBoost;
 		light = vec4(wzSrgbToLinear(lightD), 1.0);
@@ -145,6 +153,7 @@ void main()
 	{
 		light = sceneColor;
 		light += specular * gaussianTerm * lambertTerm * vec4(vec3(specularMapValue), 1.0);
+		light += specular * modMirrorTerm * lambertTerm * vec4(1.0, 1.0, 1.0, 0.0);
 		light += diffuse * lambertTerm * diffuseMap * vanillaFactor;
 		vec4 boostedAmbient = ambient * diffuseMap;
 		boostedAmbient.rgb *= ambientBoost;

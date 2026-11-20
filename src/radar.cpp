@@ -62,6 +62,7 @@
 #include <glm/gtx/transform.hpp>
 #include <vector>
 #include <cmath>
+#include <algorithm>
 
 #define HIT_NOTIFICATION	(GAME_TICKS_PER_SEC * 2)
 #define RADAR_FRAME_SKIP	10
@@ -275,13 +276,17 @@ bool resizeRadar(const WorldMapState& mapState)
 	radarOverlayBuffer = (uint32_t*)malloc(radarBufferSize);
 	memset(radarOverlayBuffer, 0, radarBufferSize);
 	frameSkip = 0;
-	if (rotateRadar)
 	{
-		RadarZoomMultiplier = (float)std::max(RADWIDTH, RADHEIGHT) / std::max<size_t>({radarTexWidth, radarTexHeight, 1});
-	}
-	else
-	{
-		RadarZoomMultiplier = 1.0f;
+		// MOD (Wunsch 20.11. "Die Minimap soll immer gleich gross bleiben, auch bei grossen Maps, und sich bei extrem grossen Maps nur ein
+		// bisschen vergroessern"): bisher war die nicht drehende Minikarte je Kachel einen Bildpunkt (x Zoom/16) gross - grosse Karten ergaben
+		// eine riesige Minikarte. Jetzt ist ihre lange Seite immer so lang wie bisher bei einer Karte mit 112 Kacheln (bei Zoom 16: 112
+		// Oberflaechen-Bildpunkte); erst ab 160 Original-Kacheln waechst sie langsam mit, hoechstens um ein Viertel (ab 512 Kacheln).
+		// Auf dem feinen Raster (Viertel) gleich gross.
+		constexpr float MOD_RADAR_LONG_SIDE = 112.0f;
+		const size_t texMax = std::max<size_t>({radarTexWidth, radarTexHeight, 1});
+		const float tilesOrig = static_cast<float>(texMax) * static_cast<float>(TILE_UNITS) / static_cast<float>(DIST_TILE);
+		const float grow = 1.0f + 0.25f * std::clamp((tilesOrig - 160.0f) / 352.0f, 0.0f, 1.0f);
+		RadarZoomMultiplier = MOD_RADAR_LONG_SIDE / static_cast<float>(texMax) * grow;
 	}
 	debug(LOG_WZ, "Setting radar zoom to %u", RadarZoom);
 	radarSize(RadarZoom);

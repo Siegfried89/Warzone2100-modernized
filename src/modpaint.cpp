@@ -1179,16 +1179,54 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 			return static_cast<int>(iAtan2(static_cast<int32_t>(-ty * fside), static_cast<int32_t>(tx * fside)));
 		};
 		for (size_t i = 0; i < fighters.size(); ++i) { send(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), false); rememberPlan(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), spots[i], faceAt(spots[i])); }
-		// Bauer heben Graeben entlang der Linie aus (Abschnitte reihum verteilt)
-		STRUCTURE_STATS *trench = firstAvailable({ "A0BaBaTrench", "A0BaBaTrenchEarth", "A0BaBaSandbagWall" });
-		if (trench != nullptr && !builders.empty())
+		// MOD (Wunsch 20.11.): Bauer heben ein Grabennetz aus - Hauptgraben lueckenlos entlang der Linie, Gruben, Verbindungsgraeben nach
+		// hinten; alle Stellungen mit der Front zu den Querstrichen (modbuild::planDefenseNet). Jeder Bauer bekommt einen zusammenhaengenden
+		// Abschnitt (ungefaehr gleich viele Felder), in der Reihenfolge ihrer Lage an der Linie - niemand laeuft hin und her.
+		if (!builders.empty() && selectedPlayer < MAX_PLAYERS)
 		{
-			const std::vector<Vector2i> seg = resample(raw, std::min<size_t>(9, std::max<size_t>(2, raw.size())));
-			for (size_t k = 0; k + 1 < seg.size(); ++k)
+			const std::vector<modbuild::Placement> plan = modbuild::planDefenseNet(selectedPlayer, raw, fside);
+			if (!plan.empty())
 			{
-				DROID *b = builders[k % builders.size()];
-				const bool add = k >= builders.size();
-				send(b, DroidOrder(DORDER_LINEBUILD, trench, seg[k], seg[k + 1], 0), add);
+				auto worldOfPlan = [](const Vector2i &t) { return Vector2i(t.x * DIST_TILE + DIST_TILE / 2, t.y * DIST_TILE + DIST_TILE / 2); };
+				std::vector<int64_t> cum(plan.size() + 1, 0);
+				for (size_t k = 0; k < plan.size(); ++k)
+				{
+					cum[k + 1] = cum[k] + 1 + std::abs(plan[k].tile2.x - plan[k].tile.x) + std::abs(plan[k].tile2.y - plan[k].tile.y);
+				}
+				// Lage eines Bauers an der Linie = Index des naechsten Planeintrags
+				std::vector<std::pair<size_t, DROID *>> order;
+				for (DROID *b : builders)
+				{
+					size_t best = 0;
+					int64_t bd = INT64_MAX;
+					for (size_t k = 0; k < plan.size(); ++k)
+					{
+						const int64_t dd = dist2(b->pos.xy(), worldOfPlan(plan[k].tile));
+						if (dd < bd) { bd = dd; best = k; }
+					}
+					order.emplace_back(best, b);
+				}
+				std::stable_sort(order.begin(), order.end(), [](const std::pair<size_t, DROID *> &a, const std::pair<size_t, DROID *> &b) {
+					return a.first != b.first ? a.first < b.first : a.second->id < b.second->id;
+				});
+				const size_t nb = std::min(order.size(), plan.size());
+				const int64_t total = cum.back();
+				for (size_t bi = 0; bi < order.size(); ++bi)
+				{
+					// mehr Bauer als Planeintraege: die uebrigen helfen im Abschnitt eines anderen mit
+					const size_t chunk = bi % nb;
+					const int64_t lo = total * static_cast<int64_t>(chunk) / static_cast<int64_t>(nb);
+					const int64_t hi = total * static_cast<int64_t>(chunk + 1) / static_cast<int64_t>(nb);
+					bool first = true;
+					for (size_t k = 0; k < plan.size(); ++k)
+					{
+						const int64_t mid = (cum[k] + cum[k + 1]) / 2;   // Eintrag gehoert zum Abschnitt, in dem seine Mitte liegt
+						if (mid < lo || mid >= hi) { continue; }
+						const modbuild::Placement &pl = plan[k];
+						send(order[bi].second, DroidOrder(DORDER_LINEBUILD, pl.stats, worldOfPlan(pl.tile), worldOfPlan(pl.tile2), static_cast<uint16_t>(pl.direction)), !first);
+						first = false;
+					}
+				}
 			}
 		}
 		break;
@@ -1693,6 +1731,25 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 		static std::vector<modbuild::Placement> s_artyPreview;
 		s_artyPreview = artyBasePlan(s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos, s_drawing ? artyBaseSize(s_cur) : 1);
 		modbuild::setExternalPreview(&s_artyPreview);
+	}
+	else if (s_mode == M_DEFEND && s_drawing && s_cur.size() >= 2 && selectedPlayer < MAX_PLAYERS)
+	{
+		// MOD (Wunsch 20.11.): beim Ziehen der Verteidigungslinie zeigt die Bauplan-Vorschau das Grabennetz, das die Bauer ausheben werden
+		// (nur wenn Bauer dabei sind; neu gerechnet, wenn die Linie waechst oder hoechstens alle 0,15 s)
+		static std::vector<modbuild::Placement> s_netPreview;
+		static size_t s_netPts = 0;
+		static unsigned s_netAt = 0;
+		std::vector<Vector2i> pts = s_cur;
+		if (pts.back() != worldPos) { pts.push_back(worldPos); }
+		if (pts.size() != s_netPts || realTime - s_netAt > 150)
+		{
+			s_netPts = pts.size();
+			s_netAt = realTime;
+			bool anyBuilder = false;
+			for (const DROID *d : pickUnits(M_DEFEND, pts)) { if (isBuilder(d)) { anyBuilder = true; break; } }
+			s_netPreview = anyBuilder ? modbuild::planDefenseNet(selectedPlayer, pts, defendSide(pts)) : std::vector<modbuild::Placement>();
+		}
+		modbuild::setExternalPreview(&s_netPreview);
 	}
 	else
 	{
