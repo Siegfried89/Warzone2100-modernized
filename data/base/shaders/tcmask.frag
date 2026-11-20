@@ -132,6 +132,9 @@ void main()
 		float mirror = clamp((specularMapValue - 0.75) * 4.0, 0.0, 1.0);
 		float mirrorExp = acos(clamp(dot(H, N), -1.0, 1.0)) / 0.11;
 		modMirrorTerm = mirror * 2.2 * exp(-(mirrorExp * mirrorExp));
+		// MOD (20.11. nachmittags): glatte Spiegelflaechen haben eine ENGERE Glanzkeule - der breite Glanz wird dort schwaecher, sonst
+		// werden Solarzellen ueber ~20 Grad Blickwinkel ganz weiss; so blitzen einzelne Zellen (Funkeln), der Rest bleibt blau
+		gaussianTerm *= 1.0 - 0.75 * mirror;
 
 		vanillaFactor = 1.0; // Neutralize factor for spec map
 	}
