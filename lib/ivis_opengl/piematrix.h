@@ -34,5 +34,6 @@ void pie_Begin3DScene();
 void pie_BeginInterface();
 float pie_getPerspectiveZFar();
 float pie_getPerspectiveZClose();
+void pie_setPerspectiveZClose(float zNear);   // MOD (20.11.): Nahebene der Spielkamera (8..330, Standard 330)
 
 #endif

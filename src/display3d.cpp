@@ -5021,7 +5021,7 @@ int calculateCameraHeightAt(WorldMapState& mapState, int worldX, int worldZ)
 /// MOD (17.11.): Die Kamera taucht nicht mehr in Haeuser/Hochhaeuser ein (dort wurden sie abgeschnitten und verschwanden). Liegt das
 /// Kamera-Auge fuer die gewuenschte Hoehe innerhalb eines Gebaeudes oder Features, wird die Hoehe so weit angehoben, dass das Auge knapp
 /// ueber dessen Dach bleibt (weich ueber trackHeight). Nur Anzeige.
-static float modCameraClearance(float pivotY)
+static glm::vec3 modCameraEye(float pivotY)
 {
 	const glm::mat4 view =
 		glm::translate(glm::vec3(0.f, 0.f, distance)) *
@@ -5030,11 +5030,38 @@ static float modCameraClearance(float pivotY)
 		glm::rotate(UNDEG(playerPos.r.x), glm::vec3(1.f, 0.f, 0.f)) *
 		glm::rotate(UNDEG(playerPos.r.y), glm::vec3(0.f, 1.f, 0.f)) *
 		glm::translate(glm::vec3(-static_cast<float>(playerPos.p.x), -pivotY, static_cast<float>(playerPos.p.z)));
-	const glm::vec3 eye = (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
+	return (glm::inverse(view) * glm::vec4(0.f, 0.f, 0.f, 1.f)).xyz();
+}
+
+/// MOD (Wunsch 20.11. 01:46 "es ist immer noch moeglich durch den Boden zu sinken"): hoechster Gelaendepunkt unter dem Kamera-Auge und
+/// rundherum (Radius ~1 Kachel) - der Drehpunkt folgte nur dem Boden UNTER DEM BILDMITTELPUNKT; stand das Auge ueber einem Hang/Huegel
+/// hinter dem Drehpunkt, lag es im Gelaende
+static float modTerrainUnderEye(const glm::vec3 &eye)
+{
+	float top = -1e9f;
+	const int ex = static_cast<int>(eye.x), ey = static_cast<int>(-eye.z);
+	for (int dy = -1; dy <= 1; ++dy)
+	{
+		for (int dx = -1; dx <= 1; ++dx)
+		{
+			const int x = ex + dx * (TILE_UNITS * 3 / 4), y = ey + dy * (TILE_UNITS * 3 / 4);
+			if (!worldOnMap(gameWorld.map, x, y)) { continue; }
+			top = std::max(top, static_cast<float>(map_Height(gameWorld.map, x, y)));
+		}
+	}
+	return top;
+}
+
+static float modCameraClearance(float pivotY)
+{
+	const glm::vec3 eye = modCameraEye(pivotY);
 	const int ex = static_cast<int>(eye.x), ey = static_cast<int>(-eye.z);
 	if (!worldOnMap(gameWorld.map, ex, ey)) { return 0.f; }
 	constexpr float MARGIN = 40.f;
 	float need = 0.f;
+	// (20.11.) Gelaende unter dem Auge: mindestens 70 Einheiten Abstand (die Nahebene folgt in modUpdateNearPlane mit)
+	const float ground = modTerrainUnderEye(eye);
+	if (ground > -1e8f) { need = std::max(need, ground + 70.f - eye.y); }
 	for (BASE_OBJECT *o : gridStartIterate(ex, ey, DIST_TILE * 4))
 	{
 		const iIMDShape *imd = nullptr;
@@ -5087,6 +5114,16 @@ static void updateCameraForFrame()
 	else
 	{
 		processWarCam();
+	}
+	// MOD (Wunsch 20.11. 01:46 "der untere schwarze Rand ... der Boden soll nicht mehr wegclippen"): die Nahebene lag fest bei 330
+	// Einheiten - bei tiefer, flacher Kamera lag der Boden vor den Fuessen naeher und wurde abgeschnitten (schwarzer Streifen unten).
+	// Jetzt: etwa halb so weit wie das Auge ueber dem Gelaende steht (8..330, Bildwinkel bleibt gleich, siehe piematrix)
+	{
+		const glm::vec3 eye = modCameraEye(static_cast<float>(playerPos.p.y));
+		const float ground = modTerrainUnderEye(eye);
+		const float above = ground > -1e8f ? eye.y - ground : 1000.f;
+		const float s = pie_GetResScalingFactor() / 100.f;
+		pie_setPerspectiveZClose(std::max(8.f, std::min(330.f, above * 0.5f * s)));
 	}
 }
 
