@@ -77,7 +77,7 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Rally", "Rally point: units gather here before an attack", "Rally: drag around the rally point (right click cancels)", 255, 150, 40, false },
 	{ "Attack", "Attack vector: units advance along it and fight everything on the way", "Attack: drag the attack vector (right click cancels)", 235, 50, 40, false },
 	{ "Defend", "Defensive line: units take up positions on it, builders dig trenches along it", "Defend: drag the defensive line (right click cancels)", 60, 130, 255, false },
-	{ "Arty base", "Build a compact artillery base here: sensor tower, 4 artillery emplacements around it, wall ring", "Artillery base: drag around the place (right click cancels)", 170, 120, 60, true },
+	{ "Arty base", "Build an artillery base here: sensor tower, artillery emplacements, wall ring, hedgehogs in front. Small circle = 4 emplacements, medium = 8, large = 12", "Artillery base: drag a circle around the place - its size sets the base size (right click cancels)", 170, 120, 60, true },
 	{ "Artillery", "Artillery: bombard this area", "Artillery: drag the target area (right click cancels)", 240, 200, 90, true },
 	{ "Aircraft", "Aircraft: patrol over this area", "Aircraft: drag the patrol area (right click cancels)", 255, 235, 50, true },
 	{ "Combots", "Combot area: combots patrol and fight in this area on their own", "Combots: drag the combot area (right click cancels)", 190, 90, 255, true },
@@ -460,14 +460,30 @@ STRUCTURE_STATS *bestArtyEmplacement()
 	return best;
 }
 
-/// Bauplan der Artilleriebasis (Sensor in der Mitte, 4 Stellungen dicht drumherum, Mauerring) - fuer den Bau UND die Vorschau
-/// unter der Maus (18.11. 12:14 "beim Klicken auf Arty base kommt das falsche Layout, beim Bestaetigen das richtige")
-std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld)
+/// Groesse der Artilleriebasis aus dem gezogenen Kreis (Wunsch 20.11. 02:13 "Die Arty base ist gut. Aber jetzt gibt es nur noch eine
+/// Groesse"): mittlerer Abstand der Strichpunkte zur Mitte - klein (bis 2,5 Felder), mittel (bis 4,5), gross
+int artyBaseSize(const std::vector<Vector2i> &raw)
+{
+	if (raw.size() < 3) { return 1; }
+	const Vector2i c = centroid(raw);
+	double sum = 0.0;
+	for (const Vector2i &q : raw) { sum += std::sqrt(static_cast<double>(dist2(q, c))); }
+	const double r = sum / static_cast<double>(raw.size()) / TILE_UNITS;
+	return r < 2.5 ? 1 : (r < 4.5 ? 2 : 3);
+}
+
+/// Bauplan der Artilleriebasis (Sensor in der Mitte, Stellungen dicht drumherum, Mauerring, davor ein Ring Panzerigel) - fuer den Bau
+/// UND die Vorschau unter der Maus (18.11. 12:14 "beim Klicken auf Arty base kommt das falsche Layout, beim Bestaetigen das richtige")
+/// size 1: 4 Stellungen, Mauer 5 x 5; size 2: 8 Stellungen, Mauer 7 x 7; size 3: 12 Stellungen, Mauer 9 x 9.
+/// (20.11. "sie hat auch nicht mehr Hedgehog-Panzersperren davor"): Igel-Ring ein Feld vor der Mauer, in der Mitte jeder Seite eine Luecke
+std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int size)
 {
 	std::vector<modbuild::Placement> out;
+	size = std::clamp(size, 1, 3);
 	STRUCTURE_STATS *arty = bestArtyEmplacement();
 	STRUCTURE_STATS *sensor = firstAvailable({ "Sys-SensoTowerWS", "Sys-SensoTower02", "Sys-SensoTower01", "A0BaBaOutpost" });
 	STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall", "CollectiveWall", "NEXUSWall", "A0BaBaSandbagWall" });
+	STRUCTURE_STATS *hedge = firstAvailable({ "A0BaBaHedgehog", "A0TankTrapHeavy", "A0TankTrap" });
 	const Vector2i ct(map_coord(centerWorld.x), map_coord(centerWorld.y));
 	auto one = [&](STRUCTURE_STATS *st, int tx, int ty) { modbuild::Placement p; p.stats = st; p.tile = Vector2i(tx, ty); p.tile2 = p.tile; out.push_back(p); };
 	auto line = [&](STRUCTURE_STATS *st, int x0, int y0, int x1, int y1) {
@@ -476,17 +492,30 @@ std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld)
 	if (sensor != nullptr) { one(sensor, ct.x, ct.y); }
 	if (arty != nullptr)
 	{
-		// (16.11. 22:50 "immer noch zu gross, nicht so viel Platz verschwenden") dicht um den Sensor: 3 x 3 Felder
-		static const int OFF[4][2] = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } };
-		for (const auto &o : OFF) { one(arty, ct.x + o[0], ct.y + o[1]); }
+		// (16.11. 22:50 "immer noch zu gross, nicht so viel Platz verschwenden") dicht um den Sensor
+		static const int IN4[4][2] = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } };
+		static const int R2[8][2] = { { -2, -2 }, { 0, -2 }, { 2, -2 }, { 2, 0 }, { 2, 2 }, { 0, 2 }, { -2, 2 }, { -2, 0 } };
+		static const int R3[8][2] = { { -3, -3 }, { 0, -3 }, { 3, -3 }, { 3, 0 }, { 3, 3 }, { 0, 3 }, { -3, 3 }, { -3, 0 } };
+		if (size != 2) { for (const auto &o : IN4) { one(arty, ct.x + o[0], ct.y + o[1]); } }
+		if (size == 2) { for (const auto &o : R2) { one(arty, ct.x + o[0], ct.y + o[1]); } }
+		if (size == 3) { for (const auto &o : R3) { one(arty, ct.x + o[0], ct.y + o[1]); } }
 	}
+	const int r = size + 1;   // Mauerring direkt um den Stellungsblock
 	if (wall != nullptr)
 	{
-		const int r = 2;   // Mauerring direkt um den 3x3-Block (vorher 4 = 9x9 Felder)
 		line(wall, ct.x - r, ct.y - r, ct.x + r, ct.y - r);
 		line(wall, ct.x + r, ct.y - r + 1, ct.x + r, ct.y + r);
 		line(wall, ct.x + r - 1, ct.y + r, ct.x - r, ct.y + r);
 		line(wall, ct.x - r, ct.y + r - 1, ct.x - r, ct.y - r + 1);
+	}
+	if (hedge != nullptr)
+	{
+		const int h = r + 2;   // ein freies Feld zwischen Mauer und Igeln
+		// je Seite zwei Stuecke mit einer Luecke von einem Feld in der Mitte
+		line(hedge, ct.x - h, ct.y - h, ct.x - 1, ct.y - h); line(hedge, ct.x + 1, ct.y - h, ct.x + h, ct.y - h);
+		line(hedge, ct.x + h, ct.y - h + 1, ct.x + h, ct.y - 1); line(hedge, ct.x + h, ct.y + 1, ct.x + h, ct.y + h);
+		line(hedge, ct.x + h - 1, ct.y + h, ct.x + 1, ct.y + h); line(hedge, ct.x - 1, ct.y + h, ct.x - h, ct.y + h);
+		line(hedge, ct.x - h, ct.y + h - 1, ct.x - h, ct.y + 1); line(hedge, ct.x - h, ct.y - 1, ct.x - h, ct.y - h + 1);
 	}
 	return out;
 }
@@ -1240,7 +1269,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 	case M_MINES:
 	{
 		// MOD (17.11. 18:12/18:13): Baufahrzeuge/Infanterie mit Spaten bauen das Feld, Stellen reihum verteilt
-		STRUCTURE_STATS *st = (m == M_TRAPS) ? firstAvailable({ "A0TankTrap", "A0TankTrapHeavy" }) : firstAvailable({ "A0Mine" });
+		STRUCTURE_STATS *st = (m == M_TRAPS) ? firstAvailable({ "A0BaBaHedgehog", "A0TankTrapHeavy", "A0TankTrap" }) : firstAvailable({ "A0Mine" });   // (20.11.) Sprite-Igel nur noch als letzte Wahl
 		if (st == nullptr) { break; }
 		std::vector<DROID *> builders;
 		for (DROID *d : units) { if (isTruck(d) && !isAir(d)) { builders.push_back(d); } }
@@ -1257,7 +1286,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 	{
 		auto worldOf = [](const Vector2i &t) { return Vector2i(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2); };
 		std::vector<DroidOrder> plan;
-		for (const modbuild::Placement &pl : artyBasePlan(c))
+		for (const modbuild::Placement &pl : artyBasePlan(c, artyBaseSize(raw)))
 		{
 			if (pl.line) { plan.emplace_back(DORDER_LINEBUILD, pl.stats, worldOf(pl.tile), worldOf(pl.tile2), 0); }
 			else { plan.emplace_back(DORDER_BUILD, pl.stats, worldOf(pl.tile), 0); }
@@ -1662,7 +1691,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	if (s_mode == M_ARTYBASE && (!overUi || s_drawing))
 	{
 		static std::vector<modbuild::Placement> s_artyPreview;
-		s_artyPreview = artyBasePlan(s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos);
+		s_artyPreview = artyBasePlan(s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos, s_drawing ? artyBaseSize(s_cur) : 1);
 		modbuild::setExternalPreview(&s_artyPreview);
 	}
 	else
