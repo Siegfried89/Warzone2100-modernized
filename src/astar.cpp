@@ -147,6 +147,8 @@ struct PathBlockingMap
 	std::vector<uint8_t> map;
 	/// MOD (17.11.): Infanterie - Stellungsfelder nur ueber offene Seiten betreten/verlassen (modfort); leer = keine Regel
 	std::vector<uint8_t> fortSides;
+	/// MOD (20.11.): Felder in oder neben einer Stellung (3 x 3 um jedes Stellungsfeld) - dort laeuft der Weg genau ueber Feldmitten
+	std::vector<uint8_t> fortNear;
 	std::vector<uint8_t> dangerMap;	// using threatBits
 };
 
@@ -185,6 +187,18 @@ struct PathfindContext
 		}
 		// Not sure whether the out-of-bounds check is needed, can only happen if pathfinding is started on a blocking tile (or off the map).
 		return x < 0 || y < 0 || x >= gameWorld.map.width || y >= gameWorld.map.height || blockingMap->map[x + y * gameWorld.map.width];
+	}
+	/// MOD (20.11.): Feld in oder neben einer Stellung (Infanterie-Wegsuche)?
+	bool nearFort(int x, int y) const
+	{
+		return !blockingMap->fortNear.empty() && x >= 0 && y >= 0 && x < gameWorld.map.width && y < gameWorld.map.height
+		       && blockingMap->fortNear[static_cast<size_t>(x + y * gameWorld.map.width)] != 0;
+	}
+	/// MOD (20.11.): Feld einer Stellung (mit Sandsackwaenden)?
+	bool fortTile(int x, int y) const
+	{
+		return !blockingMap->fortSides.empty() && x >= 0 && y >= 0 && x < gameWorld.map.width && y < gameWorld.map.height
+		       && blockingMap->fortSides[static_cast<size_t>(x + y * gameWorld.map.width)] != 0;
 	}
 	bool isDangerous(int x, int y) const
 	{
@@ -395,7 +409,10 @@ static inline void fpathNewNode(PathfindContext &context, PathCoord dest, PathCo
 		// path by backing the step cost out of the distance, which the extra
 		// overlay term would throw off. The overlay cost is the same from either
 		// source tile, so both visits skip together and the search stays exact.
-		if (overlayCost == 0 && !tileHasFlow && abs(deltaDelta.x) + abs(deltaDelta.y) == 64)
+		// MOD (20.11. "Infanterie ... haengt in den Sandsackwaenden fest"): in und neben Stellungen keine Zwischenrichtungen - sonst laeuft
+		// der Weg schraeg durch eine geschlossene Sandsackwand (Wegpunkte, die der Soldat nie erreicht). Haengt nur am Feld selbst, so
+		// ueberspringen beide Besuche gemeinsam (die Suche bleibt exakt).
+		if (overlayCost == 0 && !tileHasFlow && abs(deltaDelta.x) + abs(deltaDelta.y) == 64 && !context.nearFort(pos.x, pos.y))
 		{
 			// prevPos is tile A or B, and pos is tile P. We were previously called with prevPos being tile B or A, and pos tile P.
 			// We want to find the distance to tile P, taking into account that the actual shortest path involves coming from somewhere between tile A and tile B.
@@ -513,13 +530,13 @@ static PathCoord fpathAStarExplore(PathfindContext &context, PathCoord tileF)
 				// We cannot cut corners
 				x2 = node.p.x + aDirOffset[(dir + 1) % 8].x;
 				y2 = node.p.y + aDirOffset[(dir + 1) % 8].y;
-				if (context.isBlocked(x2, y2))
+				if (context.isBlocked(x2, y2) || context.fortTile(x2, y2))   // MOD (20.11.): auch nicht ueber die Ecke einer Stellung
 				{
 					continue;
 				}
 				x2 = node.p.x + aDirOffset[(dir + 7) % 8].x;
 				y2 = node.p.y + aDirOffset[(dir + 7) % 8].y;
-				if (context.isBlocked(x2, y2))
+				if (context.isBlocked(x2, y2) || context.fortTile(x2, y2))
 				{
 					continue;
 				}
@@ -1085,7 +1102,17 @@ ASR_RETVAL fpathAStarRoute(const std::shared_ptr<FPathExecuteContext>& ctx, MOVE
 		ASSERT_OR_RETURN(ASR_FAILED, worldOnMap(gameWorld.map, p.x, p.y), "Assigned XY coordinates (%d, %d) not on map!", (int)p.x, (int)p.y);
 		ASSERT_OR_RETURN(ASR_FAILED, path.size() < (static_cast<size_t>(gameWorld.map.width) * static_cast<size_t>(gameWorld.map.height)), "Pathfinding got in a loop.");
 
-		path.push_back(p);
+		// MOD (20.11.): in und neben Stellungen liegt der Wegpunkt genau in der Feld-/Blockmitte - von dort fuehrt der naechste Schritt
+		// gerade durch die offene Seite (der Soldat erreicht jeden Wegpunkt, statt gegen eine Sandsackwand zu laufen)
+		if (context.nearFort(map_coord(p.x), map_coord(p.y)))
+		{
+			const Vector2i q = modfort::pathPoint(context.blockingMap->fortSides, gameWorld.map.width, map_coord(p.x), map_coord(p.y));
+			if (path.empty() || path.back() != q) { path.push_back(q); }
+		}
+		else
+		{
+			path.push_back(p);
+		}
 
 		PathExploredTile &tile = context.map[map_coord(p.x) + map_coord(p.y) * gameWorld.map.width];
 		newP = p - Vector2i(tile.dx, tile.dy) * (TILE_UNITS / 64);
@@ -1215,6 +1242,23 @@ void fpathSetBlockingMap(PATHJOB *psJob)
 		if (!type.heavy && type.propulsion != PROPULSION_TYPE_LIFT)   // (gleichwertige Sperrkarten werden zwischen Bodenantrieben geteilt)
 		{
 			modfort::copySides(blockMap->fortSides);   // MOD (17.11.): Stellungen nur ueber die Oeffnungen
+			if (!blockMap->fortSides.empty())
+			{
+				// MOD (20.11.): Umgebung der Stellungen markieren (siehe fortNear)
+				const int w = gameWorld.map.width, h = gameWorld.map.height;
+				blockMap->fortNear.assign(blockMap->fortSides.size(), 0);
+				for (int y = 0; y < h; ++y)
+				{
+					for (int x = 0; x < w; ++x)
+					{
+						if (blockMap->fortSides[static_cast<size_t>(x + y * w)] == 0) { continue; }
+						for (int j = std::max(0, y - 1); j <= std::min(h - 1, y + 1); ++j)
+						{
+							for (int k = std::max(0, x - 1); k <= std::min(w - 1, x + 1); ++k) { blockMap->fortNear[static_cast<size_t>(k + j * w)] = 1; }
+						}
+					}
+				}
+			}
 		}
 		if (!isHumanPlayer(type.owner) && type.moveType == FMT_MOVE)
 		{

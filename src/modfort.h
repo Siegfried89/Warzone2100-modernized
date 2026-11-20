@@ -19,6 +19,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "lib/framework/vector.h"
+
 struct DROID;
 struct STRUCTURE;
 struct iIMDShape;
@@ -35,6 +37,8 @@ uint8_t sides(int tileX, int tileY);
 void copySides(std::vector<uint8_t> &out);
 /// Darf die Wegsuche zwischen zwei benachbarten Feldern wechseln? (sides: copySides-Daten)
 bool edgeOpen(const std::vector<uint8_t> &sides, int width, int x0, int y0, int x1, int y1);
+/// (20.11.) Wegpunkt fuer ein Feld in/an einer Stellung: Mitte des Stellungsblocks bzw. Feldmitte (sides: copySides-Daten)
+Vector2i pathPoint(const std::vector<uint8_t> &sides, int width, int tileX, int tileY);
 
 /// ist das ein Stellungsbauwerk (Graben/Grube aus mf/fort.txt)?
 bool isFort(const STRUCTURE *psStructure);
@@ -56,4 +60,7 @@ bool fortTile(int tileX, int tileY);
 /// Kollision - genau ueberpruefen"): Infanterie bewegt sich in einer Stellung nur im freien Innenraum (Grube bzw. Grabengang) und in den
 /// Gaengen zu den offenen Seiten - nicht mehr durch oder in die Sandsack-/Holzwaende. newPos wird angepasst; true = geaendert.
 bool clampInfantry(const DROID *psDroid, int oldX, int oldY, int &newX, int &newY);
+/// (Wunsch 20.11. 15:43 "... rennen stur gegen die Wand ohne nach der Oeffnung zu suchen"): nach jedem Festhalten durch clampInfantry
+/// melden - kommt die Einheit ihrem Wegpunkt 1,5 s lang nicht naeher, sucht tick() ihr einen neuen Weg (Spiellogik, auf allen Rechnern gleich)
+void noteClamped(const DROID *psDroid);
 }
