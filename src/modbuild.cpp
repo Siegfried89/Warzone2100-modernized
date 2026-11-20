@@ -884,8 +884,80 @@ const char *activeLabel()
 	}
 }
 
+// MOD (Wunsch 20.11. 16:42 "Die 3 Baubagger sollen mehr eigenstaendig arbeiten ..."): ein Baufahrzeug, das gerade seinen Bau beendet hat
+// (und nichts mehr in der Warteschlange), hilft nach einer Sekunde von selbst beim naechsten eigenen Bau in der Naehe (12 Felder) mit -
+// nicht, wenn der Spieler es zuletzt woandershin geschickt hat (dann bleibt es dort). Abrissbaustellen zaehlen nicht. Spiellogik im
+// Spielschritt, in fester Reihenfolge (auf allen Rechnern gleich).
+namespace
+{
+struct Helper
+{
+	bool wasBuilding = false;   // letzter Auftrag war ein Bau (dann darf es danach helfen)
+	uint32_t idleSince = 0;
+};
+std::map<uint32_t, Helper> s_helpers;
+uint32_t s_nextHelp = 0, s_nextHelperCleanup = 0;
+constexpr unsigned HELP_TICK_MS = 500, HELP_IDLE_MS = 1000;
+constexpr int HELP_RADIUS = 12 * DIST_TILE;
+
+bool buildOrder(DROID_ORDER o)
+{
+	return o == DORDER_BUILD || o == DORDER_LINEBUILD || o == DORDER_HELPBUILD || o == DORDER_BUILDMODULE;
+}
+
+void autoHelp(GameWorld &world)
+{
+	if (gameTime < s_nextHelp) { return; }
+	s_nextHelp = gameTime + HELP_TICK_MS;
+	const bool cleanup = gameTime >= s_nextHelperCleanup;
+	std::map<uint32_t, Helper> alive;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		if (!isHumanPlayer(p)) { continue; }
+		for (DROID *d : world.objects.droids[p])
+		{
+			if (d->died || (d->droidType != DROID_CONSTRUCT && d->droidType != DROID_CYBORG_CONSTRUCT)) { continue; }
+			Helper &h = s_helpers[d->id];
+			const DROID_ORDER o = d->order.type;
+			if (buildOrder(o)) { h.wasBuilding = true; h.idleSince = 0; }
+			else if (o != DORDER_NONE) { h.wasBuilding = false; h.idleSince = 0; }   // anderer Auftrag (Fahrt ...): dort bleiben
+			else if (h.wasBuilding && d->listPendingBegin >= d->asOrderList.size() && d->action == DACTION_NONE)
+			{
+				if (h.idleSince == 0) { h.idleSince = gameTime; }
+				else if (gameTime - h.idleSince >= HELP_IDLE_MS)
+				{
+					h.wasBuilding = false;   // einmal suchen; findet es nichts, bleibt es stehen
+					h.idleSince = 0;
+					STRUCTURE *best = nullptr;
+					int64_t bestD = static_cast<int64_t>(HELP_RADIUS) * HELP_RADIUS;
+					for (STRUCTURE *s : world.objects.structures[p])
+					{
+						if (s->died || s->status != SS_BEING_BUILT || modlayer::layerOf(s) != modlayer::layerOf(d)) { continue; }
+						if (checkDroidsDemolishing(s)) { continue; }
+						const int64_t dx = s->pos.x - d->pos.x, dy = s->pos.y - d->pos.y, dd = dx * dx + dy * dy;
+						if (dd < bestD) { bestD = dd; best = s; }
+					}
+					if (best != nullptr)
+					{
+						orderDroidObj(d, DORDER_HELPBUILD, best, ModeImmediate);
+						h.wasBuilding = true;   // nach dem Helfen wieder suchen (naechste Baustelle)
+					}
+				}
+			}
+			if (cleanup) { alive[d->id] = h; }
+		}
+	}
+	if (cleanup)
+	{
+		s_helpers.swap(alive);
+		s_nextHelperCleanup = gameTime + 30000;
+	}
+}
+} // namespace
+
 void tick(GameWorld &world)
 {
+	autoHelp(world);   // (20.11.) Baufahrzeuge helfen nach ihrem Bau in der Naehe mit
 	if (s_jobs.empty()) { return; }
 	std::vector<uint32_t> done;
 	for (auto &kv : s_jobs)
@@ -1045,6 +1117,9 @@ void reset()
 	s_previewOn = false;
 	s_previewTile = Vector2i(-1, -1);
 	s_jobs.clear();
+	s_helpers.clear();   // (20.11.)
+	s_nextHelp = 0;
+	s_nextHelperCleanup = 0;
 	s_tier = 2;
 	if (s_ringOn)
 	{
