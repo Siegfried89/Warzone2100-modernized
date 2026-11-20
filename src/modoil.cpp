@@ -868,12 +868,21 @@ void logistics()
 					par.push_back(static_cast<int>(par.size()));
 				}
 			}
+			// MOD (20.11. Oel-Pruefung): Rohrstuecke, die sich mit einer Kante beruehren, gehoeren zusammen (nicht ueber Eck). Bei der
+			// Kachel-Viertelung belegt ein Rohr 2x2 Feinfelder - der Nachbar liegt dann 2 Feinfelder weiter. Vorher wurde nur +1 Feinfeld
+			// geprueft: in der Viertel-Version war dadurch jedes Rohrstueck ein eigenes Netz (Pipelines funktionierten nur direkt am Turm).
+			constexpr int PS = (DIST_TILE / TILE_UNITS) > 0 ? (DIST_TILE / TILE_UNITS) : 1;
 			for (const auto &kv : pidx)
 			{
-				const auto r = pidx.find(std::make_pair(kv.first.first + 1, kv.first.second));
-				if (r != pidx.end()) { uunite(par, kv.second, r->second); }
-				const auto u = pidx.find(std::make_pair(kv.first.first, kv.first.second + 1));
-				if (u != pidx.end()) { uunite(par, kv.second, u->second); }
+				for (int ddx = -PS; ddx <= PS; ddx++)
+				{
+					for (int ddy = -PS; ddy <= PS; ddy++)
+					{
+						if (std::max(std::abs(ddx), std::abs(ddy)) != PS || std::min(std::abs(ddx), std::abs(ddy)) >= PS) { continue; }
+						const auto r = pidx.find(std::make_pair(kv.first.first + ddx, kv.first.second + ddy));
+						if (r != pidx.end()) { uunite(par, kv.second, r->second); }
+					}
+				}
 			}
 			auto touch = [&](int wx, int wy)
 			{
