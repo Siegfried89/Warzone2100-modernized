@@ -29,6 +29,7 @@
 #include "gfx_api_mipmap_priv.h"
 #include "lib/framework/physfs_ext.h"
 #include <unordered_map>
+#include <chrono>
 #include <algorithm>
 
 static gfx_api::backend_type backend = gfx_api::backend_type::opengl_backend;
@@ -276,17 +277,28 @@ optional<gfx_api::max_texture_compression_level> gfx_api::getMaxTextureCompressi
 
 #include "png_util.h"
 
+// MOD (20.11.): Ladezeit-Messung je Texturart (siehe gfx_api.h)
+static gfx_api::ModTexLoadStats s_modTexLoadStats[6];
+gfx_api::ModTexLoadStats (&gfx_api::modTexLoadStats())[6] { return s_modTexLoadStats; }
+void gfx_api::modTexLoadStatsReset() { for (auto &s : s_modTexLoadStats) { s = gfx_api::ModTexLoadStats(); } }
+static inline uint64_t modUsSince(std::chrono::steady_clock::time_point t0)
+{
+	return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count());
+}
+
 static gfx_api::texture* loadImageTextureFromFile_PNG(const std::string& filename, gfx_api::texture_type textureType, int maxWidth /*= -1*/, int maxHeight /*= -1*/, bool quiet)
 {
 	iV_Image loadedUncompressedImage;
 
 	// 1.) Load the PNG into an iV_Image
 	bool forceRGB = (textureType == gfx_api::texture_type::game_texture) || (textureType == gfx_api::texture_type::user_interface);
+	const auto modT0 = std::chrono::steady_clock::now();   // MOD (20.11.): Ladezeit-Messung
 	if (!iV_loadImage_PNG2(filename.c_str(), loadedUncompressedImage, forceRGB, quiet))
 	{
 		// Failed to load the image
 		return nullptr;
 	}
+	s_modTexLoadStats[std::min<size_t>(static_cast<size_t>(textureType), 5)].decodeUs += modUsSince(modT0);
 
 	return gfx_api::context::get().loadTextureFromUncompressedImage(std::move(loadedUncompressedImage), textureType, filename, maxWidth, maxHeight);
 }
@@ -444,6 +456,9 @@ static bool checkFormatVersusMaxCompressionLevel_FromUncompressed(optional<gfx_a
 // Takes an iv_Image and texture_type and loads a texture as appropriate / possible
 gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& image, gfx_api::texture_type textureType, const std::string& filename, int maxWidth /*= -1*/, int maxHeight /*= -1*/)
 {
+	gfx_api::ModTexLoadStats &modStats = s_modTexLoadStats[std::min<size_t>(static_cast<size_t>(textureType), 5)];
+	auto modT0 = std::chrono::steady_clock::now();
+	modStats.count++;
 	// 1.) Convert to expected # of channels based on textureType
 	if (!uncompressedPNGImageConvertChannels(image, gfx_api::pixel_format_target::texture_2d, textureType, filename))
 	{
@@ -491,6 +506,9 @@ gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& 
 		gfx_api::noteColorTextureFormat(uploadFormat, filename);
 	}
 
+	modStats.prepUs += modUsSince(modT0);
+	modStats.pixels += static_cast<uint64_t>(image.width()) * image.height();
+	modT0 = std::chrono::steady_clock::now();
 	// 5.) Create a new compatible gpu texture object
 	std::unique_ptr<gfx_api::texture> pTexture = std::unique_ptr<gfx_api::texture>(gfx_api::context::get().create_texture(mipmap_levels, image.width(), image.height(), uploadFormat, filename));
 
@@ -509,9 +527,11 @@ gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& 
 		ASSERT_OR_RETURN(nullptr, uploadResult, "Failed to upload buffer to image");
 	}
 
+	modStats.upload0Us += modUsSince(modT0);
 	// 7.) Generate and upload mipmaps (if needed)
 	for (size_t i = 1; i < mipmap_levels; i++)
 	{
+		modT0 = std::chrono::steady_clock::now();
 		optional<int> alphaChannelOverride;
 		if (textureType == gfx_api::texture_type::alpha_mask)
 		{
@@ -523,6 +543,8 @@ gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& 
 
 		bool resizeResult = image.resize(output_w, output_h, alphaChannelOverride);
 		ASSERT_OR_RETURN(nullptr, resizeResult, "Failed to resize image mipmap [%zu] to output size (%u x %u): %s", i, output_w, output_h, filename.c_str());
+		modStats.mipResizeUs += modUsSince(modT0);
+		modT0 = std::chrono::steady_clock::now();
 
 		if (gfx_api::format_bytes_compatible(image.pixel_format(), uploadFormat))
 		{
@@ -537,6 +559,7 @@ gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& 
 			bool uploadResult = pTexture->upload(i, *compressedImage);
 			ASSERT_OR_RETURN(nullptr, uploadResult, "Failed to upload buffer to image");
 		}
+		modStats.mipUploadUs += modUsSince(modT0);
 	}
 
 	return pTexture.release();
