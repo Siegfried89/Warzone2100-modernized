@@ -815,6 +815,7 @@ bool loadStructureStats(WzConfig &ini)
 
 		psStats->combinesWithWall = ini.value("combinesWithWall", false).toBool();
 		psStats->requiresPower = ini.value("requiresPower", false).toBool();   // MOD
+		psStats->barracks = ini.value("barracks", false).toBool();   // MOD (20.11. 19:06): Kaserne
 		psStats->mobileCore = ini.value("mobileFactoryCore", false).toBool();   // MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik
 		psStats->crewCost = std::max(0, ini.value("crewCost", 0).toInt());   // MOD: Besatzungskonto
 		psStats->crewProvide = std::max(0, ini.value("crewProvide", 0).toInt());   // MOD: Besatzungskonto
@@ -6280,6 +6281,24 @@ bool validTemplateForFactory(const DROID_TEMPLATE *psTemplate, STRUCTURE *psFact
 	}
 
 	// MOD (Wunsch 16.11. 21:25): die Scav-Fabrik bildet auch Infanterie aus (Scav-Infanterie und Cyborgs)
+	// MOD (Wunsch 20.11. 19:06 "Aus den Cryo-Farmen MF-Baracken machen, die statt der Fabrik die Infanterietypen ausbilden"): fuer Spieler
+	// mit Oel-Wirtschaft bildet NUR die Kaserne Infanterie aus (Personen und Cyborgs); Fabriken und Scav-Fabrik nicht mehr. KI wie bisher.
+	const bool modInfantry = psTemplate->droidType == DROID_PERSON || psTemplate->droidType == DROID_CYBORG || psTemplate->droidType == DROID_CYBORG_SUPER
+	                         || psTemplate->droidType == DROID_CYBORG_CONSTRUCT || psTemplate->droidType == DROID_CYBORG_REPAIR;
+	if (psFactory->pStructureType->barracks)
+	{
+		if (!modInfantry)
+		{
+			debug(level, "A barracks only trains infantry, not in %s.", objInfo(psFactory));
+			return false;
+		}
+		return true;
+	}
+	if (modInfantry && modoil::manages(static_cast<int>(psFactory->player)) && psFactory->pStructureType->type != REF_CYBORG_FACTORY)
+	{
+		debug(level, "Infantry is trained in the barracks, not in %s.", objInfo(psFactory));
+		return false;
+	}
 	const bool scavFactory = psFactory->pStructureType->type == REF_FACTORY && psFactory->pStructureType->id.toUtf8().find("BaBa") != std::string::npos;
 	//check if droid is a cyborg
 	if (psTemplate->droidType == DROID_CYBORG ||

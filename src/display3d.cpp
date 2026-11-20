@@ -3990,6 +3990,22 @@ static void queueStructureHealth(STRUCTURE *psStruct, BatchedMultiRectRenderer& 
 			}
 		}
 	}
+	// MOD (Wunsch 20.11. 19:06 "Man soll auch optisch sehen, dass die Raffinerie arbeitet - mit Ladebalken"): Fortschritt des laufenden Fasses
+	{
+		const int prog = modoil::refineryProgress(psStruct);
+		if (prog >= 0)
+		{
+			const int full = 2 * width;
+			const int fill = full * prog / 1000;
+			const int x0 = scrX - scrR, y0 = scrY + 5;
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0 - 1, y0 - 1, x0 + full + 1, y0 + 3, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			if (fill > 0)
+			{
+				batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0, x0 + fill, y0 + 1, pal_RGBA(255, 150, 40, 255)), rectGroup);
+				batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 2, pal_RGBA(170, 90, 20, 255)), rectGroup);
+			}
+		}
+	}
 	// MOD (18.11.): Schildgenerator - Schildbalken (hellblau, 10 Abschnitte) ueber dem Lebensbalken
 	{
 		const int sp = modshield::shieldPercent(psStruct);

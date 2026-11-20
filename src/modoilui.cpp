@@ -21,6 +21,8 @@
 #include "lib/ivis_opengl/ivisdef.h"
 
 #include "display.h"
+#include "edit3d.h"
+#include "map.h"
 #include "game_world.h"
 #include "hci.h"
 #include "intfac.h"
@@ -195,8 +197,21 @@ std::vector<Row> rowsFor(const modoil::EconomyView &v)
 		Lamp l = v.gens == 0 ? L_BAD : (v.minFuel == 0 ? L_BAD : (v.gensHungry > 0 ? L_WARN : L_OK));
 		std::string val = v.gens == 0 ? std::string("keins") : std::to_string(v.gens);
 		if (v.gens > 0 && v.minFuel >= 0) { val += " | Vorrat min. " + mmss(v.minFuel); }
-		if (v.gensStandby > 0) { val += " | Bereitschaft " + std::to_string(v.gensStandby); }
-		r.push_back({l, "Kraftwerke", val, false});
+		r.push_back({l, "Kraftwerke", val, true});
+	}
+	{
+		// (20.11. 19:06) Umspannwerk ist Pflicht: das Endstueck, es versorgt ueber die Masten alle Gebaeude
+		int fed = 0;
+		const int subs = modgrid::substations(static_cast<int>(selectedPlayer), fed);
+		Lamp l = subs == 0 ? L_BAD : (fed == 0 ? L_BAD : (fed < subs ? L_WARN : L_OK));
+		std::string val = subs == 0 ? std::string("keins - kein Strom!") : std::to_string(subs) + " | mit Strom " + std::to_string(fed);
+		r.push_back({l, "Umspannwerk", val, false});
+	}
+	{
+		const int sp = modgrid::solarPanelsConnected(static_cast<int>(selectedPlayer));
+		Lamp l = sp > 0 ? L_OK : L_OFF;
+		std::string val = sp == 0 ? std::string("keine am Umspannwerk") : std::to_string(sp) + " Paneele | +" + std::to_string(sp * 6) + "/min (tags)";
+		r.push_back({l, "Solar", val, false});
 	}
 	{
 		Lamp l = v.stations == 0 ? L_OFF : (v.stationBarrels * 10 < v.stationCap * 3 ? L_WARN : L_OK);
@@ -236,7 +251,7 @@ void drawPanel(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	{
 		const Row &r = rows[i];
 		// Trennlinie vor dem zweiten Block (Endempfaenger und Ergebnis)
-		if (i == 5)
+		if (i == 7)
 		{
 			iV_Line(x0 + PAD, y - 2, x0 + w - PAD, y - 2, WZCOL_FORM_DARK);
 		}
@@ -292,8 +307,74 @@ void ensureScreen()
 }
 }
 
+namespace
+{
+// (Wunsch 20.11. 19:06 "Beim Platzieren von Strommasten bereits Reichweitenradius anzeigen (blau)" / "Bei Oellager auch Radius anzeigen")
+// Reichweiten wie in modgrid/modoil (Weltmass, 128 = 1 Feld)
+constexpr int R_POLE_SUPPLY = 448;     // Verbraucher bis 3,5 Felder um den Mast
+constexpr int R_POLE_LINK = 6 * 128;   // Mast an Mast bis 6 Felder
+constexpr int R_SUB_SUPPLY = 5 * 128;  // Verbraucher bis 5 Felder um das Umspannwerk
+constexpr int R_SOURCE_LINK = 576;     // Kraftwerk / Solarpaneel / Kommandozentrale an Mast bis 4,5 Felder
+constexpr int R_STORE = 12 * 128;      // Oellager versorgt Kraftwerke bis 12 Felder
+
+void ringAt(const glm::mat4 &m, int cx, int cy, int r, PIELIGHT col, bool dashed)
+{
+	std::vector<glm::ivec4> lines;
+	Vector2i prev(0, 0);
+	bool havePrev = false;
+	const int n = 64;
+	for (int k = 0; k <= n; k++)
+	{
+		const double a = k * 6.283185307 / n;
+		const int wx = static_cast<int>(cx + std::cos(a) * r), wy = static_cast<int>(cy + std::sin(a) * r);
+		Vector2i sp(0, 0);
+		const bool ok = projectWorld(wx, wy, map_Height(gameWorld.map, wx, wy) + 6, m, sp);
+		if (ok && havePrev && (!dashed || (k % 2) == 0))
+		{
+			lines.emplace_back(prev.x, prev.y, sp.x, sp.y);
+			lines.emplace_back(prev.x, prev.y + 1, sp.x, sp.y + 1);
+		}
+		prev = sp;
+		havePrev = ok;
+	}
+	if (!lines.empty()) { iV_Lines(lines, col); }
+}
+
+void drawPlacementRanges(const glm::mat4 &m)
+{
+	if ((buildState != BUILD3D_VALID && buildState != BUILD3D_POS) || sBuildDetails.psStats == nullptr || !sBuildDetails.psStats->hasType(STAT_STRUCTURE))
+	{
+		return;
+	}
+	const STRUCTURE_STATS *st = static_cast<const STRUCTURE_STATS *>(sBuildDetails.psStats);
+	const bool pole = modgrid::isPole(st), sub = modgrid::isSubstation(st);
+	const bool store = st->id.startsWith("A0BaBaOilStore");
+	const bool source = st->type == REF_POWER_GEN || st->incomeProvide > 0;
+	const bool consumer = st->requiresPower;
+	if (!pole && !sub && !store && !source && !consumer) { return; }
+	const int cx = world_coord(static_cast<int>(sBuildDetails.x)) + world_coord(static_cast<int>(sBuildDetails.width)) / 2;
+	const int cy = world_coord(static_cast<int>(sBuildDetails.y)) + world_coord(static_cast<int>(sBuildDetails.height)) / 2;
+	const PIELIGHT blue = pal_RGBA(70, 150, 255, 235), light = pal_RGBA(150, 210, 255, 200), dim = pal_RGBA(40, 95, 180, 150);
+	// bestehende Versorgungsbereiche (gedimmt), damit man sieht, wo schon Strom hinkommt
+	if (pole || sub || consumer)
+	{
+		for (const STRUCTURE *s : gameWorld.objects.structures[selectedPlayer])
+		{
+			if (s->died || s->status != SS_BUILT) { continue; }
+			if (modgrid::isPole(s->pStructureType)) { ringAt(m, s->pos.x, s->pos.y, R_POLE_SUPPLY, dim, false); }
+			else if (modgrid::isSubstation(s->pStructureType)) { ringAt(m, s->pos.x, s->pos.y, R_SUB_SUPPLY, dim, false); }
+		}
+	}
+	if (pole) { ringAt(m, cx, cy, R_POLE_SUPPLY, blue, false); ringAt(m, cx, cy, R_POLE_LINK, light, true); }
+	if (sub) { ringAt(m, cx, cy, R_SUB_SUPPLY, blue, false); ringAt(m, cx, cy, R_POLE_LINK, light, true); }
+	if (source) { ringAt(m, cx, cy, R_SOURCE_LINK, light, true); }
+	if (store) { ringAt(m, cx, cy, R_STORE, blue, false); }
+}
+}
+
 void drawWorldIcons(const glm::mat4 &m)
 {
+	if (selectedPlayer < MAX_PLAYERS && modoil::manages(static_cast<int>(selectedPlayer))) { drawPlacementRanges(m); }
 	if (selectedPlayer >= MAX_PLAYERS || !modoil::manages(static_cast<int>(selectedPlayer))) { return; }
 	const float sc = modui::uiScale();
 	const int r = static_cast<int>(13.f * sc);

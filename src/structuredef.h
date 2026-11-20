@@ -137,6 +137,7 @@ struct STRUCTURE_STATS : public BASE_STATS
 	int shieldDrop = 231;           // MOD: Kugelmitte unter dem Boden in Tausendsteln des Radius (SupCom-Schildgenerator: 3/13)
 	bool passable = false;			// MOD (17.11.): blockiert das Feld nicht - alle Einheiten fahren darueber (Minen)
 	bool requiresPower = false;		// MOD: arbeitet nur im Versorgungsbereich eines gespeisten Strommastes (siehe modgrid)
+	bool barracks = false;			// MOD (20.11. 19:06): Kaserne (Cyborg-Fabrik-Typ) - bildet die Infanterie aus (Personen und Cyborgs), die Fabrik nicht mehr
 	bool mobileCore = false;		// MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik (Fatboy, modmobilefactory) - liegt auf keinem Feld, unsichtbar, faehrt mit
 	int crewCost = 0;				// MOD (MF): bindet so viel Besatzung (Besatzungskonto, siehe modgrid)
 	int crewProvide = 0;			// MOD (MF): stellt bis zu so viel Besatzung (Kryo-Farm)

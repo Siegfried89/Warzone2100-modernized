@@ -90,6 +90,9 @@ bool s_hasSub[MAX_PLAYERS] = {};                   // (20:35) Spieler hat ein Um
 std::set<uint32_t> s_standby;                      // Kraftwerke in Bereitschaft (Solarstrom reicht)
 std::set<int> s_standbyNet;
 bool s_hasGen[MAX_PLAYERS] = {};                   // PowerDown nur, wenn der Spieler ueberhaupt ein Kraftwerk hat (sonst kein Wiederanlauf moeglich)
+int s_solarConnected[MAX_PLAYERS] = {};            // (20.11. 19:06) Solarpaneele, die ueber Masten an einem Umspannwerk haengen (geschlossener Kreislauf)
+int s_subCount[MAX_PLAYERS] = {};                  // Umspannwerke
+int s_subFed[MAX_PLAYERS] = {};                    // davon mit Strom
 std::unordered_map<uint32_t, bool> s_held;           // wir haben die Fabrik/Forschung selbst auf Halt gesetzt (nicht der Spieler)
 constexpr int BASE_GEN_RANGE = 9 * 128;              // Fabriken/Forschung: 9 Felder um ein laufendes Kraftwerk
 constexpr unsigned RESTART_STAGGER_MS = 1200;        // MF: Gebaeude fahren einzeln nacheinander hoch
@@ -224,7 +227,7 @@ void reset()
 	for (int p = 0; p < MAX_PLAYERS; p++) { s_crewActive[p] = false; s_crewUsed[p] = 0; s_crewSupply[p] = 0; s_crewOffCount[p] = 0; }
 	s_held.clear();
 	s_standby.clear();
-	for (int p = 0; p < MAX_PLAYERS; p++) { s_hasSub[p] = false; }
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_hasSub[p] = false; s_solarConnected[p] = 0; s_subCount[p] = 0; s_subFed[p] = 0; }
 	s_powered.clear();
 	s_cables.clear();
 	s_markers.clear();
@@ -253,6 +256,9 @@ void update()
 		unsigned restartIndex = 0;
 		s_hasGen[p] = false;
 		s_hasSub[p] = false;
+		s_solarConnected[p] = 0;
+		s_subCount[p] = 0;
+		s_subFed[p] = 0;
 		std::vector<Node> poles, gens, subs, panels, cons;
 		std::vector<int> genCap;
 		std::vector<int> panelCap;   // Solarpaneel 1, laufendes Atomkraftwerk 150 (stetige Quellen)
@@ -302,7 +308,9 @@ void update()
 			}
 		}
 		if (poles.empty() && gens.empty() && cons.empty() && subs.empty()) { continue; }
-		const bool subMode = !subs.empty();   // (20:35) ab dem ersten Umspannwerk ist es der zentrale Knoten des Netzes
+		// (20:35) ab dem ersten Umspannwerk ist es der zentrale Knoten des Netzes. (Wunsch 20.11. 19:06 "Umspannwerk soll Pflicht sein. Das ist
+		// das Endstueck und versorgt ueber die Masten alles"): fuer Spieler mit Oel-Wirtschaft IMMER - ohne Umspannwerk hat kein Gebaeude Strom.
+		const bool subMode = !subs.empty() || modoil::manages(p);
 
 		const int n = static_cast<int>(poles.size());
 		const int g = static_cast<int>(gens.size());
@@ -463,8 +471,8 @@ void update()
 			if (subMode)
 			{
 				if (!hasSub[r]) { continue; }
-				if (solarCap[r] > 0 && solarCap[r] >= demand[r] && anyGen[r]) { capacity[r] = solarCap[r]; s_standbyNet.insert(r); }
-				else { capacity[r] = solarCap[r] + genCapC[r]; }
+				// (20.11. 19:06) keine Bereitschaft mehr: Oel- und Solar-Kreislauf sind unabhaengig, ihre Leistung zaehlt zusammen
+				capacity[r] = solarCap[r] + genCapC[r];
 				fed[r] = capacity[r] > 0;
 			}
 			else
@@ -477,6 +485,18 @@ void update()
 		for (int k = 0; k < g; k++)
 		{
 			if (s_standbyNet.count(find(par, G0 + k))) { s_standby.insert(gens[k].id); }
+		}
+		// (20.11. 19:06) Solar-Kreislauf: nur Paneele, deren Netz ein Umspannwerk hat, bringen Einnahmen (modlava)
+		s_solarConnected[p] = 0;
+		for (int k = 0; k < q; k++)
+		{
+			if (panelNuke[static_cast<size_t>(k)] == 0 && hasSub[find(par, P0 + k)]) { s_solarConnected[p]++; }
+		}
+		s_subCount[p] = m;
+		s_subFed[p] = 0;
+		for (int k = 0; k < m; k++)
+		{
+			if (fed[find(par, S0 + k)]) { s_subFed[p]++; }
 		}
 		// (20.11.) Strompflicht beginnt, sobald eine echte Quelle ein Netz speist (Notstrom der Kommandozentrale zaehlt nicht)
 		for (int r = 0; r < total; r++)
@@ -534,6 +554,17 @@ void update()
 	}
 }
 
+int solarPanelsConnected(int player)
+{
+	return (player >= 0 && player < MAX_PLAYERS) ? s_solarConnected[player] : 0;
+}
+
+int substations(int player, int &fed)
+{
+	fed = (player >= 0 && player < MAX_PLAYERS) ? s_subFed[player] : 0;
+	return (player >= 0 && player < MAX_PLAYERS) ? s_subCount[player] : 0;
+}
+
 bool generatorStandby(const STRUCTURE *psGen)
 {
 	return psGen != nullptr && s_standby.count(psGen->id) != 0;
@@ -561,7 +592,8 @@ bool powerDownGate(STRUCTURE *s)
 	const STRUCTURE_STATS *st = s->pStructureType;
 	// (20.11.) Strompflicht erst, wenn eine echte Stromquelle das Netz gespeist hat (erstes Fass im Kraftwerk, Atomkraftwerk, Solar am
 	// Umspannwerk) - ein neues, leeres Kraftwerk schaltet sonst sofort Fabrik und Forschung ab
-	if (!st->requiresPower || s->status != SS_BUILT || !modoil::manages(s->player) || !modoil::dutyStarted(s->player)) { return false; }
+	// (Wunsch 20.11. 19:06 "Erst das Wirtschaftsnetzwerk aufbauen! Dann produzieren und forschen. Strompflicht gilt ab sofort.")
+	if (!st->requiresPower || s->status != SS_BUILT || !modoil::manages(s->player)) { return false; }
 	const auto it = s_powered.find(s->id);
 	if (it == s_powered.end()) { return false; }          // gerade erst fertig: bis zur naechsten Berechnung Gnadenfrist
 	bool down = !it->second;
