@@ -107,7 +107,7 @@ Hit test(const DROID *psDroid, int mx, int my, float &depth, float &dist)
 	const auto it = s_entries.find(psDroid->id);
 	if (it == s_entries.end() || it->second.frame != psDroid->sDisplay.frameNumber || it->second.parts.empty())
 	{
-		return NO_DATA;
+		return PICK_NO_DATA;
 	}
 	const float W = static_cast<float>(pie_GetVideoBufferWidth()), H = static_cast<float>(pie_GetVideoBufferHeight());
 	const float px = static_cast<float>(mx) + 0.5f, py = static_cast<float>(my) + 0.5f;
@@ -191,15 +191,15 @@ Hit test(const DROID *psDroid, int mx, int my, float &depth, float &dist)
 	if (exact)
 	{
 		depth = bestDepth;
-		return EXACT;
+		return PICK_EXACT;
 	}
 	if (nearHit)
 	{
 		depth = nearDepth;
 		dist = std::sqrt(bestDist2);
-		return NEAR;
+		return PICK_NEAR;
 	}
-	return MISS;
+	return PICK_MISS;
 }
 
 void reset()

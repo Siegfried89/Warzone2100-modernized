@@ -4892,20 +4892,20 @@ DROID *modDroidUnderMouse(int mx, int my)
 			float depth = 0.f, dist = 0.f;
 			switch (modpick::test(psDroid, mx, my, depth, dist))
 			{
-			case modpick::EXACT:
+			case modpick::PICK_EXACT:
 				if (depth < exactDepth) { exactDepth = depth; psExact = psDroid; }
 				break;
-			case modpick::NEAR:
+			case modpick::PICK_NEAR:
 				if (dist < nearDist - 0.01f || (dist < nearDist + 0.01f && depth < nearDepth)) { nearDist = dist; nearDepth = depth; psNear = psDroid; }
 				break;
-			case modpick::NO_DATA:
+			case modpick::PICK_NO_DATA:
 				if (modDroidHit(psDroid, mx, my))
 				{
 					const int dx = static_cast<int>(psDroid->sDisplay.screenX) - mx, dy = static_cast<int>(psDroid->sDisplay.screenY) - my;
 					if (dx * dx + dy * dy < boxD2) { boxD2 = dx * dx + dy * dy; psBox = psDroid; }
 				}
 				break;
-			case modpick::MISS:
+			case modpick::PICK_MISS:
 				break;
 			}
 		}
