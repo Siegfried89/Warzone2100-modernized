@@ -48,6 +48,10 @@ struct iIMDShape;
  */
 /***************************************************************************/
 bool pie_Draw3DShape(const iIMDShape *shape, int frame, int team, PIELIGHT colour, int pieFlag, int pieFlagData, const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix, float stretchDepth = 0.f, bool onlySingleLevel = false);
+// MOD (20.11.): genaue Trefferflaeche der Einheiten - solange ein Rekorder gesetzt ist, meldet pie_Draw3DShape jede gezeichnete
+// Modellebene (ohne Leucht-/Schild-Effekte) mit ihrer Lage. nullptr schaltet ihn ab.
+typedef void (*PiePickRecorder)(const iIMDShape *shape, const glm::mat4 &modelMatrix, void *user);
+void pie_SetPickRecorder(PiePickRecorder recorder, void *user);
 void pie_Draw3DButton(const iIMDShape *shape, PIELIGHT teamcolour, const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix);
 
 void pie_GetResetCounts(size_t *pPieCount, size_t *pPolyCount);

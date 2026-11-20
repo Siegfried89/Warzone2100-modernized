@@ -1473,6 +1473,15 @@ void pie_CleanUp()
 	}
 }
 
+static PiePickRecorder s_modPickRecorder = nullptr;   // MOD (20.11.): genaue Trefferflaeche
+static void *s_modPickUser = nullptr;
+
+void pie_SetPickRecorder(PiePickRecorder recorder, void *user)
+{
+	s_modPickRecorder = recorder;
+	s_modPickUser = user;
+}
+
 bool pie_Draw3DShape(const iIMDShape *shape, int frame, int team, PIELIGHT colour, int pieFlag, int pieFlagData, const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix, float stretchDepth, bool onlySingleLevel)
 {
 	pieCount++;
@@ -1495,6 +1504,10 @@ bool pie_Draw3DShape(const iIMDShape *shape, int frame, int team, PIELIGHT colou
 		else
 		{
 			retVal = instancedMeshRenderer.Draw3DShape(pCurrShape, frame, teamcolour, colour, pieFlag, pieFlagData, modelMatrix, viewMatrix, stretchDepth);
+			if (retVal && s_modPickRecorder && !(pieFlag & (pie_ADDITIVE | pie_SHIELD)))
+			{
+				s_modPickRecorder(pCurrShape, modelMatrix, s_modPickUser);
+			}
 		}
 
 		pCurrShape = pCurrShape->next.get();
