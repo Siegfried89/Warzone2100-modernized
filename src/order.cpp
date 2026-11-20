@@ -3350,9 +3350,72 @@ void orderSelectedObj(UDWORD player, BASE_OBJECT *psObj)
  * If add is true, the orders are queued.
  * @todo this function runs through all the player's droids, but only uses the selected ones and the ones that are construction droids. Consider an efficiency improvement.
  */
+// MOD (Wunsch 20.11. 16:42 "Die 3 Baubagger sollen mehr eigenstaendig arbeiten. Ich habe das Gefuehl sie haengen immer aneinander dran,
+// folgen einander staendig und sind immer zusammen und koennen wenig verschiedene Bauprojekte eigenstaendig erledigen"): bisher bekam JEDES
+// gewaehlte Baufahrzeug jeden Bauauftrag (und dieselbe Warteschlange) - alle fuhren gemeinsam von Baustelle zu Baustelle. Sind mehrere
+// gewaehlt, geht ein Bauauftrag jetzt an EIN Fahrzeug: bevorzugt eines ohne eigenes Bauprojekt (untaetig oder nur beim Helfen), sonst das
+// mit den wenigsten Projekten, bei Gleichstand das naechste zur Baustelle (gemessen vom Ende seiner Warteschlange). Haben alle eigene
+// Projekte, wird der Auftrag angehaengt statt eine angefangene Baustelle aufzugeben. Fertige Fahrzeuge helfen von selbst in der Naehe
+// mit (modbuild::autoHelp). Ein einzelnes gewaehltes Fahrzeug verhaelt sich wie bisher.
+static bool modBuildOrderType(DROID_ORDER o)
+{
+	return o == DORDER_BUILD || o == DORDER_LINEBUILD || o == DORDER_BUILDMODULE;
+}
+
+static DROID *modPickBuilder(const std::vector<DROID *> &trucks, int x, int y, int &projects)
+{
+	DROID *best = nullptr;
+	int64_t bestScore = INT64_MAX;
+	for (DROID *d : trucks)
+	{
+		int n = modBuildOrderType(d->order.type) ? 1 : 0;   // eigenes laufendes Projekt (Helfen zaehlt nicht - das darf er abbrechen)
+		Vector2i endPos = n ? d->order.pos : d->pos.xy();
+		for (unsigned i = d->listPendingBegin; i < d->asOrderList.size(); ++i)
+		{
+			const DroidOrder &q = d->asOrderList[i];
+			if (modBuildOrderType(q.type)) { ++n; endPos = q.pos; }
+		}
+		const int64_t dx = endPos.x - x, dy = endPos.y - y;
+		const int64_t score = static_cast<int64_t>(n) * (int64_t(1) << 40) + dx * dx + dy * dy;
+		if (best == nullptr || score < bestScore || (score == bestScore && d->id < best->id))
+		{
+			best = d;
+			bestScore = score;
+			projects = n;
+		}
+	}
+	return best;
+}
+
 void orderSelectedStatsLocDir(UDWORD player, DROID_ORDER order, STRUCTURE_STATS *psStats, UDWORD x, UDWORD y, uint16_t direction, bool add)
 {
 	ASSERT_PLAYER_OR_RETURN(, player);
+
+	if (order == DORDER_BUILD)
+	{
+		std::vector<DROID *> trucks;
+		for (DROID *psCurr : gameWorld.objects.droids[player])
+		{
+			if (psCurr->selected && psCurr->isConstructionDroid() && !psCurr->died && !modCargoOnly(psCurr)) { trucks.push_back(psCurr); }
+		}
+		if (trucks.size() >= 2)
+		{
+			int projects = 0;
+			DROID *best = modPickBuilder(trucks, static_cast<int>(x), static_cast<int>(y), projects);
+			if (best != nullptr)
+			{
+				if (add || projects > 0)
+				{
+					orderDroidStatsLocDirAdd(best, order, psStats, x, y, direction);
+				}
+				else
+				{
+					orderDroidStatsLocDir(best, order, psStats, x, y, direction, ModeQueue);
+				}
+				return;
+			}
+		}
+	}
 
 	for (DROID *psCurr : gameWorld.objects.droids[player])
 	{
