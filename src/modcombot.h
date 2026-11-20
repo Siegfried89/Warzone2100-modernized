@@ -27,10 +27,21 @@ struct PartStats
 	bool melee = false;
 };
 
+/// (20.11.) MF-Skelett eines Einzelteils: Knochenplatz (0-27, 31 = starr am Elternteil), Elternteil, Versatz zum Elternteil
+/// (MF-Einheiten) und Bauversatz (Anbauteil ist im Rahmen eines anderen Knochens gebaut)
+struct PieceBone
+{
+	int slot = 31;
+	int parent = -1;
+	glm::vec3 off = glm::vec3(0.f);
+	glm::vec3 rel = glm::vec3(0.f);
+};
+
 struct Part
 {
 	std::string id;       // z.B. "Armor_T0"
 	std::string file;     // z.B. "Armor"
+	std::string animFile; // MF-Datei der Animationen/Klaenge (= file; Kopien wie das Breitschwert: die Vorlage)
 	std::string name;     // Anzeigename
 	std::string feature;  // Bergungs-Feature (abgeschlagenes Teil)
 	Kind kind = KIND_TORSO;
@@ -50,6 +61,8 @@ struct Part
 	int fxPiece = -1;                           // (16.11.) leuchtender Anbau, z. B. Energieschild am Unterarm (additiv)
 	glm::vec3 fxPos = glm::vec3(0.f);
 	std::string fxModel;
+	std::vector<PieceBone> bones;               // je Einzelteil (pieNames)
+	float ground = 0.f;                         // Beine: Sohlenhoehe in der Ruhehaltung (MF-Einheiten)
 
 	const iIMDShape *shape(size_t i) const;   // laedt das Modell bei Bedarf
 	bool hasAbility(const char *a) const;

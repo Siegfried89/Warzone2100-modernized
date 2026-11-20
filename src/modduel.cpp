@@ -42,7 +42,7 @@ namespace
 constexpr int ENGAGE_RANGE = 256;     // Welteinheiten (Kachel = 128): Duell beginnt
 constexpr int BREAK_RANGE = 448;      // darueber wird das Duell abgebrochen
 constexpr unsigned ROUND_TIME = 1700; // ms zwischen zwei Schlaegen (langsamer MF-Kampf)
-constexpr unsigned HIT_DELAY = 800;   // ms nach Schlagbeginn bis zum Treffer
+constexpr unsigned HIT_DELAY = HIT_DELAY_MS;   // ms nach Schlagbeginn bis zum Treffer
 constexpr unsigned BLOCK_PCT = 32;
 constexpr unsigned DODGE_PCT = 12;
 
@@ -231,6 +231,22 @@ void endDuel(DROID *d)
 bool hullWobble(const DROID *d, float &pitchDeg, float &rollDeg)
 {
 	return hullWobbleImpl(d, pitchDeg, rollDeg);   // die Umsetzung steht im anonymen Namensraum (s_wobble), die Schnittstelle in modduel.h
+}
+
+int swingSlot(const DROID *d)
+{
+	if (d == nullptr) { return -1; }
+	const auto it = s_duels.find(d->id);
+	if (it == s_duels.end()) { return -1; }
+	if (!modcombot::isModular(d)) { return 0; }
+	// wie applyDamage: die Nahkampfarme wechseln sich ab (swing zaehlt erst beim Treffer weiter)
+	const modcombot::Loadout lo = modcombot::loadoutOf(d);
+	int slots[2];
+	int n = 0;
+	if (lo.armR && lo.armR->st.melee && lo.slotR >= 0) { slots[n++] = lo.slotR; }
+	if (lo.armL && lo.armL->st.melee && lo.slotL >= 0) { slots[n++] = lo.slotL; }
+	if (n == 0) { return lo.slotR >= 0 ? lo.slotR : lo.slotL; }
+	return slots[it->second.swing % static_cast<unsigned>(n)];
 }
 
 bool isCombot(const DROID *d)
