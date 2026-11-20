@@ -80,6 +80,8 @@ bool dutyStarted(int player);
 void noteDuty(int player);
 /// (20.11.) Fracht-Lkw oder Oeltanker (Fahrzeug mit Ladeflaeche/Tank fuer Faesser)?
 bool isCargoVehicle(const DROID *psDroid);
+/// (20.11. 19:06) Fortschritt des laufenden Fasses in der Raffinerie 1..1000; 0 = arbeitet gerade nicht; -1 = keine Raffinerie
+int refineryProgress(const STRUCTURE *psStruct);
 /// (20.11.) geladene Faesser eines Fracht-Lkw / Oeltankers; cap = Plaetze (0 = kein Frachtfahrzeug)
 int cargoBarrels(const DROID *psDroid, int &cap);
 /// (20.11.) Vorrat des Kraftwerks in Sekunden

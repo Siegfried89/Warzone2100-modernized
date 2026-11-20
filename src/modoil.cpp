@@ -124,7 +124,8 @@ std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
 int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwerk-Geschenk, Bit 2 = Raffinerie-Geschenk schon vergeben
 bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
-std::vector<int> s_tankRespawn;             // (20.11. Punkt 2) Spieler, deren letzter Oeltanker zerstoert wurde
+std::vector<std::pair<int, bool>> s_tankRespawn;   // (20.11.) (Spieler, Tanker?) - letzter Oeltanker bzw. letzter Pickup zerstoert
+int s_beepTrack = -2;                       // (20.11. 19:06) Rueckfahr-Piepen beim Abliefern (-2 = noch nicht gesucht)
 bool s_have = false;
 UDWORD s_lastSec = 0;
 // (Wunsch 17.11. 20:35 "Economy pruefen") Einnahmen je Quelle seit dem letzten Bericht (Log jede Spielminute)
@@ -583,6 +584,16 @@ bool isCargoVehicle(const DROID *d)
 	return d != nullptr && cargoCapacity(d) > 0;
 }
 
+int refineryProgress(const STRUCTURE *r)
+{
+	if (r == nullptr || !isRefinery(r->pStructureType) || !manages(static_cast<int>(r->player))) { return -1; }
+	const auto ii = s_refIn.find(r->id), io = s_refOut.find(r->id), it = s_refT.find(r->id);
+	const int in = ii == s_refIn.end() ? 0 : ii->second, out = io == s_refOut.end() ? 0 : io->second, t = it == s_refT.end() ? 0 : it->second;
+	if (in <= 0 || out >= REF_CAP) { return 0; }
+	const int need = modgrid::isPoweredDown(r) ? REF_SECS_NOPOWER : REF_SECS;
+	return std::clamp(1 + t * 1000 / need, 1, 1000);
+}
+
 int cargoBarrels(const DROID *d, int &cap)
 {
 	cap = (d != nullptr && manages(static_cast<int>(d->player))) ? cargoCapacity(d) : 0;
@@ -797,15 +808,16 @@ void onFeatureDestroyed(const FEATURE *psDel)
 void onDroidDestroyed(const DROID *psDel)
 {
 	if (psDel == nullptr) { return; }
-	// (Wunsch 20.11. 17:46 Punkt 2) letzter Oeltanker zerstoert -> sofort ein neuer (leer) an der Fabrik
-	if (isTank(psDel) && manages(static_cast<int>(psDel->player)))
+	// (Wunsch 20.11. 17:46 / 19:06 "beide spawnen kostenlos") letzter Oeltanker bzw. letzter Pickup zerstoert -> sofort ein neuer (leer, gratis)
+	if (cargoCapacity(psDel) > 0 && manages(static_cast<int>(psDel->player)))
 	{
+		const bool tank = isTank(psDel);
 		bool other = false;
 		for (const DROID *d : gameWorld.objects.droids[psDel->player])
 		{
-			if (d != psDel && !d->died && isTank(d)) { other = true; break; }
+			if (d != psDel && !d->died && cargoCapacity(d) > 0 && isTank(d) == tank) { other = true; break; }
 		}
-		if (!other) { s_tankRespawn.push_back(static_cast<int>(psDel->player)); }
+		if (!other) { s_tankRespawn.emplace_back(static_cast<int>(psDel->player), tank); }
 	}
 	const auto it = s_cargo.find(psDel->id);
 	if (it == s_cargo.end()) { return; }
@@ -1187,6 +1199,16 @@ void logistics()
 						deliverToGenerator(p, ts, c.n, false);
 						c.n = 0;
 					}
+					// (Wunsch 20.11. 19:06) beim Abliefern haelt der Oeltanker kurz, dazu leises Rueckfahr-Piepen wie in der Stadt
+					if (c.mode == 2 && c.tank)
+					{
+						c.pause = 3;
+						if (tileSeen(d->pos.x, d->pos.y))
+						{
+							if (s_beepTrack == -2) { s_beepTrack = audio_GetTrackID("truckbeep.ogg"); }
+							if (s_beepTrack >= 0) { audio_PlayStaticTrack(d->pos.x, d->pos.y, s_beepTrack); }
+						}
+					}
 					c.mode = 0;
 				}
 				else if (d->order.type == DORDER_NONE)
@@ -1314,7 +1336,7 @@ void logistics()
 			}
 		}
 
-		autoTrain(p, sn);   // MOD: fehlende Fracht-Lkw / Tanker automatisch ausbilden
+		(void)autoTrain;   // (20.11. 19:06) aus: Ersatz fuer zerstoerte Pickups/Tanker kommt sofort und gratis (processTankRespawns)
 	}
 
 	// Aufraeumen: Eintraege nicht mehr vorhandener Objekte
@@ -1516,17 +1538,19 @@ void onBuilt(STRUCTURE *s)
 
 namespace
 {
-/// (20.11. Punkt 2) Ersatz fuer den letzten zerstoerten Oeltanker: an einer Fabrik (sonst HQ, Raffinerie, Kraftwerk)
+/// (20.11.) Ersatz fuer den letzten zerstoerten Oeltanker / Pickup: an einer Fabrik (sonst HQ, Raffinerie, Kraftwerk), gratis und leer
 void processTankRespawns()
 {
 	if (s_tankRespawn.empty()) { return; }
-	std::vector<int> todo;
+	std::vector<std::pair<int, bool>> todo;
 	todo.swap(s_tankRespawn);
-	for (int p : todo)
+	for (const auto &req : todo)
 	{
+		const int p = req.first;
+		const bool tank = req.second;
 		if (p < 0 || p >= MAX_PLAYERS) { continue; }
 		bool have = false;
-		for (const DROID *d : gameWorld.objects.droids[p]) { if (!d->died && isTank(d)) { have = true; break; } }
+		for (const DROID *d : gameWorld.objects.droids[p]) { if (!d->died && cargoCapacity(d) > 0 && isTank(d) == tank) { have = true; break; } }
 		if (have) { continue; }
 		const STRUCTURE *at = nullptr;
 		int rank = 99;
@@ -1537,9 +1561,9 @@ void processTankRespawns()
 			const int r = (t == REF_FACTORY && !s->isMobileCore()) ? 0 : t == REF_HQ ? 1 : isRefinery(s->pStructureType) ? 2 : t == REF_POWER_GEN ? 3 : 99;
 			if (r < rank) { rank = r; at = s; }
 		}
-		if (at != nullptr && spawnNear(at, "ScavTanker"))
+		if (at != nullptr && spawnNear(at, tank ? "ScavTanker" : "ScavLkw"))
 		{
-			debug(LOG_INFO, "MOD-Wirtschaft: letzter Oeltanker von Spieler %d zerstoert - Ersatz an %s", p, getStatsName(at->pStructureType));
+			debug(LOG_INFO, "MOD-Wirtschaft: letzter %s von Spieler %d zerstoert - Ersatz an %s", tank ? "Oeltanker" : "Pickup", p, getStatsName(at->pStructureType));
 		}
 	}
 }

@@ -19,6 +19,7 @@
 #include "modlayermap.h"
 #include "modnuke.h"
 #include "modoil.h"
+#include "modgrid.h"
 #include "effects.h"
 #include "fpath.h"
 #include "multiplay.h"
@@ -53,6 +54,8 @@ std::map<uint32_t, bool> s_hint;           // Hinweis "nur im Untergrund" je Har
 std::map<uint32_t, bool> s_shaftDone;      // Schacht -> eigenes Start-Lavafeld angelegt
 unsigned s_lastSec = 0;
 unsigned s_sec = 0;                        // Sekundenzaehler ("unter Tage nur jede vierte Sekunde")
+int s_solarAcc[MAX_PLAYERS] = {};           // (20.11. 19:06) Paneel-Sekunden bis zur naechsten Energie-Einheit
+constexpr int SOLAR_SECS_PER_ENERGY = 10;   // 1 Energie je Paneel und 10 s
 bool s_placed = false;
 bool s_placedUnder = false;
 int s_cap[MAX_PLAYERS] = {};
@@ -471,7 +474,13 @@ void tick(GameWorld &world)
 				else { incomeUnder += st->incomeProvide; }
 			}
 		}
-		const int solarGain = income + ((s_sec % 4 == 0) ? incomeUnder : 0);
+		// (Wunsch 20.11. 19:06 "Solarpaneele sind viel zu OP - nerfen" / "Solarpaneel - Mast - Umspannwerk ist ein geschlossener Kreislauf, der
+		// insgesamt weniger Energie bringen soll als das Oel"): ein Paneel bringt nur noch 1 Energie je 10 s (6 pro Minute, nur tagsueber; ein
+		// Oelturm bringt 33-50), und bei Spielern mit Oel-Wirtschaft nur, wenn es ueber Masten an einem Umspannwerk haengt.
+		const int panels = modoil::manages(p) ? modgrid::solarPanelsConnected(p) : income + ((s_sec % 4 == 0) ? incomeUnder : 0);
+		s_solarAcc[p] += std::max(0, panels);
+		const int solarGain = s_solarAcc[p] / SOLAR_SECS_PER_ENERGY;
+		s_solarAcc[p] %= SOLAR_SECS_PER_ENERGY;
 		if (solarGain > 0) { addPower(p, solarGain); modoil::noteIncome(p, modoil::INC_SOLAR, solarGain); }
 		if (modoil::manages(p))
 		{
@@ -594,6 +603,7 @@ void reset()
 	s_shaftDone.clear();
 	s_lastSec = 0;
 	s_sec = 0;
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_solarAcc[p] = 0; }
 	s_placed = false;
 	s_placedUnder = false;
 	s_landfill = false;

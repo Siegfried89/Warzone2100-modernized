@@ -73,6 +73,7 @@
 #include "bucket3d.h"
 
 #include "modgrid.h"
+#include "modoil.h"
 #include "effects.h"
 
 #include "miscimd.h"
@@ -2393,6 +2394,14 @@ static void effectStructureUpdates()
 					break;
 				}
 			case REF_GENERIC:
+				// MOD (Wunsch 20.11. 19:06 "optisch sehen, dass die Raffinerie arbeitet ... leicht Staub wie bei der Fabrik von Projekt, nicht zu
+				// aufdringlich"): solange sie ein Fass veredelt, puffen ab und zu kleine Dampfwolken wie bei den WZ-Fabriken
+				if (modoil::refineryProgress(psStructure) > 0 && rand() % 2 == 0)
+				{
+					const int top = std::max(30, pDisplayModel->max.y);
+					Vector3i eventPos = psStructure->pos.xzy() + Affine3F().RotY(psStructure->rot.direction) * Vector3i(rand() % 41 - 20, top - 6, rand() % 41 - 20);
+					addEffect(&eventPos, EFFECT_SMOKE, SMOKE_TYPE_STEAM, false, nullptr, 0);
+				}
 				// MOD (Wunsch 20.11. 17:46 "Umspannwerk ... blaue Blitze ab und zu zischen lassen + Audio"): WZ-Tesla-Blitze (wie am
 				// Kraftwerk) an den Isolatoren des Portals bzw. der Trafos, dazu das Funken-Geraeusch des Kraftwerks. Nur Anzeige.
 				if (modgrid::isSubstation(psStructure->pStructureType) && rand() % 3 == 0)

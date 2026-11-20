@@ -30,6 +30,10 @@ void reset();
 /// (Wunsch 17.11. 20:35) Umspannwerk (Kennung beginnt mit "A0Substation"): zentraler Knoten - gespeist von Solarpaneelen und/oder
 /// Kraftwerken ueber die Masten; ab dem ersten Umspannwerk laufen nur Gebaeude im Netz eines gespeisten Umspannwerks
 bool isSubstation(const STRUCTURE_STATS *psStats);
-/// Kraftwerk in Bereitschaft: der Solarstrom seines Netzes reicht, es verbraucht kein Oel (das Oel geht an die Tankstellen)
+/// Kraftwerk in Bereitschaft - (20.11. 19:06) abgeschafft, immer false (Oel- und Solar-Kreislauf sind unabhaengig)
 bool generatorStandby(const STRUCTURE *psGen);
+/// (20.11. 19:06) Solarpaneele, die ueber Masten an einem Umspannwerk haengen (nur sie bringen Einnahmen)
+int solarPanelsConnected(int player);
+/// (20.11. 19:06) Zahl der Umspannwerke; fed = davon mit Strom
+int substations(int player, int &fed);
 }
