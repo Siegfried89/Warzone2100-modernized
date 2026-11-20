@@ -44,60 +44,30 @@ struct State
 std::unordered_map<uint32_t, State> s_state;
 unsigned s_nextTick = 0;
 
-/// verbraucht diese Waffenart Munition? (Energiewaffen, Gauss, Laser ... nicht)
-bool ammoClass(const WEAPON_STATS *ws)
+int capacityOf(const WEAPON_STATS *ws)
 {
-	if (ws == nullptr) { return false; }
+	if (ws == nullptr) { return 0; }
 	switch (ws->weaponSubClass)
 	{
-	case WSC_MGUN: case WSC_CANNON: case WSC_MORTARS: case WSC_ROCKET: case WSC_MISSILE: case WSC_HOWITZERS:
-	case WSC_SLOWROCKET: case WSC_SLOWMISSILE: case WSC_FLAME: case WSC_AAGUN: case WSC_BOMB:
-		return true;
-	default:
-		return false;
+	case WSC_MGUN: return 220;
+	case WSC_CANNON: return 40;
+	case WSC_MORTARS: return 28;
+	case WSC_ROCKET: return 24;
+	case WSC_MISSILE: return 12;
+	case WSC_HOWITZERS: return 18;
+	case WSC_SLOWROCKET:
+	case WSC_SLOWMISSILE: return 10;
+	case WSC_FLAME: return 120;
+	case WSC_AAGUN: return 120;
+	case WSC_BOMB: return 4;
+	default: return 0;
 	}
-}
-
-// MOD (Wunsch 20.11. 15:52 "Warum schiessen manche Scavenger-Raketeneinheiten ... und die ganze Munition ist in wenigen Sekunden weg?"):
-// bisher je Waffenart eine feste Schusszahl (Raketen 24) - Salvenwaffen (Raketen-Jeep 4 Raketen, Batterie 8 Raketen je Salve) waren
-// damit nach ~26 s Dauerfeuer leer, MGs erst nach 110 s. Jetzt bekommt jede Waffe Munition fuer gleich lange Dauerfeuer (2 Minuten),
-// gerechnet aus ihren Grundwerten (Feuerpause, Salve, Nachladezeit); Steilfeuer-Fassungen (_ARTY) zaehlen wie die Grundwaffe.
-constexpr int ENDURANCE_MS = 120000;
-std::vector<int> s_shots;   // je Waffen-Statistik: Schuss fuer ENDURANCE_MS Dauerfeuer (-1 = noch nicht berechnet)
-
-int shotsFor(const WEAPON_STATS *ws)
-{
-	if (!ammoClass(ws)) { return 0; }
-	const size_t idx = static_cast<size_t>(ws - asWeaponStats.data());
-	if (idx >= asWeaponStats.size()) { return 0; }
-	if (s_shots.size() != asWeaponStats.size()) { s_shots.assign(asWeaponStats.size(), -1); }
-	if (s_shots[idx] >= 0) { return s_shots[idx]; }
-	const WEAPON_STATS *base = ws;
-	const std::string id = ws->id.toUtf8();
-	if (id.size() > 5 && id.compare(id.size() - 5, 5, "_ARTY") == 0)
-	{
-		const COMPONENT_STATS *c = getCompStatsFromName(WzString::fromUtf8(id.substr(0, id.size() - 5)));
-		if (c != nullptr && c->compType == COMP_WEAPON) { base = static_cast<const WEAPON_STATS *>(c); }
-	}
-	const int rounds = std::max<int>(1, static_cast<int>(base->base.numRounds));
-	const int pause = static_cast<int>(base->base.firePause), reload = static_cast<int>(base->base.reloadTime);
-	int perShot = (reload > 0) ? (reload + (rounds - 1) * pause) / rounds : pause;   // ms je Schuss im Dauerfeuer
-	perShot = std::max(perShot, 50);
-	const int shots = std::max({(ENDURANCE_MS + perShot / 2) / perShot, 2 * rounds, 4});
-	s_shots[idx] = shots;
-	return shots;
 }
 
 int capacity(const DROID *d)
 {
-	if (d == nullptr || d->numWeaps == 0) { return 0; }
-	int sum = 0;   // (20.11.) alle Waffen der Einheit (Fatboy, Mammut) - jeder Schuss jeder Waffe zaehlt
-	for (unsigned i = 0; i < d->numWeaps && i < MAX_WEAPONS; ++i)
-	{
-		if (d->asWeaps[i].nStat == 0) { continue; }
-		sum += shotsFor(d->getWeaponStats(static_cast<int>(i)));
-	}
-	return sum;
+	if (d == nullptr || d->numWeaps == 0 || d->asWeaps[0].nStat == 0) { return 0; }
+	return capacityOf(d->getWeaponStats(0));
 }
 
 /// Nachschub-Rate einer Quelle: Anteil des Vorrats je Sekunde (0 = keine Munitionsquelle)
@@ -187,7 +157,6 @@ bool usesAmmo(const DROID *d)
 	if (d == nullptr || d->died) { return false; }
 	if (!isHumanPlayer(d->player)) { return false; }
 	if (modcombot::isModular(d)) { return false; }
-	if (d->isVtol()) { return false; }   // (20.11.) Flugzeuge haben ihre eigene Bewaffnung je Anflug (Aufmunitionieren am Landeplatz)
 	return capacity(d) > 0;
 }
 
@@ -308,7 +277,6 @@ void tick(GameWorld &world)
 void reset()
 {
 	s_state.clear();
-	s_shots.clear();
 	s_nextTick = 0;
 }
 }
