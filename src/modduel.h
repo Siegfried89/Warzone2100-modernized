@@ -14,4 +14,8 @@ void update(DROID *psDroid);
 bool hullWobble(const DROID *psDroid, float &pitchDeg, float &rollDeg);
 /// Laufanimation fuer Droiden mit Beinen ohne Cyborg-Bewegungsmodell (Walk/Feuer-Ereignisse).
 void updateLeggedAnimation(DROID *psDroid, int moveSpeed);
+/// (20.11.) Zeit vom Schlagbeginn bis zum Treffer (ms) - die Combot-Animation legt ihren MF-Treffer-Moment genau darauf
+constexpr unsigned HIT_DELAY_MS = 800;
+/// Waffenplatz des Arms, der im laufenden Duell-Schlag trifft; -1 = kein Duell
+int swingSlot(const DROID *psDroid);
 }
