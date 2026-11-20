@@ -414,9 +414,11 @@ std::vector<int> range(size_t from, size_t to, size_t count)
 
 const iIMDShape *Part::shape(size_t i) const
 {
-	if (!m_tried)
+	// MOD (20.11., Absturz 21:26 im Bau-Menue nach Spielstand laden): die gemerkten Modellzeiger zeigten nach dem Neuladen der Modelle
+	// auf freigegebenen Speicher - wie die anderen Zwischenspeicher an der Modell-Generation festmachen
+	if (modelCacheStale(m_gen))
 	{
-		m_tried = true;
+		m_shapes.clear();
 		for (const auto &n : pieNames)
 		{
 			iIMDBaseShape *b = modelGet(WzString::fromUtf8(n));

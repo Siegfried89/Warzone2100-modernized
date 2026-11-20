@@ -6,9 +6,14 @@
 // ein/aus; Standard: ein. Nur Anzeige.
 #pragma once
 
+struct IMAGEFILE;
+
 namespace modunitstats
 {
 /// jedes Bild aus intRunWidgets
 void tick();
 void shutdown();
+/// MOD (20.11.): die im Spiel gemeinsam genutzte Bildliste images/modfleets.img (einmal geladen, in shutdown() freigegeben) -
+/// ein zweites Laden derselben Datei legte doppelte Texturseiten an ("tex page ... already exists")
+IMAGEFILE *fleetImages();
 }

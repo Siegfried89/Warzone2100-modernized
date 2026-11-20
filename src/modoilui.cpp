@@ -31,6 +31,7 @@
 #include "modgrid.h"
 #include "modoil.h"
 #include "modui.h"
+#include "modunitstats.h"
 #include "modwzhd.h"
 #include "structure.h"
 
@@ -110,24 +111,20 @@ constexpr int BTN_W = 36, BTN_H = 24, PANEL_W = 300, ROW_H = 17, PAD = 6;
 std::shared_ptr<W_SCREEN> s_screen;
 std::shared_ptr<W_CLICKFORM> s_panel;
 std::shared_ptr<W_BUTTON> s_toggle;
-IMAGEFILE *s_img = nullptr;
-bool s_tried = false;
 bool s_on = true;   // Standard: ein
 
-bool imagesReady()
+// MOD (20.11.): Bildliste mit der Werteleiste teilen (modunitstats laedt und gibt frei) - kein zweites Laden derselben Datei
+IMAGEFILE *images()
 {
-	if (!s_tried)
-	{
-		s_tried = true;
-		if (PHYSFS_exists("images/modfleets.img")) { s_img = iV_LoadImageFile("images/modfleets.img"); }
-	}
-	return s_img != nullptr && s_img->imageDefs.size() > static_cast<size_t>(IC_BTN_HI);
+	IMAGEFILE *img = modunitstats::fleetImages();
+	return (img != nullptr && img->imageDefs.size() > static_cast<size_t>(IC_BTN_HI)) ? img : nullptr;
 }
 
 void drawImg(int id, int x, int y, int w, int h)
 {
-	if (!imagesReady()) { return; }
-	iV_DrawImageFileAnisotropic(s_img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(w), static_cast<float>(h)), defaultProjectionMatrix(), 255);
+	IMAGEFILE *img = images();
+	if (img == nullptr) { return; }
+	iV_DrawImageFileAnisotropic(img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(w), static_cast<float>(h)), defaultProjectionMatrix(), 255);
 }
 
 std::string mmss(int secs)
@@ -328,7 +325,7 @@ void ringAt(const glm::mat4 &m, int cx, int cy, int r, PIELIGHT col, bool dashed
 		const double a = k * 6.283185307 / n;
 		const int wx = static_cast<int>(cx + std::cos(a) * r), wy = static_cast<int>(cy + std::sin(a) * r);
 		Vector2i sp(0, 0);
-		const bool ok = projectWorld(wx, wy, map_Height(gameWorld.map, wx, wy) + 6, m, sp);
+		const bool ok = projectWorld(wx, wy, map_Height(gameWorld.map, std::clamp(wx, 0, world_coord(gameWorld.map.width) - 1), std::clamp(wy, 0, world_coord(gameWorld.map.height) - 1)) + 6, m, sp);   // (20.11.) am Kartenrand nicht ausserhalb abfragen
 		if (ok && havePrev && (!dashed || (k % 2) == 0))
 		{
 			lines.emplace_back(prev.x, prev.y, sp.x, sp.y);
@@ -421,7 +418,5 @@ void shutdown()
 {
 	if (s_screen) { widgRemoveOverlayScreen(s_screen); }
 	s_screen = nullptr; s_panel = nullptr; s_toggle = nullptr;
-	if (s_img != nullptr) { iV_FreeImageFile(s_img); s_img = nullptr; }
-	s_tried = false;
 }
 }

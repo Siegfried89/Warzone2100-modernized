@@ -2287,6 +2287,7 @@ static uint32_t validateSavedDefaultComponent(uint32_t index, size_t numStats, c
 {
 	if (index >= numStats)
 	{
+		if (index == 0) { return 0; }   // MOD (20.11.): Werte noch nicht geladen, 0 bleibt 0 - keine Fehlerzeile (165x im Log)
 		debug(LOG_ERROR, "Saved default %s (%" PRIu32 ") for player %d is out of range (%zu stats) - resetting", componentName, index, player, numStats);
 		return 0;
 	}

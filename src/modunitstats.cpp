@@ -225,4 +225,10 @@ void shutdown()
 	if (s_img != nullptr) { iV_FreeImageFile(s_img); s_img = nullptr; }
 	s_tried = false;
 }
+
+IMAGEFILE *fleetImages()
+{
+	imagesReady();
+	return s_img;
+}
 }
