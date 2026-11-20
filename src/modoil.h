@@ -74,6 +74,33 @@ int storeBarrels(const STRUCTURE *psStructure, int &cap);
 int stationBarrels(const STRUCTURE *psStation);
 /// Faesser-Anzeige (Anzeigemodus 4) und Fass-Fenster der gewaehlten Tankstelle, nach dem 3D-Bild aufrufen
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
+/// (20.11.) Strompflicht: erst ab dem ersten Fass, das ein Kraftwerk dieses Spielers bekommen hat (vorher laeuft alles ohne Strom)
+bool dutyStarted(int player);
+/// (20.11.) eine echte Stromquelle (Kraftwerk mit Oel, Atomkraftwerk, Solar am Umspannwerk) hat das Netz gespeist -> Strompflicht beginnt
+void noteDuty(int player);
+/// (20.11.) Fracht-Lkw oder Oeltanker (Fahrzeug mit Ladeflaeche/Tank fuer Faesser)?
+bool isCargoVehicle(const DROID *psDroid);
+/// (20.11.) geladene Faesser eines Fracht-Lkw / Oeltankers; cap = Plaetze (0 = kein Frachtfahrzeug)
+int cargoBarrels(const DROID *psDroid, int &cap);
+/// (20.11.) Vorrat des Kraftwerks in Sekunden
+int generatorFuel(const STRUCTURE *psGen);
+/// (20.11. Wunsch "UI-Grafik fuer den Oelwirtschaftskreislauf") Zahlen fuer das Oel-Fenster
+struct EconomyView
+{
+	bool active = false;                       // Spieler hat die Fass-Wirtschaft
+	int derricks = 0, derrickBarrels = 0, derrickCap = 0, derricksFull = 0;
+	int pickups = 0, pickupBarrels = 0, pickupCap = 0, pipeDerricks = 0;
+	int refineries = 0, refIn = 0, refOut = 0, refCap = 0, refNoPower = 0;
+	int tankers = 0, tankerBarrels = 0, tankerCap = 0;
+	int stores = 0, storeBarrels = 0, storeCap = 0;
+	int gens = 0, gensRunning = 0, gensStandby = 0, gensHungry = 0, minFuel = -1;
+	int stations = 0, stationBarrels = 0, stationCap = 0;
+	int power = 0, powerMax = 0, incomeLastMinute = 0, wastedLastMinute = 0;
+	int buildingsDown = 0;
+};
+EconomyView economyView(int player);
+/// (20.11.) Kraftwerk mit wenig Oel (hoechstens 3 Minuten) - fuer die Warnanzeige
+bool generatorHungry(const STRUCTURE *psGen);
 /// beim Spielende / Ladevorgang
 void reset();
 /// Spielstand: Faesser an Oeltuermen, Lagern, Raffinerien, Kraftwerken und Tankstellen (Tripel Art, id, Wert)

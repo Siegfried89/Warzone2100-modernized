@@ -32,6 +32,10 @@ constexpr int MIN_SPEED_PERCENT = 15;                   // leerer Tank: Mindestt
 constexpr int STATION_RADIUS = 3 * DIST_TILE;          // in diesem Umkreis um die Tankstelle wird getankt
 constexpr int REFUEL_PER_TICK = FUEL_RANGE / 16;        // voll in 8 Sekunden
 constexpr unsigned TRIP_TIMEOUT_MS = 300000;            // nach 5 Minuten ohne Erfolg gibt die Einheit die Fahrt auf
+// (Wunsch 20.11. 17:46 Punkt 2) Fracht-Lkw und Oeltanker: der Tank geht nie ganz leer - unter der Reserve fahren sie langsamer weiter
+// und tanken an einer Tankstelle MIT Vorrat (zu einer leeren fahren sie nicht - sie sind es ja, die das Oel bringen)
+constexpr int CARGO_RESERVE = FUEL_RANGE / 10;          // 10 % = 48 Felder
+constexpr int CARGO_RESERVE_SPEED = 50;                 // Tempo in der Reserve
 
 struct State
 {
@@ -50,7 +54,9 @@ bool stationRaw(const STRUCTURE *s)
 {
 	if (s == nullptr || s->died || s->status != SS_BUILT || s->pStructureType == nullptr) { return false; }
 	if (s->pStructureType->type != REF_REPAIR_FACILITY) { return false; }
-	return s->pStructureType->id.toUtf8().find("Gantry") == std::string::npos;   // Combot-Reparaturgeruest ist keine Tankstelle
+	// (Wunsch 20.11. 17:46) Tankstellen sind die Scav-Reparaturzentren (heilen nur bis 50 %); die Reparaturstation (100 %) und das
+	// Combot-Reparaturgeruest sind keine Tankstellen
+	return s->pStructureType->id.startsWith("ScavRepair");
 }
 
 /// KI ohne eigene Tankstelle: Fabriken und Hauptquartier dienen als Notfall-Tankstelle (bis die KI selbst Tankstellen baut)
@@ -163,8 +169,15 @@ int speedPercent(const DROID *d)
 {
 	if (s_state.empty()) { return 100; }
 	const auto it = s_state.find(d->id);
-	if (it == s_state.end() || it->second.fuel > 0) { return 100; }
+	if (it == s_state.end()) { return 100; }
+	if (modoil::isCargoVehicle(d)) { return (it->second.fuel <= CARGO_RESERVE && usesFuel(d)) ? CARGO_RESERVE_SPEED : 100; }
+	if (it->second.fuel > 0) { return 100; }
 	return usesFuel(d) ? MIN_SPEED_PERCENT : 100;
+}
+
+bool isHalfRepair(const STRUCTURE *s)
+{
+	return s != nullptr && s->pStructureType != nullptr && s->pStructureType->type == REF_REPAIR_FACILITY && s->pStructureType->id.startsWith("ScavRepair");
 }
 
 void tick(GameWorld &world)
@@ -180,11 +193,16 @@ void tick(GameWorld &world)
 			if (!usesFuel(d)) { continue; }
 			seen[d->id] = true;
 			State &st = s_state[d->id];
+			const bool cargo = modoil::isCargoVehicle(d);
 			// Verbrauch = gefahrener Weg seit dem letzten Schritt
 			if (st.havePos)
 			{
 				const int moved = iHypot(d->pos.x - st.lastX, d->pos.y - st.lastY);
-				if (moved > 0 && moved < 8 * DIST_TILE) { st.fuel = std::max(0, st.fuel - moved); }   // Spruenge (Transport, Ebenenwechsel) zaehlen nicht
+				if (moved > 0 && moved < 8 * DIST_TILE)   // Spruenge (Transport, Ebenenwechsel) zaehlen nicht
+				{
+					const int floorFuel = cargo ? std::min(st.fuel, CARGO_RESERVE) : 0;   // Frachter: nie unter die Reserve
+					st.fuel = std::max(floorFuel, st.fuel - moved);
+				}
 			}
 			st.lastX = d->pos.x; st.lastY = d->pos.y; st.havePos = true;
 
@@ -216,7 +234,7 @@ void tick(GameWorld &world)
 				{
 					st.trip = false;
 					if (taken || timedOut) { st.nextAllowed = gameTime + 30000; }
-					else
+					else if (!cargo)   // Frachter kehren nicht zurueck - ihr Autopilot uebernimmt
 					{
 						const int dx = st.originX - d->pos.x, dy = st.originY - d->pos.y;
 						if (dx * dx + dy * dy > 6 * DIST_TILE * 6 * DIST_TILE)
@@ -226,9 +244,10 @@ void tick(GameWorld &world)
 					}
 				}
 			}
-			else if (st.fuel == 0 && gameTime >= st.nextAllowed && mayAutoTrip(d) && !modcontrol::manual(d))
+			else if ((cargo ? st.fuel <= CARGO_RESERVE : st.fuel == 0) && gameTime >= st.nextAllowed && mayAutoTrip(d) && !modcontrol::manual(d))
 			{
 				const STRUCTURE *src = nearestStation(d, aiFallback);
+				if (cargo && src != nullptr && modoil::stationMilli(src) <= 0) { src = nullptr; }   // Frachter: nur Tankstellen mit Vorrat
 				if (src != nullptr)
 				{
 					const int dx = src->pos.x - d->pos.x, dy = src->pos.y - d->pos.y;

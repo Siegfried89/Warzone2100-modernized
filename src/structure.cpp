@@ -53,6 +53,7 @@
 #include "modlayermap.h"
 #include "modcrates.h"
 #include "modoil.h"
+#include "modfuel.h"
 #include "modconcrete.h"
 #include "modterrain.h"
 #include "modnestcrew.h"
@@ -3265,7 +3266,13 @@ void aiUpdateRepair_handleState(STRUCTURE &station)
 	case RepairState::Repairing:
 	{
 		ASSERT_OR_RETURN(, psDroid != nullptr, "invalid droid pointer");
-		psDroid->body += gameTimeAdjustedAverage(getBuildingRepairPoints(psStructure));
+		// MOD (Wunsch 20.11. 17:46): Tankstellen (Scav-Reparaturzentren) heilen nur bis 50 %, die Reparaturstation bis 100 %
+		const unsigned modCap = modfuel::isHalfRepair(psStructure) ? psDroid->originalBody / 2 : psDroid->originalBody;
+		if (psDroid->body < modCap)
+		{
+			psDroid->body += gameTimeAdjustedAverage(getBuildingRepairPoints(psStructure));
+			psDroid->body = MIN(modCap, psDroid->body);
+		}
 		psDroid->body = MIN(psDroid->originalBody, psDroid->body);
 		actionTargetTurret(psStructure, (BASE_OBJECT*) psDroid, &psStructure->asWeaps[0]);
 		if (psStructure->visibleForLocalDisplay() && psDroid->visibleForLocalDisplay()) // display only - does not impact simulation state
@@ -3313,7 +3320,7 @@ RepairEvents aiUpdateRepair_obtainEvents(const STRUCTURE &station, DROID **psDro
 		{
 			return RepairEvents::UnitMovedAway;
 		}
-		if (psDroid->body >= psDroid->originalBody)
+		if (psDroid->body >= (modfuel::isHalfRepair(psStructure) ? psDroid->originalBody / 2 : psDroid->originalBody))   // MOD (20.11.): Tankstelle bis 50 %
 		{
 			return RepairEvents::UnitReachedMaxHP;
 		}

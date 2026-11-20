@@ -24,6 +24,8 @@ int permille(const DROID *psDroid);
 int speedPercent(const DROID *psDroid);
 /// ist das Bauwerk eine Tankstelle?
 bool isStation(const STRUCTURE *psStructure);
+/// (20.11.) heilt diese Reparatureinrichtung nur bis 50 %? (Scav-Reparaturzentrum = Tankstelle)
+bool isHalfRepair(const STRUCTURE *psStructure);
 /// Verbrauch, Tanken, Selbstversorgung (alle 500 ms)
 void tick(GameWorld &world);
 void reset();

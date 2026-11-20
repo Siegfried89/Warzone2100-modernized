@@ -82,6 +82,7 @@
 #include "modfort.h"
 #include "modbuild.h"
 #include "modpick.h"
+#include "modoilui.h"
 #include "modhelp.h"
 #include "modammo.h"
 #include "modauto.h"
@@ -766,6 +767,7 @@ void interfaceShutDown()
 	modbigmap::shutdown();   // MOD (17.11.): strategische Karte
 	modrosette::shutdown();  // MOD (17.11.)
 	modunitstats::shutdown(); // MOD (17.11. 22:42)
+	modoilui::shutdown();     // MOD (20.11.): Oel-Fenster
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
@@ -1270,6 +1272,7 @@ INT_RETVAL intRunWidgets()
 	modbigmap::tick();     // MOD (17.11.): strategische Karte, Knoepfe an der Minikarte
 	modrosette::tick();    // MOD (17.11.): Mod-Rosette im WZ-Stil
 	modunitstats::tick();  // MOD (17.11. 22:42): Werteleiste der gewaehlten Einheit
+	modoilui::tick();      // MOD (20.11.): Oel-Fenster (Oelkreislauf)
 	moddesigner::tick();   // MOD: Combot-Designer
 	modfleetdesigner::tick();   // MOD (17.11. 21:48): Einheiteneditor aus dem Flotten-Menue
 

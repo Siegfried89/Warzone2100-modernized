@@ -72,6 +72,7 @@
 #include "map.h"
 #include "bucket3d.h"
 
+#include "modgrid.h"
 #include "effects.h"
 
 #include "miscimd.h"
@@ -2391,6 +2392,23 @@ static void effectStructureUpdates()
 					audio_PlayObjStaticTrack(psStructure, ID_SOUND_POWER_HUM);
 					break;
 				}
+			case REF_GENERIC:
+				// MOD (Wunsch 20.11. 17:46 "Umspannwerk ... blaue Blitze ab und zu zischen lassen + Audio"): WZ-Tesla-Blitze (wie am
+				// Kraftwerk) an den Isolatoren des Portals bzw. der Trafos, dazu das Funken-Geraeusch des Kraftwerks. Nur Anzeige.
+				if (modgrid::isSubstation(psStructure->pStructureType) && rand() % 3 == 0)
+				{
+					const int top = std::max(40, pDisplayModel->max.y);
+					static const int spots[6][3] = {{-30, 62, 28}, {0, 62, 28}, {30, 62, 28}, {-30, 57, -5}, {30, 57, -5}, {0, 62, 54}};
+					const int n = 1 + rand() % 2;
+					for (int k = 0; k < n; ++k)
+					{
+						const int *sp = spots[rand() % 6];
+						Vector3i eventPos = psStructure->pos.xzy() + Affine3F().RotY(psStructure->rot.direction) * Vector3i(sp[0], sp[1] * top / 80, -sp[2]);
+						addEffect(&eventPos, EFFECT_EXPLOSION, EXPLOSION_TYPE_TESLA, false, nullptr, 0, graphicsTime + static_cast<UDWORD>(120 * k));
+					}
+					audio_PlayObjStaticTrack(psStructure, ID_SOUND_POWER_SPARK);
+				}
+				break;
 			case REF_RESOURCE_EXTRACTOR:
 				{
 					if (psStructure->pFunctionality &&
