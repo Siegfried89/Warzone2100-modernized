@@ -702,7 +702,7 @@ void drawOverlay(const glm::mat4 &m)
 				const double a = k * 6.283185307 / 32.0;
 				const int wx = static_cast<int>(mk.x + std::cos(a) * SUPPLY_RANGE), wy = static_cast<int>(mk.y + std::sin(a) * SUPPLY_RANGE);
 				Vector2i s(0, 0);
-				const bool ok = project(Vector3i(wx, wy, map_Height(gameWorld.map, wx, wy) + 4), m, s);
+				const bool ok = project(Vector3i(wx, wy, map_Height(gameWorld.map, std::clamp(wx, 0, world_coord(gameWorld.map.width) - 1), std::clamp(wy, 0, world_coord(gameWorld.map.height) - 1)) + 4), m, s);   // (20.11.) Kartenrand
 				if (ok && havePrev) { dst.emplace_back(prev.x, prev.y, s.x, s.y); }
 				prev = s;
 				havePrev = ok;

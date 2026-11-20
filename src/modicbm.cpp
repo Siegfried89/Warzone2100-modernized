@@ -78,7 +78,7 @@ std::vector<Cloud> s_clouds;
 
 iIMDBaseShape *s_missile = nullptr;
 iIMDBaseShape *s_flame = nullptr;
-bool s_modelsTried = false;
+unsigned s_modelsGen = 0;   // MOD (20.11.): Modell-Generation (Neuladen zwischen Spielen)
 
 unsigned flightMs(const Vector3i &a, const Vector3i &b)
 {
@@ -787,9 +787,8 @@ void draw3D(const glm::mat4 &viewMatrix)
 	if (!s_clouds.empty()) { tickClouds(); drawClouds(viewMatrix); }
 	if (!s_launchFx.empty()) { drawLaunchFx(); }
 	if (s_flights.empty()) { return; }
-	if (!s_modelsTried)
+	if (modelCacheStale(s_modelsGen))
 	{
-		s_modelsTried = true;
 		s_missile = modelGet(WzString::fromUtf8("modnukemissile.pie"));
 		s_flame = modelGet(WzString::fromUtf8("fxicbm.pie"));
 	}
@@ -829,6 +828,6 @@ void reset()
 	s_telWeapon = -2;
 	s_missile = nullptr;
 	s_flame = nullptr;
-	s_modelsTried = false;
+	s_modelsGen = 0;   // beim naechsten Zeichnen neu holen
 }
 }

@@ -55,7 +55,7 @@ struct Part
 	bool hasAbility(const char *a) const;
 private:
 	mutable std::vector<const iIMDShape *> m_shapes;
-	mutable bool m_tried = false;
+	mutable unsigned m_gen = 0;   // MOD (20.11., Absturz 21:26): Modell-Generation - nach dem Neuladen der Modelle neu holen
 };
 
 enum Severed { SEV_RARM = 1, SEV_LARM = 2, SEV_LEGS = 4 };
