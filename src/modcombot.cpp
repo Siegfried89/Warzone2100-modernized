@@ -279,6 +279,7 @@ bool loadAll()
 			if (i == 0 || b.parent < 0 || static_cast<size_t>(b.parent) >= i) { b.parent = i == 0 ? -1 : 0; }   // Eltern stehen vor den Kindern
 		}
 		p.ground = d.value("ground", 0.f);
+		p.legWeapon = d.value("legweapon", 0) != 0;
 		s_partIndex[p.id] = s_parts.size();
 		s_parts.push_back(std::move(p));
 	}
@@ -1147,13 +1148,23 @@ bool drawEffectPiece(const iIMDShape *s, const glm::mat4 &m, const glm::mat4 &vi
 
 namespace
 {
+// (20.11.) MF-Beine mit eingebauter Waffe (Laser-, PowerPulse-, DrunkMissile-Beine u. a.) stecken als Waffe im Arm-Platz:
+// sie ersetzen die Beine der Vorlage (sonst hingen zwei Beine an der Schulter)
+const Part *visualLegs(const Loadout &lo)
+{
+	if (lo.armR && lo.armR->legWeapon) { return lo.armR; }
+	if (lo.armL && lo.armL->legWeapon) { return lo.armL; }
+	return lo.legs;
+}
+
 // Zusammenbau in einer Haltung: Beine (Becken = Wurzel), Torso am Beckenhaken, Arme an den Schultern - jedes Einzelteil an seinem
 // MF-Gelenk (parts.json "bones")
 void drawPose(const Loadout &lo, const Pose &P, const glm::mat4 &base, const DrawPiece &emit)
 {
-	const Part *L = lo.legs ? lo.legs : defaultLegs();
+	const Part *VL = visualLegs(lo);
+	const Part *L = VL ? VL : defaultLegs();
 	if (!L || !lo.torso) { return; }
-	const bool noLegs = lo.legs == nullptr || (lo.severed & SEV_LEGS) != 0;
+	const bool noLegs = VL == nullptr || (lo.severed & SEV_LEGS) != 0;
 	XF root;
 	root.p = P.root;
 	root.p.z -= L->ground;
@@ -1182,7 +1193,7 @@ void drawPose(const Loadout &lo, const Pose &P, const glm::mat4 &base, const Dra
 	for (int s = 0; s < 2; ++s)
 	{
 		const Part *A = s == 0 ? lo.armR : lo.armL;
-		if (!A) { continue; }
+		if (!A || A->legWeapon) { continue; }   // Beine mit Waffe: oben als Beine gezeichnet
 		XF ar;
 		ar.R = torsoX[0].R;
 		ar.p = torsoX[0].p + mv(torsoX[0].R, s == 0 ? lo.torso->shR : lo.torso->shL);
@@ -1236,7 +1247,7 @@ void drawLoadout(const Loadout &lo, AnimKind kind, unsigned elapsedMs, int dieVa
 	switch (kind)
 	{
 	case ANIM_WALK:
-		if (const Tiers *ti = tiersOf(lo.legs)) { if (ti->walk[1]) { applyAnim(P, *ti->walk[1], t, true, 1.f); } }
+		if (const Tiers *ti = tiersOf(visualLegs(lo))) { if (ti->walk[1]) { applyAnim(P, *ti->walk[1], t, true, 1.f); } }
 		break;
 	case ANIM_FIRE:
 		if (const auto *v = attacksOf(lo.armR ? lo.armR : lo.armL, lo.armR != nullptr))
@@ -1389,7 +1400,7 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 
 	const float K = s_scale * s_show;                 // Welteinheiten je MF-Einheit
 	const float vmf = da.speed / std::max(0.01f, K);
-	const Tiers *ti = tiersOf(lo.legs);
+	const Tiers *ti = tiersOf(visualLegs(lo));
 	int tier = 3;
 	float tierThr = 22.f;
 	if (ti != nullptr)
@@ -1408,8 +1419,9 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 		const unsigned lf = d->asWeaps[i].lastFired;
 		if (lf != 0 && lf != da.lastFired[i] && lf + 400 >= gameTime)
 		{
-			if (static_cast<int>(i) == lo.slotR) { trigArm = 0; }
-			else if (static_cast<int>(i) == lo.slotL) { trigArm = 1; }
+			da.combatUntil = gameTime + 3000;   // jede Waffe (auch die Beinwaffe ohne Arm): Kampfhaltung
+			const Part *wa = static_cast<int>(i) == lo.slotR ? lo.armR : (static_cast<int>(i) == lo.slotL ? lo.armL : nullptr);
+			if (wa != nullptr && !wa->legWeapon) { trigArm = static_cast<int>(i) == lo.slotR ? 0 : 1; }
 		}
 		da.lastFired[i] = lf;
 	}
@@ -1418,7 +1430,8 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 		// nur echte Duell-Schlaege (modduel); FIRING ohne Duell heisst nur "steht und kaempft" - das ist die Kampfhaltung, kein Schlag
 		da.lastSwing = d->timeAnimationStarted;
 		const int ss = modduel::swingSlot(d);
-		if (ss >= 0)
+		const Part *sa = ss < 0 ? nullptr : (ss == lo.slotL ? lo.armL : lo.armR);
+		if (sa != nullptr && !sa->legWeapon)
 		{
 			trigSwing = true;
 			trigArm = ss == lo.slotL ? 1 : 0;

@@ -63,6 +63,7 @@ struct Part
 	std::string fxModel;
 	std::vector<PieceBone> bones;               // je Einzelteil (pieNames)
 	float ground = 0.f;                         // Beine: Sohlenhoehe in der Ruhehaltung (MF-Einheiten)
+	bool legWeapon = false;                     // (20.11.) MF-Beine mit eingebauter Waffe, als Waffenarm gefuehrt: werden als Beine gezeichnet
 
 	const iIMDShape *shape(size_t i) const;   // laedt das Modell bei Bedarf
 	bool hasAbility(const char *a) const;
