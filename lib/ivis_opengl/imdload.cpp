@@ -1429,6 +1429,7 @@ LoadingTask<> imdLoadLevelTexturesTask(
 
 LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 {
+	gfx_api::modTexLoadStatsReset();   // MOD (20.11.): Ladezeit je Texturart messen (Bericht unten)
 	for (auto& keyvaluepair : models)
 	{
 		iIMDBaseShape& baseModel = *keyvaluepair.second.get();
@@ -1448,6 +1449,26 @@ LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 		}
 
 		co_await controller.yieldFrame();
+	}
+
+	{
+		// MOD (20.11.): Bericht "wo bleibt die Zeit" - je Texturart Anzahl, Megapixel und ms fuer Dekodieren / Vorbereiten / Hochladen /
+		// Mipmaps rechnen / Mipmaps hochladen (nur neu geladene Texturen; schon geladene kosten nichts)
+		static const char *const NAMES[6] = { "Oberflaeche", "Farbe", "Maske", "Normalen", "Glanz", "Hoehe" };
+		std::string rep;
+		uint64_t sum = 0;
+		for (size_t t = 0; t < 6; ++t)
+		{
+			const gfx_api::ModTexLoadStats &st = gfx_api::modTexLoadStats()[t];
+			if (st.count == 0) { continue; }
+			const uint64_t all = st.decodeUs + st.prepUs + st.upload0Us + st.mipResizeUs + st.mipUploadUs;
+			sum += all;
+			rep += astringf(" | %s %u (%.1f MPix): %u ms = PNG %u + Vorb. %u + Hochl. %u + Mip %u + Mip-Hochl. %u", NAMES[t], st.count,
+			                static_cast<double>(st.pixels) / 1e6, static_cast<unsigned>(all / 1000), static_cast<unsigned>(st.decodeUs / 1000),
+			                static_cast<unsigned>(st.prepUs / 1000), static_cast<unsigned>(st.upload0Us / 1000), static_cast<unsigned>(st.mipResizeUs / 1000),
+			                static_cast<unsigned>(st.mipUploadUs / 1000));
+		}
+		debug(LOG_INFO, "MOD-Ladezeit Modell-Texturen: zusammen %u ms%s", static_cast<unsigned>(sum / 1000), rep.c_str());
 	}
 
 	if (modelTextureLoadingFailures > 0)

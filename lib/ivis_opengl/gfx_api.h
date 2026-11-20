@@ -22,6 +22,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -73,6 +74,20 @@ namespace gfx_api
 #endif
 	};
 	//
+}
+
+namespace gfx_api
+{
+	// MOD (20.11., Ladezeit "Modell-Texturen vorladen" 5 s -> 10 s nach den Glanz-/Normalenkarten): Messung je Texturart,
+	// Zeiten in Mikrosekunden fuer PNG-Dekodieren, Vorbereitung (Kanaele), erste Stufe hochladen, Mipmaps rechnen, Mipmaps hochladen
+	struct ModTexLoadStats
+	{
+		uint32_t count = 0;
+		uint64_t pixels = 0;
+		uint64_t decodeUs = 0, prepUs = 0, upload0Us = 0, mipResizeUs = 0, mipUploadUs = 0;
+	};
+	ModTexLoadStats (&modTexLoadStats())[6];
+	void modTexLoadStatsReset();
 }
 
 namespace gfx_api
