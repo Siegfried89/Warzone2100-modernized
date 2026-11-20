@@ -1558,6 +1558,23 @@ INT_RETVAL intRunWidgets()
 				{
 					orderSelectedStatsTwoLocDir(selectedPlayer, DORDER_LINEBUILD, (STRUCTURE_STATS *)psPositionStats, pos.x, pos.y, pos2.x, pos2.y, getBuildingDirection(), ctrlShiftDown());
 				}
+				// MOD (20.11. 19:23): Feldbau - die weiteren Zeilen als Linienauftraege hinten anstellen
+				std::vector<std::pair<Vector2i, Vector2i>> modRows;
+				if (modTakeFieldRows(modRows))
+				{
+					for (const auto &row : modRows)
+					{
+						if (intNumSelectedDroids(DROID_CONSTRUCT) == 0 && intNumSelectedDroids(DROID_CYBORG_CONSTRUCT) == 0
+						    && psSelectedBuilder != nullptr && psSelectedBuilder->isConstructionDroid())
+						{
+							orderDroidStatsTwoLocDir(psSelectedBuilder, DORDER_LINEBUILD, (STRUCTURE_STATS *)psPositionStats, row.first.x, row.first.y, row.second.x, row.second.y, getBuildingDirection(), ModeQueue);
+						}
+						else
+						{
+							orderSelectedStatsTwoLocDir(selectedPlayer, DORDER_LINEBUILD, (STRUCTURE_STATS *)psPositionStats, row.first.x, row.first.y, row.second.x, row.second.y, getBuildingDirection(), true);
+						}
+					}
+				}
 				if (!quickQueueMode)
 				{
 					// Clear the object screen, only if we aren't immediately building something else
