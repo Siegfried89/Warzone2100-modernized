@@ -566,17 +566,26 @@ void	displayConsoleMessages()
 
 	if (!ActiveMessages.empty())
 	{
+		// MOD (Wunsch 20.11. 15:38 "alle diese Nachrichten in blau oben... Viel zu stoerend und sollen weg"): im Spiel erscheinen
+		// System-Meldungen (Speichern, Missionsstand, Debug, Hinweise) nicht mehr oben im blauen Kasten - sie stehen weiter im
+		// Verlauf (Taste links neben der 1). Nur Nachrichten von Spielern (Chat, auch KI-Mitspieler) werden noch eingeblendet.
+		// In der Lobby bleibt alles wie bisher.
+		const bool modInGame = (GetGameMode() == GS_NORMAL);
+		auto modShow = [modInGame](const CONSOLE_MESSAGE &m) { return !modInGame || m.player >= 0; };
+		int modLines = 0;
+		for (const auto &m : ActiveMessages) { if (modShow(m)) { ++modLines; } }
 		int TextYpos = mainConsole.topY;
 		// Draw the blue background for the text (only in game, not lobby)
-		if (bTextBoxActive && GetGameMode() == GS_NORMAL)
+		if (bTextBoxActive && modInGame && modLines > 0)
 		{
 			iV_TransBoxFill(mainConsole.topX - CON_BORDER_WIDTH,
 							mainConsole.topY - mainConsole.textDepth - CON_BORDER_HEIGHT,
 							mainConsole.topX + mainConsole.width,
-							mainConsole.topY + (getNumberConsoleMessages() * linePitch) + CON_BORDER_HEIGHT - linePitch);
+							mainConsole.topY + (modLines * linePitch) + CON_BORDER_HEIGHT - linePitch);
 		}
 		for (auto &ActiveMessage : ActiveMessages)
 		{
+			if (!modShow(ActiveMessage)) { continue; }
 			console_drawtext(ActiveMessage.display, getConsoleTextColor(ActiveMessage.player), mainConsole.topX,
 							 TextYpos, ActiveMessage.JustifyType, mainConsole.width);
 			TextYpos += ActiveMessage.display.lineSize();
