@@ -60,7 +60,7 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_DEFNET, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -76,7 +76,9 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Move", "Move: draw a path - units drive along it", "Move: drag a path (right click cancels)", 60, 220, 90, false },
 	{ "Rally", "Rally point: units gather here before an attack", "Rally: drag around the rally point (right click cancels)", 255, 150, 40, false },
 	{ "Attack", "Attack vector: units advance along it and fight everything on the way", "Attack: drag the attack vector (right click cancels)", 235, 50, 40, false },
-	{ "Defend", "Defensive line: units take up positions on it, builders dig trenches along it", "Defend: drag the defensive line (right click cancels)", 60, 130, 255, false },
+	// MOD (Wunsch 21.11. 00:21): "Die Defensive Line ist weiterhin nur zur Formation fuer Fahrzeuge, um sie an eine Frontlinie zu schicken
+	// wie bisher, ohne Bauwerke" - gebaut wird nur noch ueber den eigenen Knopf "Defence net" (M_DEFNET)
+	{ "Defend", "Defensive line: combat units take up positions on it, facing the enemy side. Nothing is built - use \"Defence net\" for trenches", "Defend: drag the defensive line (right click cancels)", 60, 130, 255, false },
 	{ "Arty base", "Build an artillery base here: sensor tower, artillery emplacements, wall ring, hedgehogs in front. Small circle = 4 emplacements, medium = 8, large = 12", "Artillery base: drag a circle around the place - its size sets the base size (right click cancels)", 170, 120, 60, true },
 	{ "Artillery", "Artillery: bombard this area", "Artillery: drag the target area (right click cancels)", 240, 200, 90, true },
 	{ "Aircraft", "Aircraft: patrol over this area", "Aircraft: drag the patrol area (right click cancels)", 255, 235, 50, true },
@@ -94,6 +96,8 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Clear mines", "Clear mines: drag a circle - mine flails (drum on) and infantry sweep the whole area lane by lane, also where no mines are known. Infantry spots mines within 2.5 tiles, disarms them (3 s each) and does not set off anti-tank mines; flails beat them off ahead", "Clear mines: drag a circle around the area to sweep (right click cancels)", 230, 200, 60, true },
 	// MOD (Wunsch 19.11. 17:34 "Neue kreis ziehen = demolish alles in diesem Gebiet")
 	{ "Demolish", "Demolish: drag a circle - builders tear down all your own structures in it (nearest first, spread over all builders)", "Demolish: drag a circle around what should be torn down (right click cancels)", 200, 90, 60, true },
+	// MOD (Wunsch 21.11. 00:21 "Lieber einen neuen circle machen mit etwas wie baue Verteidigungsnetz"): das Grabennetz hat einen eigenen Befehl
+	{ "Defence net", "Build defence network: drag a line - builders dig a trench network along it (main trench, pits, MG posts, connecting trenches to the rear), front towards the enemy side. Combat units are not moved", "Defence net: drag the line of the trench network (right click cancels)", 120, 190, 230, false },
 };
 
 constexpr int BTN_W = 66;
@@ -101,7 +105,7 @@ constexpr int BTN_H = 20;
 constexpr int GAP = 3;
 constexpr int PAD = 4;
 constexpr int COLS = 2;
-constexpr int ROWS = 8;   // (17.11.) + "Take cover", + Panzersperren / Minenfeld / Offensive, + Minen raeumen
+constexpr int ROWS = 9;   // (17.11.) + "Take cover", + Panzersperren / Minenfeld / Offensive, + Minen raeumen; (21.11.) + Verteidigungsnetz
 constexpr int TOTAL_W = COLS * BTN_W + (COLS - 1) * GAP + 2 * PAD;
 constexpr int TOTAL_H = ROWS * BTN_H + (ROWS - 1) * GAP + 2 * PAD + 12;   // + Titelzeile
 constexpr unsigned SHOW_MS = 25000;   // so lange bleibt eine Zeichnung sichtbar
@@ -378,7 +382,8 @@ bool fits(Mode m, const DROID *d)
 	case M_MOVE: return !isAir(d);
 	case M_RALLY: return isCombat(d) || modcombot::isModular(d);
 	case M_ATTACK: return (isCombat(d) && !isArty(d)) || modcombot::isModular(d);
-	case M_DEFEND: return isCombat(d) || isBuilder(d);
+	case M_DEFEND: return isCombat(d);   // (21.11.) nur Aufstellung - Bauer bauen ueber M_DEFNET
+	case M_DEFNET: return isBuilder(d);
 	case M_ARTYBASE: return isTruck(d) && !isAir(d);
 	case M_ARTY: return isArty(d);
 	case M_AIR: return isAir(d) && hasWeapon(d);
@@ -1175,8 +1180,9 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		break;
 	case M_DEFEND:
 	{
-		std::vector<DROID *> fighters, builders;
-		for (DROID *d : units) { (isBuilder(d) ? builders : fighters).push_back(d); }
+		// (21.11. 00:21) nur Aufstellung: keine Bauwerke, Bauer werden nicht bewegt (Grabennetz = eigener Befehl M_DEFNET)
+		std::vector<DROID *> fighters;
+		for (DROID *d : units) { if (!isBuilder(d) || isCombat(d)) { fighters.push_back(d); } }
 		// Kaempfer verteilen sich gleichmaessig auf der Linie
 		const std::vector<Vector2i> spots = resample(raw, std::max<size_t>(1, fighters.size()));
 		// Blickrichtung am Platz = Richtung der Querstriche (Normale der Linie zur Feindseite, wie tickSegs sie zeichnet)
@@ -1192,6 +1198,14 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 			return static_cast<int>(iAtan2(static_cast<int32_t>(-ty * fside), static_cast<int32_t>(tx * fside)));
 		};
 		for (size_t i = 0; i < fighters.size(); ++i) { send(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), false); rememberPlan(fighters[i], DroidOrder(DORDER_MOVE, spots[i]), spots[i], faceAt(spots[i])); }
+		break;
+	}
+	case M_DEFNET:
+	{
+		// MOD (Wunsch 21.11. 00:21): eigener Befehl fuer das Grabennetz - nur Bauer, die Kampfeinheiten bleiben, wo sie sind
+		std::vector<DROID *> builders;
+		for (DROID *d : units) { if (isBuilder(d)) { builders.push_back(d); } }
+		const int fside = defendSide(raw);
 		// MOD (Wunsch 20.11.): Bauer heben ein Grabennetz aus - Hauptgraben lueckenlos entlang der Linie, Gruben, Verbindungsgraeben nach
 		// hinten; alle Stellungen mit der Front zu den Querstrichen (modbuild::planDefenseNet). Jeder Bauer bekommt einen zusammenhaengenden
 		// Abschnitt (ungefaehr gleich viele Felder), in der Reihenfolge ihrer Lage an der Linie - niemand laeuft hin und her.
@@ -1667,7 +1681,7 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 	const ModeInfo &mi = kModes[mode];
 	const bool closed = mi.area;
 	const bool field = mode == M_TRAPS || mode == M_MINES;
-	const bool lineWithTicks = mode == M_DEFEND || mode == M_OFFENSE;   // Verteidigungs-/Offensivlinie: Linie mit Querstrichen zum Feind
+	const bool lineWithTicks = mode == M_DEFEND || mode == M_OFFENSE || mode == M_DEFNET;   // Verteidigungs-/Offensivlinie, Grabennetz: Linie mit Querstrichen zum Feind
 	const bool arrow = !closed && mode != M_RALLY && !lineWithTicks;    // Rally = Kreis/Spirale
 	std::vector<glm::vec2> p = screenPath(pts, m, closed);
 	if (p.size() < 2 || alpha <= 0) { return; }
@@ -1745,9 +1759,9 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 		s_artyPreview = artyBasePlan(s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos, s_drawing ? artyBaseSize(s_cur) : 1);
 		modbuild::setExternalPreview(&s_artyPreview);
 	}
-	else if (s_mode == M_DEFEND && s_drawing && s_cur.size() >= 2 && selectedPlayer < MAX_PLAYERS)
+	else if (s_mode == M_DEFNET && s_drawing && s_cur.size() >= 2 && selectedPlayer < MAX_PLAYERS)
 	{
-		// MOD (Wunsch 20.11.): beim Ziehen der Verteidigungslinie zeigt die Bauplan-Vorschau das Grabennetz, das die Bauer ausheben werden
+		// MOD (Wunsch 20.11. / 21.11. eigener Befehl): beim Ziehen zeigt die Bauplan-Vorschau das Grabennetz, das die Bauer ausheben werden
 		// (nur wenn Bauer dabei sind; neu gerechnet, wenn die Linie waechst oder hoechstens alle 0,15 s)
 		static std::vector<modbuild::Placement> s_netPreview;
 		static size_t s_netPts = 0;
@@ -1759,7 +1773,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 			s_netPts = pts.size();
 			s_netAt = realTime;
 			bool anyBuilder = false;
-			for (const DROID *d : pickUnits(M_DEFEND, pts)) { if (isBuilder(d)) { anyBuilder = true; break; } }
+			for (const DROID *d : pickUnits(M_DEFNET, pts)) { if (isBuilder(d)) { anyBuilder = true; break; } }
 			s_netPreview = anyBuilder ? modbuild::planDefenseNet(selectedPlayer, pts, defendSide(pts)) : std::vector<modbuild::Placement>();
 		}
 		modbuild::setExternalPreview(&s_netPreview);
@@ -1819,7 +1833,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	st.pts = s_cur;
 	st.born = realTime;
 	if (m == M_TRAPS || m == M_MINES) { st.marks = fieldSpots(s_cur, m == M_MINES); }
-	if (m == M_DEFEND || m == M_OFFENSE) { st.side = defendSide(s_cur); }
+	if (m == M_DEFEND || m == M_OFFENSE || m == M_DEFNET) { st.side = defendSide(s_cur); }
 	// MOD (Wunsch 16.11. 21:25): hoechstens ein Marker je Aktion - eine neue Zeichnung ersetzt die alte derselben Art
 	// (18.11.) mit Shift bleiben die vorigen Marker stehen (die Befehle wurden ja angehaengt)
 	if (!shift) { s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [m](const Stroke &o) { return o.mode == m; }), s_done.end()); }
@@ -1850,7 +1864,7 @@ void drawOverlay(const glm::mat4 &m)
 		// Vorschau: Querstriche / geplante Panzersperren und Minen schon waehrend des Zeichnens
 		std::vector<Vector2i> marks;
 		if ((s_mode == M_TRAPS || s_mode == M_MINES) && s_cur.size() >= 3) { marks = fieldSpots(s_cur, s_mode == M_MINES); }
-		drawStroke(s_cur, s_mode, 255, m, &marks, (s_mode == M_DEFEND || s_mode == M_OFFENSE) ? defendSide(s_cur) : 0);
+		drawStroke(s_cur, s_mode, 255, m, &marks, (s_mode == M_DEFEND || s_mode == M_OFFENSE || s_mode == M_DEFNET) ? defendSide(s_cur) : 0);
 	}
 }
 
