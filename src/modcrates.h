@@ -34,6 +34,8 @@ bool busy(uint32_t droidId);
 bool startOrder(DROID *psDroid, int worldX, int worldY, uint16_t code);
 /// Oberflaeche: Strg + Klick auf ein Bauwerk. true = Befehl an gewaehlte Lkw verschickt
 bool loadOrderSelected(unsigned player, const STRUCTURE *psStructure);
+/// (20.11.) wuerde Strg + Klick auf dieses Gebaeude Kisten laden? (gleiche Bedingung wie loadOrderSelected, ohne Befehl)
+bool wouldLoadSelected(unsigned player, const STRUCTURE *psStructure);
 /// (Wunsch 18.11. 12:43 "Trucks koennen keine Munitionskisten aufnehmen") normaler Klick: ist das ein Bauwerk, an dem dieser Lkw Kisten
 /// laden oder einlagern kann (Fabrik mit Kistenhaufen, Haufen, Depot, Munitionskiste)?
 bool isCrateTarget(const DROID *psDroid, const STRUCTURE *psStructure);

@@ -584,6 +584,16 @@ bool loadOrderSelected(unsigned player, const STRUCTURE *s)
 	return any;
 }
 
+bool wouldLoadSelected(unsigned player, const STRUCTURE *s)
+{
+	if (player >= MAX_PLAYERS || s == nullptr || s->player != player || !alive(s) || !modammo::isSource(s)) { return false; }
+	for (const DROID *d : gameWorld.objects.droids[player])
+	{
+		if (d != nullptr && d->selected && !d->died && capacity(d) > 0) { return true; }
+	}
+	return false;
+}
+
 bool isCrateTarget(const DROID *d, const STRUCTURE *s)
 {
 	if (d == nullptr || s == nullptr || capacity(d) <= 0 || s->player != d->player || !alive(s)) { return false; }

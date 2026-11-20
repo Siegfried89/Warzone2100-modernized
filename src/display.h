@@ -202,6 +202,9 @@ enum MOUSE_TARGET
 	MT_NOTARGET		//leave as last one
 };
 
+/// MOD (Wunsch 20.11. 15:35): Strg (ohne Umschalt) + gewaehltes Baufahrzeug ueber einem eigenen Gebaeude = Abrissbirne, Linksklick reisst ab
+bool modCtrlDemolishHover(const BASE_OBJECT *psObj);
+
 extern bool		gameStats;
 extern bool		godMode;
 extern bool		lockCameraScrollWhileRotating;
