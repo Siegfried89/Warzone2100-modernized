@@ -85,8 +85,9 @@ enum class Role
 
 const char *const *namesOf(Role r, int &count)
 {
-	static const char *const dragon[] = {"A0TankTrapHeavy", "A0TankTrap"};
-	static const char *const hedge[] = {"A0TankTrap", "A0BaBaHedgehog", "A0TankTrapHeavy"};   // MOD 17.11. 15:55: wieder die Original-Sprite-Igel zuerst ("sieht immer noch am besten aus"; die 3D-Igel waren zu fett)
+	static const char *const dragon[] = {"A0TankTrapHeavy", "A0BaBaHedgehog", "A0TankTrap"};
+	// MOD (Wunsch 20.11. 02:13 "Die Sprite-Version der Hedgehogs wieder rausnehmen"): 3D-Igel zuerst, dann Beton-Panzersperren
+	static const char *const hedge[] = {"A0BaBaHedgehog", "A0TankTrapHeavy", "A0TankTrap"};
 	static const char *const bunker[] = {"A0BaBaBunker", "PillBox1", "PillBox4"};
 	static const char *const flame[] = {"A0BaBaFlameTower", "PillBox5", "Emplacement-Rocket06-IDF"};
 	static const char *const wall[] = {"A0BaBaSandbagWall", "A0HardcreteMk1Wall", "A0BaBaHorizontalWall"};
@@ -96,7 +97,7 @@ const char *const *namesOf(Role r, int &count)
 	static const char *const trench[] = {"A0BaBaTrench", "A0BaBaTrenchCover"};
 	switch (r)
 	{
-	case Role::Dragon: count = 2; return dragon;
+	case Role::Dragon: count = 3; return dragon;
 	case Role::Hedgehog: count = 3; return hedge;
 	case Role::Bunker: count = 3; return bunker;
 	case Role::Flame: count = 3; return flame;
