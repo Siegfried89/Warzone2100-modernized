@@ -622,7 +622,8 @@ static void CheckFinishedDrag(SELECTION_TYPE selection)
 			dragBox3D.y2 = mouseY();
 			// MOD (Wunsch 19.11. 17:45 "Demolish soll auch per shift + drag funktionieren"): im Abriss-Modus genuegt Umschalt/Strg + Ziehen,
 			// auch wenn ausser den Bauern noch andere Einheiten gewaehlt sind (die Auswahl-Klasse ist dann nicht SC_DROID_DEMOLISH)
-			if ((selection == SC_DROID_DEMOLISH || intDemolishSelectMode()) && ctrlShiftDown())
+			// (20.11.) nur im Abriss-Modus - Strg ueber einem Gebaeude (Abrissbirne fuer einen Klick) darf beim Ziehen nichts abreissen
+			if (intDemolishSelectMode() && ctrlShiftDown())
 			{
 				handleAreaDemolition();
 			}
@@ -2382,6 +2383,13 @@ static void dealWithLMBStructure(STRUCTURE *psStructure, SELECTION_TYPE selectio
 		printStructureInfo(psStructure);
 		return;
 	}
+	// MOD (Wunsch 20.11. 15:35): Strg + Baufahrzeug + Linksklick auf ein eigenes Gebaeude = sofort abreissen (nicht hinten anhaengen)
+	if (!bEffectiveRightClickOrders && selection == SC_DROID_DEMOLISH && !intDemolishSelectMode() && modCtrlDemolishHover(psStructure))
+	{
+		orderSelectedObjAdd(selectedPlayer, (BASE_OBJECT *)psStructure, false);
+		FeedbackOrderGiven();
+		return;
+	}
 
 	if (selectedPlayer < MAX_PLAYERS && !aiCheckAlliances(psStructure->player, selectedPlayer))
 	{
@@ -2904,7 +2912,13 @@ static void dealWithRMB()
 			if (psStructure->player == selectedPlayer)
 			{
 				/* We've clicked on our own building */
-				if (bEffectiveRightClickOrders && intDemolishSelectMode())
+				if (bEffectiveRightClickOrders && establishSelection(selectedPlayer) == SC_DROID_DEMOLISH && !intDemolishSelectMode() && modCtrlDemolishHover(psStructure))
+				{
+					// MOD (Wunsch 20.11. 15:35): Strg + Baufahrzeug + Befehlsklick (Rechtsklick-Befehle) = sofort abreissen
+					orderSelectedObjAdd(selectedPlayer, psClickedOn, false);
+					FeedbackOrderGiven();
+				}
+				else if (bEffectiveRightClickOrders && intDemolishSelectMode())
 				{
 					orderSelectedObjAdd(selectedPlayer, psClickedOn, ctrlShiftDown());
 					FeedbackOrderGiven();
@@ -3306,7 +3320,7 @@ static SELECTION_TYPE	establishSelection(UDWORD _selectedPlayer)
 
 		case DROID_CONSTRUCT:
 		case DROID_CYBORG_CONSTRUCT:
-			if (intDemolishSelectMode())
+			if (intDemolishSelectMode() || (modbuild::keysForFortify() && modCtrlDemolishHover(mouseTarget())))   // MOD (20.11.): Strg ueber eigenem Gebaeude = Abrissbirne
 			{
 				return SC_DROID_DEMOLISH;
 			}
@@ -3329,6 +3343,28 @@ static SELECTION_TYPE	establishSelection(UDWORD _selectedPlayer)
 		}
 	}
 	return (selectionClass);
+}
+
+// MOD (Wunsch 20.11. 15:35 "Bagger ausgewaehlt und mit Strg gedrueckt ueber Gebaeude hovern laesst automatisch die Abrissbirne, sodass man
+// nur noch linksklicken muesste zum Abreissen"): gilt fuer eigene, wenigstens begonnene Gebaeude, wenn ein Baufahrzeug gewaehlt ist und
+// nicht gerade ein Bauplatz gesetzt wird. Ausnahme: Strg + Klick auf ein Munitionsdepot laedt Kisten (modcrates) - dort keine Abrissbirne.
+// Strg ueber freiem Boden bleibt der Befestigungsplan (modbuild), Strg + Ziehen bleibt die Auswahl (Flaechenabriss nur im Abriss-Modus).
+bool modCtrlDemolishHover(const BASE_OBJECT *psObj)
+{
+	if (selectedPlayer >= MAX_PLAYERS || psObj == nullptr || psObj->type != OBJ_STRUCTURE || psObj->player != selectedPlayer) { return false; }
+	if (!modbuild::keysForFortify() || buildState != BUILD3D_NONE || intBuildSelectMode()) { return false; }
+	const STRUCTURE *psStruct = static_cast<const STRUCTURE *>(psObj);
+	if (psStruct->died || psStruct->status == SS_BLUEPRINT_PLANNED || psStruct->isBlueprint()) { return false; }
+	if (psObj != mouseTarget()) { return false; }
+	if (modcrates::wouldLoadSelected(selectedPlayer, psStruct)) { return false; }
+	for (const DROID *psDroid : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (psDroid->selected && !psDroid->died && (psDroid->droidType == DROID_CONSTRUCT || psDroid->droidType == DROID_CYBORG_CONSTRUCT))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 /* Just returns true if the building's present body points aren't 100 percent */
