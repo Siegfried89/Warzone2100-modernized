@@ -174,7 +174,7 @@ float pie_getPerspectiveZClose()
 
 void pie_setPerspectiveZClose(float zNear)
 {
-	perspectiveZClose = std::max(8.f, std::min(330.f, zNear));
+	perspectiveZClose = std::max(3.f, std::min(330.f, zNear));
 }
 
 void pie_Begin3DScene()

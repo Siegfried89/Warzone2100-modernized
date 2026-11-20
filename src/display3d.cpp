@@ -5010,7 +5010,13 @@ static float calculateCameraHeight(float averageTerrainHeight)
 	// nahe am Boden, ohne dass die Kamera ins Gelaende rutscht. Ab ~2000 Distanz ist alles wie im Original.
 	float k = std::min(1.0f, std::max(0.0f, distance / 2000.0f));
 	k = k * k * (3.0f - 2.0f * k);   // glatte Kurve
-	return averageTerrainHeight + static_cast<float>(HEIGHT_TRACK_INCREMENTS / 2) + static_cast<float>(CAMERA_PIVOT_HEIGHT) * (0.04f + 0.96f * k);
+	float lift = static_cast<float>(HEIGHT_TRACK_INCREMENTS / 2) + static_cast<float>(CAMERA_PIVOT_HEIGHT) * (0.04f + 0.96f * k);
+	// MOD (Wunsch 20.11. 02:13 "die Kamera soll wirklich bis an den Boden sinken duerfen"): ganz hineingezoomt sinkt auch der Drehpunkt
+	// (vorher blieb er ~45 Einheiten ueber dem Boden) - unter 600 Distanz gleitet er weich bis 3 Einheiten ueber den Boden
+	float n = std::min(1.0f, std::max(0.0f, distance / 600.0f));
+	n = n * n * (3.0f - 2.0f * n);
+	lift = 3.0f + (lift - 3.0f) * n;
+	return averageTerrainHeight + lift;
 }
 
 int calculateCameraHeightAt(WorldMapState& mapState, int worldX, int worldZ)
@@ -5034,9 +5040,11 @@ static glm::vec3 modCameraEye(float pivotY)
 }
 
 /// MOD (Wunsch 20.11. 01:46 "es ist immer noch moeglich durch den Boden zu sinken"): hoechster Gelaendepunkt unter dem Kamera-Auge und
-/// rundherum (Radius ~1 Kachel) - der Drehpunkt folgte nur dem Boden UNTER DEM BILDMITTELPUNKT; stand das Auge ueber einem Hang/Huegel
+/// rundherum (Radius radius) - der Drehpunkt folgte nur dem Boden UNTER DEM BILDMITTELPUNKT; stand das Auge ueber einem Hang/Huegel
 /// hinter dem Drehpunkt, lag es im Gelaende
-static float modTerrainUnderEye(const glm::vec3 &eye)
+static constexpr float MOD_EYE_GROUND_CLEAR = 4.f;   // MOD (20.11.): kleinster Abstand Kamera-Auge - Gelaende
+
+static float modTerrainUnderEye(const glm::vec3 &eye, int radius = 24)
 {
 	float top = -1e9f;
 	const int ex = static_cast<int>(eye.x), ey = static_cast<int>(-eye.z);
@@ -5044,7 +5052,7 @@ static float modTerrainUnderEye(const glm::vec3 &eye)
 	{
 		for (int dx = -1; dx <= 1; ++dx)
 		{
-			const int x = ex + dx * (TILE_UNITS * 3 / 4), y = ey + dy * (TILE_UNITS * 3 / 4);
+			const int x = ex + dx * radius, y = ey + dy * radius;
 			if (!worldOnMap(gameWorld.map, x, y)) { continue; }
 			top = std::max(top, static_cast<float>(map_Height(gameWorld.map, x, y)));
 		}
@@ -5059,9 +5067,10 @@ static float modCameraClearance(float pivotY)
 	if (!worldOnMap(gameWorld.map, ex, ey)) { return 0.f; }
 	constexpr float MARGIN = 40.f;
 	float need = 0.f;
-	// (20.11.) Gelaende unter dem Auge: mindestens 70 Einheiten Abstand (die Nahebene folgt in modUpdateNearPlane mit)
+	// (20.11. 02:13 "mit Kollision mit der Bodenoberflaeche auf 0") Gelaende unter dem Auge: das Auge bleibt knapp darueber (die
+	// Nahebene folgt mit, siehe updateCameraForFrame)
 	const float ground = modTerrainUnderEye(eye);
-	if (ground > -1e8f) { need = std::max(need, ground + 70.f - eye.y); }
+	if (ground > -1e8f) { need = std::max(need, ground + MOD_EYE_GROUND_CLEAR - eye.y); }
 	for (BASE_OBJECT *o : gridStartIterate(ex, ey, DIST_TILE * 4))
 	{
 		const iIMDShape *imd = nullptr;
@@ -5114,16 +5123,23 @@ static void updateCameraForFrame()
 	else
 	{
 		processWarCam();
+		// MOD (20.11.): auch die Verfolgerkamera taucht nicht ins Gelaende (sie kommt jetzt nah hinter das Fahrzeug)
+		const glm::vec3 eye = modCameraEye(static_cast<float>(playerPos.p.y));
+		const float ground = modTerrainUnderEye(eye);
+		if (ground > -1e8f && eye.y < ground + MOD_EYE_GROUND_CLEAR)
+		{
+			playerPos.p.y += static_cast<int>(std::ceil(ground + MOD_EYE_GROUND_CLEAR - eye.y));
+		}
 	}
 	// MOD (Wunsch 20.11. 01:46 "der untere schwarze Rand ... der Boden soll nicht mehr wegclippen"): die Nahebene lag fest bei 330
 	// Einheiten - bei tiefer, flacher Kamera lag der Boden vor den Fuessen naeher und wurde abgeschnitten (schwarzer Streifen unten).
-	// Jetzt: etwa halb so weit wie das Auge ueber dem Gelaende steht (8..330, Bildwinkel bleibt gleich, siehe piematrix)
+	// Jetzt: etwa halb so weit wie das Auge ueber dem Gelaende steht (3..330, Bildwinkel bleibt gleich, siehe piematrix)
 	{
 		const glm::vec3 eye = modCameraEye(static_cast<float>(playerPos.p.y));
-		const float ground = modTerrainUnderEye(eye);
-		const float above = ground > -1e8f ? eye.y - ground : 1000.f;
+		const float ground = modTerrainUnderEye(eye, TILE_UNITS * 3 / 4);   // Umgebung: auch ein Hang direkt vor dem Auge zaehlt
+		const float above = ground > -1e8f ? std::max(0.f, eye.y - ground) : 1000.f;
 		const float s = pie_GetResScalingFactor() / 100.f;
-		pie_setPerspectiveZClose(std::max(8.f, std::min(330.f, above * 0.5f * s)));
+		pie_setPerspectiveZClose(std::max(3.f, std::min(330.f, above * 0.5f * s)));
 	}
 }
 
