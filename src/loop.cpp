@@ -718,6 +718,7 @@ static void gameStateUpdate()
 			});
 		});
 	}
+	modfort::afterDroidUpdates();   // MOD (20.11. 15:57): an einer Sandsackwand festgehaltene Infanterie sucht sofort einen neuen Weg
 
 	missionTimerUpdate();
 	missionReinforcementUpdate();

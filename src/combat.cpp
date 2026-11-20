@@ -120,6 +120,11 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	{
 		return false;
 	}
+	// MOD (Wunsch 20.11. 15:52): leer ist leer - ohne Munition kein Schuss (bis Nachschub kommt)
+	if (psAttacker->type == OBJ_DROID && modammo::outOfAmmo(static_cast<const DROID *>(psAttacker)))
+	{
+		return false;
+	}
 
 	unsigned fireTime = gameTime - deltaGameTime + 1;  // Can fire earliest at the start of the tick.
 
@@ -146,10 +151,6 @@ bool combFire(WEAPON *psWeap, BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, in
 	/* See when the weapon last fired to control it's rate of fire */
 	firePause = weaponFirePause(*psStats, psAttacker->player);
 	firePause = std::max(firePause, 1u);  // Don't shoot infinitely many shots at once.
-	if (psAttacker->type == OBJ_DROID)
-	{
-		firePause *= modammo::firePauseFactor(static_cast<const DROID *>(psAttacker));   // MOD: ohne Munition 10-mal so langsam
-	}
 	if (!bMultiPlayer && getCamTweakOption_heavilyDamagedPenalty() && objectBelowHealthLevel(psAttacker, HEAVY_DAMAGE_LEVEL))
 	{
 		firePause += firePause;

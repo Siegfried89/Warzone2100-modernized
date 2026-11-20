@@ -14,6 +14,7 @@
 #include "effects.h"
 #include "game_world.h"
 #include "modlayer.h"
+#include "modammo.h"
 #include "modcrew.h"
 #include "projectile.h"
 #include "random.h"
@@ -125,6 +126,7 @@ void tick()
 		for (DROID *d : gameWorld.objects.droids[p])
 		{
 			if (!isTank(d)) { continue; }
+			if (modammo::outOfAmmo(d)) { continue; }   // (20.11.) leerer Panzer: auch das Rumpf-MG schweigt
 			Gun &g = s_guns[d->id];
 			if (gameTime < g.next) { continue; }
 			const int range = proj_GetLongRange(ms, static_cast<int>(p));

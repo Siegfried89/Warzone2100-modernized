@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD: Munition fuer Einheiten (Spieler). Jede Einheit mit Feuerwaffe hat einen Vorrat (in Schuessen, je Waffenart); der Vorrat wird in
-// 5 Abschnitten angezeigt (zweiter, gelber Balken). Ohne Munition feuert die Waffe nur noch 10-mal so langsam. Nachschub bekommen
+// 5 Abschnitten angezeigt (zweiter, gelber Balken). Ohne Munition feuert die Waffe nicht mehr (20.11.; bisher 10-mal so langsam). Nachschub bekommen
 // Einheiten in der Naehe eigener Fabriken, des Hauptquartiers, Reparaturanlagen, Aussenposten, Munitionskisten und Munitionsdepots
 // (Bauwerke mit "Outpost", "AmmoBox" oder "AmmoDepot" im Namen); Kisten fuellen schneller, das Depot (Radius 6 Felder) am schnellsten.
 // Leere Einheiten fahren von selbst zur naechsten Quelle (Depots/Kisten bevorzugt) und danach zu der Stelle zurueck, wo ihnen die
@@ -19,8 +19,8 @@ namespace modammo
 bool usesAmmo(const DROID *psDroid);
 /// angezeigte Abschnitte 0..10; -1, wenn die Einheit keine Munition braucht
 int segments(const DROID *psDroid);
-/// 1 normal, 10 wenn leer: Faktor auf die Feuerpause
-unsigned firePauseFactor(const DROID *psDroid);
+/// (20.11.) leer? Dann feuert die Einheit nicht mehr (bis Nachschub kommt)
+bool outOfAmmo(const DROID *psDroid);
 /// ein Schuss wurde abgegeben
 void onShot(const DROID *psDroid);
 /// ist das Bauwerk eine Munitionsquelle (Depot, Kiste, Kistenhaufen, Fabrik, HQ, Werkstatt, Aussenposten)?
