@@ -24,6 +24,7 @@ Alex McLean, Pumpkin Studios, EIDOS Interactive, 1997
 */
 
 #include "lib/framework/frame.h"
+#include <string>
 #include "lib/framework/math_ext.h"
 #include "lib/framework/input.h"
 #include "map.h"
@@ -120,6 +121,14 @@ void init3DBuilding(BASE_STATS *psStats, BUILDCALLBACK CallBack, void *UserData)
 		sBuildDetails.width = ((STRUCTURE_STATS *)psStats)->baseWidth;
 		sBuildDetails.height = ((STRUCTURE_STATS *)psStats)->baseBreadth;
 		sBuildDetails.psStats = psStats;
+		// MOD (Wunsch 20.11. 02:36 "Die Scavenger-Moersergruben und Scav-Raketenstellungen immer standardmaessig nach unten zeigen
+		// lassen beim Platzieren"): die zuletzt gezogene Richtung (directionShift blieb von frueheren Bauten stehen) gilt fuer diese
+		// Stellungen nicht - sie zeigen beim Platzieren zum unteren Bildrand (wie nach unten gezogen); Ziehen dreht sie weiterhin
+		const std::string id = psStats->id.toUtf8();
+		if (id.rfind("A0BaBaMortarPit", 0) == 0 || id.rfind("A0BaBaRocketPit", 0) == 0)
+		{
+			sBuildDetails.directionShift = 0;
+		}
 	}
 	else if (psStats->hasType(STAT_FEATURE))
 	{
