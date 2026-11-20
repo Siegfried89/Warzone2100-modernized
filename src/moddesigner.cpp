@@ -436,7 +436,7 @@ void defaultsToTarget()
 	assign(modcombot::SLOT_TORSO, pick("Basic_T0", modcombot::KIND_TORSO, 0));
 	assign(modcombot::SLOT_LEGS, pick("Basic_L0", modcombot::KIND_LEG, 0));
 	assign(modcombot::SLOT_RARM, pick("Basic_A0", modcombot::KIND_ARM, 1));
-	assign(modcombot::SLOT_LARM, pick("Basic_A1", modcombot::KIND_ARM, -1));
+	assign(modcombot::SLOT_LARM, pick("Basic_A3", modcombot::KIND_ARM, -1));   // (20.11. 23:03) Rimtech links (A1 ist der rechte Arm von Mil-Agro)
 	if (s_target[modcombot::SLOT_RARM] && s_target[modcombot::SLOT_RARM]->side <= 0) { assign(modcombot::SLOT_RARM, firstOf(modcombot::KIND_ARM, 1)); }
 	if (s_target[modcombot::SLOT_LARM] && s_target[modcombot::SLOT_LARM]->side >= 0) { assign(modcombot::SLOT_LARM, firstOf(modcombot::KIND_ARM, -1)); }
 }
@@ -549,6 +549,14 @@ bool makeTemplate(DROID_TEMPLATE &tpl, std::string &err)
 		const COMPONENT_STATS *w = getCompStatsFromName(WzString::fromUtf8("MFA_" + a->id));
 		if (w == nullptr) { err = "Arm " + a->name + " is not available in this game."; return false; }
 		tpl.asWeaps[tpl.numWeaps++] = static_cast<uint32_t>(w->index);
+	}
+	// MOD (20.11. 23:03, wie MF): Torso bzw. Beine mit eingebauter Waffe (Haubitze, Flak, Leuchtspur, Laser-Beine ...) - sie feuert als
+	// weitere Waffe mit (Stat "MFB_<Teil>" aus mfparts.py). Platz ist fuer hoechstens drei Waffen: Torso-Waffe vor Bein-Waffe.
+	for (const Part *bp : { t, g })
+	{
+		if (tpl.numWeaps >= MAX_WEAPONS || static_cast<unsigned>(tpl.numWeaps) >= tpl.getBodyStats()->weaponSlots) { break; }
+		const COMPONENT_STATS *w = getCompStatsFromName(WzString::fromUtf8("MFB_" + bp->id));
+		if (w != nullptr && w->compType == COMP_WEAPON) { tpl.asWeaps[tpl.numWeaps++] = static_cast<uint32_t>(w->index); }
 	}
 	std::string name = "Combot " + t->file;
 	const std::string a0 = shortArm(arms[0]), a1 = shortArm(arms[1]);

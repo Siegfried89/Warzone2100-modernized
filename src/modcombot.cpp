@@ -31,6 +31,7 @@
 #include "modlayermap.h"
 #include "modlayer.h"
 #include "modduel.h"
+#include "modcrew.h"
 #include "random.h"
 #include "stats.h"
 
@@ -279,6 +280,7 @@ bool loadAll()
 			if (i == 0 || b.parent < 0 || static_cast<size_t>(b.parent) >= i) { b.parent = i == 0 ? -1 : 0; }   // Eltern stehen vor den Kindern
 		}
 		p.ground = d.value("ground", 0.f);
+		p.sole = d.value("sole", -2.8f);
 		p.legWeapon = d.value("legweapon", 0) != 0;
 		s_partIndex[p.id] = s_parts.size();
 		s_parts.push_back(std::move(p));
@@ -751,6 +753,16 @@ namespace
 {
 struct Air { float cur = 0.f; unsigned last = 0; unsigned nextPuff = 0; bool want = false; unsigned since = 0; unsigned nextSnd = 0; };   // since: Beginn von Abheben/Landen
 std::unordered_map<uint32_t, Air> s_air;
+const JetSet &jetSetOf(const DROID *d);
+
+// fliegt, hebt ab oder landet gerade (die Lande-Animation laeuft nach dem Aufsetzen noch am Boden zu Ende)
+bool airActive(const DROID *d, const Air &a)
+{
+	if (a.cur > 0.f || a.want) { return true; }
+	if (a.since == 0 || graphicsTime < a.since) { return false; }
+	const Anim *land = jetSetOf(d).land;
+	return land != nullptr && static_cast<float>(graphicsTime - a.since) < land->T * 1000.f;
+}
 constexpr float FLY_HEIGHT = 170.f;      // Flughoehe ueber dem Boden
 
 bool overVoid(const DROID *d)
@@ -793,6 +805,50 @@ bool obstacleAhead(const DROID *d)
 	return false;
 }
 
+// (20.11. 23:03) Die MF-Fluganimationen enthalten das Ducken vor dem Absprung und das Abfedern nach dem Aufsetzen als tiefe
+// Becken-Lage (bis 31 Einheiten unter dem Stand) - MF hebt dazu die Einheit selbst an. Hier: die Fuesse werden beim Zeichnen nie unter
+// den Boden gelassen (drawPose), und die Flughoehe ist beim Landen genau dann 0, wenn die Fuesse der Lande-Animation am tiefsten sind
+// (Aufsetzen); der Rest der Animation (Abfedern, Aufrichten) spielt am Boden.
+float lowestSole(const Part *L, const Anim &an, float t)
+{
+	Pose P;
+	applyAnim(P, an, t, false, 1.f);
+	XF root;
+	root.p = P.root;
+	root.p.z -= L->ground;
+	std::vector<XF> X;
+	partTransforms(L, root, P, 0, X);
+	float lowest = 1e9f;
+	for (size_t i = 0; i < X.size() && i < L->bones.size(); ++i)
+	{
+		if (L->bones[i].slot == 3 || L->bones[i].slot == 8) { lowest = std::min(lowest, X[i].p.z + L->sole); }
+	}
+	return lowest;
+}
+
+float landTouchSeconds(const Anim *land)
+{
+	static std::unordered_map<const Anim *, float> cache;
+	if (land == nullptr) { return 1.5f; }
+	const auto it = cache.find(land);
+	if (it != cache.end()) { return it->second; }
+	float best = land->T;
+	const Part *L = defaultLegs();
+	if (L != nullptr)
+	{
+		float lowest = 1e9f;
+		for (int i = 0; i <= 60; ++i)
+		{
+			const float t = land->T * static_cast<float>(i) / 60.f;
+			const float z = lowestSole(L, *land, t);
+			if (z < lowest - 0.05f) { lowest = z; best = t; }
+		}
+	}
+	best = std::clamp(best, 0.4f, land->T);
+	cache[land] = best;
+	return best;
+}
+
 const JetSet &jetSetOf(const DROID *d)
 {
 	const Part *t = partOfBody(d->getBodyStats());
@@ -833,13 +889,15 @@ float flightOffset(const DROID *d)
 	}
 	Air &a = s_air[d->id];
 	const unsigned now = graphicsTime;
+	// einmal abgehoben bleibt er mindestens bis zum Ende des Abhebens + kurz in der Luft (kein Zappeln an Hinderniskanten)
+	if (!want && a.want && a.since != 0 && now >= a.since && now - a.since < 2800u) { want = true; }
 	if (want != a.want) { a.want = want; a.since = now; }
 	const float dt = a.last == 0 || now < a.last ? 0.f : static_cast<float>(std::min(now - a.last, 200u));
 	a.last = now;
 	// MF: Abheben/Landen dauern so lange wie die MF-Animationen (TakeOff 2,0 s, Land 2,3 s)
 	const JetSet &js = jetSetOf(d);
 	const float riseMs = js.takeoff != nullptr ? js.takeoff->T * 1000.f : 1500.f;
-	const float landMs = js.land != nullptr ? js.land->T * 1000.f : 1500.f;
+	const float landMs = landTouchSeconds(js.land) * 1000.f;   // am Boden, wenn die Lande-Animation aufsetzt
 	a.cur = want ? std::min(1.f, a.cur + dt / riseMs) : std::max(0.f, a.cur - dt / landMs);
 	if (a.cur > 0.05f && now >= a.nextPuff)
 	{
@@ -1159,7 +1217,7 @@ const Part *visualLegs(const Loadout &lo)
 
 // Zusammenbau in einer Haltung: Beine (Becken = Wurzel), Torso am Beckenhaken, Arme an den Schultern - jedes Einzelteil an seinem
 // MF-Gelenk (parts.json "bones")
-void drawPose(const Loadout &lo, const Pose &P, const glm::mat4 &base, const DrawPiece &emit)
+void drawPose(const Loadout &lo, const Pose &P, const glm::mat4 &base, const DrawPiece &emit, bool clampFeet = false, float floorZ = 0.f)
 {
 	const Part *VL = visualLegs(lo);
 	const Part *L = VL ? VL : defaultLegs();
@@ -1172,6 +1230,20 @@ void drawPose(const Loadout &lo, const Pose &P, const glm::mat4 &base, const Dra
 	std::vector<XF> legsX;
 	partTransforms(L, root, P, 0, legsX);
 	if (legsX.empty()) { return; }
+	if (clampFeet && !noLegs)
+	{
+		// Flug (Abheben/Landen): der Boden liegt floorZ (MF-Einheiten) unter dem Ursprung - die Fuesse bleiben darueber
+		float lowest = 1e9f;
+		for (size_t i = 0; i < legsX.size() && i < L->bones.size(); ++i)
+		{
+			if (L->bones[i].slot == 3 || L->bones[i].slot == 8) { lowest = std::min(lowest, legsX[i].p.z + L->sole); }
+		}
+		if (lowest < 1e8f && lowest < floorZ)
+		{
+			root.p.z += floorZ - lowest;
+			partTransforms(L, root, P, 0, legsX);
+		}
+	}
 	const DrawPiece em = [&](const iIMDShape *s, const glm::mat4 &m, const Part *p) { emit(s, m, p); };
 	if (!noLegs) { emitPart(L, legsX, base, em); }
 	XF tr;
@@ -1414,6 +1486,7 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 	// Angriffs-Ausloeser: neuer Schuss einer Waffe, oder neuer Schlag im Duell (modduel setzt FIRING mit neuer Startzeit)
 	int trigArm = -1;   // 0 rechts, 1 links
 	bool trigSwing = false;   // Duell-Schlag (Treffer-Moment abstimmen) statt Schuss
+	const Part *builtinPart = nullptr;   // Schuss der eingebauten Waffe: dieses Teil (Torso oder Beine)
 	for (unsigned i = 0; i < d->numWeaps && i < MAX_WEAPONS; ++i)
 	{
 		const unsigned lf = d->asWeaps[i].lastFired;
@@ -1422,6 +1495,17 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 			da.combatUntil = gameTime + 3000;   // jede Waffe (auch die Beinwaffe ohne Arm): Kampfhaltung
 			const Part *wa = static_cast<int>(i) == lo.slotR ? lo.armR : (static_cast<int>(i) == lo.slotL ? lo.armL : nullptr);
 			if (wa != nullptr && !wa->legWeapon) { trigArm = static_cast<int>(i) == lo.slotR ? 0 : 1; }
+			else if (wa == nullptr)
+			{
+				// eingebaute Waffe von Torso oder Beinen (Stat "MFB_<Teil>"): welches Teil schiesst?
+				const std::string wid = d->getWeaponStats(static_cast<int>(i))->id.toUtf8();
+				if (wid.rfind("MFB_", 0) == 0)
+				{
+					const std::string pid = wid.substr(4);
+					const Part *vl = visualLegs(lo);
+					builtinPart = (lo.torso != nullptr && lo.torso->id == pid) ? lo.torso : ((vl != nullptr && vl->id == pid) ? vl : nullptr);
+				}
+			}
 		}
 		da.lastFired[i] = lf;
 	}
@@ -1440,7 +1524,7 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 	const Air *air = nullptr;
 	{
 		const auto it = s_air.find(d->id);
-		if (it != s_air.end() && (it->second.cur > 0.f || it->second.want)) { air = &it->second; }
+		if (it != s_air.end() && airActive(d, it->second)) { air = &it->second; }
 	}
 
 	// ---- Grund-Schicht waehlen
@@ -1455,6 +1539,11 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 		else if (!air->want && js.land) { setBase(da, js.land, false); da.cur.t = std::min(since, js.land->T); baseClock = false; }
 		else if (moving && js.fly) { setBase(da, js.fly, true); }
 		else if (js.idle) { setBase(da, js.idle, true); }
+	}
+	else if (s_standCrewless != nullptr && modcrew::crewless(d))
+	{
+		// MF "standcrewless": ohne Besatzung sackt der Combot zusammen und bleibt so stehen (einmal abgespielt, letzte Haltung bleibt)
+		setBase(da, s_standCrewless, false);
 	}
 	else if (moving && ti != nullptr && ti->walk[tier] != nullptr)
 	{
@@ -1507,6 +1596,27 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 				da.overArm = arm;
 				++da.shots;
 			}
+		}
+	}
+
+	// ---- eingebaute Waffe (MF: Flak-Torso, Laser-Beine, DrunkMissile ...): ihre eigene Schuss-Animation, wenn gerade kein Arm zuschlaegt
+	if (builtinPart != nullptr && trigArm < 0 && da.over.an == nullptr)
+	{
+		const Anim *an = nullptr;
+		const auto it = s_armAnims.find(builtinPart->animFile);
+		if (it != s_armAnims.end())
+		{
+			for (const auto *v : { &it->second.X, &it->second.L, &it->second.R })
+			{
+				for (const Anim *c : *v) { if (an == nullptr && c->tFire >= 0.f) { an = c; } }
+			}
+		}
+		if (an != nullptr)
+		{
+			da.combatUntil = gameTime + 3000;
+			const float in = std::min(an->blendIn, 0.3f);   // z. B. Haubitze: Rohr senkt sich zuegig, dann der Schuss-Moment
+			da.over.an = an; da.over.t = std::max(0.f, an->tFire - in); da.over.loop = false;
+			da.overFade = 0.f; da.overIn = in; da.overStarted = false; da.overArm = nullptr;
 		}
 	}
 
@@ -1588,10 +1698,23 @@ bool draw(DROID *d, bool bButton, const glm::mat4 &model, const glm::mat4 &view,
 	}
 	s_emitGlow = !bButton && !(pieFlag & pie_TRANSLUCENT);
 	const glm::mat4 shown = (bButton || s_show == 1.f) ? model : model * glm::scale(glm::mat4(1.f), glm::vec3(s_show));   // (23:00) im Spiel groesser
+	// Flug: der Combot ist um die Flughoehe angehoben gezeichnet (component.cpp, flightOffset) - der Boden liegt so weit unter ihm
+	bool clampFeet = false;
+	float floorZ = 0.f;
+	if (!bButton)
+	{
+		const auto ait = s_air.find(d->id);
+		if (ait != s_air.end() && airActive(d, ait->second))
+		{
+			const float c = ait->second.cur;
+			clampFeet = true;
+			floorZ = -(c * c * (3.f - 2.f * c) * FLY_HEIGHT) / std::max(0.01f, s_scale * s_show);
+		}
+	}
 	drawPose(lo, P, shown, [&](const iIMDShape *s, const glm::mat4 &m, const Part *p) {
 		if (drawEffectPiece(s, m, view, p, d->id)) { return; }
 		if (pie_Draw3DShape(s, 0, colour, brightness, pieFlag, pieFlagData, m, view, stretch, true)) { drew = true; }
-	});
+	}, clampFeet, floorZ);
 	s_emitGlow = false;
 	return drew;
 }
