@@ -331,6 +331,8 @@ void initStructLimits()
 	}
 }
 
+// MOD (20.11.): Modul-Auswahl - siehe initModuleStats
+static bool s_facModIsOrig = true, s_resModIsOrig = true, s_powModIsOrig = true;
 void structureInitVars()
 {
 	ASSERT(asStructureStats == nullptr, "Failed to cleanup prior asStructureStats?");
@@ -341,6 +343,7 @@ void structureInitVars()
 	factoryModuleStat = 0;
 	powerModuleStat = 0;
 	researchModuleStat = 0;
+	s_facModIsOrig = s_resModIsOrig = s_powModIsOrig = true;   // MOD (20.11.)
 	lastMaxUnitMessage = 0;
 	structureDamageBaseExperienceLevel = nullopt;
 
@@ -496,24 +499,30 @@ static const StringToEnum<STRUCT_STRENGTH> map_STRUCT_STRENGTH[] =
 	{"BUNKER",      STRENGTH_BUNKER         },
 };
 
-static void initModuleStats(unsigned i, STRUCTURE_TYPE type)
+// MOD (Wunsch 20.11. 16:35 "kann die Scavenger-Fabrik eigentlich Module auf sich drauf bauen? bis jetzt konnte ich das nicht, trotz
+// research all"): im Mod gibt es zu jedem Modul eine Gegner-Kopie "<ID>-Orig" (Originalaussehen der Kampagnen-Gegner). Bisher galt das
+// zuletzt geladene Modul - die Kopie, die nie erforscht wird. Damit war kein Modulbau moeglich (Baumenue-Platz ungueltig, Bagger-Klick
+// "nicht moeglich"). Jetzt gilt das eigentliche Modul; eine "-Orig"-Kopie nur, wenn es kein anderes gibt.
+
+static void initModuleStats(unsigned i, STRUCTURE_TYPE type, const WzString &id)
 {
+	const bool orig = id.endsWith("-Orig");
 	//need to work out the stats for the modules - HACK! - But less hacky than what was here before.
 	switch (type)
 	{
 	case REF_FACTORY_MODULE:
 		//store the stat for easy access later on
-		factoryModuleStat = i;
+		if (!orig || s_facModIsOrig) { factoryModuleStat = i; s_facModIsOrig = orig; }
 		break;
 
 	case REF_RESEARCH_MODULE:
 		//store the stat for easy access later on
-		researchModuleStat = i;
+		if (!orig || s_resModIsOrig) { researchModuleStat = i; s_resModIsOrig = orig; }
 		break;
 
 	case REF_POWER_MODULE:
 		//store the stat for easy access later on
-		powerModuleStat = i;
+		if (!orig || s_powModIsOrig) { powerModuleStat = i; s_powModIsOrig = orig; }
 		break;
 	default:
 		break;
@@ -616,7 +625,7 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->type = structType[type];
 
 		// save indexes of special structures for futher use
-		initModuleStats(statWriteIdx, psStats->type);  // This function looks like a hack. But slightly less hacky than before.
+		initModuleStats(statWriteIdx, psStats->type, psStats->id);  // This function looks like a hack. But slightly less hacky than before.
 
 		if (ini.contains("userLimits"))
 		{
@@ -4460,13 +4469,14 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 	ASSERT_OR_RETURN(structureList, _selectedPlayer < MAX_PLAYERS, "_selectedPlayer = %" PRIu32 "", _selectedPlayer);
 
 	// counters for current nb of buildings, max buildings, current nb modules
-	int8_t researchLabCurrMax[] 	= {0, 0};
-	int8_t factoriesCurrMax[] 		= {0, 0};
-	int8_t vtolFactoriesCurrMax[] 	= {0, 0};
-	int8_t powerGenCurrMax[]		= {0, 0};
-	int8_t factoryModules 			= 0;
-	int8_t powerGenModules			= 0;
-	int8_t researchModules			= 0;
+	// MOD (20.11.): int statt int8_t (Summen ueber mehrere Gebaeudearten koennen 127 ueberschreiten)
+	int researchLabCurrMax[] 	= {0, 0};
+	int factoriesCurrMax[] 		= {0, 0};
+	int vtolFactoriesCurrMax[] 	= {0, 0};
+	int powerGenCurrMax[]		= {0, 0};
+	int factoryModules 			= 0;
+	int powerGenModules			= 0;
+	int researchModules			= 0;
 
 	//if currently on a mission can't build factory/research/power/derricks
 	if (!missionIsOffworld())
@@ -4498,7 +4508,7 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 	{
 		if (apStructTypeLists[_selectedPlayer][inc] == AVAILABLE || (includeRedundantDesigns && apStructTypeLists[_selectedPlayer][inc] == REDUNDANT))
 		{
-			int8_t *counter;
+			int *counter;
 			if (asStructureStats[inc].type == REF_RESEARCH)
 			{
 				counter = researchLabCurrMax;
@@ -4519,8 +4529,10 @@ std::vector<STRUCTURE_STATS *> fillStructureList(const WorldObjectState& objStat
 			{
 				continue;
 			}
-			counter[0] = asStructureStats[inc].curCount[_selectedPlayer];
-			counter[1] = asStructureStats[inc].upgrade[_selectedPlayer].limit;
+			// MOD (Wunsch 20.11. 16:35 Module): ueber ALLE Gebaeudearten des Typs zusammenzaehlen - bisher galt nur die zuletzt gepruefte Art
+			// (im Mod mehrere Fabriken/Kraftwerke: Scav, Spieler, Atom, Wasser ...); stand von ihr keines, verschwand der Modul-Knopf
+			counter[0] += asStructureStats[inc].curCount[_selectedPlayer];
+			counter[1] += asStructureStats[inc].upgrade[_selectedPlayer].limit;
 
 		}
 	}
