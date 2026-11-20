@@ -1989,7 +1989,7 @@ static void moveUpdateDroidPos(DROID *psDroid, int32_t dx, int32_t dy)
 		{
 			psDroid->pos.x = nx;
 			psDroid->pos.y = ny;
-			modfort::noteClamped(psDroid);   // (20.11.) kein Fortschritt an der Wand -> neuer Weg
+			modfort::noteClamped(psDroid, modOldX, modOldY);   // (20.11.) kein Fortschritt an der Wand -> sofort neuer Weg
 		}
 	}
 

@@ -35,15 +35,13 @@ bool isFort(const STRUCTURE *psStructure);
 namespace
 {
 constexpr unsigned REBUILD_MS = 2000;
-constexpr unsigned STUCK_MS = 1500;       // (20.11.) so lange ohne Fortschritt an einer Wand -> neuer Weg
-constexpr unsigned STUCK_GAP_MS = 400;    // laenger nicht festgehalten = frei
+constexpr unsigned REPATH_GAP_MS = 1000;   // (20.11.) hoechstens ein neuer Weg je Sekunde und Einheit (kein Zappeln bei unerreichbarem Ziel)
 
 struct Stuck
 {
 	int player = 0;
-	uint32_t since = 0;      // seit wann ohne Fortschritt
-	uint32_t lastClamp = 0;  // zuletzt festgehalten
-	int best = INT32_MAX;    // kleinster Abstand zum Wegpunkt seitdem
+	uint32_t nextAllowed = 0;   // fruehester naechster neuer Weg
+	bool pending = false;       // in diesem Spielschritt festgehalten, ohne dem Ziel naeher zu kommen
 };
 std::map<uint32_t, Stuck> s_stuck;   // Einheiten-ID -> Zustand (geordnet: feste Reihenfolge auf allen Rechnern)
 constexpr int ENTRY_SPACING = 5;      // bei langen Linien hoechstens alle 5 Felder eine Oeffnung
@@ -366,52 +364,55 @@ void crushTick()
 }
 } // namespace
 
-static void stuckTick()
+void afterDroidUpdates()
 {
 	for (auto it = s_stuck.begin(); it != s_stuck.end();)
 	{
 		Stuck &st = it->second;
-		if (gameTime - st.lastClamp > STUCK_GAP_MS) { it = s_stuck.erase(it); continue; }
-		if (static_cast<int32_t>(gameTime - st.since) >= static_cast<int32_t>(STUCK_MS))   // since kann (Wartezeit) in der Zukunft liegen
+		if (!st.pending)
 		{
-			DROID *d = IdToDroid(gameWorld.objects, it->first, st.player);
-			if (d != nullptr && !d->died && d->sMove.Status == MOVEPOINTTOPOINT)
+			it = (gameTime >= st.nextAllowed) ? s_stuck.erase(it) : std::next(it);
+			continue;
+		}
+		st.pending = false;
+		st.nextAllowed = gameTime + REPATH_GAP_MS;
+		DROID *d = IdToDroid(gameWorld.objects, it->first, st.player);
+		if (d != nullptr && !d->died && d->sMove.Status == MOVEPOINTTOPOINT)
+		{
+			modlayermap::Scope droidLayerScope(modlayer::layerOf(d));   // Wegsuche in der Karte der Ebene der Einheit
+			const bool last = d->sMove.pathIndex >= static_cast<int>(d->sMove.asPath.size());
+			const Vector2i diff = d->pos.xy() - d->sMove.target;
+			if (last && iHypot(diff) < TILE_UNITS)
 			{
-				// neuer Weg zum selben Ziel - er fuehrt (astar, 20.11.) ueber die Feldmitten durch die Oeffnung
+				moveStopDroid(d);   // das Ziel selbst liegt in der Wand - nah genug, hier stehen bleiben
+			}
+			else
+			{
+				// neuer Weg zum selben Ziel - er fuehrt (astar, 20.11.) ueber die Feld-/Blockmitten durch die Oeffnung
 				moveDroidToNoFormation(d, d->sMove.destination.x, d->sMove.destination.y);
 			}
-			st.since = gameTime + STUCK_MS;   // naechster Versuch fruehestens in 3 s
-			st.best = INT32_MAX;
 		}
 		++it;
 	}
 }
 
-void noteClamped(const DROID *psDroid)
+void noteClamped(const DROID *psDroid, int oldX, int oldY)
 {
+	// (Wunsch 20.11. 15:57 "warum nicht sofort? Es soll gut aussehen. Ohne Verzoegerung soll er sich einen neuen Weg suchen"): haelt die
+	// Wand die Einheit in diesem Spielschritt auf, ohne dass sie ihrem Wegpunkt naeher kommt, sucht sie sofort (im selben Spielschritt,
+	// modfort::tick) einen neuen Weg. Gleiten an der Wand entlang zum Ziel hin ist normale Bewegung und loest nichts aus.
 	if (psDroid == nullptr || psDroid->sMove.Status != MOVEPOINTTOPOINT) { return; }
+	const Vector2i before = Vector2i(oldX, oldY) - psDroid->sMove.target;
+	const Vector2i after = psDroid->pos.xy() - psDroid->sMove.target;
+	if (iHypot(after) + 1 < iHypot(before)) { return; }   // kommt voran
 	Stuck &st = s_stuck[psDroid->id];
-	const Vector2i diff = psDroid->pos.xy() - psDroid->sMove.target;
-	const int dist = iHypot(diff);
-	if (st.lastClamp == 0 || gameTime - st.lastClamp > STUCK_GAP_MS)
-	{
-		st = Stuck();
-		st.player = psDroid->player;
-		st.since = gameTime;
-		st.best = dist;
-	}
-	st.lastClamp = gameTime;
-	if (dist + 8 < st.best)
-	{
-		st.best = dist;
-		if (gameTime > st.since) { st.since = gameTime; }   // Fortschritt (an der Wand entlang gleiten ist in Ordnung)
-	}
+	st.player = psDroid->player;
+	if (gameTime >= st.nextAllowed) { st.pending = true; }
 }
 
 void tick()
 {
 	crushTick();
-	stuckTick();
 	const unsigned b = gameTime / REBUILD_MS;
 	if (b == s_bucket) { return; }
 	s_bucket = b;

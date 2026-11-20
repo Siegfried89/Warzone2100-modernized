@@ -60,7 +60,10 @@ bool fortTile(int tileX, int tileY);
 /// Kollision - genau ueberpruefen"): Infanterie bewegt sich in einer Stellung nur im freien Innenraum (Grube bzw. Grabengang) und in den
 /// Gaengen zu den offenen Seiten - nicht mehr durch oder in die Sandsack-/Holzwaende. newPos wird angepasst; true = geaendert.
 bool clampInfantry(const DROID *psDroid, int oldX, int oldY, int &newX, int &newY);
-/// (Wunsch 20.11. 15:43 "... rennen stur gegen die Wand ohne nach der Oeffnung zu suchen"): nach jedem Festhalten durch clampInfantry
-/// melden - kommt die Einheit ihrem Wegpunkt 1,5 s lang nicht naeher, sucht tick() ihr einen neuen Weg (Spiellogik, auf allen Rechnern gleich)
-void noteClamped(const DROID *psDroid);
+/// (Wunsch 20.11. 15:43/15:57 "... rennen stur gegen die Wand ohne nach der Oeffnung zu suchen" / "ohne Verzoegerung"): nach jedem
+/// Festhalten durch clampInfantry melden (alte Position) - kommt die Einheit dabei ihrem Wegpunkt nicht naeher, sucht tick() ihr sofort
+/// einen neuen Weg (hoechstens einmal je Sekunde; Spiellogik, auf allen Rechnern gleich)
+void noteClamped(const DROID *psDroid, int oldX, int oldY);
+/// (20.11.) nach der Bewegung aller Einheiten im Spielschritt (loop.cpp): festgehaltene Einheiten bekommen sofort einen neuen Weg
+void afterDroidUpdates();
 }
