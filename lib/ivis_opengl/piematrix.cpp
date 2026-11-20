@@ -60,6 +60,7 @@ struct PerspectiveCache {
 	int _rendSurface_xcentre = 0;
 	int _rendSurface_ycentre = 0;
 	float _zfar = 0.f;
+	float _znear = 0.f;
 };
 // Since computing the perspective matrix is a semi-costly operation, store a cache here
 static PerspectiveCache perspectiveCaches[Num_Perspective_Modes] = {};
@@ -104,8 +105,11 @@ glm::mat4 pie_PerspectiveGetConstrained(float zNear, float zFar)
 	const float height = std::max(pie_GetVideoBufferHeight(), 1);
 
 	// can be a semi-costly operation
-	const float xangle = width / 6.0f;
-	const float yangle = height / 6.0f;
+	// MOD (Wunsch 20.11. 01:46 "der untere schwarze Rand ... der Boden soll nicht mehr wegclippen"): die Nahebene darf naeher als 330
+	// liegen (tiefe Kamera) - der Bildwinkel bleibt dabei gleich (Ausschnitt mit der Nahebene mitskaliert)
+	const float fovScale = zNear / 330.f;
+	const float xangle = width / 6.0f * fovScale;
+	const float yangle = height / 6.0f * fovScale;
 	return
 //	glm::translate(glm::vec3((2.f * rendSurface.xcentre - width) / width, (height - 2.f * rendSurface.ycentre) / height, 0.f)) *
 	glm::frustum(-xangle, xangle, -yangle, yangle, zNear, zFar) * glm::scale(glm::vec3(1.f, 1.f, -1.f));
@@ -118,7 +122,7 @@ static const glm::mat4& pie_PerspectiveGetCache(PerspectiveModes mode, float zNe
 
 	PerspectiveCache& perspectiveCache = perspectiveCaches[static_cast<size_t>(mode)];
 
-	if (width != perspectiveCache._width || height != perspectiveCache._height || rendSurface.xcentre != perspectiveCache._rendSurface_xcentre || rendSurface.ycentre != perspectiveCache._rendSurface_ycentre || zFar != perspectiveCache._zfar)
+	if (width != perspectiveCache._width || height != perspectiveCache._height || rendSurface.xcentre != perspectiveCache._rendSurface_xcentre || rendSurface.ycentre != perspectiveCache._rendSurface_ycentre || zFar != perspectiveCache._zfar || zNear != perspectiveCache._znear)
 	{
 		// update the current perspective matrix (can be a semi-costly operation)
 		perspectiveCache.currentPerspectiveMatrix = pie_PerspectiveGetConstrained(zNear, zFar);
@@ -131,6 +135,7 @@ static const glm::mat4& pie_PerspectiveGetCache(PerspectiveModes mode, float zNe
 		perspectiveCache._rendSurface_xcentre = rendSurface.xcentre;
 		perspectiveCache._rendSurface_ycentre = rendSurface.ycentre;
 		perspectiveCache._zfar = perspectiveZFar;
+		perspectiveCache._znear = zNear;
 	}
 
 	return perspectiveCache.currentPerspectiveMatrix;
@@ -165,6 +170,11 @@ float pie_getPerspectiveZFar()
 float pie_getPerspectiveZClose()
 {
 	return perspectiveZClose;
+}
+
+void pie_setPerspectiveZClose(float zNear)
+{
+	perspectiveZClose = std::max(8.f, std::min(330.f, zNear));
 }
 
 void pie_Begin3DScene()

@@ -70,7 +70,7 @@ void calculateShadowCascades(const iView *player, float terrainDistance, const g
 
 	std::vector<float> cascadeSplits(SHADOW_MAP_CASCADE_COUNT, 0.f);
 
-	float nearClip = 330.f;
+	float nearClip = pie_getPerspectiveZClose();   // MOD (20.11.): Nahebene kann bei tiefer Kamera naeher als 330 liegen
 
 	float farClip = adjustedZFar; //pie_GetPerspectiveZFar();
 	float clipRange = farClip - nearClip;
