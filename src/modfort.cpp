@@ -222,6 +222,12 @@ void rebuild()
 			return true;
 		};
 		auto bestSide = [&](size_t i, bool needFacing) {
+			// MOD (Wunsch 20.11. 02:36 "Der Eingang soll ENTGEGEN der Ziehrichtung sein. Sodass die Front immer in Ziehrichtung ist."):
+			// zuerst die Rueckseite (gegenueber der Seite, in die beim Platzieren gezogen wurde), erst dann Richtung eigene Basis
+			{
+				const int back = (blocks[i].faceSide + 2) & 3;
+				if (!(blocks[i].conn & BIT[back]) && usable(blocks[i], back)) { return back; }
+			}
 			int64_t cx, cy;
 			centre(i, cx, cy);
 			const int64_t vx = hx - cx, vy = hy - cy;
@@ -239,13 +245,14 @@ void rebuild()
 		};
 		std::vector<size_t> entries;
 		// (Wunsch 18.11. 12:42 "Richtungs-Ziehen funktioniert noch nicht mit allen Stellungen"): eine einzelne Stellung (ohne Nachbarn)
-		// bekommt ihre Oeffnung auf der Seite, in die sie beim Platzieren gezogen wurde
+		// bekommt ihre Oeffnung auf der Rueckseite - (20.11. 02:36) ENTGEGEN der Ziehrichtung, die Front zeigt in Ziehrichtung
 		if (comp.size() == 1)
 		{
 			Block &b1 = blocks[comp[0]];
-			if (usable(b1, b1.faceSide))
+			const int back = (b1.faceSide + 2) & 3;
+			if (usable(b1, back))
 			{
-				b1.entry |= static_cast<uint8_t>(BIT[b1.faceSide]);
+				b1.entry |= static_cast<uint8_t>(BIT[back]);
 				continue;
 			}
 		}
@@ -416,7 +423,7 @@ uint8_t predictOpen(const STRUCTURE *bp)
 	if (conn != 0) { return conn; }
 	const uint16_t d = static_cast<uint16_t>(bp->rot.direction + 0x2000);
 	static const int SIDE_OF_QUADRANT[4] = {2, 1, 0, 3};
-	return static_cast<uint8_t>(BIT[SIDE_OF_QUADRANT[(d >> 14) & 3]]);
+	return static_cast<uint8_t>(BIT[(SIDE_OF_QUADRANT[(d >> 14) & 3] + 2) & 3]);   // (20.11.) Eingang hinten, Front in Ziehrichtung
 }
 
 const iIMDShape *displayModel(const STRUCTURE *psStructure)
