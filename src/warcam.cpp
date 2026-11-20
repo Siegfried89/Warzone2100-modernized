@@ -110,6 +110,23 @@ static SDWORD	presAvAngle = 0;
 /* How far we track relative to the droids location - direction matters */
 #define	CAM_DEFAULT_OFFSET	-400
 
+// MOD (Wunsch 20.11. 02:13 "Die Verfolgerkamera ist viel zu weit weg. Sie soll zoombar sein und standardmaessig direkt hinter dem
+// Fahrzeug"): Verfolger-Ansicht wie eine Hinterherkamera - Drehpunkt knapp VOR dem Fahrzeug, wenig angehoben, flacher Blick, Abstand
+// beim Einschalten 450 (vorher 400 hinter dem Fahrzeug + Kartenzoom ~1600-2000 + bis 450 Hoehe). Mausrad zoomt wie sonst; beim
+// Ausschalten kehrt der vorherige Zoom zurueck.
+static constexpr int MOD_CHASE_AHEAD = 120;       // Drehpunkt vor dem Fahrzeug (das Fahrzeug steht etwas unter der Bildmitte)
+static constexpr int MOD_CHASE_LIFT = 70;         // Drehpunkt ueber dem Fahrzeug
+static constexpr float MOD_CHASE_DISTANCE = 450.f;
+static constexpr int MOD_CHASE_PITCH_DEG = 16;    // Blick nach unten
+static float s_modChaseRestore = -1.f;            // Zoom vor dem Einschalten
+static bool s_modChaseZoomPending = false;
+static void modChaseRestoreZoom()
+{
+	if (s_modChaseRestore >= 0.f) { setViewDistance(s_modChaseRestore); }
+	s_modChaseRestore = -1.f;
+	s_modChaseZoomPending = false;
+}
+
 
 /* How much info do you want when tracking a droid - this toggles full stat info */
 static	bool bFullInfo = false;
@@ -301,6 +318,7 @@ void	processWarCam()
 			camAlignWithTarget(foundTarget);
 			/* We're now into tracking status */
 			trackingCamera.status = CAM_TRACK_DROID;
+			if (s_modChaseZoomPending) { setViewDistance(MOD_CHASE_DISTANCE); s_modChaseZoomPending = false; }   // MOD (20.11.)
 			/* Inform via console */
 			if (getWarCamStatus())
 			{
@@ -311,6 +329,7 @@ void	processWarCam()
 		{
 			/* We've requested a track with no droid selected */
 			trackingCamera.status = CAM_INACTIVE;
+			modChaseRestoreZoom();   // MOD (20.11.)
 		}
 		break;
 
@@ -344,6 +363,7 @@ void	processWarCam()
 	case CAM_RESET:
 		/* Switch to inactive mode */
 		trackingCamera.status = CAM_INACTIVE;
+		modChaseRestoreZoom();   // MOD (20.11.)
 		break;
 	}
 }
@@ -376,6 +396,8 @@ void	setWarCamActive(bool status)
 		{
 			/* Otherwise request the camera to track */
 			trackingCamera.status = CAM_REQUEST;
+			if (s_modChaseRestore < 0.f) { s_modChaseRestore = getViewDistance(); }   // MOD (20.11.)
+			s_modChaseZoomPending = true;
 		}
 	}
 	else
@@ -598,14 +620,14 @@ static void updateCameraAcceleration(UBYTE update)
 		uint16_t multiAngle = getAverageTrackAngle(group, true);
 		getTrackingConcerns(&concern.x, &concern.y, &concern.z, group, true);
 
-		behind = iSinCosR(multiAngle, CAM_DEFAULT_OFFSET);
+		behind = iSinCosR(multiAngle, MOD_CHASE_AHEAD);   // MOD (20.11.): vorher CAM_DEFAULT_OFFSET (400 dahinter)
 	}
 	else
 	{
-		behind = iSinCosR(trackingCamera.target->rot.direction, CAM_DEFAULT_OFFSET);
+		behind = iSinCosR(trackingCamera.target->rot.direction, MOD_CHASE_AHEAD);   // MOD (20.11.): vorher CAM_DEFAULT_OFFSET
 	}
 
-	concern.y += angle * 5;
+	concern.y += bFlying ? angle * 5 : MOD_CHASE_LIFT;   // MOD (20.11.): Bodenfahrzeuge - Drehpunkt knapp ueber dem Fahrzeug
 
 	Vector3i realPos = concern - Vector3i(-behind.x, 0, -behind.y);
 	Vector3f separation = Vector3f(realPos) - trackingCamera.position;
@@ -748,6 +770,7 @@ static void updateCameraRotationAcceleration(UBYTE update)
 			getBestPitchToEdgeOfGrid(gameWorld.map, xPos, zPos, DEG(180) - getAverageTrackAngle(group, true), &pitch);
 			pitch = MAX(angleDelta(pitch), DEG(14));
 			xConcern = -pitch;
+			xConcern = -DEG(MOD_CHASE_PITCH_DEG);   // MOD (20.11.): flacher Blick der Hinterherkamera
 		}
 		else
 		{
