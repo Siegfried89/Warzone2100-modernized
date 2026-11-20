@@ -1518,16 +1518,17 @@ static bool _imd_load_normals(const char **ppFileData, const char *FileDataEnd, 
    return true;
 }
 
-static inline uint16_t addVertex(iIMDShape &s, size_t i, const iIMDPoly *p, size_t polyIdx, std::vector<Vector3f> &pie_level_normals)
+static inline uint16_t addVertex(iIMDShape &s, size_t i, const iIMDPoly *p, size_t polyIdx, std::vector<Vector3f> &pie_level_normals, bool weld)
 {
 	const Vector3f* normal;
 
  	// Do not weld for for models with normals, those are presumed to be correct. Otherwise, it will break tangents
+ 	// (MOD: also not for models without file normals that have a normal map - they get tangents too, see _imd_load_level)
  	if (pie_level_normals.empty())
  	{
 		normal = &p->normal;
 		// See if we already have this defined, if so, return reference to it.
-		for (uint16_t j = 0; j < vertexCount; j++)
+		for (uint16_t j = 0; weld && j < vertexCount; j++)
 		{
 			if (texcoords[j * 4 + 0] == p->texCoord[i].x
  			    && texcoords[j * 4 + 1] == p->texCoord[i].y
@@ -1971,21 +1972,37 @@ static std::unique_ptr<iIMDShape> _imd_load_level(const WzString &filename, cons
 	// FINALLY, massage the data into what can stream directly to GPU buffers
 	if (!skipGPUData)
 	{
+		// MOD (20.11., Glanz-/Normalenkarten fuer Gebaeude und Waffen): Modelle OHNE eigene Normalen in der Datei, aber MIT
+		// Normalenkarte bekamen bisher keine Tangenten - der Shader liest die Karte dann als Objektraum-Karte (wzDecodeNormalMap),
+		// eine Tangentenraum-Karte (fast ueberall 128/128/255) wird so zu "alle Flaechen zeigen nach oben": Waende so hell wie
+		// Daecher, Glanz an falschen Stellen. Hier bekommen auch solche Modelle Tangenten: Flaechennormalen je Dreieck (wie bisher
+		// beleuchtet), Ecken dafuer nicht zusammengelegt (MikkTSpace verlangt das, siehe generateTangents()). Das Grundspiel hat
+		// keine Objektraum-Karten (alle Modelle mit NORMALMAP haben dort NORMALS).
+		bool modTangentsWithoutNormals = false;
+		if (pie_level_normals.empty() && s.polys.size() * 3 < static_cast<size_t>(UINT16_MAX))
+		{
+			for (size_t t = 0; t < levelSettings.tilesetTextureFiles.size() && !modTangentsWithoutNormals; ++t)
+			{
+				modTangentsWithoutNormals = !_imd_get_level_tileset_texture_file("NORMALMAP", levelSettings.tilesetTextureFiles[t], globalLevelSettings.tilesetTextureFiles[t]).empty();
+			}
+		}
+		const bool weldVertices = pie_level_normals.empty() && !modTangentsWithoutNormals;
+
 		vertexCount = 0;
 		// Go through all polygons for each frame
 		for (size_t npol = 0; npol < s.polys.size(); ++npol)
 		{
 			const iIMDPoly& p = s.polys[npol];
 			// Do we already have the vertex data for this polygon?
-			indices.emplace_back(addVertex(s, 0, &p, npol, pie_level_normals));
-			indices.emplace_back(addVertex(s, 1, &p, npol, pie_level_normals));
-			indices.emplace_back(addVertex(s, 2, &p, npol, pie_level_normals));
+			indices.emplace_back(addVertex(s, 0, &p, npol, pie_level_normals, weldVertices));
+			indices.emplace_back(addVertex(s, 1, &p, npol, pie_level_normals, weldVertices));
+			indices.emplace_back(addVertex(s, 2, &p, npol, pie_level_normals, weldVertices));
 		}
 
 		s.vertexCount = vertexCount;
 
-		// Tangents are optional, only if normals were loaded and passed sanity check above
-		if (!pie_level_normals.empty())
+		// Tangents are optional, only if normals were loaded and passed sanity check above (MOD: or the level has a normal map)
+		if (!pie_level_normals.empty() || modTangentsWithoutNormals)
 		{
 			tangents.clear();
 			tangents.resize(static_cast<size_t>(vertexCount) * 4, 0.f);
