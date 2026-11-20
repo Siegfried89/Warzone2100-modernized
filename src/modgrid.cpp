@@ -478,6 +478,13 @@ void update()
 		{
 			if (s_standbyNet.count(find(par, G0 + k))) { s_standby.insert(gens[k].id); }
 		}
+		// (20.11.) Strompflicht beginnt, sobald eine echte Quelle ein Netz speist (Notstrom der Kommandozentrale zaehlt nicht)
+		for (int r = 0; r < total; r++)
+		{
+			if (find(par, r) != r || !fed[r]) { continue; }
+			const bool real = realSrc[r] || genCapC[r] > 0 || (subMode && hasSub[r] && solarCap[r] - emergCap[r] > 0);
+			if (real) { modoil::noteDuty(p); break; }
+		}
 		s_standbyNet.clear();
 
 		const bool show = p == static_cast<int>(selectedPlayer) || aiCheckAlliances(p, static_cast<int>(selectedPlayer));
@@ -552,7 +559,9 @@ bool isPoweredDown(const STRUCTURE *psStruct)
 bool powerDownGate(STRUCTURE *s)
 {
 	const STRUCTURE_STATS *st = s->pStructureType;
-	if (!st->requiresPower || s->status != SS_BUILT || !modoil::manages(s->player) || !(s_hasGen[s->player] || s_hasSub[s->player])) { return false; }
+	// (20.11.) Strompflicht erst, wenn eine echte Stromquelle das Netz gespeist hat (erstes Fass im Kraftwerk, Atomkraftwerk, Solar am
+	// Umspannwerk) - ein neues, leeres Kraftwerk schaltet sonst sofort Fabrik und Forschung ab
+	if (!st->requiresPower || s->status != SS_BUILT || !modoil::manages(s->player) || !modoil::dutyStarted(s->player)) { return false; }
 	const auto it = s_powered.find(s->id);
 	if (it == s_powered.end()) { return false; }          // gerade erst fertig: bis zur naechsten Berechnung Gnadenfrist
 	bool down = !it->second;

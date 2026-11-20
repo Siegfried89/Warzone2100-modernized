@@ -62,6 +62,8 @@ void updatePlayerPower(int player, int ticks = 1);
 void setPower(unsigned player, int32_t power);
 
 void setPowerModifier(int player, int modifier);
+int getPowerModifier(int player);   // MOD (20.11.): Energie-Einstellung der Partie in Prozent (Oel-Wirtschaft)
+int32_t getPowerMaxStorage(unsigned player);   // MOD (20.11.): Obergrenze des Energiespeichers (Oel-Fenster)
 void setPowerMaxStorage(int player, int max);
 
 /** Get the amount of power current held by the given player. */

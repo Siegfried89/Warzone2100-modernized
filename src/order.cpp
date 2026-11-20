@@ -34,6 +34,7 @@
 
 #include "objects.h"
 #include "order.h"
+#include "modfuel.h"
 #include "modicbm.h"
 #include "modarty.h"
 #include "modauto.h"
@@ -272,12 +273,13 @@ struct RSComparator
 /// @return return top priority droid to repair, or nullptr
 static DROID* _findSomeoneToRepair(REPAIR_FACILITY *psRepairFac,
 				std::priority_queue<DROID*, std::vector<DROID*>, RSComparator> queue,
-				int x, int y, int radius, int player)
+				int x, int y, int radius, int player, bool halfOnly = false)
 {
 	for (BASE_OBJECT *gridObj : gridStartIterateRepairCandidates(x, y, radius, player))
 	{
 		DROID *psDroid = (DROID*) gridObj;
-		if (psDroid->isDamaged())
+		// MOD (20.11.): an der Tankstelle (Scav-Reparaturzentrum) gilt eine Einheit ab 50 % als fertig
+		if (halfOnly ? psDroid->body < psDroid->originalBody / 2 : psDroid->isDamaged())
 		{
 			queue.push(psDroid);
 		}
@@ -301,7 +303,7 @@ DROID *findSomeoneToRepair(const STRUCTURE *psStructure, int radius)
 	REPAIR_FACILITY *psRepairFac = &psStructure->pFunctionality->repairFacility;
 	RSComparator cmpr(psStructure);
 	std::priority_queue<DROID*, std::vector<DROID*>, RSComparator> queue(cmpr);
-	return _findSomeoneToRepair(psRepairFac, queue, psStructure->pos.x, psStructure->pos.y, radius, psStructure->player);
+	return _findSomeoneToRepair(psRepairFac, queue, psStructure->pos.x, psStructure->pos.y, radius, psStructure->player, modfuel::isHalfRepair(psStructure));
 }
 
 DROID *findSomeoneToRepair(const DROID *psTurret, int radius)
@@ -3863,6 +3865,17 @@ static inline RtrBestResult decideWhereToRepairAndBalance(DROID *psDroid)
 	vDroidPos.clear();
 	vDroid.clear();
 
+	bool modHaveFullRepair = false;   // MOD (20.11.): eigene, erreichbare Reparaturstation (100 %) vorhanden?
+	for (const STRUCTURE *psStruct : gameWorld.objects.structures[psDroid->player])
+	{
+		if (psStruct->pStructureType->type == REF_REPAIR_FACILITY && psStruct->status == SS_BUILT && !modfuel::isHalfRepair(psStruct)
+		    && modlayer::canInteract(psDroid, psStruct) && CheckInScrollLimits(gameWorld.map, psStruct->pos.x, psStruct->pos.y) && droidSqDist(psDroid, psStruct) > 0)
+		{
+			modHaveFullRepair = true;
+			break;
+		}
+	}
+
 	for (STRUCTURE *psStruct : gameWorld.objects.structures[psDroid->player])
 	{
 		if (!modlayer::canInteract(psDroid, psStruct)) { continue; }   // MOD: Ebenen - Reparatur/Rueckkehr nur zu Anlagen der eigenen Ebene
@@ -3880,6 +3893,9 @@ static inline RtrBestResult decideWhereToRepairAndBalance(DROID *psDroid)
 			{
 				continue;
 			}
+			// MOD (20.11.): Tankstellen heilen nur bis 50 % - wer schon die Haelfte hat, faehrt dort nicht hin; gibt es eine Reparaturstation,
+			// wird sie bevorzugt (siehe modHaveFull unten)
+			if (modfuel::isHalfRepair(psStruct) && (psDroid->body >= psDroid->originalBody / 2 || modHaveFullRepair)) { continue; }
 			thisDistToRepair = droidSqDist(psDroid, psStruct);
 			if (thisDistToRepair <= 0)
 			{

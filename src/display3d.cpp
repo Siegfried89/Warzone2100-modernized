@@ -139,6 +139,7 @@
 #include "perfcounters.h"
 #include "cameratrace.h"
 #include "modpick.h"
+#include "modoilui.h"
 
 
 /********************  Prototypes  ********************/
@@ -4346,6 +4347,23 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 		{
 			modQueueFuelBar(batchedMultiRectRenderer, rectGroup, static_cast<int>(psDroid->sDisplay.screenX), barY, barHalf, fuelPm, ammoSegs >= 0 ? 2 : 1);
 		}
+		// MOD (20.11.): Ladung der Fracht-Lkw / Oeltanker (orange, ein Abschnitt je Fass) unter dem Tankbalken - die Ladung startet leer
+		int cargoCap = 0;
+		const int cargoN = modoil::cargoBarrels(psDroid, cargoCap);
+		if (cargoCap > 0)
+		{
+			const int row = (ammoSegs >= 0 ? 2 : 1) + (fuelPm >= 0 ? 1 : 0);
+			const int x0 = static_cast<int>(psDroid->sDisplay.screenX) - barHalf, y0 = barY + 2 + 6 * row, full = 2 * barHalf;
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0 - 1, y0, x0 + full + 1, y0 + 5, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			const int fill = full * std::clamp(cargoN, 0, cargoCap) / cargoCap;
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 3, pal_RGBA(255, 150, 40, 255)), rectGroup);
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0 + 3, x0 + fill, y0 + 4, pal_RGBA(170, 90, 20, 255)), rectGroup);
+			for (int k = 1; k < cargoCap; ++k)
+			{
+				const int sx = x0 + full * k / cargoCap;
+				batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(sx, y0 + 1, sx + 1, y0 + 4, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			}
+		}
 	}
 	batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(
 		psDroid->sDisplay.screenX - psDroid->sDisplay.screenR - 3,
@@ -6112,6 +6130,7 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 
 	modoil::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Faesser-Anzeige
 	modgrid::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD: Stromkabel / Stromnetz-Anzeige
+	modoilui::drawWorldIcons(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD (20.11.): PowerDown- und Oel-Warnsymbole
 	modpaint::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: Schlachtplan-Zeichnungen
 	modferry::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: blinkende Transport-Leuchtfeuer
 	modtactical::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD (17.11. 18:48): taktische Symbole statt Modelle

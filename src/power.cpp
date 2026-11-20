@@ -82,6 +82,18 @@ void setPowerModifier(int player, int modifier)
 	asPower[player].powerModifier = modifier;
 }
 
+int getPowerModifier(int player)
+{
+	ASSERT_OR_RETURN(100, player >= 0 && player < MAX_PLAYERS, "Invalid player %d", player);
+	return asPower[player].powerModifier;
+}
+
+int32_t getPowerMaxStorage(unsigned player)
+{
+	ASSERT_OR_RETURN(0, player < MAX_PLAYERS, "Invalid player (%u)", player);
+	return static_cast<int32_t>(asPower[player].maxStorage / FP_ONE);
+}
+
 void setPowerMaxStorage(int player, int max)
 {
 	asPower[player].maxStorage = max * FP_ONE;
@@ -333,7 +345,7 @@ static void updateCurrentPower(STRUCTURE *psStruct, UDWORD player, int ticks)
 		{
 			if (oilEconomy)
 			{
-				modoil::extract(extractor, (updateExtractedPower(extractor) * multiplier) / 100 * ticks, FP_ONE);
+				// MOD (20.11.): Oel-Wirtschaft - die Oeltuerme foerdern unabhaengig vom Kraftwerk Faesser (modoil::logistics), hier nichts
 			}
 			else
 			{
