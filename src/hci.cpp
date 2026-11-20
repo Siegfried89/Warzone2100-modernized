@@ -1152,8 +1152,11 @@ void intOpenDebugMenu(OBJECT_TYPE id)
 			{
 				continue;
 			}
-			// MOD (Wunsch 17.11.): keine vorgefertigten Combots (MFP_*) im Cheat-Menue - Combots werden aus Teilen zusammengesetzt
-			if (localTemplate.id.toUtf8().rfind("MFP_", 0) == 0)
+			// MOD (Wunsch 17.11.): keine vorgefertigten Combots (MFP_*) im Cheat-Menue - Combots werden aus Teilen zusammengesetzt.
+			// (Wunsch 20.11. 16:02 "Die drei fertigen Combots sind nicht im Spiel per Cheat platzierbar ... Bitte platzierbar machen."):
+			// die drei fertigen Konzern-Combots (Rimtech, Mil-Agro, Neuropa Hedoth) stehen wieder im Cheat-Menue
+			const std::string modTid = localTemplate.id.toUtf8();
+			if (modTid.rfind("MFP_", 0) == 0 && modTid != "MFP_Rimtech" && modTid != "MFP_MilAgro" && modTid != "MFP_Neuropa")
 			{
 				continue;
 			}
