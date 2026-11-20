@@ -21,6 +21,9 @@
 #ifndef __INCLUDED_SRC_EDIT3D_H__
 #define __INCLUDED_SRC_EDIT3D_H__
 
+#include <utility>
+#include <vector>
+
 #include "map.h"
 
 #define TILE_RAISE	1
@@ -73,6 +76,15 @@ struct BUILDDETAILS
 
 extern BUILDDETAILS	sBuildDetails;
 
+// MOD (Wunsch 20.11. 19:23 "Saemtliche Gebaeude sollen nicht nur in einer Linie, sondern auch im Feld platzierbar sein ... fuer JEDES
+// Gebaeude" / "Steuerung plus Ziehen macht ein Feld"): Strg + Ziehen beim Platzieren baut ein Rechteck (Zeilen x Spalten) - fuer jedes
+// mehrfach baubare Gebaeude. Ziehen ohne Strg bleibt wie bisher (Linie bzw. Drehen). Der Zustand der Strg-Taste wird beim Druecken der
+// Maustaste festgehalten, damit ein spaeter gedrueckter/losgelassener Strg den laufenden Zug nicht umschaltet.
+bool modFieldBuild();
+void modFieldLatch();
+/// beim Loslassen eines Feld-Zugs: die weiteren Zeilen (die erste geht als normaler Linienauftrag hinaus); false = keine
+bool modTakeFieldRows(std::vector<std::pair<Vector2i, Vector2i>> &rows);
+
 // May only call if sBuildDetails.psStats points to a STRUCTURE_STATS.
 static inline bool canLineBuild()
 {
@@ -81,6 +93,10 @@ static inline bool canLineBuild()
 	if (s->upgrade[selectedPlayer].limit <= 1)
 	{
 		return false;
+	}
+	if (modFieldBuild())
+	{
+		return true;   // MOD (20.11. 19:23): Strg + Ziehen = Feld (auch Linie) fuer jedes Gebaeude
 	}
 	// MOD (16.11. 23:30 "Mörserstellung: klicken, halten, ziehen ändert die Richtung nicht"): bisher galt jedes mehrfach baubare
 	// Gebäude als Reihen-Bau, damit wurde Ziehen nie zum Drehen. Jetzt ziehen nur Mauern/Sperren/Gräben (1 Feld) und Mauertürme

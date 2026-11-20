@@ -2337,7 +2337,18 @@ void displayBlueprints(const glm::mat4 &viewMatrix, const glm::mat4 &perspective
 			uint16_t direction = getBuildingDirection();
 			if (wallDrag.status == DRAG_PLACING || wallDrag.status == DRAG_DRAGGING)
 			{
-				drawLineBuild(selectedPlayer, stats, wallDrag.pos, wallDrag.pos2, direction, state);
+				if (modFieldBuild())
+				{
+					// MOD (20.11. 19:23): Feldbau-Vorschau - alle Zeilen des Rechtecks
+					for (const auto &row : calcFieldRows(stats, direction, wallDrag.pos, wallDrag.pos2))
+					{
+						drawLineBuild(selectedPlayer, stats, row.first, row.second, direction, state);
+					}
+				}
+				else
+				{
+					drawLineBuild(selectedPlayer, stats, wallDrag.pos, wallDrag.pos2, direction, state);
+				}
 			}
 			else
 			{

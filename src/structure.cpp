@@ -7991,6 +7991,25 @@ LineBuild calcLineBuild(STRUCTURE_STATS const *stats, uint16_t direction, Vector
 	return calcLineBuild(stats->size(direction), packType, pos, pos2, pitch);
 }
 
+std::vector<std::pair<Vector2i, Vector2i>> calcFieldRows(STRUCTURE_STATS const *stats, uint16_t direction, Vector2i pos, Vector2i pos2)
+{
+	// Spalten: Linie entlang x bis zur Mausspalte; Zeilen: Linie entlang y bis zur Mauszeile - mit denselben Abstaenden wie beim Linienbau
+	// (Mauern/Solarpaneele dicht, normale Gebaeude 1 Feld Luft, Strommasten alle 4 Felder)
+	const LineBuild cols = calcLineBuild(stats, direction, pos, Vector2i(pos2.x, pos.y));
+	const LineBuild rows = calcLineBuild(stats, direction, pos, Vector2i(pos.x, pos2.y));
+	std::vector<std::pair<Vector2i, Vector2i>> out;
+	const int nRows = std::max(1, rows.count);
+	const int nCols = std::max(1, cols.count);
+	const Vector2i colStep = nCols > 1 ? Vector2i(cols.step.x, 0) : Vector2i(0, 0);
+	const Vector2i rowStep = nRows > 1 ? Vector2i(0, rows.step.y) : Vector2i(0, 0);
+	for (int r = 0; r < nRows && r < 64; ++r)
+	{
+		const Vector2i a = cols.begin + rowStep * r;
+		out.emplace_back(a, a + colStep * (nCols - 1));
+	}
+	return out;
+}
+
 StructContainer& GlobalStructContainer()
 {
 	static StructContainer instance;

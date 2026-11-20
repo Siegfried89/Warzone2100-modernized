@@ -710,6 +710,7 @@ static void CheckStartWallDrag()
 		if ((buildState == BUILD3D_POS || buildState == BUILD3D_VALID)
 		    && sBuildDetails.psStats->hasType(STAT_STRUCTURE))
 		{
+			modFieldLatch();   // MOD (20.11. 19:23): Strg beim Druecken = Feldbau fuer diesen Zug
 			if (canLineBuild())
 			{
 				wallDrag.pos = wallDrag.pos2 = mousePos;

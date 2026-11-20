@@ -27,6 +27,7 @@ Alex McLean, Pumpkin Studios, EIDOS Interactive, 1997
 #include <string>
 #include "lib/framework/math_ext.h"
 #include "lib/framework/input.h"
+#include "structure.h"
 #include "map.h"
 #include "edit3d.h"
 #include "display3d.h"
@@ -147,6 +148,36 @@ void init3DBuilding(BASE_STATS *psStats, BUILDCALLBACK CallBack, void *UserData)
 	sBuildDetails.y = map_coord(mousePos.y - world_coord(sBuildDetails.height)/2);
 }
 
+// MOD (20.11. 19:23): Feldbau mit Strg + Ziehen
+static bool s_modFieldLatched = false;
+static std::vector<std::pair<Vector2i, Vector2i>> s_modFieldRows;
+
+static bool modCtrlKey()
+{
+	return keyDown(KEY_LCTRL) || keyDown(KEY_RCTRL);
+}
+
+void modFieldLatch()
+{
+	s_modFieldLatched = modCtrlKey();
+}
+
+bool modFieldBuild()
+{
+	if (mouseDown(MOUSE_LMB) || mouseReleased(MOUSE_LMB) || wallDrag.status == DRAG_RELEASED)
+	{
+		return s_modFieldLatched;
+	}
+	return modCtrlKey();
+}
+
+bool modTakeFieldRows(std::vector<std::pair<Vector2i, Vector2i>> &rows)
+{
+	rows.swap(s_modFieldRows);
+	s_modFieldRows.clear();
+	return !rows.empty();
+}
+
 void	kill3DBuilding()
 {
 	//cancel the drag boxes
@@ -189,10 +220,17 @@ bool process3DBuilding()
 		{
 			wallDrag.pos2 = mousePos;  // Why must this be done here? If not doing it here, dragging works almost normally, except it suddenly stops working if the drag becomes invalid.
 
-			auto lb = calcLineBuild(static_cast<STRUCTURE_STATS *>(sBuildDetails.psStats), getBuildingDirection(), wallDrag.pos, wallDrag.pos2);
-			for (int i = 0; i < lb.count && isValid; ++i)
+			// MOD (20.11. 19:23): Feld = mehrere Zeilen, jede wie eine Linie pruefen
+			std::vector<std::pair<Vector2i, Vector2i>> rows;
+			if (modFieldBuild()) { rows = calcFieldRows(static_cast<STRUCTURE_STATS *>(sBuildDetails.psStats), getBuildingDirection(), wallDrag.pos, wallDrag.pos2); }
+			else { rows.emplace_back(wallDrag.pos, wallDrag.pos2); }
+			for (const auto &row : rows)
 			{
-				isValid &= validLocation(gameWorld, sBuildDetails.psStats, lb[i], getBuildingDirection(), selectedPlayer, true);
+				auto lb = calcLineBuild(static_cast<STRUCTURE_STATS *>(sBuildDetails.psStats), getBuildingDirection(), row.first, row.second);
+				for (int i = 0; i < lb.count && isValid; ++i)
+				{
+					isValid &= validLocation(gameWorld, sBuildDetails.psStats, lb[i], getBuildingDirection(), selectedPlayer, true);
+				}
 			}
 		}
 		else
@@ -282,11 +320,29 @@ bool found3DBuildLocTwo(Vector2i &pos, Vector2i &pos2)
 		return false;
 	}
 
-	wallDrag.status = DRAG_INACTIVE;
 	STRUCTURE_STATS *stats = (STRUCTURE_STATS *)sBuildDetails.psStats;
-	LineBuild lb = calcLineBuild(stats, getBuildingDirection(), wallDrag.pos, wallDrag.pos2);
-	pos = lb.begin;
-	pos2 = lb.back();
+	s_modFieldRows.clear();
+	if (modFieldBuild())
+	{
+		// MOD (20.11. 19:23): Feld - die erste Zeile geht als normaler Linienauftrag hinaus, die weiteren holt sich hci (modTakeFieldRows)
+		std::vector<std::pair<Vector2i, Vector2i>> rows = calcFieldRows(stats, getBuildingDirection(), wallDrag.pos, wallDrag.pos2);
+		wallDrag.status = DRAG_INACTIVE;
+		LineBuild first = calcLineBuild(stats, getBuildingDirection(), rows.front().first, rows.front().second);
+		pos = first.begin;
+		pos2 = first.back();
+		for (size_t r = 1; r < rows.size(); ++r)
+		{
+			LineBuild lb = calcLineBuild(stats, getBuildingDirection(), rows[r].first, rows[r].second);
+			s_modFieldRows.emplace_back(lb.begin, lb.back());
+		}
+	}
+	else
+	{
+		wallDrag.status = DRAG_INACTIVE;
+		LineBuild lb = calcLineBuild(stats, getBuildingDirection(), wallDrag.pos, wallDrag.pos2);
+		pos = lb.begin;
+		pos2 = lb.back();
+	}
 
 	if (ctrlShiftDown())
 	{
