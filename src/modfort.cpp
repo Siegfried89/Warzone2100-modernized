@@ -10,6 +10,7 @@
 #include "lib/ivis_opengl/ivisdef.h"
 
 #include "droid.h"
+#include "move.h"
 #include "game_world.h"
 #include "map.h"
 #include "modlayer.h"
@@ -34,6 +35,17 @@ bool isFort(const STRUCTURE *psStructure);
 namespace
 {
 constexpr unsigned REBUILD_MS = 2000;
+constexpr unsigned STUCK_MS = 1500;       // (20.11.) so lange ohne Fortschritt an einer Wand -> neuer Weg
+constexpr unsigned STUCK_GAP_MS = 400;    // laenger nicht festgehalten = frei
+
+struct Stuck
+{
+	int player = 0;
+	uint32_t since = 0;      // seit wann ohne Fortschritt
+	uint32_t lastClamp = 0;  // zuletzt festgehalten
+	int best = INT32_MAX;    // kleinster Abstand zum Wegpunkt seitdem
+};
+std::map<uint32_t, Stuck> s_stuck;   // Einheiten-ID -> Zustand (geordnet: feste Reihenfolge auf allen Rechnern)
 constexpr int ENTRY_SPACING = 5;      // bei langen Linien hoechstens alle 5 Felder eine Oeffnung
 
 bool s_tableLoaded = false;
@@ -289,6 +301,8 @@ void rebuild()
 			for (int i = 0; i < S; ++i)
 			{
 				uint8_t m = 0x10;
+				if (i == 0) { m |= 0x20; }   // (20.11.) linke Spalte des Blocks - die Wegsuche findet so die Blockmitte (pathPoint)
+				if (j == 0) { m |= 0x40; }   // (20.11.) obere Zeile des Blocks
 				if (j > 0 || (open & 1)) { m |= 1; }
 				if (i < S - 1 || (open & 2)) { m |= 2; }
 				if (j < S - 1 || (open & 4)) { m |= 4; }
@@ -352,9 +366,52 @@ void crushTick()
 }
 } // namespace
 
+static void stuckTick()
+{
+	for (auto it = s_stuck.begin(); it != s_stuck.end();)
+	{
+		Stuck &st = it->second;
+		if (gameTime - st.lastClamp > STUCK_GAP_MS) { it = s_stuck.erase(it); continue; }
+		if (static_cast<int32_t>(gameTime - st.since) >= static_cast<int32_t>(STUCK_MS))   // since kann (Wartezeit) in der Zukunft liegen
+		{
+			DROID *d = IdToDroid(gameWorld.objects, it->first, st.player);
+			if (d != nullptr && !d->died && d->sMove.Status == MOVEPOINTTOPOINT)
+			{
+				// neuer Weg zum selben Ziel - er fuehrt (astar, 20.11.) ueber die Feldmitten durch die Oeffnung
+				moveDroidToNoFormation(d, d->sMove.destination.x, d->sMove.destination.y);
+			}
+			st.since = gameTime + STUCK_MS;   // naechster Versuch fruehestens in 3 s
+			st.best = INT32_MAX;
+		}
+		++it;
+	}
+}
+
+void noteClamped(const DROID *psDroid)
+{
+	if (psDroid == nullptr || psDroid->sMove.Status != MOVEPOINTTOPOINT) { return; }
+	Stuck &st = s_stuck[psDroid->id];
+	const Vector2i diff = psDroid->pos.xy() - psDroid->sMove.target;
+	const int dist = iHypot(diff);
+	if (st.lastClamp == 0 || gameTime - st.lastClamp > STUCK_GAP_MS)
+	{
+		st = Stuck();
+		st.player = psDroid->player;
+		st.since = gameTime;
+		st.best = dist;
+	}
+	st.lastClamp = gameTime;
+	if (dist + 8 < st.best)
+	{
+		st.best = dist;
+		if (gameTime > st.since) { st.since = gameTime; }   // Fortschritt (an der Wand entlang gleiten ist in Ordnung)
+	}
+}
+
 void tick()
 {
 	crushTick();
+	stuckTick();
 	const unsigned b = gameTime / REBUILD_MS;
 	if (b == s_bucket) { return; }
 	s_bucket = b;
@@ -363,6 +420,7 @@ void tick()
 
 void reset()
 {
+	s_stuck.clear();
 	s_tableLoaded = false;
 	s_family.clear();
 	s_bucket = UINT32_MAX;
@@ -402,6 +460,16 @@ bool edgeOpen(const std::vector<uint8_t> &sd, int width, int x0, int y0, int x1,
 bool isFort(const STRUCTURE *psStructure)
 {
 	return familyOf(psStructure) != nullptr;
+}
+
+Vector2i pathPoint(const std::vector<uint8_t> &sd, int width, int tileX, int tileY)
+{
+	const uint8_t m = sd[static_cast<size_t>(tileX) + static_cast<size_t>(tileY) * width];
+	if (m == 0) { return Vector2i(world_coord(tileX) + TILE_UNITS / 2, world_coord(tileY) + TILE_UNITS / 2); }
+	// Blockmitte: dort ist der Soldat sicher im freien Innenraum (clampInfantry); S = 1 -> Feldmitte
+	const int x0 = (m & 0x20) ? tileX : tileX - (S - 1);
+	const int y0 = (m & 0x40) ? tileY : tileY - (S - 1);
+	return Vector2i(world_coord(x0) + (S * TILE_UNITS) / 2, world_coord(y0) + (S * TILE_UNITS) / 2);
 }
 
 /// (Wunsch 18.11. 12:49 "Vorschau und Ergebnis passen nicht - rund wird zu eckig ..."): Bauplan beim Platzieren zeigt dasselbe Modell wie
