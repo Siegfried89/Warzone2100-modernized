@@ -3609,6 +3609,55 @@ void renderDeliveryPoint(FLAG_POSITION *psPosition, bool blueprint, const glm::m
 	psPosition->screenR = r;
 }
 
+// MOD (Wunsch 20.11. "Kann man das Runterziehen bei den Hedgehog-Panzersperren verhindern? Das sieht nicht gut aus."):
+// Mauern/Sperren sitzen auf der hoechsten Ecke ihres Feldes, die unteren Punkte werden bis zum tiefsten Boden gestreckt - am Hang wurden
+// die Balkenenden der Panzerigel dabei zu langen Spiessen. Modelle aus Einzelteilen je Ebene (PIE-Merker iV_IMD_MOD_GROUNDLEVELS) zeichnet
+// diese Funktion Teil fuer Teil: jedes steht auf dem Boden unter seiner eigenen Mitte und neigt sich mit dem Hang (hoechstens 30 Grad),
+// ohne Streckung. Nur Anzeige - das Spiel rechnet weiter mit pos.z. false = kein solches Modell (normal zeichnen).
+static bool modDrawGroundLevels(const iIMDShape *shape, const STRUCTURE *psStructure, int colour, PIELIGHT brightness, int pieFlag, int pieFlagData, const glm::mat4 &viewMatrix)
+{
+	if (shape == nullptr || !(shape->flags & iV_IMD_MOD_GROUNDLEVELS))
+	{
+		return false;
+	}
+	const float rotRad = UNDEG(-psStructure->rot.direction);
+	const glm::mat4 rotY = glm::rotate(rotRad, glm::vec3(0.f, 1.f, 0.f));
+	auto H = [](float x, float y) { return static_cast<float>(map_Height(gameWorld.map, static_cast<int>(std::lround(x)), static_cast<int>(std::lround(y)))); };
+	const float maxTilt = glm::radians(30.f);
+	for (const iIMDShape *lvl = shape; lvl != nullptr; lvl = lvl->next.get())
+	{
+		const glm::vec3 c(lvl->modPartCenter.x, lvl->modPartCenter.y, lvl->modPartCenter.z);
+		const glm::vec4 off = rotY * glm::vec4(c.x, 0.f, c.z, 0.f);
+		const float wx = static_cast<float>(psStructure->pos.x) + off.x;
+		const float wy = static_cast<float>(psStructure->pos.y) - off.z;   // Anzeige-z = -Welt-y
+		const float r = clip(lvl->modPartRadius, 8.f, 48.f);
+		const float hc = H(wx, wy);
+		// Hang unter dem Teil (Mittelwert ueber die Standflaeche) -> Neigung
+		const float hx = (H(wx + r, wy) - H(wx - r, wy)) / (2.f * r);
+		const float hy = (H(wx, wy + r) - H(wx, wy - r)) / (2.f * r);
+		glm::vec3 n = glm::normalize(glm::vec3(-hx, 1.f, hy));
+		glm::mat4 tilt(1.f);
+		const float ang = std::acos(clip(n.y, -1.f, 1.f));
+		if (ang > 0.001f)
+		{
+			const glm::vec3 axis = glm::normalize(glm::cross(glm::vec3(0.f, 1.f, 0.f), n));
+			tilt = glm::rotate(std::min(ang, maxTilt), axis);
+		}
+		// Mulden: liegt der Boden an einer Ecke der Standflaeche tiefer als die geneigte Ebene, das Teil so weit absenken (hoechstens 6),
+		// damit kein Balkenende in der Luft haengt; 1 Einheit sinkt es immer ein (sitzt fest auf dem Boden)
+		float sink = 1.f;
+		for (int k = 0; k < 4; k++)
+		{
+			const float dx = (k & 1) ? r : -r, dy = (k & 2) ? r : -r;
+			const float gap = (hc + hx * dx + hy * dy) - H(wx + dx, wy + dy);
+			sink = std::max(sink, std::min(gap, 6.f));
+		}
+		const glm::mat4 m = glm::translate(glm::vec3(wx, hc - sink, -wy)) * tilt * rotY * glm::translate(glm::vec3(-c.x, -c.y, -c.z));
+		pie_Draw3DShape(lvl, 0, colour, brightness, pieFlag, pieFlagData, m, viewMatrix, 0.f, true);
+	}
+	return true;
+}
+
 static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	int ecmFlag = 0;
@@ -3656,8 +3705,12 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 		}
 		else if (psStructure->sDisplay.imd)
 		{
-			pie_Draw3DShape(getFactionDisplayIMD(faction, psStructure->sDisplay.imd->displayModel()), 0, getPlayerColour(psStructure->player),
-							brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, static_cast<int>(structHeightScale(psStructure) * pie_RAISE_SCALE), modelMatrix, viewMatrix, stretch);
+			const iIMDShape *shape = getFactionDisplayIMD(faction, psStructure->sDisplay.imd->displayModel());
+			const int scaleData = static_cast<int>(structHeightScale(psStructure) * pie_RAISE_SCALE);
+			if (!modDrawGroundLevels(shape, psStructure, getPlayerColour(psStructure->player), brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, scaleData, viewMatrix))
+			{
+				pie_Draw3DShape(shape, 0, getPlayerColour(psStructure->player), brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, scaleData, modelMatrix, viewMatrix, stretch);
+			}
 		}
 	}
 	else
@@ -3680,7 +3733,11 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 		}
 		else if (imd)
 		{
-			pie_Draw3DShape(getFactionDisplayIMD(faction, imd->displayModel()), 0, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
+			const iIMDShape *shape = getFactionDisplayIMD(faction, imd->displayModel());
+			if (!modDrawGroundLevels(shape, psStructure, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, viewMatrix))
+			{
+				pie_Draw3DShape(shape, 0, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
+			}
 		}
 	}
 	setScreenDispWithPerspective(&psStructure->sDisplay, perspectiveViewMatrix * modelMatrix);

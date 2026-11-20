@@ -201,6 +201,10 @@ struct iIMDShape
 
 	unsigned int flags = 0;
 
+	// MOD (20.11.) nur bei iV_IMD_MOD_GROUNDLEVELS: Mitte (x, Unterkante y, z) und halbe Breite der Standflaeche dieser Ebene
+	Vector3f modPartCenter = Vector3f(0.f, 0.f, 0.f);
+	float modPartRadius = 0.f;
+
 	const iIMDShapeTextures& getTextures() const;
 
 	unsigned short numFrames = 0;

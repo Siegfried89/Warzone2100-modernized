@@ -79,6 +79,13 @@ float ballSwing(const DROID *psDroid, unsigned anim);
 /// Scav-Mauern bekommen das Scav-Tor (A0BaBaGate), andere Mauern das Beton-Tor. true, wenn der Befehl erteilt wurde.
 bool gateFromWall(unsigned player, const STRUCTURE *psWall, bool add);
 
+/// MOD (Wunsch 20.11.): Grabennetz entlang einer gezeichneten Verteidigungslinie (Weltpunkte in Zeichenreihenfolge). side = Seite der
+/// Querstriche (+1/-1 wie modpaint::defendSide: Normale (-ty, tx) * side zeigt zum Feind). Hauptgraben lueckenlos entlang der Linie,
+/// Gruben darin (abwechselnd bewaffnet), Verbindungsgraeben nach hinten mit Reservegrube und Munitionskiste; alles blickt zum Feind.
+/// Alle Eintraege sind Linienbau (line = true, Einzelstuecke mit tile == tile2), Kacheln = Plan-Kacheln (Welt = Kachel * DIST_TILE + DIST_TILE / 2).
+/// Rein lesend (veraendert nichts, kein Zufall) - fuer Vorschau und Bauauftraege.
+std::vector<Placement> planDefenseNet(unsigned player, const std::vector<Vector2i> &strokeWorld, int side);
+
 /// jeden Spielschritt
 void tick(GameWorld &world);
 /// bei neuem Spiel

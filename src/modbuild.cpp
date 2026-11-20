@@ -2,6 +2,7 @@
 // MOD: Befestigungsbau - siehe modbuild.h
 #include "modcrates.h"
 #include "modbuild.h"
+#include "modfort.h"
 #include "feature.h"
 
 #include "lib/framework/frame.h"
@@ -1074,5 +1075,313 @@ void reset()
 		range_rings::setDebugRange(0.f, 0.f, 0.f);
 		s_ringOn = false;
 	}
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// MOD (Wunsch 20.11. "mit defensive line. Sie soll eigentlich so ein Netz bilden wie die von der Infanterie gebauten Netze, nur mit der
+// Eigenschaft, dass die laengste Linie entlang der gezogenen blauen Verteidigungslinie laeuft und alle Stellungen mit der Front zu den
+// blauen Staeben gerichtet sind."). Bisher gruben die Bauer gerade Grabenstuecke zwischen wenigen Stuetzpunkten der Linie: schraege
+// Stuecke wurden zu Treppen (Felder nur ueber Eck = nicht verbunden), die Stuecke trafen sich nicht, alles blickte nach Sueden.
+// Jetzt (alles in Plan-Kacheln = Original-Kacheln, siehe tileOk):
+//  - die Linie wird zu einer lueckenlosen Feldfolge (nur waagerecht/senkrecht benachbart; Ecken bekommen ein Zwischenfeld), Hindernisse
+//    werden umgangen, Schleifen abgeschnitten - das ist der Hauptgraben (der laengste Strang des Netzes),
+//  - im Hauptgraben etwa alle 5 Felder eine Grube, an beiden Enden eine; abwechselnd bewaffnet (MG, Raketen, Panzerabwehr - je nach
+//    Forschung) und unbewaffnet,
+//  - von den unbewaffneten Gruben laeuft ein Verbindungsgraben nach hinten (3 Felder zur eigenen Seite, 2 seitlich, am Ende eine
+//    Reservegrube) wie beim Infanterie-Netz, daneben Munitionskiste und manchmal ein einzelnes MG,
+//  - jedes Bauwerk blickt zur Feindseite (Seite der Querstriche) - die Eingaenge liegen damit hinten (modfort).
+// Alle Teile sind Linienbau-Auftraege (auch Einzelstuecke: Anfang = Ende) - so loest der Bau einer Grube durch Infanterie keinen
+// zusaetzlichen Infanterie-Komplex aus.
+namespace
+{
+STRUCTURE_STATS *availStat(unsigned player, const std::string &name)
+{
+	STRUCTURE_STATS *st = getStructStatsFromName(WzString::fromUtf8(name));
+	if (st == nullptr) { return nullptr; }
+	const int idx = static_cast<int>(st - asStructureStats);
+	if (idx < 0 || idx >= static_cast<int>(numStructureStats)) { return nullptr; }
+	const int status = apStructTypeLists[player][idx];
+	return (status == AVAILABLE || status == REDUNDANT) ? st : nullptr;
+}
+
+/// Bauwerks-Richtung, mit der ein Bauwerk zur Seite k blickt (0 N, 1 O, 2 S, 3 W): Richtung 0 = Sueden (+y), 0x4000 = Osten (modfort)
+uint16_t dirOfSide(int k)
+{
+	static const uint16_t D[4] = {0x8000u, 0x4000u, 0x0000u, 0xC000u};
+	return D[k & 3];
+}
+
+const int SDX[4] = {0, 1, 0, -1};
+const int SDY[4] = {-1, 0, 1, 0};
+
+int64_t dist2i(const Vector2i &a, const Vector2i &b)
+{
+	const int64_t dx = a.x - b.x, dy = a.y - b.y;
+	return dx * dx + dy * dy;
+}
+
+/// fester "Zufall" aus den Feldkoordinaten (Vorschau und Bau ergeben denselben Plan)
+uint32_t cellHash(const Vector2i &t, uint32_t salt)
+{
+	return (static_cast<uint32_t>(t.x) * 73856093u) ^ (static_cast<uint32_t>(t.y) * 19349663u) ^ (salt * 83492791u);
+}
+}
+
+std::vector<Placement> planDefenseNet(unsigned player, const std::vector<Vector2i> &stroke, int side)
+{
+	std::vector<Placement> out;
+	if (player >= MAX_PLAYERS || stroke.empty()) { return out; }
+	STRUCTURE_STATS *trench = availStat(player, "A0BaBaTrench");
+	if (trench == nullptr) { trench = availStat(player, "A0BaBaTrenchEarth"); }
+	if (trench == nullptr) { trench = availStat(player, "A0BaBaSandbagWall"); }
+	if (trench == nullptr) { return out; }
+	side = side < 0 ? -1 : 1;
+	constexpr size_t MAX_LINE = 80;      // Felder Hauptgraben
+	constexpr int MAX_BRANCHES = 6;
+
+	// 1) Linie -> lueckenlose Feldfolge in 4er-Nachbarschaft (Stueckchen von einer Viertel-Kachel abtasten)
+	auto tileOf = [](const Vector2i &w) { return Vector2i(std::max(0, w.x) / DIST_TILE, std::max(0, w.y) / DIST_TILE); };
+	auto worldOf = [](const Vector2i &t) { return Vector2i(t.x * DIST_TILE + DIST_TILE / 2, t.y * DIST_TILE + DIST_TILE / 2); };
+	std::vector<Vector2i> path;
+	std::vector<Vector2i> dense;   // abgetastete Linie (fuer die Blickrichtung)
+	auto push = [&](const Vector2i &t) {
+		const auto it = std::find(path.begin(), path.end(), t);
+		if (it != path.end()) { path.erase(it + 1, path.end()); return; }   // Schleife: abschneiden
+		path.push_back(t);
+	};
+	for (size_t i = 0; i < stroke.size() && path.size() < MAX_LINE; ++i)
+	{
+		const Vector2i a = i == 0 ? stroke[0] : stroke[i - 1], b = stroke[i];
+		const int64_t len = static_cast<int64_t>(std::sqrt(static_cast<double>(dist2i(a, b))));
+		const int steps = std::max<int>(1, static_cast<int>(len / (DIST_TILE / 4)));
+		for (int k = (i == 0 ? 0 : 1); k <= steps && path.size() < MAX_LINE; ++k)
+		{
+			const Vector2i w(a.x + static_cast<int>((static_cast<int64_t>(b.x - a.x) * k) / steps), a.y + static_cast<int>((static_cast<int64_t>(b.y - a.y) * k) / steps));
+			dense.push_back(w);
+			const Vector2i t = tileOf(w);
+			if (!path.empty() && path.back() == t) { continue; }
+			if (!path.empty() && manhattan(path.back(), t) == 2 && path.back().x != t.x && path.back().y != t.y)
+			{
+				// schraeger Schritt: Zwischenfeld (das der Linie naehere der beiden Ecken), damit die Felder verbunden bleiben
+				const Vector2i ca(t.x, path.back().y), cb(path.back().x, t.y);
+				push(dist2i(worldOf(ca), w) <= dist2i(worldOf(cb), w) ? ca : cb);
+			}
+			else if (!path.empty() && manhattan(path.back(), t) > 1)
+			{
+				// (sehr schnelle Mausbewegung) Luecke: gerade Felder dazwischen
+				Vector2i c = path.back();
+				while (manhattan(c, t) > 1 && path.size() < MAX_LINE)
+				{
+					if (c.x != t.x) { c.x += (t.x > c.x) ? 1 : -1; } else { c.y += (t.y > c.y) ? 1 : -1; }
+					push(c);
+				}
+			}
+			push(t);
+		}
+	}
+	if (path.empty() || dense.empty()) { return out; }
+
+	// 2) Hindernisse umgehen (wie der Mauerring): blockiertes Feld -> Weg um das Hindernis zum naechsten freien Feld der Linie,
+	//    geht es nicht, beginnt dort ein neues Stueck. Eigene Stellungen auf der Linie gehoeren dazu (werden nicht neu gebaut).
+	TileSet used;
+	auto ownFort = [&](const Vector2i &t) {
+		const STRUCTURE *os = ownStructAt(player, t);
+		return os != nullptr && modfort::isFort(os);
+	};
+	auto passable = [&](const Vector2i &t) { return used.count(keyOf(t)) == 0 && (freeFor(player, trench, t, 0, used) || ownFort(t)); };
+	std::vector<std::vector<Vector2i>> pieces;
+	{
+		std::vector<Vector2i> cur;
+		size_t i = 0;
+		while (i < path.size())
+		{
+			const Vector2i t = path[i];
+			if (passable(t)) { cur.push_back(t); used.insert(keyOf(t)); ++i; continue; }
+			size_t j = i + 1;
+			while (j < path.size() && j < i + 10 && !passable(path[j])) { ++j; }
+			std::vector<Vector2i> detour;
+			if (!cur.empty() && j < path.size() && passable(path[j])
+			    && routeTiles(cur.back(), path[j], passable, static_cast<int>(j - i) * 2 + 6, detour))
+			{
+				for (const Vector2i &d : detour) { cur.push_back(d); used.insert(keyOf(d)); }
+				i = j;
+				continue;
+			}
+			if (!cur.empty()) { pieces.push_back(cur); cur.clear(); }
+			i = j;
+		}
+		if (!cur.empty()) { pieces.push_back(cur); }
+	}
+
+	// Bewaffnung reihum nach Forschung; Grubenformen nach festem Zufall
+	static const char *const SHAPE[3] = {"Square", "Hex", "Round"};
+	auto pitFor = [&](const Vector2i &t, int armKind) -> STRUCTURE_STATS * {
+		// armKind: -1 unbewaffnet, 0 MG, 1 Raketen, 2 Panzerabwehr
+		const std::string shape = SHAPE[cellHash(t, 7) % 3u];
+		std::vector<std::string> names;
+		if (armKind == 0) { names = {"A0BaBaMGNest" + shape, "A0BaBaMGNestSquare"}; }
+		else if (armKind == 1) { names = {"A0BaBaPit" + shape + "Rkt", "A0BaBaPitSquareRkt", "A0BaBaMGNest" + shape, "A0BaBaMGNestSquare"}; }
+		else if (armKind == 2) { names = {"A0BaBaPit" + shape + "AT", "A0BaBaPitSquareAT", "A0BaBaMGNest" + shape, "A0BaBaMGNestSquare"}; }
+		names.push_back("A0BaBaPit" + shape);
+		names.push_back("A0BaBaPitSquare");
+		for (const std::string &n : names) { if (STRUCTURE_STATS *st = availStat(player, n)) { return st; } }
+		return nullptr;
+	};
+	static const int ARM_CYCLE[4] = {0, 1, 0, 2};   // MG, Raketen, MG, Panzerabwehr
+	STRUCTURE_STATS *box = availStat(player, "A0BaBaAmmoBox");
+	STRUCTURE_STATS *post = availStat(player, "A0BaBaMGNestPost");
+
+	struct Item { double key; Placement p; };
+	std::vector<Item> items;
+	auto addItem = [&](double key, STRUCTURE_STATS *st, const Vector2i &a, const Vector2i &b, int faceSide) {
+		Item it;
+		it.key = key;
+		it.p.stats = st; it.p.tile = a; it.p.tile2 = b; it.p.line = true; it.p.direction = dirOfSide(faceSide);
+		items.push_back(it);
+	};
+	int branches = 0, armedCount = 0;
+	double pieceBase = 0.0;
+	for (const std::vector<Vector2i> &cells : pieces)
+	{
+		const size_t m = cells.size();
+		// Feindseite je Feld: Normale der GEZEICHNETEN Linie am naechsten Punkt (Tangente ueber +-1,5 Kacheln) zur Seite der Querstriche,
+		// auf N/O/S/W gerundet - mit Beharrung: die Seite des Vorgaengers bleibt, solange sie hoechstens 60 Grad abweicht (schraege Linien
+		// und Umwege um Hindernisse wechseln nicht hin und her)
+		std::vector<int> face(m, 0);
+		{
+			int prev = -1;
+			for (size_t i = 0; i < m; ++i)
+			{
+				const Vector2i cw = worldOf(cells[i]);
+				size_t best = 0;
+				int64_t bd = INT64_MAX;
+				for (size_t q = 0; q < dense.size(); ++q) { const int64_t dd = dist2i(dense[q], cw); if (dd < bd) { bd = dd; best = q; } }
+				const Vector2i a = dense[best >= 6 ? best - 6 : 0], b = dense[std::min(dense.size() - 1, best + 6)];
+				double tx = b.x - a.x, ty = b.y - a.y;
+				if (tx == 0 && ty == 0) { tx = 1; }
+				const double ex = -ty * side, ey = tx * side, el = std::max(1e-9, std::sqrt(ex * ex + ey * ey));
+				auto dotSide = [&](int k) { return (ex * SDX[k] + ey * SDY[k]) / el; };
+				int pick = 0;
+				for (int k = 1; k < 4; ++k) { if (dotSide(k) > dotSide(pick) + 1e-9) { pick = k; } }
+				if (prev >= 0 && dotSide(prev) >= 0.5) { pick = prev; }
+				face[i] = pick;
+				prev = pick;
+			}
+		}
+		// Gruben im Hauptgraben: an den Enden und etwa alle 5 Felder
+		std::vector<char> isPit(m, 0);
+		const size_t nPit = (m <= 2) ? m : std::max<size_t>(2, 1 + (m - 1 + 2) / 5);
+		for (size_t k = 0; k < nPit; ++k)
+		{
+			size_t idx = (nPit == 1) ? 0 : (k * (m - 1) + (nPit - 1) / 2) / (nPit - 1);
+			// steht dort schon eine eigene Stellung: Nachbarfeld nehmen
+			for (int d : {0, 1, -1, 2, -2})
+			{
+				const long j = static_cast<long>(idx) + d;
+				if (j < 0 || j >= static_cast<long>(m) || isPit[static_cast<size_t>(j)] || ownFort(cells[static_cast<size_t>(j)])) { continue; }
+				isPit[static_cast<size_t>(j)] = 1;
+				break;
+			}
+		}
+		// Hauptgraben: gerade Stuecke gleicher Blickrichtung zwischen den Gruben
+		size_t i = 0;
+		while (i < m)
+		{
+			if (isPit[i] || ownFort(cells[i])) { ++i; continue; }
+			size_t j = i;
+			while (j + 1 < m && !isPit[j + 1] && !ownFort(cells[j + 1]) && face[j + 1] == face[i]
+			       && (j == i || (cells[j + 1].x - cells[j].x == cells[i + 1].x - cells[i].x && cells[j + 1].y - cells[j].y == cells[i + 1].y - cells[i].y))
+			       && manhattan(cells[j], cells[j + 1]) == 1)
+			{
+				++j;
+			}
+			addItem(pieceBase + static_cast<double>(i), trench, cells[i], cells[j], face[i]);
+			i = j + 1;
+		}
+		// Gruben (abwechselnd bewaffnet - die Enden immer) und Verbindungsgraeben nach hinten
+		size_t pitNo = 0;
+		const size_t lastPit = [&]() { size_t l = 0; for (size_t q = 0; q < m; ++q) { if (isPit[q]) { l = q; } } return l; }();
+		for (size_t q = 0; q < m; ++q)
+		{
+			if (!isPit[q]) { continue; }
+			const bool endPit = pitNo == 0 || q == lastPit;
+			const bool armed = endPit || (pitNo % 2 == 0);
+			const int k = face[q];
+			STRUCTURE_STATS *pst = pitFor(cells[q], armed ? ARM_CYCLE[armedCount % 4] : -1);
+			if (armed) { ++armedCount; }
+			++pitNo;
+			if (pst == nullptr) { pst = trench; }
+			addItem(pieceBase + static_cast<double>(q), pst, cells[q], cells[q], k);
+			if (armed || branches >= MAX_BRANCHES || m < 5) { continue; }
+			// Verbindungsgraben: 3 Felder nach hinten, 2 zur Seite, Reservegrube am Ende (wie beim Infanterie-Netz)
+			const int back = (k + 2) & 3;
+			const int sideA = ((branches % 2) == 0) ? ((k + 1) & 3) : ((k + 3) & 3);
+			const Vector2i r = cells[q];
+			// ein Abzweigfeld darf nur an seinen Vorgaenger grenzen (sonst verschmilzt es mit dem Hauptgraben); das erste darf zusaetzlich
+			// Hauptgraben-Felder direkt neben der Grube beruehren (schraege Linien: kleiner Knoten aus 2 x 2 Feldern an der Abzweigung)
+			auto touchesOther = [&](const Vector2i &t, const Vector2i &pred) {
+				for (int d = 0; d < 4; ++d)
+				{
+					const Vector2i n(t.x + SDX[d], t.y + SDY[d]);
+					if (n == pred) { continue; }
+					if (used.count(keyOf(n)) == 0 && !ownFort(n)) { continue; }
+					if (pred == r && std::max(std::abs(n.x - r.x), std::abs(n.y - r.y)) <= 1) { continue; }
+					return true;
+				}
+				return false;
+			};
+			std::vector<Vector2i> br;
+			int usedSide = sideA;
+			for (int attempt = 0; attempt < 2 && br.size() < 3; ++attempt)
+			{
+				const int sd = attempt == 0 ? sideA : ((sideA + 2) & 3);
+				std::vector<Vector2i> want;
+				for (int s1 = 1; s1 <= 3; ++s1) { want.emplace_back(r.x + SDX[back] * s1, r.y + SDY[back] * s1); }
+				for (int s2 = 1; s2 <= 3; ++s2) { want.emplace_back(r.x + SDX[back] * 3 + SDX[sd] * s2, r.y + SDY[back] * 3 + SDY[sd] * s2); }
+				std::vector<Vector2i> got;
+				Vector2i pred = r;
+				for (const Vector2i &t : want)
+				{
+					if (!freeFor(player, trench, t, 0, used) || touchesOther(t, pred)) { break; }
+					got.push_back(t);
+					pred = t;
+				}
+				if (got.size() > br.size()) { br = got; usedSide = sd; }
+			}
+			if (br.size() < 3) { continue; }   // kein Platz nach hinten
+			++branches;
+			for (const Vector2i &t : br) { used.insert(keyOf(t)); }
+			const double bk = pieceBase + static_cast<double>(q) + 0.5;
+			// letzte Zelle = Reservegrube (unbewaffnet), davor Graben (gerade Stuecke)
+			const Vector2i endT = br.back();
+			std::vector<Vector2i> run(br.begin(), br.end() - 1);
+			size_t a0 = 0;
+			while (a0 < run.size())
+			{
+				size_t b0 = a0;
+				while (b0 + 1 < run.size() && (b0 == a0 || (run[b0 + 1].x - run[b0].x == run[a0 + 1].x - run[a0].x && run[b0 + 1].y - run[b0].y == run[a0 + 1].y - run[a0].y))) { ++b0; }
+				addItem(bk, trench, run[a0], run[b0], k);
+				a0 = b0 + 1;
+			}
+			STRUCTURE_STATS *reserve = pitFor(endT, -1);
+			addItem(bk + 0.01, reserve != nullptr ? reserve : trench, endT, endT, k);
+			// Munitionskiste neben dem 2. Grabenfeld (gegenueber der Abzweigung), einzelnes MG neben dem 3. (jeder zweite Abzweig)
+			const int opp = (usedSide + 2) & 3;
+			if (box != nullptr)
+			{
+				const Vector2i bx(br[1].x + SDX[opp], br[1].y + SDY[opp]);
+				if (freeFor(player, box, bx, dirOfSide(k), used)) { used.insert(keyOf(bx)); addItem(bk + 0.02, box, bx, bx, k); }
+			}
+			if (post != nullptr && (branches % 2) == 0 && br.size() >= 3)
+			{
+				const Vector2i mg(br[2].x + SDX[opp], br[2].y + SDY[opp]);
+				if (freeFor(player, post, mg, dirOfSide(k), used)) { used.insert(keyOf(mg)); addItem(bk + 0.03, post, mg, mg, k); }
+			}
+		}
+		pieceBase += static_cast<double>(m) + 1.0;
+	}
+	std::stable_sort(items.begin(), items.end(), [](const Item &a, const Item &b) { return a.key < b.key; });
+	for (const Item &it : items) { out.push_back(it.p); }
+	return out;
 }
 }

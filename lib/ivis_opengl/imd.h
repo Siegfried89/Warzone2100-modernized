@@ -52,6 +52,9 @@ struct iIMDShapeTextures;
 #define iV_IMD_PITCH_TO_CAMERA 0x00000020
 #define iV_IMD_NOSTRETCH       0x00001000
 #define iV_IMD_TCMASK          0x00010000
+// MOD (20.11.): jede Ebene ist ein eigenes Teil, das in der Anzeige auf dem Boden unter seiner Mitte steht und sich mit dem Hang neigt
+// (z. B. fuenf Panzerigel je Feld); die Grenzen des Modells (Spielwerte) umfassen alle Ebenen
+#define iV_IMD_MOD_GROUNDLEVELS 0x00100000
 
 // polygon flags	b0..b7: col, b24..b31: anim index
 
