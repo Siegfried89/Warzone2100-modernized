@@ -43,9 +43,10 @@ namespace
 {
 // ---------------------------------------------------------------- Masse (Welteinheiten, 1 Feld = 128)
 constexpr int FIX = 256;                     // Festkomma der Streckenlaenge
-constexpr int HALF_LOCO = 31;                // halbe Laenge Lok / Waggon (Modelle in trains.py)
-constexpr int HALF_WAGON = 28;
-constexpr int COUPLER = 5;                   // Kupplung zwischen zwei Fahrzeugen
+// (Wunsch 21.11. 15:48 "Alle Zugteile groesser ... dieselbe Groesse wie der Scav-Bus"): Modelle x1,8 (trains.py VS)
+constexpr int HALF_LOCO = 57;                // halbe Laenge Lok / Waggon (Modelle in trains.py)
+constexpr int HALF_WAGON = 50;
+constexpr int COUPLER = 9;                   // Kupplung zwischen zwei Fahrzeugen
 constexpr int ACCEL = 170;                   // Anfahren (Welteinheiten/s^2)
 constexpr int BRAKE = 260;                   // Bremsen
 constexpr int SPAWN_RADIUS = 9;              // Lokschuppen: Gleis hoechstens so viele Felder entfernt
@@ -676,7 +677,7 @@ void onFactoryDroid(DROID *d, const STRUCTURE *factory)
 			bool busy = false;
 			for (const DROID *o : gameWorld.objects.droids[d->player])
 			{
-				if (o != d && !o->died && isTrain(o) && iHypot(o->pos.xy() - c) < RT * 3 / 4) { busy = true; break; }
+				if (o != d && !o->died && isTrain(o) && iHypot(o->pos.xy() - c) < HALF_LOCO + HALF_WAGON) { busy = true; break; }
 			}
 			const Vector2i dv = c - fp;
 			const int64_t dd = static_cast<int64_t>(dv.x) * dv.x + static_cast<int64_t>(dv.y) * dv.y + (busy ? static_cast<int64_t>(1) << 40 : 0);
@@ -821,18 +822,29 @@ void reset()
 // ---------------------------------------------------------------- Zeichnen
 bool drawRail(const STRUCTURE *s, PIELIGHT brightness, const glm::mat4 &viewMatrix)
 {
-	static const iIMDShape *s_half = nullptr, *s_diag = nullptr, *s_hub = nullptr;
+	// (Wunsch 21.11. 15:40) Damm mit Schotter, Schwellen, Schienen; Erde am Dammfuss durchscheinend auslaufend (eigene Modelle mit Alpha);
+	// Gleisende = gerader, harter Abschluss (modrail_end); das achteckige Mittelstueck nur noch an Kurven und Weichen; Hellholz-Variante
+	// fuer das Bauwerk "A0RailTrackLight"
+	enum { HALF = 0, DIAG, END, HUB, E_HALF, E_DIAG, E_END, E_HUB, NSHAPE };
+	static const char *const names[2][NSHAPE] = {
+		{ "modrail_half.pie", "modrail_diag.pie", "modrail_end.pie", "modrail_hub.pie", "modrail_earth_half.pie", "modrail_earth_diag.pie", "modrail_earth_end.pie", "modrail_earth_hub.pie" },
+		{ "modrail_half_l.pie", "modrail_diag_l.pie", "modrail_end_l.pie", "modrail_hub.pie", "modrail_earth_half.pie", "modrail_earth_diag.pie", "modrail_earth_end.pie", "modrail_earth_hub.pie" } };
+	static const iIMDShape *shapes[2][NSHAPE] = {};
 	static unsigned s_gen = 0;
 	if (modelCacheStale(s_gen))
 	{
-		const iIMDBaseShape *a = modelGet(WzString::fromUtf8("modrail_half.pie"));
-		const iIMDBaseShape *b = modelGet(WzString::fromUtf8("modrail_diag.pie"));
-		const iIMDBaseShape *c = modelGet(WzString::fromUtf8("modrail_hub.pie"));
-		s_half = a ? a->displayModel() : nullptr;
-		s_diag = b ? b->displayModel() : nullptr;
-		s_hub = c ? c->displayModel() : nullptr;
+		for (int v = 0; v < 2; ++v)
+		{
+			for (int k = 0; k < NSHAPE; ++k)
+			{
+				const iIMDBaseShape *b = modelGet(WzString::fromUtf8(names[v][k]));
+				shapes[v][k] = b ? b->displayModel() : nullptr;
+			}
+		}
 	}
-	if (s_half == nullptr || s_diag == nullptr) { return false; }
+	const int var = s->pStructureType->id.endsWith("Light") ? 1 : 0;
+	const iIMDShape *const *sh = shapes[var];
+	if (sh[HALF] == nullptr || sh[DIAG] == nullptr) { return false; }
 	ensureNet();
 	const int tx = rc(s->pos.x), ty = rc(s->pos.y);
 	if (!onMap(tx, ty)) { return false; }
@@ -845,27 +857,19 @@ bool drawRail(const STRUCTURE *s, PIELIGHT brightness, const glm::mat4 &viewMatr
 		if ((k & 1) != 0 && (any(nx, ty) || any(tx, ny))) { continue; }
 		m |= static_cast<uint8_t>(1u << k);
 	}
-	if (m == 0)
-	{
-		// einzelnes Feld: gerades Stueck in Bauwerks-Richtung
-		const bool ew = ((s->rot.direction + 0x2000) & 0x4000) != 0;
-		m = ew ? static_cast<uint8_t>((1u << 2) | (1u << 6)) : static_cast<uint8_t>((1u << 0) | (1u << 4));
-	}
+	int links[8];
+	int nl = 0;
+	for (int k = 0; k < 8; ++k) { if ((m & (1u << k)) != 0) { links[nl++] = k; } }
 	const bool built = s->status == SS_BUILT;
 	const int flags = built ? 0 : pie_TRANSLUCENT;
 	const int flagData = built ? 0 : 110;
 	const int cx = rw(tx) + RT / 2, cy = rw(ty) + RT / 2;
 	const float h0 = static_cast<float>(map_Height(gameWorld.map, cx, cy));
 	const glm::vec3 c(static_cast<float>(cx), h0, static_cast<float>(-cy));
-	if (s_hub != nullptr)
+	const auto piece = [&](int k, const iIMDShape *model, float len, int fl, int fd)
 	{
-		pie_Draw3DShape(s_hub, 0, 0, brightness, flags, flagData, glm::translate(glm::mat4(1.f), c), viewMatrix);
-	}
-	for (int k = 0; k < 8; ++k)
-	{
-		if ((m & (1u << k)) == 0) { continue; }
+		if (model == nullptr) { return; }
 		const int dx = KNEE[k][0], dy = KNEE[k][1];
-		const float len = (k & 1) ? 90.51f : 64.f;
 		const float ex = static_cast<float>(cx) + static_cast<float>(dx) * 64.f, ey = static_cast<float>(cy) + static_cast<float>(dy) * 64.f;
 		const float h1 = static_cast<float>(map_Height(gameWorld.map, static_cast<int>(ex), static_cast<int>(ey)));
 		const float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(-dy));   // Modell +z -> Richtung (dx, -dy) im Bild (Bild-z = -Welt-y)
@@ -873,7 +877,40 @@ bool drawRail(const STRUCTURE *s, PIELIGHT brightness, const glm::mat4 &viewMatr
 		glm::mat4 M = glm::translate(glm::mat4(1.f), c);
 		M = glm::rotate(M, yaw, glm::vec3(0.f, 1.f, 0.f));
 		M = glm::rotate(M, pitch, glm::vec3(1.f, 0.f, 0.f));
-		pie_Draw3DShape((k & 1) ? s_diag : s_half, 0, 0, brightness, flags, flagData, M, viewMatrix);
+		pie_Draw3DShape(model, 0, 0, brightness, fl, fd, M, viewMatrix);
+	};
+	const int eFlags = pie_TRANSLUCENT;                 // Erde: Alpha der Textur laesst sie in den Boden auslaufen
+	const int eData = built ? 255 : 90;
+	if (nl == 0)
+	{
+		// einzelnes Feld: gerades Stueck in Bauwerks-Richtung mit zwei harten Enden
+		const bool ew = ((s->rot.direction + 0x2000) & 0x4000) != 0;
+		const int a = ew ? 2 : 0;
+		for (int k : { a, a + 4 })
+		{
+			piece(k, sh[END], 40.f, flags, flagData);
+			piece(k, sh[E_END], 40.f, eFlags, eData);
+		}
+		return true;
+	}
+	for (int i = 0; i < nl; ++i)
+	{
+		const int k = links[i];
+		piece(k, (k & 1) ? sh[DIAG] : sh[HALF], (k & 1) ? 90.51f : 64.f, flags, flagData);
+		piece(k, (k & 1) ? sh[E_DIAG] : sh[E_HALF], (k & 1) ? 90.51f : 64.f, eFlags, eData);
+	}
+	if (nl == 1)
+	{
+		// Gleisende: gerader Abschluss in Gegenrichtung
+		const int k = (links[0] + 4) % 8;
+		piece(k, sh[END], 40.f, flags, flagData);
+		piece(k, sh[E_END], 40.f, eFlags, eData);
+	}
+	else if (!(nl == 2 && links[1] - links[0] == 4))
+	{
+		// Kurve oder Weiche: Mittelstueck fuellt die Ecke
+		if (sh[HUB] != nullptr) { pie_Draw3DShape(sh[HUB], 0, 0, brightness, flags, flagData, glm::translate(glm::mat4(1.f), c), viewMatrix); }
+		if (sh[E_HUB] != nullptr) { pie_Draw3DShape(sh[E_HUB], 0, 0, brightness, eFlags, eData, glm::translate(glm::mat4(1.f), c), viewMatrix); }
 	}
 	return true;
 }

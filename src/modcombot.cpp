@@ -1053,9 +1053,21 @@ static void spawnSeveredFeature(const DROID *d, const Part *p)
 		if (s.id.toUtf8() == p->feature) { fs = &s; break; }
 	}
 	if (fs == nullptr || fs->psImd == nullptr) { return; }
-	const int x = d->pos.x + static_cast<int>(gameRand(129)) - 64;
-	const int y = d->pos.y + static_cast<int>(gameRand(129)) - 64;
-	if (x < 0 || y < 0 || !tileOnMap(gameWorld.map, map_coord(x), map_coord(y))) { return; }
+	// (21.11., Log "Salvage ... already placed ... - removing it"): ein freies Feld in der Naehe suchen, sonst verdraengt das neue Teil
+	// ein schon liegendes
+	int x = -1, y = -1;
+	for (int attempt = 0; attempt < 12; ++attempt)
+	{
+		const int r = 64 + attempt * 24;
+		const int cx = d->pos.x + static_cast<int>(gameRand(static_cast<uint32_t>(2 * r + 1))) - r;
+		const int cy = d->pos.y + static_cast<int>(gameRand(static_cast<uint32_t>(2 * r + 1))) - r;
+		if (cx < 0 || cy < 0 || !tileOnMap(gameWorld.map, map_coord(cx), map_coord(cy))) { continue; }
+		const MAPTILE *mt = mapTile(gameWorld.map, map_coord(cx), map_coord(cy));
+		if (mt->psObject != nullptr) { continue; }   // dort liegt schon etwas (Teil, Wrack, Bauwerk)
+		x = cx; y = cy;
+		break;
+	}
+	if (x < 0) { return; }
 	FEATURE *f = buildFeature(gameWorld, fs, static_cast<UDWORD>(x), static_cast<UDWORD>(y), false);
 	if (f != nullptr) { f->rot.direction = gameRand(DEG(360)); }
 }
