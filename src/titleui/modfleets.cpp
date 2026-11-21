@@ -617,9 +617,9 @@ void WzFleetTitleUI::build()
 	const int fy = 62 + LINE_H + 4 + DESIGN_ROWS * LINE_H + 2;
 	if (pages > 1)
 	{
-		wzNamedButton(form, ID_PREV, X, fy - 2, 36, 24, "wz_left", nullptr, IC_LEFT);
+		wzNamedButton(form, ID_PREV, X, fy - 2, 36, 24, "wz_left", _("Previous page"), IC_LEFT);   // MOD (21.11.): Tooltip
 		headLabel(form, ID_HEAD + 4, X + 52, fy, 60, astringf("%d / %d", page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22);
-		wzNamedButton(form, ID_NEXT, X + 112, fy - 2, 36, 24, "wz_right", nullptr, IC_RIGHT);
+		wzNamedButton(form, ID_NEXT, X + 112, fy - 2, 36, 24, "wz_right", _("Next page"), IC_RIGHT);
 	}
 	headLabel(form, ID_HEAD + 22, X + 170, fy, RW - 170, _("Click a design: favourite on/off"), WZCOL_TEXT_MEDIUM, font_small, 22);
 }
@@ -1251,9 +1251,9 @@ void WzUnitDesignTitleUI::build()
 	if (pages > 1)
 	{
 		const int fy = std::min(listY + D_ROWS * LINE_H + 4, PANEL_H - 66);
-		wzNamedButton(form, ID_D_PREV, 24, fy, 36, 24, "wz_left", nullptr, IC_LEFT);
+		wzNamedButton(form, ID_D_PREV, 24, fy, 36, 24, "wz_left", _("Previous page"), IC_LEFT);   // MOD (21.11.): Tooltip
 		headLabel(form, ID_D_HEAD + 4, 70, fy + 2, 60, astringf("%d / %d", s_ds.page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22, true);
-		wzNamedButton(form, ID_D_NEXT, 140, fy, 36, 24, "wz_right", nullptr, IC_RIGHT);
+		wzNamedButton(form, ID_D_NEXT, 140, fy, 36, 24, "wz_right", _("Next page"), IC_RIGHT);
 	}
 
 	// ---- rechts: 3D-Vorschau
