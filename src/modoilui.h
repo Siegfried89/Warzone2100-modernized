@@ -11,6 +11,8 @@
 
 #include "lib/framework/vector.h"
 #include <glm/fwd.hpp>
+#include <glm/vec3.hpp>
+#include <vector>
 
 namespace modoilui
 {
@@ -19,4 +21,8 @@ void drawWorldIcons(const glm::mat4 &perspectiveViewMatrix);
 /// jedes Bild aus intRunWidgets: Oel-Fenster
 void tick();
 void shutdown();
+/// MOD (Wunsch 21.11. 19:25 "warum nicht so schoen leuchtend blau wie die anderen Ringe?"): Reichweiten beim Platzieren von
+/// Strommasten/Umspannwerk/Kraftwerk/Solar/Oellager als leuchtende Ringe des Reichweiten-Systems (range_rings). supply = Versorgungs-
+/// bereiche (blau, schon versorgte Flaechen eingeschlossen), link = Verbindungsreichweite zu anderen Masten (hellblau). x, y, Radius (Welt).
+void placementRings(std::vector<glm::vec3> &supply, std::vector<glm::vec3> &link);
 }

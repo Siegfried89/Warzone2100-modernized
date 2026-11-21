@@ -36,6 +36,7 @@
 #include "stats.h"
 #include "structure.h"
 #include "visibility.h"
+#include "modoilui.h"   // MOD (21.11.): Reichweiten beim Platzieren von Stromnetz-Gebaeuden
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -82,6 +83,7 @@ gfx_api::buffer* s_instanceMin = nullptr;
 std::vector<gfx_api::RangeRingInstance> s_sensor;
 std::vector<gfx_api::RangeRingInstance> s_weapon;
 std::vector<gfx_api::RangeRingInstance> s_minRange;
+bool s_placementLink = false;   // MOD (21.11.): dritter Kanal zeigt gerade Verbindungsreichweiten (hellblau statt gold)
 
 uint32_t s_gatheredFrame = 0;
 bool s_gatheredThisFrame = false;
@@ -323,6 +325,7 @@ void gatherSelected()
 	s_sensor.clear();
 	s_weapon.clear();
 	s_minRange.clear();
+	s_placementLink = false;
 	if (!s_modeTouched && rangeOnScreen && s_mode == 0) { s_mode = 3; } // Altbestand aus der Konfiguration
 
 	if (selectedPlayer >= MAX_PLAYERS)
@@ -353,6 +356,17 @@ void gatherSelected()
 	if (s_debugRadius > 0.f)
 	{
 		push(s_weapon, s_debugX, s_debugY, s_debugRadius);
+	}
+
+	// MOD (Wunsch 21.11. 19:25 "so schoen leuchtend blau wie die anderen Ringe"): Platzieren von Strommast/Umspannwerk/Kraftwerk/Solar/
+	// Oellager - Versorgungsbereich im blauen Kanal (verschmilzt mit den schon versorgten Flaechen), Verbindungsreichweite im dritten
+	// Kanal, der dafuer hellblau leuchtet (statt gold)
+	{
+		std::vector<glm::vec3> supply, link;
+		modoilui::placementRings(supply, link);
+		for (const glm::vec3 &r : supply) { push(s_sensor, r.x, r.y, r.z); }
+		for (const glm::vec3 &r : link) { push(s_minRange, r.x, r.y, r.z); }
+		s_placementLink = !link.empty();
 	}
 }
 
@@ -550,7 +564,8 @@ void recordComposite(const gfx_api::RenderPassContext& passCtx)
 	display3d_fillPassReadUvScaleClamp(passCtx, 2, constants.sdfUvScaleClamp);
 	constants.sensorColor = glm::vec4(0.25f, 0.55f, 1.00f, 1.f)   /* MOD: Blau */;
 	constants.weaponColor = glm::vec4(1.00f, 0.18f, 0.12f, 1.f)   /* MOD: Rot */;
-	constants.minRangeColor = glm::vec4(1.00f, 0.80f, 0.20f, 1.f)   /* MOD: Gold */;
+	constants.minRangeColor = s_placementLink ? glm::vec4(0.55f, 0.90f, 1.00f, 1.f)   /* MOD (21.11.): Verbindungsreichweite beim Platzieren: hellblau */
+	                                          : glm::vec4(1.00f, 0.80f, 0.20f, 1.f)   /* MOD: Gold */;
 	constants.fillAlpha = FILL_ALPHA;
 	constants.sdfBand = s_sdfCamera.sdfBand;
 	constants.linearLighting = gfx_api::context::get().linearLightingEnabled() ? 1.f : 0.f;
