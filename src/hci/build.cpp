@@ -32,6 +32,8 @@
 #include "../modbuild.h"
 #include "../structure.h"
 #include "../hci.h"
+#include "../intimage.h"   // MOD (21.11.): Gruppen-Symbole (IntImages)
+#include "../intfac.h"
 #include "lib/ivis_opengl/textdraw.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
@@ -628,10 +630,36 @@ private:
 	}
 
 	/// MOD (16.11. 19:54): Gruppen-Reiter ueber den Bauknoepfen (Alle / Wirtschaft / Fabriken / Versorgung / Mauern / Verteidigung)
+	/// (Wunsch 21.11. 15:40 "die Buttons jeweils mit einem WZ-passenden Icon versehen, vielleicht auch mit einer Ueberschrift + Icon, dass man
+	/// es gleich lesen kann"): jeder Reiter zeigt das WZ-Forschungssymbol seiner Gruppe ueber dem Kurznamen; darueber eine Ueberschrift mit
+	/// Symbol und vollem Namen der gewaehlten Gruppe.
+	struct CatInfo { int cat; const char *name; const char *title; const char *tip; UWORD icon; };
+	static const CatInfo *cats(int &n)
+	{
+		static const CatInfo CATS[] = {
+			{ -2, "All", "All buildings", "All buildings", IMAGE_RES_STRUCTURETECH },
+			{ 0, "Eco", "Economy", "Economy: power, oil derricks, refinery, pipelines, power poles", IMAGE_RES_POWERTECH },
+			{ 1, "Prod", "Production", "Factories, research, crew and combot buildings", IMAGE_RES_DROIDTECH },
+			{ 2, "Supply", "Supply", "Supply: fuel station (repair facility), ammo, outposts, sensors", IMAGE_RES_SYSTEMTECH },
+			{ 3, "Walls", "Walls & trenches", "Walls, gates, tank traps, trenches, pits", IMAGE_RES_MAJOR_PLASCRETE },
+			{ 4, "Def", "Defenses", "Defenses: towers, bunkers, nests, emplacements", IMAGE_RES_DEFENCE },
+		};
+		n = static_cast<int>(sizeof(CATS) / sizeof(CATS[0]));
+		return CATS;
+	}
+
+	static void drawIcon(UWORD icon, int x, int y, int size, bool dim)
+	{
+		if (IntImages == nullptr) { return; }
+		if (dim) { iV_DrawImageFileAnisotropicTint(IntImages, icon, x, y, Vector2f(static_cast<float>(size), static_cast<float>(size)), pal_RGBA(170, 180, 210, 255)); }
+		else { iV_DrawImageFileAnisotropic(IntImages, icon, x, y, Vector2f(static_cast<float>(size), static_cast<float>(size))); }
+	}
+
 	class CategoryButton: public W_BUTTON
 	{
 	public:
 		int cat = -2;
+		UWORD icon = IMAGE_RES_QUESTIONMARK;
 		void display(int xOffset, int yOffset) override
 		{
 			const int x0 = xOffset + x(), y0 = yOffset + y(), x1 = x0 + width(), y1 = y0 + height();
@@ -640,33 +668,52 @@ private:
 			pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x1), static_cast<float>(y1),
 			                    active ? pal_RGBA(70, 110, 200, 230) : (hover ? pal_RGBA(40, 60, 120, 220) : pal_RGBA(16, 22, 60, 200)));
 			iV_Box(x0, y0, x1 - 1, y1 - 1, active ? WZCOL_WHITE : WZCOL_FORM_LIGHT);
+			const int is = std::min(width() - 6, height() - 14);
+			drawIcon(icon, x0 + (width() - is) / 2, y0 + 2, is, !active && !hover);
 			label.setText(getString(), font_small);
 			const int tw = label.width();
-			label.render(x0 + (width() - tw) / 2, y0 + (height() + label.aboveBase()) / 2 - 1, active ? WZCOL_WHITE : WZCOL_FORM_TEXT);
+			label.render(x0 + (width() - tw) / 2, y1 - 3, active ? WZCOL_WHITE : WZCOL_FORM_TEXT);
 		}
 	private:
 		WzText label;
 	};
 
+	/// Ueberschrift: Symbol + voller Name der gewaehlten Gruppe
+	class CategoryHeader: public WIDGET
+	{
+	public:
+		void display(int xOffset, int yOffset) override
+		{
+			int n = 0;
+			const CatInfo *c = cats(n);
+			const CatInfo *cur = &c[0];
+			for (int i = 0; i < n; ++i) { if (c[i].cat == BuildController::getCategory()) { cur = &c[i]; } }
+			const int x0 = xOffset + x(), y0 = yOffset + y();
+			drawIcon(cur->icon, x0 + 2, y0 + 1, height() - 2, false);
+			text.setText(WzString::fromUtf8(cur->title), font_regular);
+			text.render(x0 + height() + 6, y0 + (height() + text.aboveBase()) / 2, WZCOL_FORM_TEXT);
+		}
+	private:
+		WzText text;
+	};
+
 	void addCategoryButtons()
 	{
-		static const struct { int cat; const char *name; const char *tip; } CATS[] = {
-			{ -2, "All", "All buildings" },
-			{ 0, "Eco", "Economy: power, oil derricks, refinery, pipelines, power poles" },
-			{ 1, "Prod", "Factories, research, crew and combot buildings" },
-			{ 2, "Supply", "Supply: fuel station (repair facility), ammo, outposts, sensors" },
-			{ 3, "Walls", "Walls, gates, tank traps, trenches, pits" },
-			{ 4, "Def", "Defenses: towers, bunkers, nests, emplacements" },
-		};
-		constexpr int ROW_Y = STAT_TABFORMY;
-		constexpr int ROW_H = 16;
-		const int n = static_cast<int>(sizeof(CATS) / sizeof(CATS[0]));
+		int n = 0;
+		const CatInfo *CATS = cats(n);
+		constexpr int HEAD_H = 18;
+		constexpr int ROW_H = 32;
+		const int ROW_Y = STAT_TABFORMY + HEAD_H + 2;
+		auto head = std::make_shared<CategoryHeader>();
+		head->setGeometry(6, STAT_TABFORMY, STATF_WIDTH - 12, HEAD_H);
+		attach(head);
 		const int w = (STATF_WIDTH - 8) / n;
 		auto weakController = std::weak_ptr<BuildController>(controller);
 		for (int i = 0; i < n; i++)
 		{
 			auto b = std::make_shared<CategoryButton>();
 			b->cat = CATS[i].cat;
+			b->icon = CATS[i].icon;
 			b->setString(WzString::fromUtf8(CATS[i].name));
 			b->setTip(CATS[i].tip);
 			b->setGeometry(4 + i * w, ROW_Y, w - 2, ROW_H);
@@ -679,11 +726,12 @@ private:
 			});
 			attach(b);
 		}
-		// Bauknoepfe eine Zeile tiefer
+		// Bauknoepfe darunter
 		if (optionList)
 		{
+			const int top = ROW_Y + ROW_H + 4;
 			optionList->setCalcLayout(nullptr);
-			optionList->setGeometry(optionList->x(), STAT_TABFORMY + ROW_H + 4, optionList->width(), STATF_HEIGHT - STAT_TABFORMY - ROW_H - 4);
+			optionList->setGeometry(optionList->x(), top, optionList->width(), STATF_HEIGHT - top);
 		}
 	}
 

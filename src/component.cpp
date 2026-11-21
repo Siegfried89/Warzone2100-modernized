@@ -22,6 +22,8 @@
  * Draws component objects - oh yes indeed.
 */
 
+#include <physfs.h>   // MOD (21.11.)
+#include <unordered_map>
 #include "lib/framework/frame.h"
 #include "lib/framework/trig.h"
 #include <unordered_map>
@@ -841,11 +843,24 @@ void drawMuzzleFlash(WEAPON sWeap, const iIMDShape *weaponImd, const iIMDShape *
 // Kopfhoehe ueber der Deckung), fuer alle Waffen. Nur Anzeige.
 static const iIMDBaseShape *modShapeVariant(const iIMDBaseShape *fireShape, const char *suffix)
 {
-	std::string name = fireShape->filename.toStdString();
+	// (21.11., Log "Could not find: fireknee-kneel.pie"): nicht jedes Modell hat jede Variante - nachgeschlagen wird nur einmal je Name
+	// und ohne Fehlermeldung (Ergebnis gemerkt, auch "gibt es nicht"; neu nach dem Neuladen der Modelle)
+	static std::unordered_map<std::string, const iIMDBaseShape *> cache;
+	static unsigned gen = 0;
+	if (modelCacheStale(gen)) { cache.clear(); }
+	std::string name = fireShape->filename.toLower().toStdString();
 	const size_t dot = name.rfind(".pie");
 	if (dot == std::string::npos) { return nullptr; }
 	name.insert(dot, suffix);
-	return modelGet(WzString::fromUtf8(name));
+	const auto it = cache.find(name);
+	if (it != cache.end()) { return it->second; }
+	const iIMDBaseShape *s = nullptr;
+	if (PHYSFS_exists(("components/bodies/" + name).c_str()) || PHYSFS_exists(("components/prop/" + name).c_str()))
+	{
+		s = modelGet(WzString::fromUtf8(name));
+	}
+	cache.emplace(name, s);
+	return s;
 }
 
 static bool modInfantryCovered(const DROID *psDroid)

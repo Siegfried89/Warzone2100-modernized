@@ -50,14 +50,15 @@ Vector3i seatPos(const DROID *apc, int k)
 {
 	if (isWagon(apc))
 	{
-		// (21.11.) Truppenwaggon: zwei Reihen zu fuenf entlang des Wagens, Blick nach aussen
+		// (21.11.) Truppenwaggon: zwei Reihen zu fuenf entlang des Wagens auf den Laengsbaenken; (15:48) Wagen x1,8 und auf dem hoeheren
+		// Gleisdamm (trains.py: Bankoberkante 27 ueber dem Boden)
 		const int side = (k % 2 == 0) ? -1 : 1;
 		const int row = k / 2;
-		const int right = side * 5;
-		const int along = 18 - row * 9;                     // vorn -> hinten
+		const int right = side * 10;
+		const int along = 32 - row * 16;                    // vorn -> hinten
 		const int fx = iSinR(apc->rot.direction, 1024), fy = iCosR(apc->rot.direction, 1024);
 		const int rx = fy, ry = -fx;
-		return Vector3i(apc->pos.x + (rx * right + fx * along) / 1024, apc->pos.y + (ry * right + fy * along) / 1024, apc->pos.z + 8);
+		return Vector3i(apc->pos.x + (rx * right + fx * along) / 1024, apc->pos.y + (ry * right + fy * along) / 1024, apc->pos.z + 25);
 	}
 	const int side = (k % 2 == 0) ? -1 : 1;
 	const int row = k / 2;                                  // 0 = vorn im Laderaum
@@ -77,7 +78,13 @@ void dismount(DROID *d, const DROID *apc, int k)
 	{
 		// hinter dem Fahrzeug absitzen, Reihe neben Reihe
 		const int fx = iSinR(apc->rot.direction, 1024), fy = iCosR(apc->rot.direction, 1024);
-		const int back = 70 + (k / 4) * 28, right = ((k % 4) - 1) * 26 - 13;
+		int back = 70 + (k / 4) * 28, right = ((k % 4) - 1) * 26 - 13;
+		if (isWagon(apc))
+		{
+			// (21.11.) Waggon: hinter ihm haengt der naechste Wagen - neben dem Damm absitzen, links und rechts entlang des Wagens
+			right = ((k % 2 == 0) ? -1 : 1) * (56 + (k / 10) * 22);
+			back = -36 + ((k / 2) % 5) * 18;
+		}
 		wx = apc->pos.x + (fy * right - fx * back) / 1024;
 		wy = apc->pos.y + (-fx * right - fy * back) / 1024;
 	}
