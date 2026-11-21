@@ -71,6 +71,18 @@ bool concreteAt(WorldMapState &m, int x, int y)
 	if (!TileHasStructure(t)) { return false; }
 	return wants(castStructure(t->psObject));
 }
+
+// (Wunsch 21.11. 15:40/16:47 "da liegt noch ein Stueck von der Betontextur auf dem Boden, ueber der Strasse"): die Strassenkacheln mit
+// Erdrand (Arizona 37 und 47: Asphalt, weisse Randlinie, schmaler Erdstreifen) zaehlen im Kachelsatz als "gebackene Erde", nicht als
+// Strasse - der weiche Betonrand eines Gebaeudes (oder des Karten-Betons) daneben lief deshalb ueber Randlinie und Asphalt. Alle
+// Strassenkacheln (auch Kreuzung 57 und gerade Strasse 59) haben Vorrang vor dem Beton.
+bool roadTile(const MAPTILE *t)
+{
+	if (terrainType(t) == TER_ROAD) { return true; }
+	if (currentMapTileset != MAP_TILESET::ARIZONA) { return false; }
+	const unsigned n = TileNumber_tile(t->texture);
+	return n == 37 || n == 47 || n == 57 || n == 59;
+}
 }
 
 bool wants(const STRUCTURE *psStruct)
@@ -111,7 +123,7 @@ int overrideTexture(WorldMapState &m, int x, int y, bool classic)
 	const MAPTILE *t = mapTile(m, x, y);
 	if (TILE_HAS_DECAL(t)) { return -1; }
 	const unsigned char tt = terrainType(t);
-	if (tt == TER_WATER || tt == TER_CLIFFFACE || tt == TER_ROAD) { return -1; }
+	if (tt == TER_WATER || tt == TER_CLIFFFACE || roadTile(t)) { return -1; }
 	int mask = 0;
 	if (concreteAt(m, x, y - 1)) { mask |= 1; }
 	if (concreteAt(m, x + 1, y)) { mask |= 2; }
@@ -152,7 +164,7 @@ int classicDecal(WorldMapState &m, int x, int y, int decalNo, bool waterOnly)
 	if (TileNumber_tile(t->texture) == MOD_TILE_VOID) { return decalNo; }
 	const unsigned char tt = terrainType(t);
 	// (18.11. 12:19 "der Beton soll nicht in Strassen hineinbluten - da sollte die Strasse Vorrang haben"): kein Betonrand auf Strassenfeldern
-	if (tt == TER_WATER || tt == TER_CLIFFFACE || tt == TER_ROAD) { return decalNo; }
+	if (tt == TER_WATER || tt == TER_CLIFFFACE || roadTile(t)) { return decalNo; }
 	const bool structOk = s_first >= 0;
 	if ((structOk && concreteAt(m, x, y)) || mapConcrete(m, x, y)) { return decalNo; }
 	static const int DX[8] = {0, 1, 0, -1, 1, 1, -1, -1};
