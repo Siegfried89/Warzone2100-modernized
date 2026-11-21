@@ -17,6 +17,7 @@
 #include "map.h"
 #include "modlayer.h"
 #include "modoil.h"
+#include "modrail.h"
 #include "order.h"
 #include "orderdef.h"
 #include "stats.h"
@@ -38,9 +39,26 @@ DROID *findDroid(uint32_t id)
 	return nullptr;
 }
 
+bool isWagon(const DROID *d)
+{
+	const BODY_STATS *b = d != nullptr ? d->getBodyStats() : nullptr;
+	return b != nullptr && b->id.startsWith("TrainWagonTroop");
+}
+
 /// Sitzplatz k im offenen Laderaum (hinten): zwei Reihen zu vier, quer leicht versetzt; Weltkoordinaten
 Vector3i seatPos(const DROID *apc, int k)
 {
+	if (isWagon(apc))
+	{
+		// (21.11.) Truppenwaggon: zwei Reihen zu fuenf entlang des Wagens, Blick nach aussen
+		const int side = (k % 2 == 0) ? -1 : 1;
+		const int row = k / 2;
+		const int right = side * 5;
+		const int along = 18 - row * 9;                     // vorn -> hinten
+		const int fx = iSinR(apc->rot.direction, 1024), fy = iCosR(apc->rot.direction, 1024);
+		const int rx = fy, ry = -fx;
+		return Vector3i(apc->pos.x + (rx * right + fx * along) / 1024, apc->pos.y + (ry * right + fy * along) / 1024, apc->pos.z + 8);
+	}
 	const int side = (k % 2 == 0) ? -1 : 1;
 	const int row = k / 2;                                  // 0 = vorn im Laderaum
 	const int right = side * 9;
@@ -73,7 +91,12 @@ bool isApc(const DROID *d)
 {
 	if (d == nullptr) { return false; }
 	const BODY_STATS *b = d->getBodyStats();
-	return b != nullptr && b->id.startsWith("ScavAPC");
+	return b != nullptr && (b->id.startsWith("ScavAPC") || b->id.startsWith("TrainWagonTroop"));
+}
+
+int capacity(const DROID *d)
+{
+	return isWagon(d) ? 10 : CAPACITY;
 }
 
 bool aboard(const SIMPLE_OBJECT *o)
@@ -114,14 +137,18 @@ void tick()
 				crew.clear();
 			}
 			// Einsteigen: eigene Infanterie, die zum Transporter will (begleiten oder hingeschickt) und angekommen ist
-			if (crew.size() < static_cast<size_t>(CAPACITY))
+			const size_t cap = static_cast<size_t>(capacity(apc));
+			if (crew.size() < cap)
 			{
 				for (DROID *d : gameWorld.objects.droids[p])
 				{
-					if (crew.size() >= static_cast<size_t>(CAPACITY)) { break; }
+					if (crew.size() >= cap) { break; }
 					if (d->died || aboard(d) || !modoil::isInfantry(d) || !modlayer::canInteract(d, apc)) { continue; }
 					if (iHypot(d->pos.xy() - apc->pos.xy()) > BOARD_R) { continue; }
-					const bool follow = d->order.type == DORDER_GUARD && d->order.psObj == apc;
+					// (21.11.) Zug: Infanterie auf die Lok geklickt -> steigt in einen Truppenwaggon dieses Zuges
+					const bool follow = d->order.type == DORDER_GUARD && (d->order.psObj == apc
+					                    || (d->order.psObj != nullptr && d->order.psObj->type == OBJ_DROID && modrail::isLoco(static_cast<const DROID *>(d->order.psObj))
+					                        && modrail::locoOf(apc) == d->order.psObj->id));
 					const bool sent = (d->order.type == DORDER_MOVE || d->order.type == DORDER_SCOUT) && iHypot(d->order.pos - apc->pos.xy()) <= BOARD_R;
 					if (!follow && !sent) { continue; }
 					orderDroid(d, DORDER_STOP, ModeImmediate);

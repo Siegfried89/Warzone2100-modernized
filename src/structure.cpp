@@ -55,6 +55,7 @@
 #include "modoil.h"
 #include "modfuel.h"
 #include "modconcrete.h"
+#include "modrail.h"   // MOD (21.11.): Zuege
 #include "modterrain.h"
 #include "modnestcrew.h"
 #include "research.h"
@@ -821,6 +822,7 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->combinesWithWall = ini.value("combinesWithWall", false).toBool();
 		psStats->requiresPower = ini.value("requiresPower", false).toBool();   // MOD
 		psStats->barracks = ini.value("barracks", false).toBool();   // MOD (20.11. 19:06): Kaserne
+		psStats->trainDepot = ini.value("trainDepot", false).toBool();   // MOD (21.11.): Lokschuppen
 		psStats->mobileCore = ini.value("mobileFactoryCore", false).toBool();   // MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik
 		psStats->crewCost = std::max(0, ini.value("crewCost", 0).toInt());   // MOD: Besatzungskonto
 		psStats->crewProvide = std::max(0, ini.value("crewProvide", 0).toInt());   // MOD: Besatzungskonto
@@ -2999,6 +3001,7 @@ static bool structPlaceDroid(STRUCTURE *psStructure, DROID_TEMPLATE *psTempl, DR
 		limitCommanderExpForProduction(psNewDroid);
 		/* add the droid to the list */
 		addDroid(psNewDroid, gameWorld.objects.droids);
+		modrail::onFactoryDroid(psNewDroid, psStructure);   // MOD (21.11.): Schienenfahrzeug aufs naechste Gleis, Waggon an die Lok
 		*ppsDroid = psNewDroid;
 		if (psNewDroid->player == selectedPlayer)
 		{
@@ -6286,6 +6289,14 @@ bool validTemplateForFactory(const DROID_TEMPLATE *psTemplate, STRUCTURE *psFact
 	{
 		debug(level, "A mobile factory cannot build another mobile factory.");
 		return false;
+	}
+
+	// MOD (21.11.): Schienenfahrzeuge nur aus dem Lokschuppen, der Lokschuppen baut nichts anderes
+	if (psFactory->pStructureType->trainDepot || modrail::isTrainTemplate(psTemplate))
+	{
+		const bool ok = psFactory->pStructureType->trainDepot && modrail::isTrainTemplate(psTemplate);
+		if (!ok) { debug(level, "Rail vehicles are built in the train depot only, not in %s.", objInfo(psFactory)); }
+		return ok;
 	}
 
 	// MOD (Wunsch 16.11. 21:25): die Scav-Fabrik bildet auch Infanterie aus (Scav-Infanterie und Cyborgs)

@@ -2900,7 +2900,8 @@ bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complai
 	    psTempl->asParts[COMP_BRAIN] == 0 &&
 	    psTempl->asParts[COMP_REPAIRUNIT] == 0 &&
 	    psTempl->asParts[COMP_CONSTRUCT] == 0 &&
-		!isTransportTempl)
+		!isTransportTempl &&
+		!(psTempl->asParts[COMP_BODY] && psTempl->getBodyStats()->id.startsWith("Train")))   // MOD (21.11.): Loks und Waggons ohne Turm
 	{
 		debug(level, "No turret for template");
 		return false;

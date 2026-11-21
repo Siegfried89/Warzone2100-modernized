@@ -40,6 +40,7 @@
 #include "modauto.h"
 #include "modmines.h"   // MOD: Minenraeumer-Walze
 #include "modapc.h"     // MOD: Schuetzenpanzer
+#include "modrail.h"    // MOD (21.11.): Zuege
 #include "modoil.h"
 #include "modlayer.h"
 #include "modcrew.h"
@@ -3010,7 +3011,13 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 	//check for transporters first
 	// MOD (17.11. 21:01): Infanterie auf den eigenen Schuetzenpanzer klicken = einsteigen (begleiten, modapc nimmt sie auf)
 	if (psObj->type == OBJ_DROID && modapc::isApc((DROID *)psObj) && psObj->player == psDroid->player && modoil::isInfantry(psDroid)
-	    && modapc::load((DROID *)psObj) < modapc::CAPACITY)
+	    && modapc::load((DROID *)psObj) < modapc::capacity((DROID *)psObj))
+	{
+		return DroidOrder(DORDER_GUARD, psObj);
+	}
+	// MOD (21.11.): Zug - Infanterie auf die eigene Lok klicken = in einen Truppenwaggon einsteigen; Waggon auf eine Lok = ankuppeln
+	if (psObj->type == OBJ_DROID && psObj->player == psDroid->player && modrail::isLoco((DROID *)psObj)
+	    && ((modoil::isInfantry(psDroid) && modrail::freeSeats((DROID *)psObj) > 0) || modrail::isWagon(psDroid)))
 	{
 		return DroidOrder(DORDER_GUARD, psObj);
 	}
@@ -3618,7 +3625,7 @@ bool secondarySupported(const DROID *psDroid, SECONDARY_ORDER sec)
 		break;
 
 	case DSO_MINECLEAR:   // MOD: Minenraeumer (Walze), Schuetzenpanzer (Absitzen) und Combots (Pilot steigt aus, modcrew)
-		supported = modmines::isFlail(psDroid) || modapc::isApc(psDroid) || modcombot::isModular(psDroid);
+		supported = modmines::isFlail(psDroid) || modapc::isApc(psDroid) || modcombot::isModular(psDroid) || modrail::isLoco(psDroid);
 		break;
 
 	case DSO_REPAIR_LEVEL:
@@ -3691,7 +3698,7 @@ SECONDARY_STATE secondaryGetState(const DROID *psDroid, SECONDARY_ORDER sec, QUE
 		return (SECONDARY_STATE)(state & DSS_FULLAUTO_MASK);
 		break;
 	case DSO_MINECLEAR:   // MOD
-		return (modmines::isFlail(psDroid) || modapc::isApc(psDroid) || modcombot::isModular(psDroid)) ? (SECONDARY_STATE)(state & DSS_MINECLEAR_MASK) : DSS_NONE;
+		return (modmines::isFlail(psDroid) || modapc::isApc(psDroid) || modcombot::isModular(psDroid) || modrail::isLoco(psDroid)) ? (SECONDARY_STATE)(state & DSS_MINECLEAR_MASK) : DSS_NONE;
 		break;
 	case DSO_HALTTYPE:
 		if (psDroid->order.type == DORDER_HOLD)
@@ -4369,7 +4376,7 @@ bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORD
 		break;
 	}
 	case DSO_MINECLEAR:   // MOD: Minenraeumer-Walze an/aus (nur Minenraeumer - bei Kommandeuren ist das Bit eine Fabrik-Zuordnung)
-		if (modmines::isFlail(psDroid) || modapc::isApc(psDroid) || modcombot::isModular(psDroid))   // Schuetzenpanzer: Absitzen / Combot: Aussteigen (modapc/modcrew setzen das Bit danach zurueck)
+		if (modmines::isFlail(psDroid) || modapc::isApc(psDroid) || modcombot::isModular(psDroid) || modrail::isLoco(psDroid))   // Schuetzenpanzer: Absitzen / Combot: Aussteigen (modapc/modcrew setzen das Bit danach zurueck)
 		{
 			CurrState = (CurrState & ~DSS_MINECLEAR_MASK) | (State & DSS_MINECLEAR_MASK);
 		}

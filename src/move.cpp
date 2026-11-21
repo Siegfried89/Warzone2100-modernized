@@ -43,6 +43,7 @@
 #include "modrecover.h"
 #include "modsalvage.h"
 #include "modparts.h"
+#include "modrail.h"   // MOD (21.11.): Zuege
 #include "modfuel.h"
 #include "modoil.h"   // MOD
 #include "modtankguns.h"   // MOD
@@ -275,6 +276,12 @@ static bool moveDroidToBase(DROID *psDroid, UDWORD x, UDWORD y, bool bFormation,
 	FPATH_RETVAL		retVal = FPR_OK;
 
 	CHECK_DROID(psDroid);
+
+	if (modrail::isTrain(psDroid))
+	{
+		// MOD (21.11.): Zuege fahren nur auf Schienen - Weg im Gleisnetz (modrail)
+		return modrail::routeTrain(psDroid, static_cast<int>(x), static_cast<int>(y));
+	}
 
 	if (modparts::immobile(psDroid))
 	{
@@ -2815,6 +2822,12 @@ void moveUpdateDroid(DROID *psDroid)
 			// Get out without updating
 			return;
 		}
+	}
+
+	if (modrail::isTrain(psDroid))
+	{
+		modrail::updateTrain(psDroid);   // MOD (21.11.): Zug faehrt entlang der Schienen (Lok bewegt den ganzen Zug)
+		return;
 	}
 
 	// Run the blocked watchdog before this update's movement as well as after it, so a block whose time

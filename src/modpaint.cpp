@@ -60,7 +60,7 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_DEFNET, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_DEFNET, M_RAIL, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -98,6 +98,8 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Demolish", "Demolish: drag a circle - builders tear down all your own structures in it (nearest first, spread over all builders)", "Demolish: drag a circle around what should be torn down (right click cancels)", 200, 90, 60, true },
 	// MOD (Wunsch 21.11. 00:21 "Lieber einen neuen circle machen mit etwas wie baue Verteidigungsnetz"): das Grabennetz hat einen eigenen Befehl
 	{ "Defence net", "Build defence network: drag a line - builders dig a trench network along it (main trench, pits, MG posts, connecting trenches to the rear), front towards the enemy side. Combat units are not moved", "Defence net: drag the line of the trench network (right click cancels)", 120, 190, 230, false },
+	// MOD (Wunsch 21.11. 00:21, Zugsystem): Gleisstrecke frei zeichnen (gerade Stuecke gehen auch wie Mauern ueber das Baumenue)
+	{ "Rail line", "Rail line: drag a route - builders lay a railway track along it (straight and diagonal, around obstacles, joining your existing tracks). Locomotives and wagons come from the train depot and run on the tracks", "Rail line: drag the route of the track (right click cancels)", 175, 140, 95, false },
 };
 
 constexpr int BTN_W = 66;
@@ -105,7 +107,7 @@ constexpr int BTN_H = 20;
 constexpr int GAP = 3;
 constexpr int PAD = 4;
 constexpr int COLS = 2;
-constexpr int ROWS = 9;   // (17.11.) + "Take cover", + Panzersperren / Minenfeld / Offensive, + Minen raeumen; (21.11.) + Verteidigungsnetz
+constexpr int ROWS = 9;   // (17.11.) + "Take cover", + Panzersperren / Minenfeld / Offensive, + Minen raeumen; (21.11.) + Verteidigungsnetz, + Gleisstrecke
 constexpr int TOTAL_W = COLS * BTN_W + (COLS - 1) * GAP + 2 * PAD;
 constexpr int TOTAL_H = ROWS * BTN_H + (ROWS - 1) * GAP + 2 * PAD + 12;   // + Titelzeile
 constexpr unsigned SHOW_MS = 25000;   // so lange bleibt eine Zeichnung sichtbar
@@ -384,6 +386,7 @@ bool fits(Mode m, const DROID *d)
 	case M_ATTACK: return (isCombat(d) && !isArty(d)) || modcombot::isModular(d);
 	case M_DEFEND: return isCombat(d);   // (21.11.) nur Aufstellung - Bauer bauen ueber M_DEFNET
 	case M_DEFNET: return isBuilder(d);
+	case M_RAIL: return isBuilder(d);
 	case M_ARTYBASE: return isTruck(d) && !isAir(d);
 	case M_ARTY: return isArty(d);
 	case M_AIR: return isAir(d) && hasWeapon(d);
@@ -1126,6 +1129,55 @@ int defendSide(const std::vector<Vector2i> &pts)
 	return acc > 0 ? -1 : 1;   // Normale (-ty, tx) zeigt zur Basis, wenn acc > 0 -> Striche auf die andere Seite
 }
 
+/// MOD (20.11./21.11.): Bauplan (Grabennetz, Gleisstrecke) auf die Bauer verteilen - jeder Bauer bekommt einen zusammenhaengenden
+/// Abschnitt (ungefaehr gleich viele Felder), in der Reihenfolge ihrer Lage an der Linie - niemand laeuft hin und her.
+void distributePlan(const std::vector<DROID *> &builders, const std::vector<modbuild::Placement> &plan)
+{
+	if (!plan.empty())
+	{
+		auto worldOfPlan = [](const Vector2i &t) { return Vector2i(t.x * DIST_TILE + DIST_TILE / 2, t.y * DIST_TILE + DIST_TILE / 2); };
+		std::vector<int64_t> cum(plan.size() + 1, 0);
+		for (size_t k = 0; k < plan.size(); ++k)
+		{
+			cum[k + 1] = cum[k] + 1 + std::abs(plan[k].tile2.x - plan[k].tile.x) + std::abs(plan[k].tile2.y - plan[k].tile.y);
+		}
+		// Lage eines Bauers an der Linie = Index des naechsten Planeintrags
+		std::vector<std::pair<size_t, DROID *>> order;
+		for (DROID *b : builders)
+		{
+			size_t best = 0;
+			int64_t bd = INT64_MAX;
+			for (size_t k = 0; k < plan.size(); ++k)
+			{
+				const int64_t dd = dist2(b->pos.xy(), worldOfPlan(plan[k].tile));
+				if (dd < bd) { bd = dd; best = k; }
+			}
+			order.emplace_back(best, b);
+		}
+		std::stable_sort(order.begin(), order.end(), [](const std::pair<size_t, DROID *> &a, const std::pair<size_t, DROID *> &b) {
+			return a.first != b.first ? a.first < b.first : a.second->id < b.second->id;
+		});
+		const size_t nb = std::min(order.size(), plan.size());
+		const int64_t total = cum.back();
+		for (size_t bi = 0; bi < order.size(); ++bi)
+		{
+			// mehr Bauer als Planeintraege: die uebrigen helfen im Abschnitt eines anderen mit
+			const size_t chunk = bi % nb;
+			const int64_t lo = total * static_cast<int64_t>(chunk) / static_cast<int64_t>(nb);
+			const int64_t hi = total * static_cast<int64_t>(chunk + 1) / static_cast<int64_t>(nb);
+			bool first = true;
+			for (size_t k = 0; k < plan.size(); ++k)
+			{
+				const int64_t mid = (cum[k] + cum[k + 1]) / 2;   // Eintrag gehoert zum Abschnitt, in dem seine Mitte liegt
+				if (mid < lo || mid >= hi) { continue; }
+				const modbuild::Placement &pl = plan[k];
+				send(order[bi].second, DroidOrder(DORDER_LINEBUILD, pl.stats, worldOfPlan(pl.tile), worldOfPlan(pl.tile2), static_cast<uint16_t>(pl.direction)), !first);
+				first = false;
+			}
+		}
+	}
+}
+
 void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 {
 	if (raw.empty()) { return; }
@@ -1211,50 +1263,20 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		// Abschnitt (ungefaehr gleich viele Felder), in der Reihenfolge ihrer Lage an der Linie - niemand laeuft hin und her.
 		if (!builders.empty() && selectedPlayer < MAX_PLAYERS)
 		{
-			const std::vector<modbuild::Placement> plan = modbuild::planDefenseNet(selectedPlayer, raw, fside);
-			if (!plan.empty())
-			{
-				auto worldOfPlan = [](const Vector2i &t) { return Vector2i(t.x * DIST_TILE + DIST_TILE / 2, t.y * DIST_TILE + DIST_TILE / 2); };
-				std::vector<int64_t> cum(plan.size() + 1, 0);
-				for (size_t k = 0; k < plan.size(); ++k)
-				{
-					cum[k + 1] = cum[k] + 1 + std::abs(plan[k].tile2.x - plan[k].tile.x) + std::abs(plan[k].tile2.y - plan[k].tile.y);
-				}
-				// Lage eines Bauers an der Linie = Index des naechsten Planeintrags
-				std::vector<std::pair<size_t, DROID *>> order;
-				for (DROID *b : builders)
-				{
-					size_t best = 0;
-					int64_t bd = INT64_MAX;
-					for (size_t k = 0; k < plan.size(); ++k)
-					{
-						const int64_t dd = dist2(b->pos.xy(), worldOfPlan(plan[k].tile));
-						if (dd < bd) { bd = dd; best = k; }
-					}
-					order.emplace_back(best, b);
-				}
-				std::stable_sort(order.begin(), order.end(), [](const std::pair<size_t, DROID *> &a, const std::pair<size_t, DROID *> &b) {
-					return a.first != b.first ? a.first < b.first : a.second->id < b.second->id;
-				});
-				const size_t nb = std::min(order.size(), plan.size());
-				const int64_t total = cum.back();
-				for (size_t bi = 0; bi < order.size(); ++bi)
-				{
-					// mehr Bauer als Planeintraege: die uebrigen helfen im Abschnitt eines anderen mit
-					const size_t chunk = bi % nb;
-					const int64_t lo = total * static_cast<int64_t>(chunk) / static_cast<int64_t>(nb);
-					const int64_t hi = total * static_cast<int64_t>(chunk + 1) / static_cast<int64_t>(nb);
-					bool first = true;
-					for (size_t k = 0; k < plan.size(); ++k)
-					{
-						const int64_t mid = (cum[k] + cum[k + 1]) / 2;   // Eintrag gehoert zum Abschnitt, in dem seine Mitte liegt
-						if (mid < lo || mid >= hi) { continue; }
-						const modbuild::Placement &pl = plan[k];
-						send(order[bi].second, DroidOrder(DORDER_LINEBUILD, pl.stats, worldOfPlan(pl.tile), worldOfPlan(pl.tile2), static_cast<uint16_t>(pl.direction)), !first);
-						first = false;
-					}
-				}
-			}
+			distributePlan(builders, modbuild::planDefenseNet(selectedPlayer, raw, fside));
+		}
+		break;
+	}
+	case M_RAIL:
+	{
+		// MOD (21.11., Zugsystem): Bauer legen eine Gleisstrecke entlang der Linie (modbuild::planRailLine), in zusammenhaengenden Abschnitten
+		std::vector<DROID *> builders;
+		for (DROID *d : units) { if (isBuilder(d)) { builders.push_back(d); } }
+		if (!builders.empty() && selectedPlayer < MAX_PLAYERS)
+		{
+			const std::vector<modbuild::Placement> plan = modbuild::planRailLine(selectedPlayer, raw);
+			if (plan.empty()) { addConsoleMessage(_("Rail line: no free ground for a track there (or rails are not available yet)"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+			distributePlan(builders, plan);
 		}
 		break;
 	}
@@ -1758,6 +1780,24 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 		static std::vector<modbuild::Placement> s_artyPreview;
 		s_artyPreview = artyBasePlan(s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos, s_drawing ? artyBaseSize(s_cur) : 1);
 		modbuild::setExternalPreview(&s_artyPreview);
+	}
+	else if (s_mode == M_RAIL && s_drawing && s_cur.size() >= 2 && selectedPlayer < MAX_PLAYERS)
+	{
+		// MOD (21.11.): Vorschau der Gleisstrecke beim Ziehen (nur mit Bauern)
+		static std::vector<modbuild::Placement> s_railPreview;
+		static size_t s_railPts = 0;
+		static unsigned s_railAt = 0;
+		std::vector<Vector2i> pts = s_cur;
+		if (pts.back() != worldPos) { pts.push_back(worldPos); }
+		if (pts.size() != s_railPts || realTime - s_railAt > 150)
+		{
+			s_railPts = pts.size();
+			s_railAt = realTime;
+			bool anyBuilder = false;
+			for (const DROID *d : pickUnits(M_RAIL, pts)) { if (isBuilder(d)) { anyBuilder = true; break; } }
+			s_railPreview = anyBuilder ? modbuild::planRailLine(selectedPlayer, pts) : std::vector<modbuild::Placement>();
+		}
+		modbuild::setExternalPreview(&s_railPreview);
 	}
 	else if (s_mode == M_DEFNET && s_drawing && s_cur.size() >= 2 && selectedPlayer < MAX_PLAYERS)
 	{
