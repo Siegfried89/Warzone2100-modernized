@@ -185,7 +185,7 @@ std::vector<Item> itemsFor(int hex)
 		spread.action = []() { modincoming::spreadUnits(selection()); };
 		v.push_back(spread);
 		Item salv; salv.img = C_SALVAGE; salv.tip = _("Salvage: drag a circle around parts, artefacts and wrecks - an escorted salvage team recovers everything in it");
-		salv.action = []() { s_planOpen = true; modpaint::selectMode("Salvage"); };
+		salv.action = []() { s_planOpen = true; modpaint::selectMode("Salvage Op"); };
 		v.push_back(salv);
 		Item rec; rec.img = C_RECOVER; rec.tip = _("Recover: the selected construction and repair units pick up lost turrets and parts nearby");
 		rec.action = []() { modrecover::recoverWithSelection(selection()); };

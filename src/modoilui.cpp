@@ -107,11 +107,23 @@ int structureTop(const STRUCTURE *s)
 // ---------------------------------------------------------------- Oel-Fenster
 
 enum ImgFleet { IC_BTN_UP = 9, IC_BTN_DOWN = 10, IC_BTN_HI = 11 };
-constexpr int BTN_W = 36, BTN_H = 24, PANEL_W = 300, ROW_H = 17, PAD = 6;
+// MOD (Wunsch 21.11. 18:31 "die Oel-Uebersicht einfacher gestalten mit Icons im WZ-Stil und kuerzerer, aber immer noch informativer
+// Beschreibung, die Probleme schnell erkennen laesst. Es soll nicht so viel vom Bildschirm einnehmen"): statt elf Textzeilen (300 Punkte
+// breit) zwei Reihen Bildkacheln der echten Gebaeude/Fahrzeuge (images/modoil.img, oilicons.py) mit Statusrahmen (gruen/gelb/rot) und
+// einer kurzen Zahl darunter; die Einzelheiten stehen im Tooltip der Kachel; unten EINE Zeile mit dem wichtigsten Problem.
+constexpr int BTN_W = 36, BTN_H = 24, PAD = 5;
+constexpr int TILE = 28, TGAP = 5, VAL_H = 10, TITLE_H = 12, PROB_H = 13;
+constexpr int COLS = 6;
+constexpr int PANEL_W = PAD * 2 + COLS * TILE + (COLS - 1) * TGAP;
+constexpr int ROWS = 2;
+constexpr int PANEL_H = PAD * 2 + TITLE_H + ROWS * (TILE + VAL_H + 3) + PROB_H;
+enum OilImg { OI_DERRICK = 0, OI_PICKUP, OI_REFINERY, OI_TANKER, OI_STORE, OI_POWERGEN, OI_SUBSTATION, OI_SOLAR, OI_STATION, OI_COUNT,
+              OI_POWER = 100, OI_NOPOWER };   // POWER/NOPOWER: WZ-Blitz aus der Oberflaeche
 
 std::shared_ptr<W_SCREEN> s_screen;
 std::shared_ptr<W_CLICKFORM> s_panel;
 std::shared_ptr<W_BUTTON> s_toggle;
+std::vector<std::shared_ptr<W_BUTTON>> s_tiles;   // nur fuer die Tooltips (gezeichnet wird im Fenster)
 bool s_on = true;   // Standard: ein
 
 // MOD (20.11.): Bildliste mit der Werteleiste teilen (modunitstats laedt und gibt frei) - kein zweites Laden derselben Datei
@@ -119,6 +131,18 @@ IMAGEFILE *images()
 {
 	IMAGEFILE *img = modunitstats::fleetImages();
 	return (img != nullptr && img->imageDefs.size() > static_cast<size_t>(IC_BTN_HI)) ? img : nullptr;
+}
+
+IMAGEFILE *oilImages()
+{
+	static IMAGEFILE *s_img = nullptr;
+	static bool s_tried = false;
+	if (!s_tried)
+	{
+		s_tried = true;
+		if (PHYSFS_exists("images/modoil.img")) { s_img = iV_LoadImageFile("images/modoil.img"); }
+	}
+	return (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(OI_COUNT)) ? s_img : nullptr;
 }
 
 void drawImg(int id, int x, int y, int w, int h)
@@ -136,6 +160,7 @@ std::string mmss(int secs)
 }
 
 std::string of(int a, int b) { return std::to_string(a) + "/" + std::to_string(b); }
+std::string pct(int a, int b) { return b > 0 ? std::to_string(std::clamp(a * 100 / b, 0, 100)) + "%" : std::string("-"); }
 
 enum Lamp { L_OFF, L_OK, L_WARN, L_BAD };
 
@@ -150,88 +175,122 @@ PIELIGHT lampColour(Lamp l)
 	}
 }
 
-struct Row
+struct Tile
 {
 	Lamp lamp;
-	std::string name;
-	std::string value;
-	bool arrow;   // Pfeil zur naechsten Stufe darunter
+	int icon;
+	std::string value;     // kurz unter der Kachel
+	std::string tip;       // Einzelheiten (Tooltip)
+	std::string problem;   // kurze Problemmeldung (nur bei gelb/rot)
+	int prio;              // Wichtigkeit des Problems (kleiner = wichtiger)
 };
 
-std::vector<Row> rowsFor(const modoil::EconomyView &v)
+std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 {
-	std::vector<Row> r;
+	std::vector<Tile> t;
+	// Reihe 1: der Oelkreislauf von links nach rechts
 	{
-		Lamp l = v.derricks == 0 ? L_BAD : (v.derricksFull > 0 ? L_WARN : L_OK);
-		std::string val = v.derricks == 0 ? std::string("keiner") : std::to_string(v.derricks) + " | F\xC3\xA4sser " + of(v.derrickBarrels, v.derrickCap);
-		if (v.derricksFull > 0) { val += " (" + std::to_string(v.derricksFull) + " voll)"; }
-		r.push_back({l, "\xC3\x96lt\xC3\xBCrme", val, true});
+		const Lamp l = v.derricks == 0 ? L_BAD : (v.derricksFull > 0 ? L_WARN : L_OK);
+		std::string tip = "\xC3\x96lt\xC3\xBCrme: " + (v.derricks == 0 ? std::string("keiner") : std::to_string(v.derricks) + " | F\xC3\xA4sser " + of(v.derrickBarrels, v.derrickCap));
+		if (v.derricksFull > 0) { tip += " | " + std::to_string(v.derricksFull) + " voll - es wird nichts abgeholt"; }
+		const std::string prob = v.derricks == 0 ? "Keine \xC3\x96lt\xC3\xBCrme" : std::to_string(v.derricksFull) + " \xC3\x96lturm voll - mehr Pickups";
+		t.push_back({l, OI_DERRICK, std::to_string(v.derricks) + (v.derricksFull > 0 ? "!" : ""), tip, prob, v.derricks == 0 ? 3 : 20});
 	}
 	{
-		Lamp l = (v.pickups > 0 || v.pipeDerricks > 0) ? L_OK : (v.derricks > 0 ? L_BAD : L_OFF);
-		std::string val = "Pickups " + std::to_string(v.pickups);
-		if (v.pickups > 0) { val += " (" + of(v.pickupBarrels, v.pickupCap) + ")"; }
-		if (v.pipeDerricks > 0) { val += " | Rohr " + std::to_string(v.pipeDerricks); }
-		r.push_back({l, "Transport", val, true});
+		const Lamp l = (v.pickups > 0 || v.pipeDerricks > 0) ? L_OK : (v.derricks > 0 ? L_BAD : L_OFF);
+		std::string tip = "Transport (Pickups holen die F\xC3\xA4sser): " + std::to_string(v.pickups);
+		if (v.pickups > 0) { tip += " | geladen " + of(v.pickupBarrels, v.pickupCap); }
+		if (v.pipeDerricks > 0) { tip += " | per Rohr: " + std::to_string(v.pipeDerricks) + " \xC3\x96lt\xC3\xBCrme"; }
+		t.push_back({l, OI_PICKUP, std::to_string(v.pickups), tip, "Keine Pickups f\xC3\xBCr das \xC3\x96l", 4});
 	}
 	{
-		Lamp l = v.refineries == 0 ? (v.derricks > 0 ? L_BAD : L_OFF) : (v.refNoPower > 0 || (v.refCap > 0 && v.refIn >= v.refCap) ? L_WARN : L_OK);
-		std::string val = v.refineries == 0 ? std::string("keine") : std::to_string(v.refineries) + " | ein " + of(v.refIn, v.refCap) + " aus " + of(v.refOut, v.refCap);
-		if (v.refNoPower > 0) { val += " | Notbetrieb"; }
-		r.push_back({l, "Raffinerie", val, true});
+		const bool full = v.refCap > 0 && v.refIn >= v.refCap;
+		const Lamp l = v.refineries == 0 ? (v.derricks > 0 ? L_BAD : L_OFF) : (v.refNoPower > 0 || full ? L_WARN : L_OK);
+		std::string tip = "Raffinerie: " + (v.refineries == 0 ? std::string("keine") : std::to_string(v.refineries) + " | Eingang " + of(v.refIn, v.refCap) + " | Ausgang " + of(v.refOut, v.refCap));
+		if (v.refNoPower > 0) { tip += " | ohne Strom: Notbetrieb (langsam)"; }
+		const std::string prob = v.refineries == 0 ? "Keine Raffinerie" : (v.refNoPower > 0 ? "Raffinerie ohne Strom (Notbetrieb)" : "Raffinerie voll - mehr Tanker");
+		t.push_back({l, OI_REFINERY, std::to_string(v.refineries), tip, prob, v.refineries == 0 ? 5 : 21});
 	}
 	{
-		Lamp l = v.tankers > 0 ? L_OK : (v.refineries > 0 ? L_BAD : L_OFF);
-		std::string val = std::to_string(v.tankers);
-		if (v.tankers > 0) { val += " | geladen " + of(v.tankerBarrels, v.tankerCap); }
-		r.push_back({l, "\xC3\x96ltanker", val, true});
+		const Lamp l = v.tankers > 0 ? L_OK : (v.refineries > 0 ? L_BAD : L_OFF);
+		std::string tip = "\xC3\x96ltanker (bringen das Raffinat zu Lager/Kraftwerk): " + std::to_string(v.tankers);
+		if (v.tankers > 0) { tip += " | geladen " + of(v.tankerBarrels, v.tankerCap); }
+		t.push_back({l, OI_TANKER, std::to_string(v.tankers), tip, "Kein \xC3\x96ltanker", 6});
 	}
 	{
-		Lamp l = v.stores > 0 ? L_OK : L_OFF;
-		std::string val = v.stores == 0 ? std::string("keins (Bonus +10 %)") : std::to_string(v.stores) + " | " + of(v.storeBarrels, v.storeCap);
-		r.push_back({l, "\xC3\x96llager", val, true});
+		const Lamp l = v.stores > 0 ? L_OK : L_OFF;
+		std::string tip = "\xC3\x96llager: " + (v.stores == 0 ? std::string("keins (mit Lager +10 % Ertrag)") : std::to_string(v.stores) + " | " + of(v.storeBarrels, v.storeCap) + " F\xC3\xA4sser");
+		t.push_back({l, OI_STORE, v.stores == 0 ? std::string("-") : pct(v.storeBarrels, v.storeCap), tip, "", 99});
 	}
 	{
-		Lamp l = v.gens == 0 ? L_BAD : (v.minFuel == 0 ? L_BAD : (v.gensHungry > 0 ? L_WARN : L_OK));
-		std::string val = v.gens == 0 ? std::string("keins") : std::to_string(v.gens);
-		if (v.gens > 0 && v.minFuel >= 0) { val += " | Vorrat min. " + mmss(v.minFuel); }
-		r.push_back({l, "Kraftwerke", val, true});
+		const Lamp l = v.gens == 0 ? L_BAD : (v.minFuel == 0 ? L_BAD : (v.gensHungry > 0 ? L_WARN : L_OK));
+		std::string tip = "Kraftwerke: " + (v.gens == 0 ? std::string("keins") : std::to_string(v.gens));
+		if (v.gens > 0 && v.minFuel >= 0) { tip += " | \xC3\x96l reicht noch mindestens " + mmss(v.minFuel); }
+		const std::string prob = v.gens == 0 ? "Kein Kraftwerk" : (v.minFuel == 0 ? "Kraftwerk ohne \xC3\x96l" : "Kraftwerk braucht bald \xC3\x96l");
+		t.push_back({l, OI_POWERGEN, v.gens == 0 ? std::string("0") : (v.minFuel >= 0 ? mmss(v.minFuel) : std::to_string(v.gens)), tip, prob, v.gens == 0 ? 1 : (v.minFuel == 0 ? 2 : 22)});
 	}
+	// Reihe 2: Stromnetz und Ergebnis
 	{
-		// (20.11. 19:06) Umspannwerk ist Pflicht: das Endstueck, es versorgt ueber die Masten alle Gebaeude
 		int fed = 0;
 		const int subs = modgrid::substations(static_cast<int>(selectedPlayer), fed);
-		Lamp l = subs == 0 ? L_BAD : (fed == 0 ? L_BAD : (fed < subs ? L_WARN : L_OK));
-		std::string val = subs == 0 ? std::string("keins - kein Strom!") : std::to_string(subs) + " | mit Strom " + std::to_string(fed);
-		r.push_back({l, "Umspannwerk", val, false});
+		const Lamp l = subs == 0 ? L_BAD : (fed == 0 ? L_BAD : (fed < subs ? L_WARN : L_OK));
+		const std::string tip = "Umspannwerk (Pflicht - versorgt \xC3\xBC" "ber die Masten alle Geb\xC3\xA4ude): " + (subs == 0 ? std::string("keins - kein Strom!") : std::to_string(subs) + " | davon mit Strom " + std::to_string(fed));
+		const std::string prob = subs == 0 ? "Umspannwerk fehlt - kein Strom!" : (fed == 0 ? "Umspannwerk bekommt keinen Strom" : "Ein Umspannwerk ohne Strom");
+		t.push_back({l, OI_SUBSTATION, subs == 0 ? std::string("0") : of(fed, subs), tip, prob, subs == 0 || fed == 0 ? 0 : 23});
 	}
 	{
 		const int sp = modgrid::solarPanelsConnected(static_cast<int>(selectedPlayer));
-		Lamp l = sp > 0 ? L_OK : L_OFF;
-		std::string val = sp == 0 ? std::string("keine am Umspannwerk") : std::to_string(sp) + " Paneele | +" + std::to_string(sp * 6) + "/min (tags)";
-		r.push_back({l, "Solar", val, false});
+		const Lamp l = sp > 0 ? L_OK : L_OFF;
+		const std::string tip = "Solar: " + (sp == 0 ? std::string("keine Paneele am Umspannwerk") : std::to_string(sp) + " Paneele | +" + std::to_string(sp * 6) + "/min (tags\xC3\xBC" "ber)");
+		t.push_back({l, OI_SOLAR, std::to_string(sp), tip, "", 99});
 	}
 	{
-		Lamp l = v.stations == 0 ? L_OFF : (v.stationBarrels * 10 < v.stationCap * 3 ? L_WARN : L_OK);
-		std::string val = v.stations == 0 ? std::string("keine") : std::to_string(v.stations) + " | " + of(v.stationBarrels, v.stationCap);
-		r.push_back({l, "Tankstellen", val, false});
+		const Lamp l = v.stations == 0 ? L_OFF : (v.stationBarrels * 10 < v.stationCap * 3 ? L_WARN : L_OK);
+		const std::string tip = "Tankstellen (Treibstoff f\xC3\xBCr die Fahrzeuge): " + (v.stations == 0 ? std::string("keine") : std::to_string(v.stations) + " | " + of(v.stationBarrels, v.stationCap) + " F\xC3\xA4sser");
+		t.push_back({l, OI_STATION, v.stations == 0 ? std::string("-") : pct(v.stationBarrels, v.stationCap), tip, "Tankstellen fast leer", 24});
 	}
 	{
-		Lamp l = (v.wastedLastMinute > 0 || (v.powerMax > 0 && v.power >= v.powerMax)) ? L_WARN : L_OK;
-		std::string val = of(v.power, v.powerMax) + " | +" + std::to_string(v.incomeLastMinute) + "/min";
-		if (v.wastedLastMinute > 0) { val += " | verfallen " + std::to_string(v.wastedLastMinute); }
-		r.push_back({l, "Energie", val, false});
+		const bool wasting = v.wastedLastMinute > 0 || (v.powerMax > 0 && v.power >= v.powerMax);
+		const Lamp l = wasting ? L_WARN : L_OK;
+		std::string tip = "Energie: " + of(v.power, v.powerMax) + " | +" + std::to_string(v.incomeLastMinute) + " in der letzten Minute";
+		if (v.wastedLastMinute > 0) { tip += " | verfallen " + std::to_string(v.wastedLastMinute) + " (Speicher voll)"; }
+		t.push_back({l, OI_POWER, "+" + std::to_string(v.incomeLastMinute), tip, "Speicher voll - Energie verf\xC3\xA4llt", 25});
 	}
 	{
-		Lamp l = v.buildingsDown > 0 ? L_BAD : L_OK;
-		r.push_back({l, "Ohne Strom", v.buildingsDown == 0 ? std::string("nichts") : std::to_string(v.buildingsDown) + " Geb\xC3\xA4ude", false});
+		const Lamp l = v.buildingsDown > 0 ? L_BAD : L_OK;
+		const std::string tip = "Geb\xC3\xA4ude ohne Strom: " + (v.buildingsDown == 0 ? std::string("keine") : std::to_string(v.buildingsDown) + " (stehen still - Masten/Umspannwerk pr\xC3\xBC" "fen)");
+		t.push_back({l, OI_NOPOWER, std::to_string(v.buildingsDown), tip, std::to_string(v.buildingsDown) + " Geb\xC3\xA4ude ohne Strom", 7});
 	}
-	return r;
+	return t;
 }
 
-int panelHeight(size_t rows)
+void tileRect(size_t i, int &x, int &y)
 {
-	return PAD * 2 + 16 + static_cast<int>(rows) * ROW_H + 6;
+	const int row = i < COLS ? 0 : 1;
+	const int col = i < COLS ? static_cast<int>(i) : static_cast<int>(i) - COLS;
+	x = PAD + col * (TILE + TGAP);
+	y = PAD + TITLE_H + row * (TILE + VAL_H + 3);
+}
+
+void drawIcon(int icon, int x, int y, int w, int h, bool dim)
+{
+	const unsigned char a = dim ? 120 : 255;
+	if (icon == OI_POWER || icon == OI_NOPOWER)
+	{
+		const int iw = iV_GetImageWidth(IntImages, IMAGE_DES_POWER), ih = iV_GetImageHeight(IntImages, IMAGE_DES_POWER);
+		const float k = std::min(static_cast<float>(w - 6) / std::max(1, iw), static_cast<float>(h - 6) / std::max(1, ih));
+		const int dw = std::max(1, static_cast<int>(iw * k)), dh = std::max(1, static_cast<int>(ih * k));
+		modwzhd::drawIntfac(IMAGE_DES_POWER, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh, true, a);
+		if (icon == OI_NOPOWER)
+		{
+			const PIELIGHT red = withAlpha(pal_RGBA(255, 50, 40, 255), a);
+			for (int o = -1; o <= 1; ++o) { iV_Line(x + 4 + o, y + h - 4, x + w - 4 + o, y + 4, red); }
+		}
+		return;
+	}
+	IMAGEFILE *img = oilImages();
+	if (img == nullptr) { return; }
+	iV_DrawImageFileAnisotropic(img, static_cast<UWORD>(icon), x, y, Vector2f(static_cast<float>(w), static_cast<float>(h)), defaultProjectionMatrix(), a);
 }
 
 void drawPanel(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -239,34 +298,56 @@ void drawPanel(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	if (!s_on || selectedPlayer >= MAX_PLAYERS) { return; }
 	const modoil::EconomyView v = modoil::economyView(static_cast<int>(selectedPlayer));
 	if (!v.active) { return; }
-	const std::vector<Row> rows = rowsFor(v);
+	const std::vector<Tile> tiles = tilesFor(v);
 	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
-	const int w = psWidget->width(), h = panelHeight(rows.size());
-	modui::wzPanel(x0, y0, x0 + w, y0 + h, "\xC3\x96lkreislauf", 1);
-	int y = y0 + PAD + 16;
-	const int nameX = x0 + PAD + 14, valX = x0 + PAD + 100;
-	for (size_t i = 0; i < rows.size(); ++i)
+	const int w = psWidget->width(), h = psWidget->height();
+	modui::wzPanel(x0, y0, x0 + w, y0 + h, "\xC3\x96l & Strom", 0);
+	const double t = static_cast<double>(realTime) / 1000.0;
+	const int pulse = 150 + static_cast<int>(105.0 * (0.5 + 0.5 * std::sin(t * 6.0)));
+	for (size_t i = 0; i < tiles.size(); ++i)
 	{
-		const Row &r = rows[i];
-		// Trennlinie vor dem zweiten Block (Endempfaenger und Ergebnis)
-		if (i == 7)
+		const Tile &tl = tiles[i];
+		int tx, ty;
+		tileRect(i, tx, ty);
+		tx += x0; ty += y0;
+		// Kachel: dunkle Flaeche, Rahmen in der Statusfarbe (rot pulsiert), Bild, kurze Zahl darunter
+		pie_UniTransBoxFill(static_cast<float>(tx), static_cast<float>(ty), static_cast<float>(tx + TILE), static_cast<float>(ty + TILE), pal_RGBA(8, 12, 30, 220));
+		PIELIGHT rim = lampColour(tl.lamp);
+		if (tl.lamp == L_BAD) { rim.byte.a = static_cast<UBYTE>(pulse); }
+		iV_Box(tx, ty, tx + TILE - 1, ty + TILE - 1, rim);
+		if (tl.lamp == L_BAD || tl.lamp == L_WARN) { iV_Box(tx + 1, ty + 1, tx + TILE - 2, ty + TILE - 2, rim); }
+		drawIcon(tl.icon, tx + 1, ty + 1, TILE - 2, TILE - 2, tl.lamp == L_OFF);
+		// Pfeil zur naechsten Stufe des Kreislaufs (Reihe 1)
+		if (i + 1 < COLS)
 		{
-			iV_Line(x0 + PAD, y - 2, x0 + w - PAD, y - 2, WZCOL_FORM_DARK);
+			const int ax = tx + TILE + 1, ay = ty + TILE / 2;
+			iV_Line(ax, ay, ax + TGAP - 2, ay, WZCOL_TEXT_MEDIUM);
+			iV_Line(ax + TGAP - 4, ay - 2, ax + TGAP - 2, ay, WZCOL_TEXT_MEDIUM);
+			iV_Line(ax + TGAP - 4, ay + 2, ax + TGAP - 2, ay, WZCOL_TEXT_MEDIUM);
 		}
-		const int cy = y + ROW_H / 2 - 1;
-		modui::disc(x0 + PAD + 5, cy, 4, lampColour(r.lamp));
-		modui::ring(x0 + PAD + 5, cy, 4, pal_RGBA(0, 0, 0, 200));
-		if (r.arrow && i + 1 < rows.size())
-		{
-			// kleiner Pfeil nach unten: die Faesser laufen zur naechsten Stufe
-			const int ax = x0 + PAD + 5, ay = y + ROW_H - 3;
-			iV_Line(ax, ay - 2, ax, ay + 3, WZCOL_TEXT_MEDIUM);
-			iV_Line(ax - 2, ay + 1, ax, ay + 3, WZCOL_TEXT_MEDIUM);
-			iV_Line(ax + 2, ay + 1, ax, ay + 3, WZCOL_TEXT_MEDIUM);
-		}
-		modui::text(r.name, nameX, y + 1, WZCOL_TEXT_BRIGHT, 0);
-		modui::text(modui::fit(r.value, x0 + w - PAD - valX, 0), valX, y + 1, r.lamp == L_BAD ? pal_RGBA(255, 120, 100, 255) : WZCOL_TEXT_MEDIUM, 0);
-		y += ROW_H;
+		const std::string val = modui::fit(tl.value, TILE + TGAP - 1, 0);
+		const int vw = modui::textWidth(val, 0);
+		const PIELIGHT vc = tl.lamp == L_BAD ? pal_RGBA(255, 120, 100, 255) : (tl.lamp == L_WARN ? pal_RGBA(255, 215, 90, 255) : WZCOL_TEXT_MEDIUM);
+		modui::text(val, tx + (TILE - vw) / 2, ty + TILE + 1, vc, 0);
+	}
+	// wichtigstes Problem (rot vor gelb, dann nach Wichtigkeit) - oder "alles laeuft"
+	const Tile *worst = nullptr;
+	for (const Tile &tl : tiles)
+	{
+		if ((tl.lamp != L_BAD && tl.lamp != L_WARN) || tl.problem.empty()) { continue; }
+		if (worst == nullptr || (tl.lamp == L_BAD && worst->lamp != L_BAD) || (tl.lamp == worst->lamp && tl.prio < worst->prio)) { worst = &tl; }
+	}
+	const int py = y0 + h - PAD - PROB_H + 2;
+	if (worst != nullptr)
+	{
+		const PIELIGHT pc = worst->lamp == L_BAD ? pal_RGBA(255, 110, 90, 255) : pal_RGBA(255, 210, 80, 255);
+		modui::disc(x0 + PAD + 4, py + 5, 3, pc);
+		modui::text(modui::fit(worst->problem, w - 2 * PAD - 12, 0), x0 + PAD + 11, py, pc, 0);
+	}
+	else
+	{
+		modui::disc(x0 + PAD + 4, py + 5, 3, pal_RGBA(70, 230, 90, 255));
+		modui::text("Alles l\xC3\xA4uft", x0 + PAD + 11, py, pal_RGBA(140, 230, 150, 255), 0);
 	}
 }
 
@@ -293,10 +374,18 @@ void ensureScreen()
 	screen->psForm->attach(panel);
 	panel->displayFunction = drawPanel;
 	panel->setTransparentToClicks(true);
+	s_tiles.clear();
+	for (int i = 0; i < 11; ++i)
+	{
+		auto tb = std::make_shared<W_BUTTON>();
+		panel->attach(tb);
+		tb->displayFunction = [](WIDGET *, UDWORD, UDWORD) {};   // gezeichnet wird im Fenster (drawPanel)
+		s_tiles.push_back(tb);
+	}
 	auto t = std::make_shared<W_BUTTON>();
 	screen->psForm->attach(t);
 	t->displayFunction = drawToggle;
-	t->setTip("\xC3\x96lkreislauf ein/aus");
+	t->setTip("\xC3\x96l & Strom: \xC3\x9C" "bersicht ein/aus");
 	t->addOnClickHandler([](W_BUTTON &) { s_on = !s_on; });
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
 	s_screen = screen;
@@ -408,16 +497,29 @@ void tick()
 	s_toggle->show(want);
 	s_panel->show(want && s_on);
 	if (!want) { return; }
-	const modoil::EconomyView v = modoil::economyView(static_cast<int>(selectedPlayer));
-	const int rows = static_cast<int>(rowsFor(v).size());
 	const int x = static_cast<int>(screenWidth) - PANEL_W - 8 - modlayer::reservedRight(), y = 44;   // MOD (21.11.): links neben den Ebenen-Knoepfen
 	s_toggle->setGeometry(x + PANEL_W - BTN_W, y, BTN_W, BTN_H);
-	s_panel->setGeometry(x, y + BTN_H + 4, PANEL_W, panelHeight(static_cast<size_t>(rows)));
+	s_panel->setGeometry(x, y + BTN_H + 4, PANEL_W, PANEL_H);
+	// Tooltips der Kacheln (Einzelheiten) - nur neu setzen, wenn sich der Text geaendert hat
+	if (s_on)
+	{
+		const modoil::EconomyView v = modoil::economyView(static_cast<int>(selectedPlayer));
+		const std::vector<Tile> tiles = tilesFor(v);
+		static std::vector<std::string> s_lastTips;
+		s_lastTips.resize(s_tiles.size());
+		for (size_t i = 0; i < s_tiles.size() && i < tiles.size(); ++i)
+		{
+			int tx, ty;
+			tileRect(i, tx, ty);
+			s_tiles[i]->setGeometry(tx, ty, TILE, TILE + VAL_H);
+			if (s_lastTips[i] != tiles[i].tip) { s_tiles[i]->setTip(tiles[i].tip); s_lastTips[i] = tiles[i].tip; }
+		}
+	}
 }
 
 void shutdown()
 {
 	if (s_screen) { widgRemoveOverlayScreen(s_screen); }
-	s_screen = nullptr; s_panel = nullptr; s_toggle = nullptr;
+	s_screen = nullptr; s_panel = nullptr; s_toggle = nullptr; s_tiles.clear();
 }
 }
