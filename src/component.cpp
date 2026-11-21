@@ -65,6 +65,8 @@
 #include "modparts.h"
 #include "modrecover.h"
 #include "modpick.h"
+#include "modfort.h"      // MOD (21.11.): Schuss-Animation in Stellungen
+#include "modterrain.h"   // MOD (21.11.): Krater als Deckung
 #include "featuredef.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
@@ -833,16 +835,60 @@ void drawMuzzleFlash(WEAPON sWeap, const iIMDShape *weaponImd, const iIMDShape *
 // removed mountRotation,they get such stuff from psObj directly now
 // MOD (Wunsch 14.11. Punkt 4): Scav-MG-Schuetzen zielen beim Feuern ueber Kimme und Korn (Animation "<Name>-aim.pie" neben der
 // Schuss-Animation, vom Mod erzeugt). Das schwere MG (BabaHeavyMG) und alle anderen Waffen behalten die Animation aus der Huefte.
+// MOD (Wunsch 21.11. 12:44): dazu die kniende Schuss-Animation nach den Scav-Sprites ("<Name>-kneel.pie", infkneel.py) im Wechsel mit
+// der bisherigen - je Einheit und Gefecht (Beginn der Schuss-Animation) gewaehlt. "Solange sie in Graeben und Stellungen sind
+// (Sandsaecke), bitte NUR die bereits bestehende 'ueber Kopf'-Schussanimation verwenden" - dort immer die Ziel-Animation (Gewehr in
+// Kopfhoehe ueber der Deckung), fuer alle Waffen. Nur Anzeige.
+static const iIMDBaseShape *modShapeVariant(const iIMDBaseShape *fireShape, const char *suffix)
+{
+	std::string name = fireShape->filename.toStdString();
+	const size_t dot = name.rfind(".pie");
+	if (dot == std::string::npos) { return nullptr; }
+	name.insert(dot, suffix);
+	return modelGet(WzString::fromUtf8(name));
+}
+
+static bool modInfantryCovered(const DROID *psDroid)
+{
+	if (modoil::droidInTrench(psDroid) || modterrain::droidInCover(psDroid)) { return true; }
+	const int tx = map_coord(psDroid->pos.x), ty = map_coord(psDroid->pos.y);
+	if (modfort::fortTile(tx, ty)) { return true; }
+	// an einer Sandsackwand (Nachbarfeld, nah an der Wand)
+	for (int dy = -1; dy <= 1; ++dy)
+	{
+		for (int dx = -1; dx <= 1; ++dx)
+		{
+			if ((dx == 0 && dy == 0) || !tileOnMap(gameWorld.map, tx + dx, ty + dy)) { continue; }
+			const MAPTILE *t = mapTile(gameWorld.map, tx + dx, ty + dy);
+			if (t->psObject == nullptr || t->psObject->type != OBJ_STRUCTURE) { continue; }
+			const STRUCTURE *s = static_cast<const STRUCTURE *>(t->psObject);
+			if (s->pStructureType == nullptr || s->status != SS_BUILT) { continue; }
+			const std::string id = s->pStructureType->id.toStdString();
+			if (id.find("andbag") == std::string::npos && id.find("Trench") == std::string::npos) { continue; }
+			const Vector2i c = world_coord(Vector2i(tx + dx, ty + dy)) + Vector2i(TILE_UNITS / 2, TILE_UNITS / 2);
+			if (std::max(std::abs(c.x - psDroid->pos.x), std::abs(c.y - psDroid->pos.y)) < TILE_UNITS * 9 / 8) { return true; }
+		}
+	}
+	return false;
+}
+
 static const iIMDBaseShape *modAimVariant(const DROID *psDroid, const iIMDBaseShape *fireShape)
 {
 	if (fireShape == nullptr || psDroid->numWeaps == 0) { return fireShape; }
+	if (modInfantryCovered(psDroid))
+	{
+		const iIMDBaseShape *aim = modShapeVariant(fireShape, "-aim");
+		return aim ? aim : fireShape;
+	}
+	// im Freien: abwechselnd kniend und wie bisher (Ziel-Animation fuer das leichte MG, sonst aus der Huefte)
+	const uint32_t h = (psDroid->id * 2654435761u) ^ (psDroid->timeAnimationStarted / 500u * 40503u);
+	if (((h >> 7) & 1u) != 0)
+	{
+		if (const iIMDBaseShape *kneel = modShapeVariant(fireShape, "-kneel")) { return kneel; }
+	}
 	const WEAPON_STATS *w = psDroid->getWeaponStats(0);
 	if (w == nullptr || w->weaponSubClass != WSC_MGUN || w->id.compare("BabaHeavyMG") == 0) { return fireShape; }
-	std::string name = fireShape->filename.toStdString();
-	const size_t dot = name.rfind(".pie");
-	if (dot == std::string::npos) { return fireShape; }
-	name.insert(dot, "-aim");
-	const iIMDBaseShape *aim = modelGet(WzString::fromUtf8(name));
+	const iIMDBaseShape *aim = modShapeVariant(fireShape, "-aim");
 	return aim ? aim : fireShape;
 }
 
