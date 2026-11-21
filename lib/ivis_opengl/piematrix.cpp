@@ -134,7 +134,7 @@ static const glm::mat4& pie_PerspectiveGetCache(PerspectiveModes mode, float zNe
 		perspectiveCache._height = height;
 		perspectiveCache._rendSurface_xcentre = rendSurface.xcentre;
 		perspectiveCache._rendSurface_ycentre = rendSurface.ycentre;
-		perspectiveCache._zfar = perspectiveZFar;
+		perspectiveCache._zfar = zFar;   // MOD (21.11.): vorher immer perspectiveZFar - der Himmel-Cache (zFar 100000) wurde jedes Bild neu berechnet
 		perspectiveCache._znear = zNear;
 	}
 
@@ -143,7 +143,12 @@ static const glm::mat4& pie_PerspectiveGetCache(PerspectiveModes mode, float zNe
 
 const glm::mat4& pie_SkyboxPerspectiveGet()
 {
-	return pie_PerspectiveGetCache(PerspectiveModes::Skybox, 330.f, 100000.f, [](glm::mat4& matrix, float width, float height) {
+	// MOD (Wunsch 21.11. "Schwarzer Boden ... du siehst doch, dass es abschneidet"): der Himmel wird NACH dem Gelaende gezeichnet und nur
+	// dort, wo seine Tiefe kleiner ist (Tiefentest). Er hatte eine feste Nahebene von 330, die Spielkamera seit 20.11. aber 3..330
+	// (Kamera nah am Boden). Mit verschiedenen Nahebenen passen die Tiefenwerte nicht mehr zusammen: bei Nahebene 30 lag der Himmel
+	// (Wuerfel ~10000 Einheiten) in der Tiefe schon vor allem Boden, der weiter als ~8 Felder entfernt war - der Himmel (nachts schwarz)
+	// ueberdeckte den Boden, die Modelle (danach gezeichnet) blieben sichtbar. Jetzt dieselbe Nahebene wie die Kamera.
+	return pie_PerspectiveGetCache(PerspectiveModes::Skybox, perspectiveZClose, 100000.f, [](glm::mat4& matrix, float width, float height) {
 		matrix = glm::translate(glm::vec3((2.f * rendSurface.xcentre - width) / width, (height - 2.f * rendSurface.ycentre) / height, 0.f)) * matrix;
 	});
 }
