@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD (Wunsch 20.11. 17:46): Anzeigen zur Oel-Wirtschaft - siehe modoilui.h
 #include "modoilui.h"
+#include "modlayer.h"   // MOD (21.11.): Platz der Ebenen-Knoepfe
 
 #include <physfs.h>
 #include <algorithm>
@@ -86,11 +87,11 @@ void iconLowOil(int cx, int cy, int r, bool empty, int alpha)
 	const int x0 = cx - bw / 2, y0 = cy - bh / 2;
 	const PIELIGHT body = withAlpha(empty ? pal_RGBA(200, 40, 30, 255) : pal_RGBA(230, 130, 25, 255), alpha);
 	const PIELIGHT hoop = withAlpha(pal_RGBA(40, 20, 10, 255), alpha);
-	pie_BoxFill_alpha(x0, y0 + 2, x0 + bw, y0 + bh, body);
-	pie_BoxFill_alpha(x0 + 1, y0, x0 + bw - 1, y0 + 3, withAlpha(pal_RGBA(255, 210, 120, 255), alpha));
-	pie_BoxFill_alpha(x0, y0 + bh / 3, x0 + bw, y0 + bh / 3 + 1, hoop);
-	pie_BoxFill_alpha(x0, y0 + bh * 2 / 3, x0 + bw, y0 + bh * 2 / 3 + 1, hoop);
-	pie_BoxFill_alpha(x0 + 2, y0 + 3, x0 + 3, y0 + bh - 1, withAlpha(pal_RGBA(255, 220, 160, 255), alpha / 2));
+	pie_UniTransBoxFill(x0, y0 + 2, x0 + bw, y0 + bh, body);
+	pie_UniTransBoxFill(x0 + 1, y0, x0 + bw - 1, y0 + 3, withAlpha(pal_RGBA(255, 210, 120, 255), alpha));
+	pie_UniTransBoxFill(x0, y0 + bh / 3, x0 + bw, y0 + bh / 3 + 1, hoop);
+	pie_UniTransBoxFill(x0, y0 + bh * 2 / 3, x0 + bw, y0 + bh * 2 / 3 + 1, hoop);
+	pie_UniTransBoxFill(x0 + 2, y0 + 3, x0 + 3, y0 + bh - 1, withAlpha(pal_RGBA(255, 220, 160, 255), alpha / 2));
 }
 
 int structureTop(const STRUCTURE *s)
@@ -409,7 +410,7 @@ void tick()
 	if (!want) { return; }
 	const modoil::EconomyView v = modoil::economyView(static_cast<int>(selectedPlayer));
 	const int rows = static_cast<int>(rowsFor(v).size());
-	const int x = static_cast<int>(screenWidth) - PANEL_W - 8, y = 44;
+	const int x = static_cast<int>(screenWidth) - PANEL_W - 8 - modlayer::reservedRight(), y = 44;   // MOD (21.11.): links neben den Ebenen-Knoepfen
 	s_toggle->setGeometry(x + PANEL_W - BTN_W, y, BTN_W, BTN_H);
 	s_panel->setGeometry(x, y + BTN_H + 4, PANEL_W, panelHeight(static_cast<size_t>(rows)));
 }

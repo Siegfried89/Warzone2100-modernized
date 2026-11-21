@@ -102,6 +102,7 @@ void kf_ChooseCommand();
 void kf_ChooseManufacture();
 void kf_ChooseResearch();
 void kf_ChooseBuild();
+void kf_ChooseBuildAlt();   // MOD (21.11.): F
 void kf_ChooseDesign();
 void kf_ChooseIntelligence();
 void kf_ChooseCancel();

@@ -210,6 +210,7 @@ static void DrawRadarTiles(WorldMapState& mapState);
 static void DrawRadarObjects(GameWorld& world);
 static void DrawRadarExtras(const glm::mat4 &modelViewProjectionMatrix);
 static void DrawNorth(const glm::mat4 &modelViewProjectionMatrix);
+static void modDrawRadarFrame(int x0, int y0, int x1, int y1);   // MOD (21.11.)
 static void setViewingWindow(const WorldMapState& mapState);
 
 static void radarSize(int ZoomLevel)
@@ -420,7 +421,161 @@ void drawRadar(GameWorld& world)
 
 	pie_RenderRadar(orthoMatrix * radarMatrix);
 	DrawRadarExtras(orthoMatrix * radarMatrix * glm::translate(glm::vec3(-static_cast<float>(radarWidth) / 2.f - 1.f, -static_cast<float>(radarHeight) / 2.f - 1.f, 0.f)));
+	if (!rotateRadar)   // MOD (21.11. 18:04): Metallrahmen um die Minikarte
+	{
+		const int rx0 = static_cast<int>(radarCenterX) - static_cast<int>(radarWidth) / 2 - 1, ry0 = static_cast<int>(radarCenterY) - static_cast<int>(radarHeight) / 2 - 1;
+		modDrawRadarFrame(rx0, ry0, rx0 + static_cast<int>(radarWidth) + 2, ry0 + static_cast<int>(radarHeight) + 2);
+	}
 	drawRadarBlips(static_cast<int>(-static_cast<int>(radarWidth) / 2.f - 1), static_cast<int>(-static_cast<int>(radarHeight) / 2.f - 1), pixSizeH, pixSizeV, orthoMatrix * radarMatrix);
+}
+
+// MOD (Wunsch 21.11. 18:04 "Koennen wir auch schoenere Rahmen um die Minimap machen im StarCraft-Stil?"): eigener Industrie-Metallrahmen
+// (eigene Gestaltung): gebuerstete Metallleiste mit Licht oben links und Schatten unten rechts, abgeschraegte Aussenecken, verstaerkte
+// Eckwinkel mit Nieten, duenne leuchtende Innenkante und zwei Statuslampen. Bildschirmkoordinaten des Kartenrechtecks x0,y0 - x1,y1.
+static PIELIGHT modMix(int r0, int g0, int b0, int r1, int g1, int b1, float t, int a = 255)
+{
+	t = std::clamp(t, 0.f, 1.f);
+	return pal_RGBA(static_cast<UBYTE>(r0 + (r1 - r0) * t), static_cast<UBYTE>(g0 + (g1 - g0) * t), static_cast<UBYTE>(b0 + (b1 - b0) * t), static_cast<UBYTE>(a));
+}
+
+static void modFill(int x0, int y0, int x1, int y1, PIELIGHT c)
+{
+	if (x1 > x0 && y1 > y0) { pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x1), static_cast<float>(y1), c); }
+}
+
+static void modRivet(int cx, int cy, int r)
+{
+	for (int dy = -r - 1; dy <= r + 1; ++dy)   // dunkler Rand
+	{
+		const int hw = static_cast<int>(std::sqrt(std::max(0.f, static_cast<float>((r + 1) * (r + 1) - dy * dy))));
+		modFill(cx - hw, cy + dy, cx + hw + 1, cy + dy + 1, pal_RGBA(10, 12, 16, 230));
+	}
+	for (int dy = -r; dy <= r; ++dy)
+	{
+		const int hw = static_cast<int>(std::sqrt(std::max(0.f, static_cast<float>(r * r - dy * dy))));
+		modFill(cx - hw, cy + dy, cx + hw + 1, cy + dy + 1, modMix(185, 195, 205, 70, 78, 88, (dy + r) / (2.f * r + 0.01f)));
+	}
+	modFill(cx - std::max(1, r / 2), cy - std::max(1, r / 2), cx, cy, pal_RGBA(235, 240, 245, 220));   // Glanzpunkt
+}
+
+static void modDrawRadarFrame(int x0, int y0, int x1, int y1)
+{
+	const float s = std::max(1.f, static_cast<float>(pie_GetVideoBufferHeight()) / 900.f);
+	const int T = std::max(9, static_cast<int>(std::lround(11.f * s)));   // Leistenbreite
+	const int C = T + 3;                                                    // Abschraegung der Aussenecken
+	const int X0 = x0 - T, Y0 = y0 - T, X1 = x1 + T, Y1 = y1 + T;
+	const PIELIGHT edge = pal_RGBA(6, 8, 11, 255);
+	// Schlagschatten
+	modFill(X0 + 4, Y1 + 1, X1 + 4, Y1 + 5, pal_RGBA(0, 0, 0, 100));
+	modFill(X1 + 1, Y0 + 4, X1 + 5, Y1 + 1, pal_RGBA(0, 0, 0, 100));
+	// Leiste Ring fuer Ring (aussen -> innen): Profil = Glanzkante aussen, gebuerstete Flaeche, Rille, dunkle Innenkante;
+	// oben/links im Licht, unten/rechts im Schatten
+	for (int k = 0; k < T; ++k)
+	{
+		const float t = static_cast<float>(k) / static_cast<float>(T - 1);
+		float lum;
+		if (k == 0) { lum = 0.95f; }
+		else if (k == 1) { lum = 0.75f; }
+		else if (std::abs(t - 0.62f) < 0.5f / static_cast<float>(T)) { lum = 0.05f; }           // Rille
+		else if (std::abs(t - 0.62f) < 1.5f / static_cast<float>(T)) { lum = 0.75f; }           // Kante neben der Rille
+		else if (k >= T - 2) { lum = 0.18f; }                                                    // Innenkante
+		else { lum = 0.45f + 0.25f * std::sin(t * 3.1415926f); }                                // gewoelbte Flaeche
+		const PIELIGHT lit = modMix(34, 38, 46, 150, 160, 174, lum);
+		const PIELIGHT dark = modMix(14, 16, 20, 92, 100, 112, lum);
+		const PIELIGHT midL = modMix(26, 29, 35, 124, 134, 148, lum);
+		const PIELIGHT midD = modMix(20, 23, 28, 108, 117, 130, lum);
+		const int ox0 = X0 + k, oy0 = Y0 + k, ox1 = X1 - k, oy1 = Y1 - k;
+		const int cut = std::max(0, C - k);
+		modFill(ox0 + cut, oy0, ox1 - cut, oy0 + 1, lit);          // oben
+		modFill(ox0, oy0 + cut, ox0 + 1, oy1 - cut, lit);          // links
+		modFill(ox0 + cut, oy1 - 1, ox1 - cut, oy1, dark);         // unten
+		modFill(ox1 - 1, oy0 + cut, ox1, oy1 - cut, dark);         // rechts
+		if (cut > 0)   // 45-Grad-Schraegen der Ecken
+		{
+			iV_Line(ox0, oy0 + cut - 1, ox0 + cut - 1, oy0, lit);
+			iV_Line(ox1 - cut, oy0, ox1 - 1, oy0 + cut - 1, midL);
+			iV_Line(ox0, oy1 - cut, ox0 + cut - 1, oy1 - 1, midD);
+			iV_Line(ox1 - cut, oy1 - 1, ox1 - 1, oy1 - cut, dark);
+		}
+	}
+	// Umriss aussen
+	iV_Line(X0 + C, Y0 - 1, X1 - C, Y0 - 1, edge);
+	iV_Line(X0 + C, Y1, X1 - C, Y1, edge);
+	iV_Line(X0 - 1, Y0 + C, X0 - 1, Y1 - C, edge);
+	iV_Line(X1, Y0 + C, X1, Y1 - C, edge);
+	iV_Line(X0 - 1, Y0 + C, X0 + C, Y0 - 1, edge);
+	iV_Line(X1 - C, Y0 - 1, X1, Y0 + C, edge);
+	iV_Line(X0 - 1, Y1 - C, X0 + C, Y1, edge);
+	iV_Line(X1, Y1 - C, X1 - C, Y1, edge);
+	// dunkle Fuge und leuchtende Innenkante an der Karte
+	modFill(x0 - 2, y0 - 2, x1 + 2, y0 - 1, edge);
+	modFill(x0 - 2, y1 + 1, x1 + 2, y1 + 2, edge);
+	modFill(x0 - 2, y0 - 2, x0 - 1, y1 + 2, edge);
+	modFill(x1 + 1, y0 - 2, x1 + 2, y1 + 2, edge);
+	const PIELIGHT glow = pal_RGBA(80, 205, 255, 170);
+	modFill(x0 - 1, y0 - 1, x1 + 1, y0, glow);
+	modFill(x0 - 1, y1, x1 + 1, y1 + 1, glow);
+	modFill(x0 - 1, y0, x0, y1, glow);
+	modFill(x1, y0, x1 + 1, y1, glow);
+	// Kopfplatte oben in der Mitte (Trapez mit Lueftungsschlitzen)
+	{
+		const int pw = std::max(5 * T, (x1 - x0) * 2 / 5), ph = T + std::max(4, T / 2);
+		const int px0 = (x0 + x1) / 2 - pw / 2, py1 = Y0 + T - 1, py0 = py1 - ph;
+		for (int r = 0; r < ph; ++r)
+		{
+			const int inset = std::max(0, ph - 1 - r - (ph - T));   // nur der ueberstehende Teil ist schraeg
+			const float lum = (r == 0) ? 0.95f : (r == 1 ? 0.7f : 0.42f + 0.18f * std::sin(static_cast<float>(r) / static_cast<float>(ph) * 3.1415926f));
+			modFill(px0 + inset, py0 + r, px0 + pw - inset, py0 + r + 1, modMix(34, 38, 46, 150, 160, 174, lum));
+		}
+		const int over = ph - T;
+		iV_Line(px0 + over, py0 - 1, px0 + pw - over, py0 - 1, edge);
+		iV_Line(px0 - 1, py0 + over, px0 + over, py0 - 1, edge);
+		iV_Line(px0 + pw - over, py0 - 1, px0 + pw, py0 + over, edge);
+		const int slots = 5, sw = std::max(2, T / 3), sh = std::max(3, ph / 2);
+		const int gap = std::max(2, T / 3);
+		const int total = slots * sw + (slots - 1) * gap;
+		int sx = (x0 + x1) / 2 - total / 2;
+		for (int i = 0; i < slots; ++i, sx += sw + gap)
+		{
+			modFill(sx, py0 + (ph - sh) / 2, sx + sw, py0 + (ph - sh) / 2 + sh, edge);
+			modFill(sx, py0 + (ph - sh) / 2 + sh, sx + sw, py0 + (ph - sh) / 2 + sh + 1, pal_RGBA(150, 160, 172, 160));
+		}
+	}
+	// verstaerkte Eckwinkel mit je zwei Nieten
+	const int L = 3 * T + 2, W2 = T + 4;
+	const int cx[4] = {X0 - 3, X1 + 3, X0 - 3, X1 + 3}, cy[4] = {Y0 - 3, Y0 - 3, Y1 + 3, Y1 + 3};
+	for (int c = 0; c < 4; ++c)
+	{
+		const int sx = (c & 1) ? -1 : 1, sy = (c & 2) ? -1 : 1;
+		const int ax = cx[c], ay = cy[c];
+		auto rect = [&](int u0, int v0, int u1, int v1, PIELIGHT col) {
+			const int ra = ax + sx * u0, rb = ax + sx * u1, rc = ay + sy * v0, rd = ay + sy * v1;
+			modFill(std::min(ra, rb), std::min(rc, rd), std::max(ra, rb), std::max(rc, rd), col);
+		};
+		const int ch = C / 2 + 1;   // Schraege am Winkel
+		rect(ch, 0, L, W2, edge);
+		rect(0, ch, W2, L, edge);
+		for (int j = 0; j < ch; ++j) { rect(ch - j, j, ch - j + 1, j + 1, edge); }
+		const float tone = (c == 0) ? 0.8f : ((c == 3) ? 0.35f : 0.55f);
+		rect(ch + 1, 1, L - 1, W2 - 1, modMix(40, 45, 53, 140, 150, 164, tone));
+		rect(1, ch + 1, W2 - 1, L - 1, modMix(40, 45, 53, 140, 150, 164, tone - 0.08f));
+		for (int j = 1; j < ch; ++j) { rect(ch - j + 1, j, W2 - 1, j + 1, modMix(40, 45, 53, 140, 150, 164, tone)); }
+		rect(ch + 1, 1, L - 1, 2, pal_RGBA(190, 200, 212, 210));
+		rect(1, ch + 1, 2, L - 1, pal_RGBA(170, 180, 194, 180));
+		rect(L - 1, 1, L, W2 - 1, pal_RGBA(12, 14, 18, 200));
+		rect(1, L - 1, W2 - 1, L, pal_RGBA(12, 14, 18, 200));
+		const int rr = std::max(1, T / 4);
+		modRivet(ax + sx * (L - T / 2 - 2), ay + sy * (W2 / 2), rr);
+		modRivet(ax + sx * (W2 / 2), ay + sy * (L - T / 2 - 2), rr);
+	}
+	// Statuslampen auf der unteren Leiste (gruen = Karte aktiv, bernstein pulsiert langsam)
+	const int ly = Y1 - T / 2 - 1, lx = X1 - L - 8;
+	const float pulse = 0.55f + 0.45f * std::sin(static_cast<float>(realTime % 2400) / 2400.f * 6.2831853f);
+	modFill(lx - 3, ly - 3, lx + 4, ly + 4, edge);
+	modFill(lx - 2, ly - 2, lx + 3, ly + 3, pal_RGBA(60, 220, 100, 255));
+	modFill(lx - 1, ly - 2, lx + 1, ly - 1, pal_RGBA(200, 255, 210, 255));
+	modFill(lx - 13, ly - 3, lx - 6, ly + 4, edge);
+	modFill(lx - 12, ly - 2, lx - 7, ly + 3, pal_RGBA(255, 165, 35, static_cast<UBYTE>(110 + 145 * pulse)));
 }
 
 static void DrawNorth(const glm::mat4 &modelViewProjectionMatrix)

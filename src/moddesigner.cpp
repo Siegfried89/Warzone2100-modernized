@@ -642,7 +642,7 @@ void box(int x0, int y0, int x1, int y1, PIELIGHT col)
 void drawFrame(int x, int y, int w, int h)
 {
 	// schlicht: dunkle Flaeche mit einem feinen Rand (keine leuchtenden Rahmen mehr)
-	pie_BoxFill_alpha(x, y, x + w, y + h, pal_RGBA(4, 9, 20, 232));
+	pie_UniTransBoxFill(x, y, x + w, y + h, pal_RGBA(4, 9, 20, 232));
 	box(x, y, x + w - 1, y + h - 1, pal_RGBA(46, 84, 112, 255));
 }
 
@@ -773,7 +773,7 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int mw = c.L(320.f), mh = c.L(480.f);
 	modui::drawSized(modui::METALPANEL, c.ox, c.oy, mw, mh);
 	modui::drawSized(modui::METALPANEL, c.ox + mw, c.oy, mw, mh);
-	pie_BoxFill_alpha(c.ox, c.oy, c.ox + 2 * mw, c.oy + mh, pal_RGBA(2, 5, 12, 150));   // Metall-Muster abdunkeln, damit der Bildschirm ruhig wirkt
+	pie_UniTransBoxFill(c.ox, c.oy, c.ox + 2 * mw, c.oy + mh, pal_RGBA(2, 5, 12, 150));   // Metall-Muster abdunkeln, damit der Bildschirm ruhig wirkt
 
 	// Reiter
 	const modui::Img tabImg = s_tab == TAB_ARMS ? modui::TAB_ARMS : (s_tab == TAB_LEGS ? modui::TAB_LEGS : (s_tab == TAB_TORSO ? modui::TAB_TORSO : modui::TAB_ALL));
@@ -789,7 +789,7 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		const Entry &e = s_list[static_cast<size_t>(idx)];
 		const int ry = c.Y(38.f + static_cast<float>(i * ROW_H));
 		const bool cur = isCurrent(e);
-		if (cur) { pie_BoxFill_alpha(c.X(8), ry + 1, c.X(158), ry + c.L(static_cast<float>(ROW_H)) - 1, pal_RGBA(20, 140, 190, 120)); }
+		if (cur) { pie_UniTransBoxFill(c.X(8), ry + 1, c.X(158), ry + c.L(static_cast<float>(ROW_H)) - 1, pal_RGBA(20, 140, 190, 120)); }
 		const bool locked = entryLocked(e);
 		const PIELIGHT col = locked ? pal_RGBA(120, 130, 140, 255)
 		                            : (cur ? pal_RGBA(255, 255, 255, 255) : (s_hoverShown == i ? pal_RGBA(180, 255, 255, 255) : modui::cyan(230)));
@@ -821,7 +821,7 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			const bool on = (k == 0) == (s_side > 0);
 			const int x = c.X(6.f + k * 80.f), y = c.Y(300);
 			const int w = c.L(74.f), h = c.L(17.f);
-			pie_BoxFill_alpha(x, y, x + w, y + h, on ? pal_RGBA(20, 140, 190, 150) : pal_RGBA(4, 10, 24, 200));
+			pie_UniTransBoxFill(x, y, x + w, y + h, on ? pal_RGBA(20, 140, 190, 150) : pal_RGBA(4, 10, 24, 200));
 			box(x, y, x + w - 1, y + h - 1, modui::cyan(on ? 255 : 150));
 			const std::string t = k == 0 ? "RIGHT ARM" : "LEFT ARM";
 			modui::text(t, x + (w - modui::textWidth(t, sc)) / 2, y + c.L(4.f), on ? pal_RGBA(255, 255, 255, 255) : modui::cyan(), sc);
@@ -840,7 +840,7 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			const int x = c.X(6.f + k * 52.f), y = c.Y(320);
 			const int w = c.L(50.f), h = c.L(17.f);
 			const int *cc = kCorpCol[k];
-			pie_BoxFill_alpha(x, y, x + w, y + h, on ? pal_RGBA(cc[0], cc[1], cc[2], 200) : pal_RGBA(cc[0] / 5, cc[1] / 5, cc[2] / 5, hl ? 230 : 200));
+			pie_UniTransBoxFill(x, y, x + w, y + h, on ? pal_RGBA(cc[0], cc[1], cc[2], 200) : pal_RGBA(cc[0] / 5, cc[1] / 5, cc[2] / 5, hl ? 230 : 200));
 			box(x, y, x + w - 1, y + h - 1, on ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(std::min(255, cc[0] + 60), std::min(255, cc[1] + 60), std::min(255, cc[2] + 60), hl ? 255 : 180));
 			const std::string t = kCorpLbl[k];
 			const int tw = modui::textWidth(t, sc);
@@ -976,7 +976,7 @@ void hotDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
 	const int x1 = x0 + psWidget->width() - 1, y1 = y0 + psWidget->height() - 1;
 	if ((b->getState() & WBUT_HIGHLIGHT) != 0) { box(x0, y0, x1, y1, pal_RGBA(255, 255, 255, 170)); }
-	if ((b->getState() & WBUT_DOWN) != 0) { pie_BoxFill_alpha(x0, y0, x1, y1, pal_RGBA(255, 255, 255, 50)); }
+	if ((b->getState() & WBUT_DOWN) != 0) { pie_UniTransBoxFill(x0, y0, x1, y1, pal_RGBA(255, 255, 255, 50)); }
 }
 
 void rowDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -1179,7 +1179,7 @@ void displayEntryButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const unsigned now = realTime;
 
 	// Aussenrahmen (dunkel) und Schatten
-	pie_BoxFill_alpha(x0 + 3, y0 + 3, x0 + w + 3, y0 + h + 3, pal_RGBA(0, 0, 0, 90));
+	pie_UniTransBoxFill(x0 + 3, y0 + 3, x0 + w + 3, y0 + h + 3, pal_RGBA(0, 0, 0, 90));
 	pie_BoxFill(x0, y0, x0 + w, y0 + h, pal_RGBA(2, 10, 30, 255));
 	// Farbverlauf im WZ-Blau, innen
 	const int in = 3;
@@ -1193,14 +1193,14 @@ void displayEntryButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	}
 	// dunkle Bildflaeche fuer die Silhouette mit feinem Raster
 	const int px0 = x0 + 8, py0 = y0 + 8, px1 = x0 + w - 8, py1 = y0 + h - 36;
-	pie_BoxFill_alpha(px0, py0, px1, py1, pal_RGBA(2, 14, 44, 200));
-	for (int gy = py0 + 8; gy < py1; gy += 8) { pie_BoxFill_alpha(px0, gy, px1, gy + 1, pal_RGBA(40, 150, 220, 40)); }
-	for (int gx = px0 + 8; gx < px1; gx += 8) { pie_BoxFill_alpha(gx, py0, gx + 1, py1, pal_RGBA(40, 150, 220, 40)); }
+	pie_UniTransBoxFill(px0, py0, px1, py1, pal_RGBA(2, 14, 44, 200));
+	for (int gy = py0 + 8; gy < py1; gy += 8) { pie_UniTransBoxFill(px0, gy, px1, gy + 1, pal_RGBA(40, 150, 220, 40)); }
+	for (int gx = px0 + 8; gx < px1; gx += 8) { pie_UniTransBoxFill(gx, py0, gx + 1, py1, pal_RGBA(40, 150, 220, 40)); }
 	// wandernder Abtast-Strahl
 	{
 		const int span = std::max(1, py1 - py0 - 2);
 		const int sy = py0 + 1 + static_cast<int>((now % 2600u) * static_cast<unsigned>(span) / 2600u);
-		pie_BoxFill_alpha(px0, sy, px1, sy + 2, pal_RGBA(60, 240, 255, hl ? 120 : 70));
+		pie_UniTransBoxFill(px0, sy, px1, sy + 2, pal_RGBA(60, 240, 255, hl ? 120 : 70));
 	}
 	// weisse Combot-Silhouette (24 x 40 Raster), links hell, rechts leicht abgedunkelt = Plastizitaet
 	struct R { int x0, y0, x1, y1; };

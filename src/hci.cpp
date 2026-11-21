@@ -2252,7 +2252,7 @@ static void intDisplaySensorModeButton(WIDGET *psWidget, UDWORD xOffset, UDWORD 
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
 	const int mode = range_rings::getMode();
 	const PIELIGHT frame = hl ? pal_RGBA(255, 255, 255, 230) : pal_RGBA(150, 170, 190, 200);
-	pie_BoxFill_alpha(x0, y0, x0 + w, y0 + h, down ? pal_RGBA(30, 40, 60, 220) : pal_RGBA(10, 16, 28, 190));
+	pie_UniTransBoxFill(x0, y0, x0 + w, y0 + h, down ? pal_RGBA(30, 40, 60, 220) : pal_RGBA(10, 16, 28, 190));
 	iV_Box(x0, y0, x0 + w, y0 + h, frame);
 	const PIELIGHT blue = pal_RGBA(70, 140, 255, 255), red = pal_RGBA(255, 50, 40, 255), grey = pal_RGBA(110, 120, 130, 255);
 	const PIELIGHT ringCol = (mode & 1) ? blue : grey;
@@ -2289,7 +2289,7 @@ static void intDisplayFormationButton(WIDGET *psWidget, UDWORD xOffset, UDWORD y
 	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
 	const bool down = (b->getState() & (WBUT_DOWN | WBUT_CLICKLOCK)) != 0;
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
-	pie_BoxFill_alpha(x0, y0, x0 + w, y0 + h, down ? pal_RGBA(30, 40, 60, 220) : pal_RGBA(10, 16, 28, 190));
+	pie_UniTransBoxFill(x0, y0, x0 + w, y0 + h, down ? pal_RGBA(30, 40, 60, 220) : pal_RGBA(10, 16, 28, 190));
 	iV_Box(x0, y0, x0 + w, y0 + h, hl ? pal_RGBA(255, 255, 255, 230) : pal_RGBA(150, 170, 190, 200));
 	const PIELIGHT dot = pal_RGBA(220, 230, 240, 255), lead = pal_RGBA(255, 200, 60, 255), gun = pal_RGBA(255, 80, 60, 255);
 	const float cx = x0 + w * 0.5f, cy = y0 + h * 0.5f, u = w * 0.11f;

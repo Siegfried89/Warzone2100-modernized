@@ -548,7 +548,9 @@ bool loadConfig()
 	}
 	war_SetSPcolor(iniGetInteger("colour", 0).value());	// default is green (0)
 	war_setMPcolour(iniGetInteger("colourMP", -1).value());  // default is random (-1)
-	war_setPlayerFaction(iniGetInteger("playerFaction", 0).value());  // MOD: default is Scavengers (the mod look)
+	// MOD (Wunsch 21.11. 17:59 "Scavenger-Fraktion ist IMMER Standard ausgewaehlt bei Spielstart"): die zuletzt gewaehlte Fraktion wird
+	// nicht mehr uebernommen - jeder Programmstart beginnt mit den Scavengers (Wahl im Hauptmenue gilt bis zum Beenden)
+	war_setPlayerFaction(0);
 	sstrcpy(game.name, iniGetString("gameName", _("My Game")).value().c_str());
 	sstrcpy(sPlayer, iniGetString("playerName", _("Player")).value().c_str());
 

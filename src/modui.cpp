@@ -131,7 +131,7 @@ void wzPanel(int x0, int y0, int x1, int y1, const char *title, int sizeClass)
 	// wie WZ-Formulare: dunkelblaue Flaeche, heller Aussenrand, dunkler Innenrand
 	PIELIGHT bg = WZCOL_MENU_BACKGROUND;
 	bg.byte.a = 210;
-	pie_BoxFill_alpha(x0, y0, x1, y1, bg);
+	pie_UniTransBoxFill(x0, y0, x1, y1, bg);
 	iV_Box(x0, y0, x1 - 1, y1 - 1, WZCOL_MENU_BORDER);
 	iV_Box(x0 + 1, y0 + 1, x1 - 2, y1 - 2, WZCOL_FORM_DARK);
 	if (title != nullptr)
@@ -147,7 +147,7 @@ void wzButton(int x0, int y0, int w, int h, const std::string &label, bool activ
 	PIELIGHT fill = active ? WZCOL_FORM_LIGHT : WZCOL_FORM_BACKGROUND;
 	fill.byte.a = active ? 235 : 215;
 	if (down) { fill = WZCOL_FORM_HILITE; fill.byte.a = 240; }
-	pie_BoxFill_alpha(x0, y0, x1, y1, fill);
+	pie_UniTransBoxFill(x0, y0, x1, y1, fill);
 	iV_Box(x0, y0, x1 - 1, y1 - 1, (hover || active) ? WZCOL_FORM_HILITE : WZCOL_MENU_BORDER);
 	if (accent != nullptr)
 	{
@@ -164,7 +164,7 @@ void disc(int cx, int cy, int r, PIELIGHT colour)
 	for (int dy = -r; dy <= r; ++dy)
 	{
 		const int hw = static_cast<int>(std::sqrt(static_cast<double>(r * r - dy * dy)));
-		pie_BoxFill_alpha(cx - hw, cy + dy, cx + hw + 1, cy + dy + 1, colour);
+		pie_UniTransBoxFill(cx - hw, cy + dy, cx + hw + 1, cy + dy + 1, colour);
 	}
 }
 

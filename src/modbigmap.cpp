@@ -572,13 +572,13 @@ void draw()
 	const float sc = modui::uiScale();
 	const Rect p = panel(), a = mapArea();
 	// Grund und Gelaende
-	pie_BoxFill_alpha(static_cast<int>(p.x0), static_cast<int>(p.y0), static_cast<int>(p.x1), static_cast<int>(p.y1), pal_RGBA(8, 12, 22, 255));
+	pie_UniTransBoxFill(static_cast<int>(p.x0), static_cast<int>(p.y0), static_cast<int>(p.x1), static_cast<int>(p.y1), pal_RGBA(8, 12, 22, 255));
 	if (s_gfx == nullptr) { rebuildTexture(); }
 	drawTerrain();
 	// strategischer Blauschleier (nur Gelaende-Ansicht) + Gitter (alle 16 Felder)
 	if (s_view == V_TERRAIN)
 	{
-		pie_BoxFill_alpha(static_cast<int>(a.x0), static_cast<int>(a.y0), static_cast<int>(a.x1), static_cast<int>(a.y1), pal_RGBA(10, 30, 70, 50));
+		pie_UniTransBoxFill(static_cast<int>(a.x0), static_cast<int>(a.y0), static_cast<int>(a.x1), static_cast<int>(a.y1), pal_RGBA(10, 30, 70, 50));
 	}
 	const PIELIGHT gridCol = s_view == V_CARTO ? pal_RGBA(90, 70, 50, 45) : pal_RGBA(150, 200, 255, 38);
 	const float step = static_cast<float>(world_coord(16));
@@ -632,7 +632,7 @@ void draw()
 			{
 				const Vector2i size = s->size();
 				const float hx = std::max(1.5f, static_cast<float>(size.x * TILE_UNITS) * 0.5f / s_wpp), hy = std::max(1.5f, static_cast<float>(size.y * TILE_UNITS) * 0.5f / s_wpp);
-				pie_BoxFill_alpha(static_cast<int>(c.x - hx), static_cast<int>(c.y - hy), static_cast<int>(c.x + hx + 1.f), static_cast<int>(c.y + hy + 1.f), pal_RGBA(tc.byte.r, tc.byte.g, tc.byte.b, 220));
+				pie_UniTransBoxFill(static_cast<int>(c.x - hx), static_cast<int>(c.y - hy), static_cast<int>(c.x + hx + 1.f), static_cast<int>(c.y + hy + 1.f), pal_RGBA(tc.byte.r, tc.byte.g, tc.byte.b, 220));
 			}
 		}
 	}
@@ -673,7 +673,7 @@ void draw()
 	{
 		const float x0 = std::min<float>(s_lStart.x, mouseX()), x1 = std::max<float>(s_lStart.x, mouseX());
 		const float y0 = std::min<float>(s_lStart.y, mouseY()), y1 = std::max<float>(s_lStart.y, mouseY());
-		pie_BoxFill_alpha(static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(x1), static_cast<int>(y1), pal_RGBA(120, 220, 255, 40));
+		pie_UniTransBoxFill(static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(x1), static_cast<int>(y1), pal_RGBA(120, 220, 255, 40));
 		line(glm::vec2(x0, y0), glm::vec2(x1, y0), 1.5f, pal_RGBA(150, 230, 255, 220)); line(glm::vec2(x1, y0), glm::vec2(x1, y1), 1.5f, pal_RGBA(150, 230, 255, 220));
 		line(glm::vec2(x1, y1), glm::vec2(x0, y1), 1.5f, pal_RGBA(150, 230, 255, 220)); line(glm::vec2(x0, y1), glm::vec2(x0, y0), 1.5f, pal_RGBA(150, 230, 255, 220));
 	}
@@ -681,7 +681,7 @@ void draw()
 	modui::wzPanel(static_cast<int>(p.x0), static_cast<int>(p.y0), static_cast<int>(p.x1), static_cast<int>(p.y0 + barH()), "Strategic map", modui::sizeClassFor(sc));
 	if (s_mode == 2)
 	{
-		pie_BoxFill_alpha(static_cast<int>(p.x1) - 2, 0, static_cast<int>(p.x1) + 2, static_cast<int>(p.y1), pal_RGBA(150, 200, 255, 200));
+		pie_UniTransBoxFill(static_cast<int>(p.x1) - 2, 0, static_cast<int>(p.x1) + 2, static_cast<int>(p.y1), pal_RGBA(150, 200, 255, 200));
 	}
 }
 
