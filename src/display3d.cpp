@@ -3697,26 +3697,42 @@ static bool modCornerWallShape(const STRUCTURE *s, iIMDBaseShape *&imdOut, uint1
 	{
 		return false;
 	}
-	static std::unordered_map<const STRUCTURE_STATS *, const STRUCTURE_STATS *> s_wallOf;
-	const STRUCTURE_STATS *wall = nullptr;
-	const auto it = s_wallOf.find(cs);
-	if (it != s_wallOf.end())
+	// Zuordnung Eckmauer -> Mauersatz (Index); die Werte werden je Spiel neu geladen -> bei neuem Feld/neuer Anzahl verwerfen,
+	// gefundene Eintraege vor Gebrauch pruefen (keine alten Zeiger)
+	static std::unordered_map<const STRUCTURE_STATS *, UDWORD> s_wallOf;
+	static const STRUCTURE_STATS *s_statsBase = nullptr;
+	static UDWORD s_statsNum = 0;
+	if (s_statsBase != asStructureStats || s_statsNum != numStructureStats)
 	{
-		wall = it->second;
+		s_wallOf.clear();
+		s_statsBase = asStructureStats;
+		s_statsNum = numStructureStats;
+	}
+	const auto isSet = [cs](UDWORD i) {
+		if (i >= numStructureStats) { return false; }
+		const STRUCTURE_STATS &st = asStructureStats[i];
+		return st.type == REF_WALL && st.pIMD.size() >= 4 && st.pIMD[1] == cs->pIMD[0];
+	};
+	constexpr UDWORD NONE = 0xFFFFFFFFu;
+	UDWORD wi = NONE;
+	const auto it = s_wallOf.find(cs);
+	if (it != s_wallOf.end() && (it->second == NONE || isSet(it->second)))
+	{
+		wi = it->second;
 	}
 	else
 	{
 		for (UDWORD i = 0; i < numStructureStats; ++i)
 		{
-			const STRUCTURE_STATS &st = asStructureStats[i];
-			if (st.type == REF_WALL && st.pIMD.size() >= 4 && st.pIMD[1] == cs->pIMD[0]) { wall = &st; break; }
+			if (isSet(i)) { wi = i; break; }
 		}
-		s_wallOf[cs] = wall;
+		s_wallOf[cs] = wi;
 	}
-	if (wall == nullptr)
+	if (wi == NONE)
 	{
 		return false;
 	}
+	const STRUCTURE_STATS *wall = &asStructureStats[wi];
 	const int mx = map_coord(s->pos.x), my = map_coord(s->pos.y);
 	constexpr int step = DIST_TILE / TILE_UNITS;     // Nachbarmauer eine Original-Kachel weiter (Zweig viertel: 2 Feinfelder)
 	auto has = [&](int dx, int dy) {
