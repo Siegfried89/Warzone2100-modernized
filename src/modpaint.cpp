@@ -72,39 +72,40 @@ struct ModeInfo
 	bool area;   // Gebiet (geschlossene Form) statt Linie
 };
 
+// MOD (Wunsch 21.11. 18:31): klarere/coolere Namen (Attack -> Attack Vector, Defend -> Defensive Line ...), Tooltips erklaeren genau,
+// was der Befehl tut (Reihenfolge = enum Mode)
 const ModeInfo kModes[M_COUNT] = {
-	{ "Move", "Move: draw a path - units drive along it", "Move: drag a path (right click cancels)", 60, 220, 90, false },
-	{ "Rally", "Rally point: units gather here before an attack", "Rally: drag around the rally point (right click cancels)", 255, 150, 40, false },
-	{ "Attack", "Attack vector: units advance along it and fight everything on the way", "Attack: drag the attack vector (right click cancels)", 235, 50, 40, false },
+	{ "Move", "Move: draw a path - the selected units drive exactly along it", "Move: drag a path (right click cancels)", 60, 220, 90, false },
+	{ "Rally Point", "Rally Point: units gather at this spot (for example before an attack) and wait there", "Rally Point: drag around the rally point (right click cancels)", 255, 150, 40, false },
+	{ "Attack Vector", "Attack Vector: draw the direction of attack - units advance along the line and fight everything on the way", "Attack Vector: drag the direction of attack (right click cancels)", 235, 50, 40, false },
 	// MOD (Wunsch 21.11. 00:21): "Die Defensive Line ist weiterhin nur zur Formation fuer Fahrzeuge, um sie an eine Frontlinie zu schicken
-	// wie bisher, ohne Bauwerke" - gebaut wird nur noch ueber den eigenen Knopf "Defence net" (M_DEFNET)
-	{ "Defend", "Defensive line: combat units take up positions on it, facing the enemy side. Nothing is built - use \"Defence net\" for trenches", "Defend: drag the defensive line (right click cancels)", 60, 130, 255, false },
-	{ "Arty base", "Build an artillery base here: sensor tower, artillery emplacements, wall ring, hedgehogs in front. Small circle = 4 emplacements, medium = 8, large = 12", "Artillery base: drag a circle around the place - its size sets the base size (right click cancels)", 170, 120, 60, true },
-	{ "Artillery", "Artillery: bombard this area", "Artillery: drag the target area (right click cancels)", 240, 200, 90, true },
-	{ "Aircraft", "Aircraft: patrol over this area", "Aircraft: drag the patrol area (right click cancels)", 255, 235, 50, true },
-	{ "Combots", "Combot area: combots patrol and fight in this area on their own", "Combots: drag the combot area (right click cancels)", 190, 90, 255, true },
-	{ "Spread out", "Spread out: the selected units spread out evenly (against artillery and bombs)", "", 150, 200, 200, false },
-	{ "Salvage", "Salvage: drag a circle around parts, artefacts and wrecks - an armed, escorted salvage team gathers at the base first, then recovers everything in it (wrecks are towed to the repair facility by flatbed trucks)", "Salvage: drag a circle around the salvage (right click cancels)", 120, 220, 255, true },
-	{ "Take cover", "Take cover: the selected infantry (or all infantry, if none is selected) mans the nearest trenches, pits, sandbag positions and buildings", "", 200, 170, 110, false },
+	// wie bisher, ohne Bauwerke" - gebaut wird nur noch ueber den eigenen Knopf (M_DEFNET)
+	{ "Defensive Line", "Defensive Line: combat units take up positions along the line, facing the enemy side, and hold it. Nothing is built - use \"Trench Network\" for trenches", "Defensive Line: drag the line to hold (right click cancels)", 60, 130, 255, false },
+	{ "Firebase", "Firebase: builders set up an artillery base here - sensor tower, artillery emplacements, wall ring, hedgehogs in front. Small circle = 4 emplacements, medium = 8, large = 12", "Firebase: drag a circle around the place - its size sets the base size (right click cancels)", 170, 120, 60, true },
+	{ "Barrage", "Barrage: all artillery in range bombards this area", "Barrage: drag the target area (right click cancels)", 240, 200, 90, true },
+	{ "Air Cover", "Air Cover: aircraft patrol over this area and attack every enemy that shows up there", "Air Cover: drag the patrol area (right click cancels)", 255, 235, 50, true },
+	{ "Combot Hunt", "Combot Hunt: combots roam this area on their own and hunt down every enemy in it", "Combot Hunt: drag the hunting area (right click cancels)", 190, 90, 255, true },
+	{ "Spread Out", "Spread Out: the selected units spread out evenly (against artillery and bombs)", "", 150, 200, 200, false },
+	{ "Salvage Op", "Salvage Op: drag a circle around parts, artefacts and wrecks - an armed, escorted salvage team gathers at the base first, then recovers everything in it (wrecks are towed to the repair facility by flatbed trucks)", "Salvage Op: drag a circle around the salvage (right click cancels)", 120, 220, 255, true },
+	{ "Take Cover", "Take Cover: the selected infantry (or all infantry, if none is selected) mans the nearest trenches, pits, sandbag positions and buildings", "", 200, 170, 110, false },
 	// MOD (Wunsch 17.11. 18:12/18:13): Panzersperrenfeld (gruene Pyramiden) und Minenfeld
-	{ "Tank traps", "Tank trap field: drag an area - builders put a staggered field of tank traps into it (vehicles cannot pass)", "Tank traps: drag the area (right click cancels)", 40, 200, 80, true },
+	{ "Tank Traps", "Tank Traps: drag an area - builders put a staggered field of tank traps into it (vehicles cannot pass)", "Tank Traps: drag the area (right click cancels)", 40, 200, 80, true },
 	{ "Minefield", "Minefield: drag an area - builders lay hidden mines in it; they blow up enemy ground units that drive over them", "Minefield: drag the area (right click cancels)", 255, 90, 40, true },
 	// MOD (Wunsch 17.11. 18:37): Offensivlinie (rot) - wie die Verteidigungslinie, aber auf Angriff ausgerichtet
-	{ "Offense", "Offensive line: many combat units mass on the line in two ranks, ready to push forward (they pursue enemies); builders add only a few short trenches and MG posts", "Offense: drag the offensive line (right click cancels)", 240, 45, 45, false },
-	// MOD (Wunsch 17.11. 19:36): Faehigkeit der Infanterie - Minen raeumen; (19.11. 17:34 "konnte keinen minenraeumkreis ziehen? der sollte
-	// auch funktionieren wenn es keine Minen dort gibt"): jetzt ein Gebiet - Raeumpanzer (Walze an) und Infanterie durchkaemmen es in Bahnen
-	{ "Clear mines", "Clear mines: drag a circle - mine flails (drum on) and infantry sweep the whole area lane by lane, also where no mines are known. Infantry spots mines within 2.5 tiles, disarms them (3 s each) and does not set off anti-tank mines; flails beat them off ahead", "Clear mines: drag a circle around the area to sweep (right click cancels)", 230, 200, 60, true },
+	{ "Assault Line", "Assault Line: many combat units mass on the line in two ranks, ready to storm forward (they chase enemies that come close); builders only add a few short trenches and MG posts as a jump-off point", "Assault Line: drag the line to mass on (right click cancels)", 240, 45, 45, false },
+	// MOD (Wunsch 17.11. 19:36 / 19.11. 17:34): Raeumpanzer (Walze an) und Infanterie durchkaemmen das Gebiet in Bahnen
+	{ "Mine Sweep", "Mine Sweep: drag a circle - mine flails (drum on) and infantry sweep the whole area lane by lane, also where no mines are known. Infantry spots mines within 2.5 tiles, disarms them (3 s each) and does not set off anti-tank mines; flails beat them off ahead", "Mine Sweep: drag a circle around the area to sweep (right click cancels)", 230, 200, 60, true },
 	// MOD (Wunsch 19.11. 17:34 "Neue kreis ziehen = demolish alles in diesem Gebiet")
 	{ "Demolish", "Demolish: drag a circle - builders tear down all your own structures in it (nearest first, spread over all builders)", "Demolish: drag a circle around what should be torn down (right click cancels)", 200, 90, 60, true },
 	// MOD (Wunsch 21.11. 00:21 "Lieber einen neuen circle machen mit etwas wie baue Verteidigungsnetz"): das Grabennetz hat einen eigenen Befehl
-	{ "Defence net", "Build defence network: drag a line - builders dig a trench network along it (main trench, pits, MG posts, connecting trenches to the rear), front towards the enemy side. Combat units are not moved", "Defence net: drag the line of the trench network (right click cancels)", 120, 190, 230, false },
+	{ "Trench Network", "Trench Network: drag a line - builders dig a trench network along it (main trench, pits, MG posts, connecting trenches to the rear), front towards the enemy side. Combat units are not moved", "Trench Network: drag the line of the trenches (right click cancels)", 120, 190, 230, false },
 	// MOD (Wunsch 21.11. 00:21, Zugsystem): Gleisstrecke frei zeichnen (gerade Stuecke gehen auch wie Mauern ueber das Baumenue)
-	{ "Rail line", "Rail line: drag a route - builders lay a railway track along it (straight and diagonal, around obstacles, joining your existing tracks). Locomotives and wagons come from the train depot and run on the tracks", "Rail line: drag the route of the track (right click cancels)", 175, 140, 95, false },
+	{ "Railway", "Railway: drag a route - builders lay a railway track along it (straight and diagonal, around obstacles, joining your existing tracks). Locomotives and wagons come from the train depot and run on the tracks", "Railway: drag the route of the track (right click cancels)", 175, 140, 95, false },
 };
 
 // MOD (Wunsch 21.11. 17:59 "Die Befehlsbuttons besser nach Kategorie sortieren (aehnliches zu aehnlichem), ausserdem Icons zu jedem dazu"):
 // vier Gruppen mit Ueberschrift, jeder Knopf mit eigenem Symbol in seiner Farbe; die Knoepfe sind dafuer breiter
-constexpr int BTN_W = 86;
+constexpr int BTN_W = 104;   // (21.11. 18:31) laengere Namen (Defensive Line, Trench Network)
 constexpr int BTN_H = 22;
 constexpr int GAP = 3;
 constexpr int PAD = 4;
@@ -1453,7 +1454,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		if (!builders.empty() && selectedPlayer < MAX_PLAYERS)
 		{
 			const std::vector<modbuild::Placement> plan = modbuild::planRailLine(selectedPlayer, raw);
-			if (plan.empty()) { addConsoleMessage(_("Rail line: no free ground for a track there (or rails are not available yet)"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+			if (plan.empty()) { addConsoleMessage(_("Railway: no free ground for a track there (or rails are not available yet)"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
 			distributePlan(builders, plan);
 		}
 		break;

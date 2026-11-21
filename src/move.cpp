@@ -142,8 +142,13 @@ static steering::SteeringManager& moveSteeringManager()
 	return instance;
 }
 
+// MOD (21.11.): Ausweich-Versuche je Einheit (siehe modTryDetour)
+struct ModDetour { UDWORD last = 0; int count = 0; };
+static std::unordered_map<uint32_t, ModDetour> s_modDetour;
+
 void moveInit()
 {
+	s_modDetour.clear();   // MOD (21.11.)
 	// Initialize formation speed limiting to off for all players
 	playerFormationSpeedLimiting.resize(MAX_PLAYERS);
 	for (size_t i = 0; i < playerFormationSpeedLimiting.size(); ++i)
@@ -931,10 +936,77 @@ static void moveClearBump(DROID *psDroid)
 {
 	psDroid->sMove.bumpTime = 0;
 	psDroid->sMove.lastBump = 0;
-	if (pathfindingCorridorLanesEnabled() && psDroid->sMove.Status == MOVEPAUSE)
+	// MOD (Wunsch 21.11. 18:31 "Einheiten bleiben oefter stecken und fahren nicht wieder an"): auch ohne Korridor-Spuren - eine
+	// pausierende Einheit ohne Uhr blieb sonst fuer immer in der Pause stehen
+	if (psDroid->sMove.Status == MOVEPAUSE)
 	{
 		psDroid->sMove.Status = MOVEPOINTTOPOINT;
 	}
+}
+
+// MOD (Wunsch 21.11. 18:31 "... bleiben stecken und versuchen keinen neuen Weg zu finden, wenn sie gegen jemanden dagegen fahren"):
+// Einheiten schieben andere nicht mehr weg (17.11., Blockieren ist gewollt), und der Wegfinder kennt keine Einheiten - ein neuer Weg
+// fuehrte deshalb wieder gegen dasselbe Hindernis, am Ende gab die Einheit auf und blieb stehen. Jetzt weicht sie zuerst seitlich aus:
+// ein Zwischenpunkt 1,5 bzw. 2,5 Felder schraeg/seitlich vor ihr (befahrbar, keine andere Einheit dort), danach geht es auf dem alten
+// Weg weiter. Bis zu vier Versuche je halbe Minute, die Seite wechselt; erst dann wie bisher neu planen bzw. aufgeben.
+
+static bool modTryDetour(DROID *psDroid)
+{
+	MOVE_CONTROL &m = psDroid->sMove;
+	const Vector2i pos = psDroid->pos.xy();
+	if (m.asPath.empty() || iHypot(m.destination - pos) < 2 * DIST_TILE)
+	{
+		return false;   // am Ziel: dort parken ist richtig
+	}
+	ModDetour &st = s_modDetour[psDroid->id];
+	if (gameTime - st.last > 30000) { st.count = 0; }
+	if (st.count >= 4) { return false; }
+	const PROPULSION_TYPE prop = psDroid->getPropulsionStats()->propulsionType;
+	const uint16_t dir = (m.target != pos) ? iAtan2(m.target - pos) : psDroid->rot.direction;
+	const int side = ((psDroid->id + static_cast<uint32_t>(st.count)) & 1) ? 1 : -1;
+	static const int ANG[] = {55, 90, 125, 30};
+	const int dists[2] = {DIST_TILE * 3 / 2, DIST_TILE * 5 / 2};
+	for (const int dist : dists)
+	{
+		for (const int a : ANG)
+		{
+			for (int flip = 0; flip < 2; ++flip)
+			{
+				const int sgn = flip ? -side : side;
+				const uint16_t d = static_cast<uint16_t>(dir + DEG(a) * sgn);
+				const Vector2i p = pos + iSinCosR(d, dist);
+				const Vector2i mid = pos + iSinCosR(d, dist / 2);
+				if (p.x < TILE_UNITS || p.y < TILE_UNITS || map_coord(p.x) >= gameWorld.map.width - 1 || map_coord(p.y) >= gameWorld.map.height - 1)
+				{
+					continue;
+				}
+				if (fpathBlockingTile(gameWorld.map, map_coord(p.x), map_coord(p.y), prop) || fpathBlockingTile(gameWorld.map, map_coord(mid.x), map_coord(mid.y), prop))
+				{
+					continue;
+				}
+				bool occupied = false;
+				for (BASE_OBJECT *o : gridStartIterate(p.x, p.y, DIST_TILE * 3 / 4))
+				{
+					if (o != psDroid && o->type == OBJ_DROID && !o->died) { occupied = true; break; }
+				}
+				if (occupied) { continue; }
+				const int idx = std::max(0, m.pathIndex - 1);
+				std::vector<Vector2i> np = m.asPath;
+				np.insert(np.begin() + idx, p);
+				m.setRoute(std::move(np), idx + 1);   // (zaehlt die Weg-Generation hoch - gemerkte Antworten zum alten Weg verfallen)
+				m.src = pos;
+				m.target = p;
+				m.Status = MOVEPOINTTOPOINT;
+				st.last = gameTime;
+				++st.count;
+				objTrace(psDroid->id, "MOD: detour around block to (%d,%d)", p.x, p.y);
+				return true;
+			}
+		}
+	}
+	st.last = gameTime;
+	++st.count;
+	return false;
 }
 
 // See if the droid has been stopped long enough to give up on the move
@@ -985,6 +1057,13 @@ bool moveBlocked(DROID *psDroid)
 		blockTime = BLOCK_TIME;
 	}
 
+	// MOD (21.11.): schon nach 2,5 s Stillstand am Hindernis seitlich ausweichen (nicht erst nach 6 s neu planen/aufgeben)
+	if (gameTime - psDroid->sMove.bumpTime > 2500 && psDroid->sMove.Status != MOVESHUFFLE && modTryDetour(psDroid))
+	{
+		psDroid->sMove.bumpTime = 0;
+		psDroid->sMove.lastBump = 0;
+		return false;
+	}
 	if (gameTime - psDroid->sMove.bumpTime > blockTime)
 	{
 		// Stopped long enough - blocked
@@ -998,6 +1077,11 @@ bool moveBlocked(DROID *psDroid)
 		else
 		{
 			objTrace(psDroid->id, "BLOCKED");
+		}
+		// MOD (21.11.): zuerst seitlich ausweichen (siehe modTryDetour)
+		if (modTryDetour(psDroid))
+		{
+			return false;
 		}
 		// if the unit cannot see the next way point - reroute it's got stuck,
 		// unless it is stuck against the settled crowd at its own destination,
@@ -2143,11 +2227,9 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	const bool modPivot = modPivotTurn(psDroid, psPropStats);
 	if (modPivot)   // MOD: auf der Stelle drehen
 	{
-		// (Wunsch 21.11. 18:01 "Bagger ... vor allem auch schneller drehen (auf der Stelle)"): Bagger drehen mit mindestens 120 Grad/s
-		// (3 s fuer eine ganze Runde), Kettenfahrzeuge wie bisher mit mindestens 40 Grad/s
-		const bool excavator = psPropStats->propulsionType != PROPULSION_TYPE_TRACKED;
+		// (Wunsch 21.11. 18:31 "mach sie einfach wieder so wie vorher"): Bagger wie Kettenfahrzeuge - mindestens 40 Grad/s
 		spinAngle = std::min<int32_t>(spinAngle, DEG(25));
-		spinSpeed = std::max<int32_t>(spinSpeed, excavator ? DEG(120) : DEG(40));
+		spinSpeed = std::max<int32_t>(spinSpeed, DEG(40));
 		turnSpeed = std::min<int32_t>(turnSpeed, spinSpeed);
 	}
 
@@ -3030,6 +3112,11 @@ void moveUpdateDroid(DROID *psDroid)
 			psDroid->sMove.pauseTime = (UWORD)(gameTime - psDroid->sMove.bumpTime);
 		}
 
+		// MOD (21.11.): Pause ohne laufende Uhr = niemand weckt die Einheit mehr -> weiterfahren
+		if (psDroid->sMove.Status == MOVEPAUSE && psDroid->sMove.bumpTime == 0)
+		{
+			psDroid->sMove.Status = MOVEPOINTTOPOINT;
+		}
 		if ((psDroid->sMove.Status == MOVEPAUSE) &&
 		    (psDroid->sMove.bumpTime != 0) &&
 		    (psDroid->sMove.lastBump > psDroid->sMove.pauseTime) &&

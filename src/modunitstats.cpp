@@ -43,6 +43,7 @@ constexpr int ROW_H = 26, ICON_W = 36, ICON_H = 24, VAL_W = 66, PAD = 4;
 std::shared_ptr<W_SCREEN> s_screen;
 std::shared_ptr<W_CLICKFORM> s_panel;
 std::shared_ptr<W_BUTTON> s_toggle;
+std::vector<std::shared_ptr<W_BUTTON>> s_rowTips;   // MOD (21.11.): Tooltips der Zeilen (was bedeutet das Symbol)
 IMAGEFILE *s_img = nullptr;
 bool s_tried = false;
 bool s_on = true;          // Standard: ein
@@ -99,18 +100,18 @@ std::vector<Row> rowsFor(const DROID *d)
 	if (d->numWeaps > 0 && d->asWeaps[0].nStat > 0)
 	{
 		const WEAPON_STATS &w = asWeaponStats[d->asWeaps[0].nStat];
-		rows.push_back({S_DAMAGE, num(weaponDamage(w, p)), "damage"});
-		rows.push_back({S_ROF, num(weaponROF(w, p)), "shots per minute"});
-		rows.push_back({S_RANGE, tiles(proj_GetLongRange(w, p)), "range (tiles)"});
+		rows.push_back({S_DAMAGE, num(weaponDamage(w, p)), "Damage: how much one shot of the main weapon does"});
+		rows.push_back({S_ROF, num(weaponROF(w, p)), "Fire rate: shots per minute of the main weapon"});
+		rows.push_back({S_RANGE, tiles(proj_GetLongRange(w, p)), "Range of the main weapon (in tiles)"});
 	}
-	rows.push_back({S_ARMOUR, num(objArmour(d, WC_KINETIC)), "armour"});
-	rows.push_back({S_THERMAL, num(objArmour(d, WC_HEAT)), "thermal armour"});
-	rows.push_back({S_HP, num(static_cast<int>(d->body)) + "/" + num(static_cast<int>(d->originalBody)), "hitpoints"});
-	rows.push_back({S_SPEED, num(static_cast<int>(d->baseSpeed)), "speed"});
-	rows.push_back({S_WEIGHT, num(static_cast<int>(d->weight)), "weight"});
-	rows.push_back({S_POWER, num(static_cast<int>(calcDroidPower(d))), "cost"});
-	rows.push_back({S_SENSOR, tiles(objSensorRange(d)), "sight range (tiles)"});
-	rows.push_back({IC_STAR, num(static_cast<int>(d->kills)), "kills"});
+	rows.push_back({S_ARMOUR, num(objArmour(d, WC_KINETIC)), "Armour: protection against bullets, shells and rockets (kinetic)"});
+	rows.push_back({S_THERMAL, num(objArmour(d, WC_HEAT)), "Thermal armour: protection against fire, lasers and other heat weapons"});
+	rows.push_back({S_HP, num(static_cast<int>(d->body)) + "/" + num(static_cast<int>(d->originalBody)), "Hit points: current / maximum (0 = destroyed)"});
+	rows.push_back({S_SPEED, num(static_cast<int>(d->baseSpeed)), "Speed on open ground"});
+	rows.push_back({S_WEIGHT, num(static_cast<int>(d->weight)), "Weight (heavier = slower, needs a stronger engine)"});
+	rows.push_back({S_POWER, num(static_cast<int>(calcDroidPower(d))), "Cost: power needed to build this unit"});
+	rows.push_back({S_SENSOR, tiles(objSensorRange(d)), "Sight range: how far the unit can see (in tiles)"});
+	rows.push_back({IC_STAR, num(static_cast<int>(d->kills)), "Kills: enemies destroyed by this unit (gives experience and rank)"});
 	return rows;
 }
 
@@ -181,10 +182,20 @@ void ensureScreen()
 	screen->psForm->attach(panel);
 	panel->displayFunction = drawPanel;
 	panel->setTransparentToClicks(true);
+	// (Wunsch 21.11. 18:31 "Tooltips ... auch die Einheitenwerte links oben in der Liste, was die ganzen Symbole bedeuten")
+	s_rowTips.clear();
+	for (int i = 0; i < 14; ++i)
+	{
+		auto tb = std::make_shared<W_BUTTON>();
+		panel->attach(tb);
+		tb->displayFunction = [](WIDGET *, UDWORD, UDWORD) {};
+		tb->hide();
+		s_rowTips.push_back(tb);
+	}
 	auto t = std::make_shared<W_BUTTON>();
 	screen->psForm->attach(t);
 	t->displayFunction = drawToggle;
-	t->setTip(_("Unit values on/off"));
+	t->setTip(_("Unit values on/off - shows the values of the selected unit (point at a symbol to see what it means)"));
 	t->addOnClickHandler([](W_BUTTON &) { s_on = !s_on; });
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
 	s_screen = screen;
@@ -214,14 +225,24 @@ void tick()
 		}
 	}
 	s_toggle->setGeometry(x, y, ICON_W, ICON_H);
-	const int rows = static_cast<int>(rowsFor(d).size());
+	const std::vector<Row> rowList = rowsFor(d);
+	const int rows = static_cast<int>(rowList.size());
 	s_panel->setGeometry(x, y + ICON_H + 4, PAD * 2 + ICON_W + 3 + VAL_W + 4, PAD * 2 + rows * ROW_H);
+	static std::vector<std::string> s_lastTips;
+	s_lastTips.resize(s_rowTips.size());
+	for (size_t i = 0; i < s_rowTips.size(); ++i)
+	{
+		if (i >= rowList.size()) { s_rowTips[i]->hide(); continue; }
+		s_rowTips[i]->show();
+		s_rowTips[i]->setGeometry(PAD, PAD + static_cast<int>(i) * ROW_H, ICON_W + 3 + VAL_W, ROW_H);
+		if (s_lastTips[i] != rowList[i].tip) { s_rowTips[i]->setTip(rowList[i].tip); s_lastTips[i] = rowList[i].tip; }
+	}
 }
 
 void shutdown()
 {
 	if (s_screen) { widgRemoveOverlayScreen(s_screen); }
-	s_screen = nullptr; s_panel = nullptr; s_toggle = nullptr;
+	s_screen = nullptr; s_panel = nullptr; s_toggle = nullptr; s_rowTips.clear();
 	if (s_img != nullptr) { iV_FreeImageFile(s_img); s_img = nullptr; }
 	s_tried = false;
 }
