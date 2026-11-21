@@ -404,30 +404,7 @@ constexpr int R_SUB_SUPPLY = 5 * 128;  // Verbraucher bis 5 Felder um das Umspan
 constexpr int R_SOURCE_LINK = 576;     // Kraftwerk / Solarpaneel / Kommandozentrale an Mast bis 4,5 Felder
 constexpr int R_STORE = 12 * 128;      // Oellager versorgt Kraftwerke bis 12 Felder
 
-void ringAt(const glm::mat4 &m, int cx, int cy, int r, PIELIGHT col, bool dashed)
-{
-	std::vector<glm::ivec4> lines;
-	Vector2i prev(0, 0);
-	bool havePrev = false;
-	const int n = 64;
-	for (int k = 0; k <= n; k++)
-	{
-		const double a = k * 6.283185307 / n;
-		const int wx = static_cast<int>(cx + std::cos(a) * r), wy = static_cast<int>(cy + std::sin(a) * r);
-		Vector2i sp(0, 0);
-		const bool ok = projectWorld(wx, wy, map_Height(gameWorld.map, std::clamp(wx, 0, world_coord(gameWorld.map.width) - 1), std::clamp(wy, 0, world_coord(gameWorld.map.height) - 1)) + 6, m, sp);   // (20.11.) am Kartenrand nicht ausserhalb abfragen
-		if (ok && havePrev && (!dashed || (k % 2) == 0))
-		{
-			lines.emplace_back(prev.x, prev.y, sp.x, sp.y);
-			lines.emplace_back(prev.x, prev.y + 1, sp.x, sp.y + 1);
-		}
-		prev = sp;
-		havePrev = ok;
-	}
-	if (!lines.empty()) { iV_Lines(lines, col); }
-}
-
-void drawPlacementRanges(const glm::mat4 &m)
+void collectPlacementRings(std::vector<glm::vec3> &supply, std::vector<glm::vec3> &link)
 {
 	if ((buildState != BUILD3D_VALID && buildState != BUILD3D_POS) || sBuildDetails.psStats == nullptr || !sBuildDetails.psStats->hasType(STAT_STRUCTURE))
 	{
@@ -439,29 +416,32 @@ void drawPlacementRanges(const glm::mat4 &m)
 	const bool source = st->type == REF_POWER_GEN || st->incomeProvide > 0;
 	const bool consumer = st->requiresPower;
 	if (!pole && !sub && !store && !source && !consumer) { return; }
-	const int cx = world_coord(static_cast<int>(sBuildDetails.x)) + world_coord(static_cast<int>(sBuildDetails.width)) / 2;
-	const int cy = world_coord(static_cast<int>(sBuildDetails.y)) + world_coord(static_cast<int>(sBuildDetails.height)) / 2;
-	const PIELIGHT blue = pal_RGBA(70, 150, 255, 235), light = pal_RGBA(150, 210, 255, 200), dim = pal_RGBA(40, 95, 180, 150);
-	// bestehende Versorgungsbereiche (gedimmt), damit man sieht, wo schon Strom hinkommt
+	const float cx = static_cast<float>(world_coord(static_cast<int>(sBuildDetails.x)) + world_coord(static_cast<int>(sBuildDetails.width)) / 2);
+	const float cy = static_cast<float>(world_coord(static_cast<int>(sBuildDetails.y)) + world_coord(static_cast<int>(sBuildDetails.height)) / 2);
+	// bestehende Versorgungsbereiche: verschmelzen mit dem neuen Ring zu EINER leuchtenden Umrisslinie - man sieht, wohin Strom kommt
 	if (pole || sub || consumer)
 	{
 		for (const STRUCTURE *s : gameWorld.objects.structures[selectedPlayer])
 		{
 			if (s->died || s->status != SS_BUILT) { continue; }
-			if (modgrid::isPole(s->pStructureType)) { ringAt(m, s->pos.x, s->pos.y, R_POLE_SUPPLY, dim, false); }
-			else if (modgrid::isSubstation(s->pStructureType)) { ringAt(m, s->pos.x, s->pos.y, R_SUB_SUPPLY, dim, false); }
+			if (modgrid::isPole(s->pStructureType)) { supply.emplace_back(static_cast<float>(s->pos.x), static_cast<float>(s->pos.y), static_cast<float>(R_POLE_SUPPLY)); }
+			else if (modgrid::isSubstation(s->pStructureType)) { supply.emplace_back(static_cast<float>(s->pos.x), static_cast<float>(s->pos.y), static_cast<float>(R_SUB_SUPPLY)); }
 		}
 	}
-	if (pole) { ringAt(m, cx, cy, R_POLE_SUPPLY, blue, false); ringAt(m, cx, cy, R_POLE_LINK, light, true); }
-	if (sub) { ringAt(m, cx, cy, R_SUB_SUPPLY, blue, false); ringAt(m, cx, cy, R_POLE_LINK, light, true); }
-	if (source) { ringAt(m, cx, cy, R_SOURCE_LINK, light, true); }
-	if (store) { ringAt(m, cx, cy, R_STORE, blue, false); }
+	if (pole) { supply.emplace_back(cx, cy, static_cast<float>(R_POLE_SUPPLY)); link.emplace_back(cx, cy, static_cast<float>(R_POLE_LINK)); }
+	if (sub) { supply.emplace_back(cx, cy, static_cast<float>(R_SUB_SUPPLY)); link.emplace_back(cx, cy, static_cast<float>(R_POLE_LINK)); }
+	if (source) { link.emplace_back(cx, cy, static_cast<float>(R_SOURCE_LINK)); }
+	if (store) { supply.emplace_back(cx, cy, static_cast<float>(R_STORE)); }
 }
+}
+
+void placementRings(std::vector<glm::vec3> &supply, std::vector<glm::vec3> &link)
+{
+	if (selectedPlayer < MAX_PLAYERS && modoil::manages(static_cast<int>(selectedPlayer))) { collectPlacementRings(supply, link); }
 }
 
 void drawWorldIcons(const glm::mat4 &m)
 {
-	if (selectedPlayer < MAX_PLAYERS && modoil::manages(static_cast<int>(selectedPlayer))) { drawPlacementRanges(m); }
 	if (selectedPlayer >= MAX_PLAYERS || !modoil::manages(static_cast<int>(selectedPlayer))) { return; }
 	const float sc = modui::uiScale();
 	const int r = static_cast<int>(13.f * sc);

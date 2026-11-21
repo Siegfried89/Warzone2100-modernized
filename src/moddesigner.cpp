@@ -1056,7 +1056,7 @@ void buildScreen()
 	for (int t = 0; t < 4; ++t) { s_tabBtn.push_back(makeBtn(parent, hotDisplay, static_cast<UDWORD>(t), tabTips[t], [t]() { setTab(t); })); }
 	for (int i = 0; i < ROWS; ++i)
 	{
-		s_rowBtn.push_back(makeBtn(parent, rowDisplay, static_cast<UDWORD>(i), nullptr, [i]() {
+		s_rowBtn.push_back(makeBtn(parent, rowDisplay, static_cast<UDWORD>(i), "Click to fit this part (its values are shown next to the preview; locked parts need research first)", [i]() {   // MOD (21.11.): Tooltip
 			const size_t idx = static_cast<size_t>(s_scroll + i);
 			if (idx >= s_list.size()) { return; }
 			if (entryLocked(s_list[idx])) { setStatus(lockReason(s_list[idx]), true); play("mfui_clank.ogg"); return; }

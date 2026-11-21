@@ -43,7 +43,9 @@ bool applySceneEffectSurfaces()
 	cfg.ssr = ssrSettings.enabled;
 	cfg.ssrResolution = {ssrSettings.generateDivisor, ssrSettings.blurDivisor};
 	cfg.fog = pie_GetFogEnabled();
-	cfg.rangeRings = rangeOnScreen;
+	// MOD (21.11.): Ring-Flaechen immer bereithalten - die leuchtenden Reichweiten beim Platzieren von Stromnetz-Gebaeuden erscheinen auch,
+	// wenn die Reichweitenringe der Einheiten aus sind (ohne Ringe faellt der Durchgang je Bild weg, siehe render_topology_game.cpp)
+	cfg.rangeRings = true;
 	cfg.bloom = bloom_pass::intensity() > 0.f;
 	pie_SetAdditiveCoreBoost(bloom_pass::additiveCoreBoost());
 	if (!gfx_api::context::get().setSceneEffectSurfaces(cfg))
