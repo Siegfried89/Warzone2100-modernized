@@ -84,6 +84,10 @@ bool gateFromWall(unsigned player, const STRUCTURE *psWall, bool add);
 /// Rein lesend (veraendert nichts, kein Zufall) - fuer Vorschau und Bauauftraege.
 std::vector<Placement> planDefenseNet(unsigned player, const std::vector<Vector2i> &strokeWorld, int side);
 
+/// MOD (21.11., Zuege): Gleisstrecke entlang einer gezeichneten Linie - Felder in 8er-Nachbarschaft (schraege Gleise erlaubt), um
+/// Hindernisse herum, vorhandene eigene Gleise werden mitbenutzt (nicht neu gebaut). Linienbau-Eintraege (gerade oder schraege Stuecke).
+std::vector<Placement> planRailLine(unsigned player, const std::vector<Vector2i> &strokeWorld);
+
 /// jeden Spielschritt
 void tick(GameWorld &world);
 /// bei neuem Spiel

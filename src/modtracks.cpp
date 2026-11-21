@@ -14,6 +14,7 @@
 #include "loop.h"
 #include "map.h"
 #include "modlayer.h"
+#include "modrail.h"
 #include "objmem.h"
 #include "stats.h"
 
@@ -173,6 +174,7 @@ void update()
 		{
 			if (d == nullptr || d->died) { continue; }
 			if (d->isVtol() || d->isTransporter() || d->isFlying()) { continue; }
+			if (modrail::isTrain(d)) { continue; }   // MOD (21.11.): Zuege rollen auf Schienen - keine Reifenspuren
 			if (d->droidType == DROID_PERSON || d->droidType == DROID_CYBORG || d->droidType == DROID_CYBORG_SUPER
 			    || d->droidType == DROID_CYBORG_CONSTRUCT || d->droidType == DROID_CYBORG_REPAIR) { continue; }
 			if (!d->visibleForLocalDisplay()) { s_last.erase(d->id); continue; }

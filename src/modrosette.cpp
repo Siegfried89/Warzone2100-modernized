@@ -27,6 +27,7 @@
 #include "modauto.h"
 #include "modmines.h"
 #include "modapc.h"
+#include "modrail.h"
 #include "modbuild.h"
 #include "modcover.h"
 #include "moddesigner.h"
@@ -254,11 +255,12 @@ std::vector<Item> itemsFor(int hex)
 			bool any = false;
 			for (DROID *d : selection())
 			{
-				if (!modapc::isApc(d)) { continue; }
+				// (21.11.) auch Loks: alle Truppenwaggons ihres Zuges (modrail gibt den Knopf weiter)
+				if (!modapc::isApc(d) && !modrail::isLoco(d)) { continue; }
 				any = true;
-				if (modapc::load(d) > 0) { secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_MINECLEAR_SET); }
+				if (modapc::load(d) > 0 || modrail::isLoco(d)) { secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_MINECLEAR_SET); }
 			}
-			if (!any) { addConsoleMessage(_("Unload: select a halftrack APC"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+			if (!any) { addConsoleMessage(_("Unload: select a halftrack APC, a troop wagon or a locomotive"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
 		};
 		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_UNLOAD, true) + 1)) { v.push_back(unload); }
 		// (18.11. 17:52, MF-Besatzung) Pilot steigt aus: der Combot steht danach ohne Besatzung (neutral) da; jede Besatzung kann ihn besteigen

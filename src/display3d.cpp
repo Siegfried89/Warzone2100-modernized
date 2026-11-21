@@ -103,6 +103,7 @@
 #include "modgrid.h"
 #include "modpaint.h"
 #include "modferry.h"
+#include "modrail.h"   // MOD (21.11.): Gleise
 #include "modheadlights.h"
 #include "modnightlights.h"
 #include "modrocket.h"
@@ -3418,6 +3419,13 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 	}
 
 	buildingBrightness = structureBrightness(psStructure);
+
+	// MOD (21.11.): Gleise - die Engine zeichnet die Gleisstuecke entlang der Verbindungen zu den Nachbarfeldern (modrail)
+	if (modrail::isRail(psStructure) && modrail::drawRail(psStructure, buildingBrightness, viewMatrix))
+	{
+		setScreenDispWithPerspective(&psStructure->sDisplay, perspectiveViewMatrix * modelMatrix);   // anklickbar (Abriss)
+		return;
+	}
 
 	if (!defensive)
 	{

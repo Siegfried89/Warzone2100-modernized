@@ -1178,6 +1178,91 @@ uint32_t cellHash(const Vector2i &t, uint32_t salt)
 }
 }
 
+std::vector<Placement> planRailLine(unsigned player, const std::vector<Vector2i> &stroke)
+{
+	std::vector<Placement> out;
+	if (player >= MAX_PLAYERS || stroke.empty()) { return out; }
+	STRUCTURE_STATS *rail = availStat(player, "A0RailTrack");
+	if (rail == nullptr) { return out; }
+	constexpr size_t MAX_LINE = 240;
+	auto tileOf = [](const Vector2i &w) { return Vector2i(std::max(0, w.x) / DIST_TILE, std::max(0, w.y) / DIST_TILE); };
+	auto cheb = [](const Vector2i &a, const Vector2i &b) { return std::max(std::abs(a.x - b.x), std::abs(a.y - b.y)); };
+	// 1) Linie -> Feldfolge in 8er-Nachbarschaft
+	std::vector<Vector2i> path;
+	auto push = [&](const Vector2i &t) {
+		const auto it = std::find(path.begin(), path.end(), t);
+		if (it != path.end()) { path.erase(it + 1, path.end()); return; }   // Schleife: abschneiden
+		path.push_back(t);
+	};
+	for (size_t i = 0; i < stroke.size() && path.size() < MAX_LINE; ++i)
+	{
+		const Vector2i a = i == 0 ? stroke[0] : stroke[i - 1], b = stroke[i];
+		const int64_t len = static_cast<int64_t>(std::sqrt(static_cast<double>(dist2i(a, b))));
+		const int steps = std::max<int>(1, static_cast<int>(len / (DIST_TILE / 4)));
+		for (int k = (i == 0 ? 0 : 1); k <= steps && path.size() < MAX_LINE; ++k)
+		{
+			const Vector2i w(a.x + static_cast<int>((static_cast<int64_t>(b.x - a.x) * k) / steps), a.y + static_cast<int>((static_cast<int64_t>(b.y - a.y) * k) / steps));
+			const Vector2i t = tileOf(w);
+			if (!path.empty() && path.back() == t) { continue; }
+			while (!path.empty() && cheb(path.back(), t) > 1 && path.size() < MAX_LINE)
+			{
+				Vector2i c = path.back();
+				c.x += (t.x > c.x) ? 1 : (t.x < c.x ? -1 : 0);
+				c.y += (t.y > c.y) ? 1 : (t.y < c.y ? -1 : 0);
+				push(c);
+			}
+			push(t);
+		}
+	}
+	if (path.empty()) { return out; }
+	// 2) Hindernisse umgehen; eigene Gleise auf dem Weg werden mitbenutzt
+	TileSet used;
+	auto ownRail = [&](const Vector2i &t) {
+		const STRUCTURE *os = ownStructAt(player, t);
+		return os != nullptr && os->pStructureType != nullptr && os->pStructureType->id.startsWith("A0RailTrack");
+	};
+	auto passable = [&](const Vector2i &t) { return used.count(keyOf(t)) == 0 && (freeFor(player, rail, t, 0, used) || ownRail(t)); };
+	std::vector<std::vector<Vector2i>> pieces(1);
+	for (size_t i = 0; i < path.size();)
+	{
+		const Vector2i t = path[i];
+		if (passable(t)) { pieces.back().push_back(t); used.insert(keyOf(t)); ++i; continue; }
+		size_t j = i + 1;
+		while (j < path.size() && j < i + 10 && !passable(path[j])) { ++j; }
+		std::vector<Vector2i> detour;
+		if (!pieces.back().empty() && j < path.size()
+		    && routeTiles(pieces.back().back(), path[j], passable, static_cast<int>(j - i) * 2 + 6, detour))
+		{
+			for (const Vector2i &d : detour) { pieces.back().push_back(d); used.insert(keyOf(d)); }
+		}
+		else if (!pieces.back().empty())
+		{
+			pieces.emplace_back();
+		}
+		i = j;
+	}
+	// 3) gerade/schraege Stuecke (gleicher Schritt) als Linienbau; vorhandene Gleise trennen die Stuecke
+	for (const std::vector<Vector2i> &cells : pieces)
+	{
+		size_t i = 0;
+		while (i < cells.size())
+		{
+			if (ownRail(cells[i])) { ++i; continue; }
+			size_t j = i;
+			if (j + 1 < cells.size() && !ownRail(cells[j + 1]) && cheb(cells[j], cells[j + 1]) == 1)
+			{
+				const int dx = cells[j + 1].x - cells[j].x, dy = cells[j + 1].y - cells[j].y;
+				while (j + 1 < cells.size() && !ownRail(cells[j + 1]) && cells[j + 1].x - cells[j].x == dx && cells[j + 1].y - cells[j].y == dy) { ++j; }
+			}
+			Placement pl;
+			pl.stats = rail; pl.tile = cells[i]; pl.tile2 = cells[j]; pl.line = true; pl.direction = 0;
+			out.push_back(pl);
+			i = j + 1;
+		}
+	}
+	return out;
+}
+
 std::vector<Placement> planDefenseNet(unsigned player, const std::vector<Vector2i> &stroke, int side)
 {
 	std::vector<Placement> out;

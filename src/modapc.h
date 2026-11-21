@@ -14,13 +14,15 @@ struct SIMPLE_OBJECT;
 
 namespace modapc
 {
-/// Schuetzenpanzer (Rumpf-Kennung beginnt mit "ScavAPC")?
+/// Schuetzenpanzer (Rumpf-Kennung beginnt mit "ScavAPC") oder Truppenwaggon eines Zuges ("TrainWagonTroop", modrail)?
 bool isApc(const DROID *psDroid);
 /// sitzt dieses Objekt gerade in einem Schuetzenpanzer?
 bool aboard(const SIMPLE_OBJECT *psObj);
 /// Zahl der Insassen
 int load(const DROID *psApc);
 constexpr int CAPACITY = 8;
+/// (21.11.) Plaetze dieses Transporters: Schuetzenpanzer 8, Truppenwaggon (Rumpf "TrainWagonTroop") 10
+int capacity(const DROID *psApc);
 /// jeden Spielschritt aus der Spielschleife (nach den Einheiten)
 void tick();
 void reset();
