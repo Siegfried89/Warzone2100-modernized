@@ -25,6 +25,9 @@ struct PartStats
 {
 	int hp = 0, ak = 0, ah = 0, spd = 0, dmg = 0, rng = 0, blk = 0;
 	bool melee = false;
+	// (21.11.) echte MF-Werte (mfunit.py aus objinfo.tbd): Trefferpunkte des Teils, Schilde (Anteil 0..1), Nahkampfschaden mech./Energie,
+	// Takt zwischen zwei Angriffen (s), Treffsicherheit (0..1); rch = mittlere Schlagweite der Angriffe (MF-Einheiten, mfreach.py)
+	float mfhp = 0.f, ms = 0.f, es = 0.f, md = 0.f, ed = 0.f, cyc = 0.75f, acc = 0.85f, rch = 0.f;
 };
 
 /// (20.11.) MF-Skelett eines Einzelteils: Knochenplatz (0-27, 31 = starr am Elternteil), Elternteil, Versatz zum Elternteil
@@ -65,6 +68,10 @@ struct Part
 	float ground = 0.f;                         // Beine: Sohlenhoehe in der Ruhehaltung (MF-Einheiten)
 	float sole = -2.8f;                         // Beine: Unterkante des Fusses unter dem Fussgelenk (MF-Einheiten)
 	bool legWeapon = false;                     // (20.11.) MF-Beine mit eingebauter Waffe, als Waffenarm gefuehrt: werden als Beine gezeichnet
+	/// (21.11.) je Angriffsanimation dieses Arms: Schlagweite im Treffer-Moment (MF-Einheiten) und der Treffer-Moment selbst (s) -
+	/// die weiteste Streckung der Waffe (mfreach.py). Leer = alte Daten.
+	std::vector<std::pair<std::string, glm::vec2>> reach;
+	bool reachOf(const std::string &animKey, float &reachMF, float &impactSec) const;
 
 	const iIMDShape *shape(size_t i) const;   // laedt das Modell bei Bedarf
 	bool hasAbility(const char *a) const;
@@ -111,6 +118,15 @@ int hitRandomPart(DROID *d, int damage);
 /// Zustand eines Teils in Prozent (0..100); -1 = Teil fehlt (abgeschlagen oder nie vorhanden)
 int partHealth(const DROID *d, PartSlot slot);
 const Part *partInSlot(const DROID *d, PartSlot slot);
+/// (21.11.) MF-Nahkampftreffer (Duell): trifft ein zufaelliges vorhandenes Teil mit mD/eD (MF-Schaden, mal Steady-Prozent auf Arme/Beine),
+/// abgezogen werden die MF-Schilde dieses Teils; Arme/Beine verlieren eigene Trefferpunkte (Verhaeltnis wie in MF zum Torso) und werden
+/// bei 0 abgeschlagen. Rueckgabe: Schaden am Torso in Warzone-Trefferpunkten (der Aufrufer zieht ihn vom Rumpf ab), slotOut = Teil.
+int meleeHit(DROID *victim, float mD, float eD, int severPct, int &slotOut, int forceSlot = -1);
+/// Werte des Arms in einem Waffenplatz (nullptr = kein Arm)
+const Part *armInSlot(const DROID *d, int weaponSlot);
+/// Welteinheiten je MF-Einheit (Modellmassstab x Anzeige-Vergroesserung) und Brusttiefe des Grund-Combots (MF-Einheiten)
+float worldPerMF();
+float frontMF();
 /// Waffen-Einsatz: nur Nahkampf, alle oder nur Fernkampf
 WeaponMode weaponMode(const DROID *d);
 void setWeaponMode(DROID *d, WeaponMode m);

@@ -89,6 +89,7 @@ bool s_ok = false;
 bool s_mirrored = false;         // (20.11.) Teile in WZ-Handhabung gespiegelt (mfmirror.py) -> Abbildung MF (x,y,z) -> Modell (x,z,y)
 float s_scale = 1.8f;
 float s_show = 1.f;   // MOD (19.11. 23:00 "die Groessenordnung auch"): Anzeige-Vergroesserung im Spiel (parts.json "show"), Baustation unveraendert
+float s_front = 8.2f;  // (21.11.) Brusttiefe des Grund-Combots in der Kampfhaltung (MF-Einheiten, parts.json "front" von mfreach.py)
 std::vector<Part> s_parts;
 std::unordered_map<std::string, Anim> s_anims;
 const Anim *s_stand = nullptr, *s_standCrewless = nullptr, *s_standTurn = nullptr, *s_attackIdle = nullptr;
@@ -214,6 +215,7 @@ bool loadAll()
 	s_scale = pj.value("scale", 1.8f);
 	s_show = std::clamp(pj.value("show", 1.f), 0.25f, 4.f);
 	s_mirrored = pj.value("mirrored", 0) != 0;
+	s_front = std::clamp(pj.value("front", 8.2f), 2.f, 30.f);
 	for (const auto &d : pj["parts"])
 	{
 		Part p;
@@ -233,6 +235,20 @@ bool loadAll()
 			const auto &s = d["st"];
 			p.st.hp = s.value("hp", 0); p.st.ak = s.value("ak", 0); p.st.ah = s.value("ah", 0); p.st.spd = s.value("spd", 0);
 			p.st.dmg = s.value("dmg", 0); p.st.rng = s.value("rng", 0); p.st.blk = s.value("blk", 0); p.st.melee = s.value("melee", 0) != 0;
+			// (21.11.) echte MF-Werte (mfunit.py / mfreach.py)
+			p.st.mfhp = s.value("mfhp", 0.f); p.st.ms = std::clamp(s.value("ms", 0.f), 0.f, 0.95f); p.st.es = std::clamp(s.value("es", 0.f), 0.f, 0.95f);
+			p.st.md = s.value("md", 0.f); p.st.ed = s.value("ed", 0.f); p.st.cyc = std::clamp(s.value("cyc", 0.75f), 0.2f, 30.f);
+			p.st.acc = std::clamp(s.value("acc", 0.85f), 0.3f, 1.f); p.st.rch = s.value("rch", 0.f);
+		}
+		if (d.contains("rch") && d["rch"].is_object())
+		{
+			for (auto it = d["rch"].begin(); it != d["rch"].end(); ++it)
+			{
+				if (it.value().is_array() && it.value().size() >= 2)
+				{
+					p.reach.emplace_back(it.key(), glm::vec2(it.value()[0].get<float>(), it.value()[1].get<float>()));
+				}
+			}
 		}
 		p.shR = jv(d, "shR"); p.shL = jv(d, "shL");
 		if (d.contains("neck")) { p.neck = jv(d, "neck"); }
@@ -597,6 +613,15 @@ bool Part::hasAbility(const char *a) const
 	return false;
 }
 
+bool Part::reachOf(const std::string &animKey, float &reachMF, float &impactSec) const
+{
+	for (const auto &r : reach)
+	{
+		if (r.first == animKey) { reachMF = r.second.x; impactSec = r.second.y; return true; }
+	}
+	return false;
+}
+
 // ---------------------------------------------------------------- Zugriff
 
 float modelScale()
@@ -687,6 +712,16 @@ static State &stateOf(const DROID *d)
 		s.hpMax[SLOT_RARM] = std::max(1, base * 18 / 100);
 		s.hpMax[SLOT_LARM] = std::max(1, base * 18 / 100);
 		s.hpMax[SLOT_LEGS] = std::max(1, base * 22 / 100);
+		// (21.11.) wie in MF: jedes Teil hat seine eigenen Trefferpunkte (Hammerarm 338, Katana 173, Grund-Torso 179, Grund-Beine 114 ...)
+		// - umgerechnet im Verhaeltnis zum Torso, dessen Warzone-Trefferpunkte der Rumpf hat
+		const Loadout lo = loadoutOf(d);
+		if (lo.torso != nullptr && lo.torso->st.mfhp > 0.f)
+		{
+			const float f = static_cast<float>(base) / lo.torso->st.mfhp;
+			if (lo.armR && lo.armR->st.mfhp > 0.f) { s.hpMax[SLOT_RARM] = std::max(1, static_cast<int>(lo.armR->st.mfhp * f)); }
+			if (lo.armL && lo.armL->st.mfhp > 0.f) { s.hpMax[SLOT_LARM] = std::max(1, static_cast<int>(lo.armL->st.mfhp * f)); }
+			if (lo.legs && lo.legs->st.mfhp > 0.f) { s.hpMax[SLOT_LEGS] = std::max(1, static_cast<int>(lo.legs->st.mfhp * f)); }
+		}
 		for (int i = 0; i < SLOT_COUNT; ++i) { s.hp[i] = s.hpMax[i]; }
 	}
 	return s;
@@ -1108,6 +1143,62 @@ int hitRandomPart(DROID *d, int damage)
 	return slot;
 }
 
+// (21.11.) MF-Nahkampftreffer: Teil waehlen, MF-Schaden abzueglich der MF-Schilde dieses Teils
+int meleeHit(DROID *d, float mD, float eD, int severPct, int &slotOut, int forceSlot)
+{
+	slotOut = -1;
+	if (d == nullptr || d->died || !isModular(d)) { return 0; }
+	State &s = stateOf(d);
+	const Loadout lo = loadoutOf(d);
+	int w[SLOT_COUNT];
+	w[SLOT_TORSO] = 40;
+	w[SLOT_RARM] = partInSlot(d, SLOT_RARM) ? 20 : 0;
+	w[SLOT_LARM] = partInSlot(d, SLOT_LARM) ? 20 : 0;
+	w[SLOT_LEGS] = partInSlot(d, SLOT_LEGS) ? 20 : 0;
+	int roll = static_cast<int>(gameRand(static_cast<uint32_t>(w[0] + w[1] + w[2] + w[3])));
+	int slot = SLOT_TORSO;
+	for (int i = 0; i < SLOT_COUNT; ++i)
+	{
+		if (roll < w[i]) { slot = i; break; }
+		roll -= w[i];
+	}
+	if (forceSlot >= 0 && forceSlot < SLOT_COUNT && w[forceSlot] > 0) { slot = forceSlot; }   // Schild faengt den Schlag ab
+	slotOut = slot;
+	const Part *hit = slot == SLOT_TORSO ? lo.torso : (slot == SLOT_RARM ? lo.armR : (slot == SLOT_LARM ? lo.armL : lo.legs));
+	const float ms = hit ? hit->st.ms : 0.f, es = hit ? hit->st.es : 0.f;
+	float dmgMF = std::max(0.f, mD) * (1.f - ms) + std::max(0.f, eD) * (1.f - es);
+	// MF-Trefferpunkte -> Warzone-Trefferpunkte (der Rumpf traegt die des Torsos)
+	const float f = (lo.torso != nullptr && lo.torso->st.mfhp > 0.f) ? static_cast<float>(d->originalBody) / lo.torso->st.mfhp : 1.f;
+	if (slot == SLOT_TORSO) { return std::max(1, static_cast<int>(std::lround(dmgMF * f))); }
+	dmgMF = dmgMF * static_cast<float>(std::max(0, severPct)) / 100.f;
+	s.hp[slot] -= std::max(1, static_cast<int>(std::lround(dmgMF * f)));
+	if (s.hp[slot] <= 0)
+	{
+		s.hp[slot] = 0;
+		severPart(d, slot == SLOT_RARM ? SEV_RARM : (slot == SLOT_LARM ? SEV_LARM : SEV_LEGS));
+	}
+	return 0;
+}
+
+const Part *armInSlot(const DROID *d, int weaponSlot)
+{
+	if (d == nullptr || weaponSlot < 0 || !isModular(d)) { return nullptr; }
+	const Loadout lo = loadoutOf(d);
+	if (weaponSlot == lo.slotR) { return lo.armR; }
+	if (weaponSlot == lo.slotL) { return lo.armL; }
+	return nullptr;
+}
+
+float worldPerMF()
+{
+	return s_scale * s_show;
+}
+
+float frontMF()
+{
+	return s_front;
+}
+
 WeaponMode weaponMode(const DROID *d)
 {
 	if (d == nullptr) { return MODE_ALL; }
@@ -1390,6 +1481,8 @@ struct DroidAnim
 	unsigned shots = 0;
 	unsigned lastBody = 0;
 	unsigned nextFlinch = 0;
+	unsigned lastParry = 0;       // (21.11.) zuletzt gezeigte Parade (Spielzeit des abgewehrten Schlags)
+	float overCut = -1.f;         // (21.11.) Parade: ab dieser Zeit der Animation ausblenden (kein Nachschwung), -1 = ganz abspielen
 };
 std::unordered_map<uint32_t, DroidAnim> s_da;
 
@@ -1584,7 +1677,30 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 		da.combatUntil = gameTime + 3000;
 		if (v != nullptr && !v->empty())
 		{
-			const Anim *an = (*v)[da.shots % v->size()];
+			const Anim *an = nullptr;
+			float impact = -1.f;
+			if (trigSwing && arm != nullptr && !arm->reach.empty())
+			{
+				// (21.11. "Hiebe ins Leere"): nur Angriffe, deren Waffe im Treffer-Moment bis an den Gegner reicht (Schlagweite je
+				// Animation, mfreach.py); reicht keiner, der weiteste
+				const float need = modduel::swingNeedMF(d);
+				std::vector<const Anim *> fit;
+				const Anim *longest = nullptr;
+				float lr = -1.f;
+				for (const Anim *c : *v)
+				{
+					float r = 0.f, im = 0.f;
+					if (!arm->reachOf(c->key, r, im)) { continue; }
+					if (r >= need) { fit.push_back(c); }
+					if (r > lr) { lr = r; longest = c; }
+				}
+				an = !fit.empty() ? fit[da.shots % fit.size()] : longest;
+			}
+			if (an == nullptr) { an = (*v)[da.shots % v->size()]; }
+			{
+				float r = 0.f, im = 0.f;
+				if (arm != nullptr && arm->reachOf(an->key, r, im)) { impact = im; }
+			}
 			const bool busy = da.over.an != nullptr && da.over.an != s_hit[0] && da.over.an != s_hit[1] && da.over.an != s_hit[2]
 			                  && da.over.an != s_hit[3] && da.over.t < da.over.an->T * 0.75f;
 			if (!busy)
@@ -1592,7 +1708,9 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 				float t0 = 0.f, in = an->blendIn;
 				if (trigSwing)
 				{
-					const float th = an->tHit >= 0.f ? an->tHit : an->tFire;
+					// Treffer-Moment = weiteste Streckung der Waffe (mfreach.py; das MF-Ereignis 0x200 liegt 0,1-0,2 s davor und loest den
+					// Klang aus) - genau dann zieht modduel den Schaden ab
+					const float th = impact >= 0.f ? impact : (an->tHit >= 0.f ? an->tHit : an->tFire);
 					if (th >= 0.f) { t0 = th - static_cast<float>(modduel::HIT_DELAY_MS) * 0.001f; }   // kann < 0 sein: Schlag beginnt etwas spaeter
 				}
 				else if (an->tFire >= 0.f)
@@ -1606,7 +1724,39 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 				da.overIn = in;
 				da.overStarted = false;
 				da.overArm = arm;
+				da.overCut = -1.f;
 				++da.shots;
+			}
+		}
+	}
+
+	// ---- (21.11.) Parade: der Gegner schlaegt zu, dieser Combot wehrt ab (modduel hat das schon gewuerfelt) - er fuehrt seine eigene
+	// Waffe dem Schlag entgegen: Angriffs-Animation des Nahkampfarms so, dass ihre weiteste Streckung genau auf den Treffer-Moment des
+	// Gegners faellt, danach weich aus (kein Nachschwung). MF hat keine eigene Block-Animation; die Waffen treffen sich in der Mitte.
+	{
+		int pslot = -1;
+		const unsigned pa = modduel::parryAt(d, pslot);
+		if (pa != 0 && pa != da.lastParry && trigArm < 0 && gameTime <= pa)
+		{
+			da.lastParry = pa;
+			const Part *parm = pslot == lo.slotR ? lo.armR : (pslot == lo.slotL ? lo.armL : nullptr);
+			const auto *v = attacksOf(parm, pslot == lo.slotR);
+			const bool busy = da.over.an != nullptr && da.over.an != s_hit[0] && da.over.an != s_hit[1] && da.over.an != s_hit[2]
+			                  && da.over.an != s_hit[3] && da.over.t < da.over.an->T * 0.75f;
+			if (parm != nullptr && v != nullptr && !v->empty() && !busy)
+			{
+				const Anim *an = (*v)[(da.shots + 1) % v->size()];
+				float r = 0.f, im = -1.f;
+				if (!parm->reachOf(an->key, r, im)) { im = an->tHit >= 0.f ? an->tHit + 0.15f : an->T * 0.5f; }
+				const float until = static_cast<float>(pa - gameTime) * 0.001f;
+				if (da.over.an != nullptr && da.over.t > 0.f && da.overFade > 0.f) { da.overOld = da.over; da.overOldFade = da.overFade; }
+				da.over.an = an; da.over.t = im - until; da.over.loop = false;
+				da.overFade = 0.f;
+				da.overIn = std::min(an->blendIn, 0.2f);
+				da.overStarted = false;
+				da.overArm = parm;
+				da.overCut = im + 0.25f;
+				da.combatUntil = gameTime + 3000;
 			}
 		}
 	}
@@ -1672,6 +1822,12 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 		const float fout = da.over.t <= outFrom ? 1.f : std::clamp((A.T - da.over.t) / std::max(0.04f, A.T - outFrom), 0.f, 1.f);
 		da.overFade = std::min(fin, fout);
 		if (da.over.t >= A.T) { da.over.an = nullptr; da.overFade = 0.f; }
+		else if (da.overCut >= 0.f && da.over.t >= da.overCut)
+		{
+			// Parade fertig: weich ausblenden wie eine abgeloeste Angriffs-Animation
+			da.overOld = da.over; da.overOldFade = da.overFade;
+			da.over.an = nullptr; da.overFade = 0.f; da.overCut = -1.f;
+		}
 	}
 
 	// ---- Haltung mischen: alte Grund-Animation -> neue (Ueberblenden) -> Angriff (Gewichte je Knochen; im Gehen ohne Beine)
