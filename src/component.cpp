@@ -670,7 +670,7 @@ static void modGaitTorso(const DROID *psDroid, float &yaw, float &lean)
 	const float fade = std::max(0.f, 1.f - still / 400.f);
 	if (fade <= 0.f) { return; }
 	const float run = std::clamp(it->second.blend, 0.f, 1.f);
-	yaw = fade * (0.087f + 0.053f * run) * static_cast<float>(std::sin(it->second.phase * 2.0 * M_PI));
+	yaw = fade * (0.087f + 0.053f * run) * static_cast<float>(std::sin(it->second.phase * 6.283185307179586));
 	lean = -fade * 0.14f * run;   // rund 8 Grad nach vorn beim Rennen
 }
 
