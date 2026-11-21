@@ -45,6 +45,7 @@
 #include "modsound.h"
 #include "modlayer.h"
 #include "modpaint.h"
+#include "modfacing.h"
 #include "modbigmap.h"
 #include "uiobjectrefs.h"
 #include "ordersource.h"
@@ -990,6 +991,11 @@ void processMouseClickInput()
 		{
 			return;
 		}
+		// MOD (Wunsch 21.11. 20:22): gewaehlte Einheit anklicken und ziehen = alle gewaehlten Einheiten in diese Richtung ausrichten
+		if (!gestureActive && modfacing::processMouse(overUi, mousePos))
+		{
+			return;
+		}
 	}
 
 	if (gestureActive)
@@ -1557,6 +1563,14 @@ static void handleCameraScrolling()
 	if (InGameOpUp || bDisplayMultiJoiningStatus)		// cant scroll when menu up. or when over radar
 	{
 		return;
+	}
+
+	// MOD (Wunsch 21.11. 20:22 "Bei Verfolgerkamera ist das Fahrzeug oder die Einheit mit WASD steuerbar"): in der Verfolgerkamera fahren
+	// die Kamera-Tasten (WASD/Pfeile) die verfolgte eigene Einheit, statt die Kamera wegzuschieben (Rand-Scrollen bleibt Kamera)
+	if (getWarCamStatus() && (scrollDirLeftRight != 0 || scrollDirUpDown != 0) && modfacing::drive(scrollDirUpDown, scrollDirLeftRight))
+	{
+		scrollDirLeftRight = 0;
+		scrollDirUpDown = 0;
 	}
 
 	if (lockCameraScrollWhileRotating && rotActive && (scrollDirUpDown == 0 && scrollDirLeftRight == 0))

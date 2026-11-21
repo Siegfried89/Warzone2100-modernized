@@ -58,6 +58,7 @@
 #include "atmos.h"
 #include "map.h"
 #include "ai.h"   // MOD (21.11.): Eckmauern - Buendnis der Nachbarmauer
+#include "modfacing.h"
 #include <unordered_map>
 #include "droid.h"
 #include "group.h"
@@ -6243,6 +6244,7 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 	pie_BeginInterface();
 
 	drawDragBox();
+	modfacing::draw();   // MOD (21.11. 20:22): Richtungspfeile beim Ausrichten
 
 	if (dragBox3D.status == DRAG_RELEASED)
 	{

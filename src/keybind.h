@@ -103,6 +103,7 @@ void kf_ChooseManufacture();
 void kf_ChooseResearch();
 void kf_ChooseBuild();
 void kf_ChooseBuildAlt();   // MOD (21.11.): F
+void kf_FaceCursor();       // MOD (21.11. 20:22): L = gewaehlte Einheiten zum Mauszeiger ausrichten
 void kf_ChooseDesign();
 void kf_ChooseIntelligence();
 void kf_ChooseCancel();

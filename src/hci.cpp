@@ -92,6 +92,7 @@
 #include "modrocket.h"
 #include "modapc.h"
 #include "modrail.h"
+#include "modfacing.h"
 #include "modnuke.h"
 #include "modicbm.h"
 #include "modsat.h"
@@ -806,6 +807,7 @@ void interfaceShutDown()
 	modrocket::reset();      // MOD (17.11. 20:56): Raketensilo
 	modapc::reset();         // MOD (17.11. 21:01): Schuetzenpanzer
 	modrail::reset();        // MOD (21.11.): Zuege
+	modfacing::reset();      // MOD (21.11. 20:22): Ausrichten / Fahren
 	modnuke::reset();        // MOD (17.11. 21:13): Atomkraftwerk
 	modicbm::reset();        // MOD (18.11.): Atomraketen-Silo
 	modsat::reset();         // MOD (17.11. 21:34): Lasersatelliten

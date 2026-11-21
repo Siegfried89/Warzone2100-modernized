@@ -38,6 +38,7 @@
 #include "edit3d.h"
 #include "keybind.h"
 #include "modargfx.h"
+#include "modfacing.h"
 #include <algorithm>
 #include "modsalvage.h"
 #include "screens/researchtreescreen.h"
@@ -1902,6 +1903,12 @@ void	kf_ChooseBuild()
 void	kf_ChooseBuildAlt()
 {
 	kf_ChooseBuild();
+}
+
+// MOD (Wunsch 21.11. 20:22 "Zusaetzlich Taste dafuer 'Ausrichten'"): gewaehlte Einheiten drehen sich zum Punkt unter dem Mauszeiger
+void kf_FaceCursor()
+{
+	modfacing::faceCursor();
 }
 
 // --------------------------------------------------------------------------
