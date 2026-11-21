@@ -53,8 +53,11 @@ namespace modlayer
 namespace
 {
 
-constexpr int BTN_W = 78;
-constexpr int BTN_H = 22;
+// MOD (Wunsch 21.11. 17:59/18:04): wie in Metal Fatigue drei quadratische Bild-Knoepfe untereinander (Orbit / Oberflaeche mit Gitter /
+// Untergrund), die gewaehlte Ebene bernsteinfarben; ohne die Bilder (aelteres Mod-Paket) wie bisher Textknoepfe
+constexpr int ICON = 40;
+constexpr int BTN_W = ICON;
+constexpr int BTN_H = ICON;
 constexpr int BTN_GAP = 3;
 constexpr int PAD = 3;
 constexpr int TOTAL_W = BTN_W + 2 * PAD;
@@ -298,7 +301,17 @@ void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const bool down = (b->getState() & WBUT_DOWN) != 0;
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
 
-	modui::wzButton(x0, y0, w, h, layerName(l), active, hl, down, modui::sizeClassFor(s));   // MOD (16.11. Punkt 1): WZ-Stil
+	const modui::Img img = (l == ORBIT) ? (active ? modui::L_ORBIT_ON : modui::L_ORBIT)
+	                       : ((l == UNDERGROUND) ? (active ? modui::L_UNDER_ON : modui::L_UNDER) : (active ? modui::L_SURFACE_ON : modui::L_SURFACE));
+	if (!modui::has(img))
+	{
+		modui::wzButton(x0, y0, w, h, layerName(l), active, hl, down, modui::sizeClassFor(s));   // MOD (16.11. Punkt 1): WZ-Stil
+		return;
+	}
+	const int o = down ? 1 : 0;
+	modui::drawSized(img, x0 + o, y0 + o, w, h, 255);
+	if (hl) { iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, pal_RGBA(255, 255, 255, 220)); }
+	if (active) { iV_Box(x0 - 1, y0 - 1, x0 + w, y0 + h, pal_RGBA(255, 190, 70, 255)); }
 }
 
 void ensureScreen()
@@ -352,6 +365,11 @@ Layer current()
 	return s_current;
 }
 
+int reservedRight()
+{
+	return (s_root && s_root->visible()) ? s_root->width() + 8 : 0;
+}
+
 void request(Layer target)
 {
 	if (s_busy || target == s_current) { return; }
@@ -383,7 +401,8 @@ void tick()
 	// den Haeusern; Infanterie in besetzten Gebaeuden = dumpf mit Treppenhaus-Hall (je Klangquelle, siehe soundInBuilding)
 	sound_SetSampleEnvironmentHook(&soundInBuilding);
 	sound_SetEnvironment(s_current == UNDERGROUND ? 2 : ((s_current == SURFACE && currentMapTileset == MAP_TILESET::URBAN) ? 1 : 0));
-	const bool want = !s_suppressed && !modrosette::active();   // (17.11.) Ebenen-Knoepfe jetzt in der Mod-Rosette
+	// (17.11.) Ebenen-Knoepfe in der Mod-Rosette; (Wunsch 21.11. 17:59) ZUSAETZLICH wieder oben rechts (MF-Symbole)
+	const bool want = !s_suppressed;
 	if (!want && !s_screen) { return; }
 	ensureScreen();
 	if (!s_root) { return; }

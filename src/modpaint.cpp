@@ -102,14 +102,33 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Rail line", "Rail line: drag a route - builders lay a railway track along it (straight and diagonal, around obstacles, joining your existing tracks). Locomotives and wagons come from the train depot and run on the tracks", "Rail line: drag the route of the track (right click cancels)", 175, 140, 95, false },
 };
 
-constexpr int BTN_W = 66;
-constexpr int BTN_H = 20;
+// MOD (Wunsch 21.11. 17:59 "Die Befehlsbuttons besser nach Kategorie sortieren (aehnliches zu aehnlichem), ausserdem Icons zu jedem dazu"):
+// vier Gruppen mit Ueberschrift, jeder Knopf mit eigenem Symbol in seiner Farbe; die Knoepfe sind dafuer breiter
+constexpr int BTN_W = 86;
+constexpr int BTN_H = 22;
 constexpr int GAP = 3;
 constexpr int PAD = 4;
 constexpr int COLS = 2;
-constexpr int ROWS = 9;   // (17.11.) + "Take cover", + Panzersperren / Minenfeld / Offensive, + Minen raeumen; (21.11.) + Verteidigungsnetz, + Gleisstrecke
+constexpr int TITLE_H = 13;    // Titelzeile "Battle plan"
+constexpr int GROUP_H = 12;    // Gruppen-Ueberschrift
+constexpr int GROUP_GAP = 3;   // Abstand nach einer Gruppe
+struct Group { const char *title; int n; int modes[6]; };
+constexpr Group kGroups[] = {
+	{ "Units",   4, { M_MOVE, M_RALLY, M_SPREAD, M_COVER, 0, 0 } },
+	{ "Combat",  6, { M_ATTACK, M_OFFENSE, M_DEFEND, M_ARTY, M_AIR, M_COMBOT } },
+	{ "Build",   6, { M_DEFNET, M_ARTYBASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH } },
+	{ "Support", 2, { M_CLEARMINES, M_RECOVER, 0, 0, 0, 0 } },
+};
+constexpr int NGROUPS = static_cast<int>(sizeof(kGroups) / sizeof(kGroups[0]));
+constexpr int groupRows(int n) { return (n + COLS - 1) / COLS; }
+constexpr int groupsHeight()
+{
+	int h = 0;
+	for (int g = 0; g < NGROUPS; ++g) { h += GROUP_H + groupRows(kGroups[g].n) * (BTN_H + GAP) - GAP + GROUP_GAP; }
+	return h;
+}
 constexpr int TOTAL_W = COLS * BTN_W + (COLS - 1) * GAP + 2 * PAD;
-constexpr int TOTAL_H = ROWS * BTN_H + (ROWS - 1) * GAP + 2 * PAD + 12;   // + Titelzeile
+constexpr int TOTAL_H = PAD + TITLE_H + groupsHeight() + PAD;
 constexpr unsigned SHOW_MS = 25000;   // so lange bleibt eine Zeichnung sichtbar
 constexpr int NEAR_TILES = 16;        // ohne Auswahl: passende Einheiten in diesem Umkreis
 constexpr size_t MAX_UNITS = 40;
@@ -142,12 +161,162 @@ std::shared_ptr<W_BUTTON> s_infBtn;
 
 // ------------------------------------------------------------------------------------------------- Anzeige der Knoepfe
 
+// Lage eines Knopfes im Formular (unskaliert): Gruppe fuer Gruppe, je zwei Knoepfe nebeneinander
+bool buttonPos(int m, int &x, int &y)
+{
+	int gy = PAD + TITLE_H;
+	for (int g = 0; g < NGROUPS; ++g)
+	{
+		const int top = gy + GROUP_H;
+		for (int i = 0; i < kGroups[g].n; ++i)
+		{
+			if (kGroups[g].modes[i] == m)
+			{
+				x = PAD + (i % COLS) * (BTN_W + GAP);
+				y = top + (i / COLS) * (BTN_H + GAP);
+				return true;
+			}
+		}
+		gy = top + groupRows(kGroups[g].n) * (BTN_H + GAP) - GAP + GROUP_GAP;
+	}
+	return false;
+}
+
 void drawRoot(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
 	const float s = modui::uiScale();
 	const int x0 = static_cast<int>(xOffset) + psWidget->x();
 	const int y0 = static_cast<int>(yOffset) + psWidget->y();
-	modui::wzPanel(x0, y0, x0 + static_cast<int>(TOTAL_W * s), y0 + static_cast<int>(TOTAL_H * s), "Battle plan", modui::sizeClassFor(s));   // MOD: WZ-Stil
+	const int sc = modui::sizeClassFor(s);
+	modui::wzPanel(x0, y0, x0 + static_cast<int>(TOTAL_W * s), y0 + static_cast<int>(TOTAL_H * s), "Battle plan", sc);   // MOD: WZ-Stil
+	// Gruppen-Ueberschriften mit duenner Linie
+	int gy = PAD + TITLE_H;
+	for (int g = 0; g < NGROUPS; ++g)
+	{
+		const int ty = y0 + static_cast<int>(gy * s);
+		const int tx = x0 + static_cast<int>((PAD + 2) * s);
+		modui::text(kGroups[g].title, tx, ty, pal_RGBA(120, 175, 220, 255), sc);
+		const int lx = tx + modui::textWidth(kGroups[g].title, sc) + static_cast<int>(4 * s);
+		const int ly = ty + static_cast<int>(GROUP_H * s * 0.5f);
+		pie_UniTransBoxFill(static_cast<float>(lx), static_cast<float>(ly), static_cast<float>(x0 + static_cast<int>((TOTAL_W - PAD - 2) * s)), static_cast<float>(ly + 1), pal_RGBA(70, 110, 160, 170));
+		gy += GROUP_H + groupRows(kGroups[g].n) * (BTN_H + GAP) - GAP + GROUP_GAP;
+	}
+}
+
+// Symbole der Befehle: Strichzeichnungen in der Farbe des Befehls (Einheitsquadrat -1..1, Mitte cx/cy, halbe Groesse r)
+struct Pen
+{
+	float cx, cy, r;
+	PIELIGHT c;
+	bool thick;
+	int X(float u) const { return static_cast<int>(std::lround(cx + u * r)); }
+	int Y(float v) const { return static_cast<int>(std::lround(cy + v * r)); }
+	void l(float x0, float y0, float x1, float y1) const
+	{
+		iV_Line(X(x0), Y(y0), X(x1), Y(y1), c);
+		if (thick)
+		{
+			const bool steep = std::abs(y1 - y0) > std::abs(x1 - x0);
+			iV_Line(X(x0) + (steep ? 1 : 0), Y(y0) + (steep ? 0 : 1), X(x1) + (steep ? 1 : 0), Y(y1) + (steep ? 0 : 1), c);
+		}
+	}
+	void arc(float x, float y, float rr, float a0, float a1, int n = 14) const
+	{
+		for (int i = 0; i < n; ++i)
+		{
+			const float t0 = a0 + (a1 - a0) * i / n, t1 = a0 + (a1 - a0) * (i + 1) / n;
+			l(x + rr * std::cos(t0), y + rr * std::sin(t0), x + rr * std::cos(t1), y + rr * std::sin(t1));
+		}
+	}
+	void circ(float x, float y, float rr) const { arc(x, y, rr, 0.f, 6.2831853f, 18); }
+	void dot(float x, float y, float rr) const
+	{
+		const int R = std::max(1, static_cast<int>(std::lround(rr * r)));
+		for (int dy = -R; dy <= R; ++dy)
+		{
+			const int hw = static_cast<int>(std::sqrt(static_cast<float>(R * R - dy * dy)));
+			pie_UniTransBoxFill(static_cast<float>(X(x) - hw), static_cast<float>(Y(y) + dy), static_cast<float>(X(x) + hw + 1), static_cast<float>(Y(y) + dy + 1), c);
+		}
+	}
+};
+
+void drawIcon(int m, const Pen &p)
+{
+	constexpr float kPi = 3.14159265f;
+	switch (m)
+	{
+	case M_MOVE:   // Pfeil
+		p.l(-0.85f, 0.f, 0.7f, 0.f); p.l(0.25f, -0.5f, 0.8f, 0.f); p.l(0.25f, 0.5f, 0.8f, 0.f);
+		break;
+	case M_RALLY:   // Fahne
+		p.l(-0.55f, 0.9f, -0.55f, -0.9f); p.l(-0.55f, -0.9f, 0.75f, -0.5f); p.l(0.75f, -0.5f, -0.55f, -0.1f); p.l(-0.9f, 0.9f, -0.2f, 0.9f);
+		break;
+	case M_SPREAD:   // Pfeile nach aussen
+		for (int k = 0; k < 4; ++k)
+		{
+			const float dx = (k & 1) ? 1.f : -1.f, dy = (k & 2) ? 1.f : -1.f;
+			p.l(dx * 0.2f, dy * 0.2f, dx * 0.85f, dy * 0.85f); p.l(dx * 0.85f, dy * 0.85f, dx * 0.45f, dy * 0.85f); p.l(dx * 0.85f, dy * 0.85f, dx * 0.85f, dy * 0.45f);
+		}
+		break;
+	case M_COVER:   // Helm ueber Graben
+		p.arc(0.f, 0.1f, 0.65f, kPi, 2.f * kPi); p.l(-0.9f, 0.1f, 0.9f, 0.1f); p.l(-0.9f, 0.55f, -0.5f, 0.85f); p.l(-0.5f, 0.85f, 0.5f, 0.85f); p.l(0.5f, 0.85f, 0.9f, 0.55f);
+		break;
+	case M_ATTACK:   // gekreuzte Schwerter
+		p.l(-0.8f, 0.8f, 0.75f, -0.75f); p.l(0.8f, 0.8f, -0.75f, -0.75f); p.l(-0.75f, 0.35f, -0.35f, 0.75f); p.l(0.75f, 0.35f, 0.35f, 0.75f);
+		break;
+	case M_OFFENSE:   // Doppelpfeil nach vorn
+		p.l(-0.75f, -0.7f, -0.05f, 0.f); p.l(-0.05f, 0.f, -0.75f, 0.7f); p.l(0.f, -0.7f, 0.7f, 0.f); p.l(0.7f, 0.f, 0.f, 0.7f);
+		break;
+	case M_DEFEND:   // Schild
+		p.l(-0.7f, -0.75f, 0.7f, -0.75f); p.l(-0.7f, -0.75f, -0.7f, 0.05f); p.l(0.7f, -0.75f, 0.7f, 0.05f);
+		p.l(-0.7f, 0.05f, 0.f, 0.9f); p.l(0.7f, 0.05f, 0.f, 0.9f); p.l(0.f, -0.55f, 0.f, 0.55f);
+		break;
+	case M_ARTY:   // Flugbahn ins Ziel
+		p.arc(0.f, 0.75f, 0.85f, kPi, 1.85f * kPi); p.circ(0.55f, 0.45f, 0.3f); p.l(0.55f, 0.05f, 0.55f, 0.85f); p.l(0.15f, 0.45f, 0.95f, 0.45f);
+		break;
+	case M_AIR:   // Flugzeug von oben
+		p.l(0.f, -0.9f, 0.f, 0.85f); p.l(-0.9f, 0.05f, 0.9f, 0.05f); p.l(-0.9f, 0.05f, 0.f, -0.25f); p.l(0.9f, 0.05f, 0.f, -0.25f); p.l(-0.4f, 0.8f, 0.4f, 0.8f);
+		break;
+	case M_COMBOT:   // Kampfroboter
+		p.l(-0.35f, -0.85f, 0.35f, -0.85f); p.l(-0.35f, -0.85f, -0.35f, -0.45f); p.l(0.35f, -0.85f, 0.35f, -0.45f);
+		p.l(-0.6f, -0.35f, 0.6f, -0.35f); p.l(-0.6f, -0.35f, -0.45f, 0.25f); p.l(0.6f, -0.35f, 0.45f, 0.25f); p.l(-0.45f, 0.25f, 0.45f, 0.25f);
+		p.l(-0.3f, 0.25f, -0.45f, 0.9f); p.l(0.3f, 0.25f, 0.45f, 0.9f); p.l(-0.6f, -0.35f, -0.95f, 0.2f); p.l(0.6f, -0.35f, 0.95f, 0.2f);
+		break;
+	case M_DEFNET:   // Graben-Zickzack mit Stacheldraht
+		p.l(-0.9f, 0.2f, -0.5f, -0.2f); p.l(-0.5f, -0.2f, -0.1f, 0.2f); p.l(-0.1f, 0.2f, 0.3f, -0.2f); p.l(0.3f, -0.2f, 0.7f, 0.2f); p.l(0.7f, 0.2f, 0.9f, 0.f);
+		for (int k = 0; k < 4; ++k) { const float x = -0.75f + k * 0.5f; p.l(x - 0.12f, -0.75f, x + 0.12f, -0.55f); p.l(x + 0.12f, -0.75f, x - 0.12f, -0.55f); }
+		p.l(-0.9f, -0.65f, 0.9f, -0.65f); p.l(-0.9f, 0.65f, 0.9f, 0.65f);
+		break;
+	case M_ARTYBASE:   // Ring mit Stellungen
+		p.circ(0.f, 0.f, 0.8f); p.dot(0.f, 0.f, 0.2f);
+		for (int k = 0; k < 4; ++k) { const float a = kPi * 0.25f + k * kPi * 0.5f; p.dot(0.8f * std::cos(a), 0.8f * std::sin(a), 0.16f); }
+		break;
+	case M_TRAPS:   // Panzersperre (Igel)
+		p.l(-0.75f, 0.8f, 0.75f, -0.6f); p.l(0.75f, 0.8f, -0.75f, -0.6f); p.l(0.f, -0.9f, 0.f, 0.9f); p.l(-0.9f, 0.8f, 0.9f, 0.8f);
+		break;
+	case M_MINES:   // Mine
+		p.circ(0.f, 0.15f, 0.5f); p.dot(0.f, 0.15f, 0.22f);
+		p.l(0.f, -0.35f, 0.f, -0.85f); p.l(-0.5f, 0.15f, -0.9f, 0.15f); p.l(0.5f, 0.15f, 0.9f, 0.15f); p.l(-0.35f, -0.2f, -0.65f, -0.5f); p.l(0.35f, -0.2f, 0.65f, -0.5f);
+		break;
+	case M_RAIL:   // Gleis
+		p.l(-0.4f, -0.95f, -0.4f, 0.95f); p.l(0.4f, -0.95f, 0.4f, 0.95f);
+		for (int k = 0; k < 4; ++k) { const float y = -0.75f + k * 0.5f; p.l(-0.75f, y, 0.75f, y); }
+		break;
+	case M_DEMOLISH:   // Abrissbirne
+		p.l(-0.8f, -0.9f, 0.4f, -0.9f); p.l(-0.8f, -0.9f, -0.8f, 0.9f); p.l(0.25f, -0.9f, 0.25f, 0.1f); p.dot(0.25f, 0.45f, 0.35f);
+		break;
+	case M_CLEARMINES:   // Mine, durchgestrichen
+		p.circ(0.f, 0.f, 0.45f); p.dot(0.f, 0.f, 0.2f); p.l(0.f, -0.45f, 0.f, -0.75f); p.l(-0.45f, 0.f, -0.75f, 0.f); p.l(0.45f, 0.f, 0.75f, 0.f);
+		p.circ(0.f, 0.f, 0.9f); p.l(-0.65f, -0.65f, 0.65f, 0.65f);
+		break;
+	case M_RECOVER:   // Kranhaken (Bergung)
+		p.l(-0.85f, -0.85f, 0.6f, -0.85f); p.l(0.1f, -0.85f, 0.1f, 0.15f); p.arc(-0.15f, 0.15f, 0.25f, 0.f, kPi); p.l(-0.4f, 0.15f, -0.4f, 0.f);
+		p.l(-0.75f, 0.55f, 0.75f, 0.55f); p.l(-0.75f, 0.55f, -0.55f, 0.9f); p.l(0.75f, 0.55f, 0.55f, 0.9f); p.l(-0.55f, 0.9f, 0.55f, 0.9f);
+		break;
+	default:
+		p.dot(0.f, 0.f, 0.4f);
+		break;
+	}
 }
 
 void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -161,10 +330,18 @@ void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const W_BUTTON *b = static_cast<const W_BUTTON *>(psWidget);
 	const bool active = s_mode == m;
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
-	// MOD (16.11. Punkt 1): WZ-Stil; die kleine Farbmarke links zeigt die Art des Befehls
-	const PIELIGHT accent = pal_RGBA(mi.r, mi.g, mi.b, 255);
 	const bool down = (b->getState() & WBUT_DOWN) != 0;
-	modui::wzButton(x0, y0, w, h, mi.label, active, hl, down, modui::sizeClassFor(s), &accent);
+	const int sc = modui::sizeClassFor(s);
+	// Knopf im WZ-Stil (Flaeche/Rahmen wie modui::wzButton), links das Symbol in der Farbe des Befehls, daneben die Beschriftung
+	modui::wzButton(x0, y0, w, h, "", active, hl, down, sc, nullptr);
+	const float ir = (h - 6.f * s) * 0.5f;
+	const PIELIGHT col = (active || hl) ? pal_RGBA(static_cast<UBYTE>(std::min(255, mi.r + 50)), static_cast<UBYTE>(std::min(255, mi.g + 50)), static_cast<UBYTE>(std::min(255, mi.b + 50)), 255)
+	                                    : pal_RGBA(mi.r, mi.g, mi.b, 235);
+	const Pen pen{ x0 + 4.f * s + ir, y0 + h * 0.5f, ir, col, ir >= 7.f };
+	drawIcon(m, pen);
+	const int fh = (sc <= 0) ? 9 : (sc == 1 ? 12 : 16);
+	const int tx = x0 + static_cast<int>(8.f * s + 2.f * ir) + static_cast<int>(3 * s);
+	modui::text(mi.label, tx, y0 + (h - fh) / 2 - 1, (active || hl) ? WZCOL_TEXT_BRIGHT : WZCOL_TEXT_MEDIUM, sc);
 }
 
 void ensureScreen()
@@ -301,9 +478,10 @@ void layout()
 	s_root->setGeometry(x, y, w, h);
 	for (size_t i = 0; i < s_buttons.size(); ++i)
 	{
-		const int col = static_cast<int>(i) % COLS, row = static_cast<int>(i) / COLS;
-		s_buttons[i]->setGeometry(static_cast<int>((PAD + col * (BTN_W + GAP)) * s), static_cast<int>((PAD + 12 + row * (BTN_H + GAP)) * s),
-		                          static_cast<int>(BTN_W * s), static_cast<int>(BTN_H * s));
+		int bx = 0, by = 0;
+		if (!buttonPos(static_cast<int>(i), bx, by)) { s_buttons[i]->hide(); continue; }
+		s_buttons[i]->show();
+		s_buttons[i]->setGeometry(static_cast<int>(bx * s), static_cast<int>(by * s), static_cast<int>(BTN_W * s), static_cast<int>(BTN_H * s));
 	}
 }
 

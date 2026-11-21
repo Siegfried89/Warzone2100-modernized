@@ -37,6 +37,8 @@ void request(Layer target);
 void tick();
 /// waehrend der Designer offen ist, bleiben die Knoepfe unsichtbar
 void setSuppressed(bool suppressed);
+/// MOD (21.11.): Breite, die die Ebenen-Knoepfe am rechten Rand oben belegen (0 = verborgen) - andere Anzeigen weichen nach links aus
+int reservedRight();
 /// beim Beenden der Oberflaeche aufrufen; setzt die Ebene auf Oberflaeche zurueck
 void shutdown();
 

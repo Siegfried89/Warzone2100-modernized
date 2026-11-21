@@ -377,7 +377,7 @@ void drawCmd(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	{
 		// WZ-Befehlsbild (36 x 24) mittig auf dunklem Grund
 		const int w = psWidget->width(), h = psWidget->height();
-		pie_BoxFill_alpha(x0, y0, x0 + w, y0 + h, pal_RGBA(20, 24, 60, 200));
+		pie_UniTransBoxFill(x0, y0, x0 + w, y0 + h, pal_RGBA(20, 24, 60, 200));
 		iV_DrawImageTint(IntImages, static_cast<UWORD>(down ? it.wzDown : it.wzUp), x0 + (w - 36 * w / CMD_W) / 2, y0 + (h - 24 * h / CMD_H) / 2,
 		                 pal_RGBA(255, 255, 255, 255), Vector2f{static_cast<float>(36 * w / CMD_W), static_cast<float>(24 * h / CMD_H)});
 	}

@@ -1897,6 +1897,13 @@ void	kf_ChooseBuild()
 	}
 }
 
+// MOD (Wunsch 21.11. 17:59 "F ist der zusaetzliche Standard-Shortcut fuer das Gebaeudebaumenue"): eigene Spieltaste (nur im Spiel, nicht
+// im Forschungsbaum - dort ist F "Pfad verfolgen")
+void	kf_ChooseBuildAlt()
+{
+	kf_ChooseBuild();
+}
+
 // --------------------------------------------------------------------------
 void	kf_ChooseDesign()
 {

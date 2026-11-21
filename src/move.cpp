@@ -2140,10 +2140,14 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	spinSpeed = psDroid->baseSpeed * psPropStats->spinSpeed;
 	turnSpeed = psDroid->baseSpeed * psPropStats->turnSpeed;
 	spinAngle = DEG(psPropStats->spinAngle);
-	if (modPivotTurn(psDroid, psPropStats))   // MOD: auf der Stelle drehen
+	const bool modPivot = modPivotTurn(psDroid, psPropStats);
+	if (modPivot)   // MOD: auf der Stelle drehen
 	{
+		// (Wunsch 21.11. 18:01 "Bagger ... vor allem auch schneller drehen (auf der Stelle)"): Bagger drehen mit mindestens 120 Grad/s
+		// (3 s fuer eine ganze Runde), Kettenfahrzeuge wie bisher mit mindestens 40 Grad/s
+		const bool excavator = psPropStats->propulsionType != PROPULSION_TYPE_TRACKED;
 		spinAngle = std::min<int32_t>(spinAngle, DEG(25));
-		spinSpeed = std::max<int32_t>(spinSpeed, DEG(40));
+		spinSpeed = std::max<int32_t>(spinSpeed, excavator ? DEG(120) : DEG(40));
 		turnSpeed = std::min<int32_t>(turnSpeed, spinSpeed);
 	}
 
@@ -2163,7 +2167,9 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	// Bogen (Wenderadius ~1,3 Felder, Drehtempo = Fahrtempo / Radius). Nur wenn der naechste Wegpunkt so nah und so weit seitlich liegt,
 	// dass der Bogen ihn nicht erreicht, drehen sie langsam (wie Rangieren) wie bisher.
 	bool carDone = false;
-	if (psPropStats->propulsionType == PROPULSION_TYPE_WHEELED && psDroid->droidType != DROID_PERSON && !psDroid->isCyborg()
+	// (21.11. 18:01) NICHT fuer Bagger: sie fahren auf Ketten (Antrieb nur als Raeder gefuehrt) - die Auto-Lenkung hatte seit 18.11. das
+	// Drehen auf der Stelle verdraengt (weite, langsame Boegen)
+	if (psPropStats->propulsionType == PROPULSION_TYPE_WHEELED && !modPivot && psDroid->droidType != DROID_PERSON && !psDroid->isCyborg()
 	    && psDroid->sMove.Status != MOVEPAUSE && speed > 0)
 	{
 		constexpr int R = 165;

@@ -20,6 +20,8 @@ enum Img
 	ARR_UP, ARR_UP_HL, ARR_DN, ARR_DN_HL, METALPANEL,
 	// (17.11.) WZ-Stil: gedrueckte/aktive Fassung der sechs Befehlstasten (mfwzbtn.py haengt sie an; aeltere Pakete haben sie nicht)
 	B_GUARD_ON, B_ATTACK_ON, B_MOVE_ON, B_PATROL_ON, B_RETFIRE_ON, B_STOP_ON,
+	// (21.11. 18:04) MF-Ebenen-Symbole fuer die Ebenen-Knoepfe oben rechts (mflayericons.py), je normal und aktiv (bernsteinfarben)
+	L_ORBIT, L_ORBIT_ON, L_SURFACE, L_SURFACE_ON, L_UNDER, L_UNDER_ON,
 	IMG_COUNT
 };
 

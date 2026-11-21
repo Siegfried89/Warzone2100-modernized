@@ -245,7 +245,7 @@ void drawLimb(int px, int py, float s, int pct, int cx, int cy, int r, int rx0, 
 	if (pct < 0)
 	{
 		// Teil fehlt: Schemen abdunkeln und rotes Kreuz
-		pie_BoxFill_alpha(X + static_cast<int>(rx0 * s), Y + static_cast<int>(ry0 * s), X + static_cast<int>(rx1 * s), Y + static_cast<int>(ry1 * s), pal_RGBA(6, 12, 30, 225));
+		pie_UniTransBoxFill(X + static_cast<int>(rx0 * s), Y + static_cast<int>(ry0 * s), X + static_cast<int>(rx1 * s), Y + static_cast<int>(ry1 * s), pal_RGBA(6, 12, 30, 225));
 		const int cxs = X + static_cast<int>(cx * s), cys = Y + static_cast<int>(cy * s), rr = static_cast<int>(r * s * 0.7f);
 		const PIELIGHT red = pal_RGBA(255, 50, 40, 255);
 		iV_Line(cxs - rr, cys - rr, cxs + rr, cys + rr, red);
@@ -360,12 +360,12 @@ void drawBlueprint(int px, int py, float s, const int pct[4], const std::string 
 		const int bw = static_cast<int>(26 * s), bh = static_cast<int>(24 * s);
 		if (sl.pct < 0)
 		{
-			pie_BoxFill_alpha(bx, by, bx + bw, by + bh, pal_RGBA(6, 12, 30, 200));
+			pie_UniTransBoxFill(bx, by, bx + bw, by + bh, pal_RGBA(6, 12, 30, 200));
 			continue;
 		}
 		PIELIGHT f = modui::healthColour(sl.pct);
 		f.byte.a = 70;
-		pie_BoxFill_alpha(bx, by, bx + bw, by + bh, f);
+		pie_UniTransBoxFill(bx, by, bx + bw, by + bh, f);
 		std::string abbr = sl.label.substr(0, 3);
 		for (char &ch : abbr) { ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch))); }
 		const int tw = modui::textWidth(abbr, sizeClass);
