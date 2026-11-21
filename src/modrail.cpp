@@ -155,6 +155,35 @@ bool railTile(int x, int y) { return onMap(x, y) && s_net.rail[static_cast<size_
 
 Vector2i centre(int i) { return Vector2i(rw(i % s_net.w) + RT / 2, rw(i / s_net.w) + RT / 2); }
 
+// (Wunsch 21.11. 19:35) Prellbock am Gleisende (trains.py track_end): Puffer-Teller BUFFER_FACE vor der Feldmitte; die Zugspitze
+// (halbe Laenge + Stossstange) haelt dort statt in den Prellbock zu ragen
+constexpr int BUFFER_FACE = 40;
+int frontLen(const DROID *d) { return halfLen(d) + 5; }
+
+/// Gleisende-Feld: Richtung k des einzigen Nachbarn (der Prellbock steht auf der Gegenseite), sonst -1 (gleiche Regel wie drawRail)
+int deadEndLink(int tx, int ty)
+{
+	if (!onMap(tx, ty)) { return -1; }
+	const auto any = [](int x, int y) { return onMap(x, y) && s_net.rail[static_cast<size_t>(idx(x, y))] != 0; };
+	int link = -1, n = 0;
+	for (int k = 0; k < 8; ++k)
+	{
+		const int nx = tx + KNEE[k][0], ny = ty + KNEE[k][1];
+		if (!any(nx, ny)) { continue; }
+		if ((k & 1) != 0 && (any(nx, ty) || any(tx, ny))) { continue; }
+		link = k;
+		++n;
+	}
+	return n == 1 ? link : -1;
+}
+
+/// Weg (Welteinheiten) entlang Richtung k
+Vector2i alongLink(int k, int len)
+{
+	const int d = (k & 1) != 0 ? 181 : 128;          // Laenge von KNEE[k] x 128
+	return Vector2i(KNEE[k][0] * len * 128 / d, KNEE[k][1] * len * 128 / d);
+}
+
 /// naechstes fertiges Gleisfeld zu einem Weltpunkt (Ring-Suche bis r Felder), -1 = keins
 int nearestRail(Vector2i world, int r)
 {
@@ -326,7 +355,11 @@ void initLine(Train &t, const DROID *loco)
 	}
 	else
 	{
-		const Vector2i c = centre(i);
+		// auf einem Gleisende-Feld vom Prellbock weg ruecken, damit kein Fahrzeugende hineinragt
+		Vector2i c = centre(i);
+		const int k = deadEndLink(rc(c.x), rc(c.y));
+		const int pull = frontLen(loco) - BUFFER_FACE;
+		if (k >= 0 && pull > 0) { c += alongLink(k, pull); }
 		t.line = { c - f, c };
 	}
 	recum(t);
@@ -611,9 +644,25 @@ void updateTrain(DROID *d)
 	const size_t leadK = t.rev ? veh.size() - 1 : 0;
 	const int64_t end = lineLen(t);
 	int64_t sLead = arcOf(t, off, leadK);
+	// Endet die Linie auf einem Gleisende-Feld und faehrt der Zug auf den Prellbock zu, haelt die Spitze vor den Puffern
+	int64_t endStop = end;
+	if (t.line.size() >= 2)
+	{
+		const Vector2i pe = t.line.back();
+		const int k = deadEndLink(rc(pe.x), rc(pe.y));
+		const int pull = frontLen(veh[leadK]) - BUFFER_FACE;
+		if (k >= 0 && pull > 0)
+		{
+			const Vector2i dv = pe - pointAt(t, std::max<int64_t>(0, end - 32 * FIX));
+			if (static_cast<int64_t>(dv.x) * KNEE[k][0] + static_cast<int64_t>(dv.y) * KNEE[k][1] < 0)
+			{
+				endStop = std::max<int64_t>(0, end - static_cast<int64_t>(pull) * FIX);
+			}
+		}
+	}
 	// Fahrbares Ende: Linienende oder das erste Feld voraus, das kein fertiges Gleis mehr ist (zerstoert/abgerissen)
-	int64_t stop = end;
-	const int64_t look = std::min(end, sLead + static_cast<int64_t>(8 * RT) * FIX);   // 8 Felder voraus (Bremsweg aus voller Fahrt ~6 Felder)
+	int64_t stop = endStop;
+	const int64_t look = std::min(endStop, sLead + static_cast<int64_t>(8 * RT) * FIX);   // 8 Felder voraus (Bremsweg aus voller Fahrt ~6 Felder)
 	for (int64_t s = sLead + 16 * FIX; s <= look; s += 16 * FIX)
 	{
 		const Vector2i p = pointAt(t, s);
@@ -652,7 +701,7 @@ void updateTrain(DROID *d)
 	{
 		t.speed = 0;
 		d->sMove.Status = MOVEINACTIVE;
-		if (stop < end - 4 * FIX && d->player == selectedPlayer) { addConsoleMessage(_("Train: the track ahead is interrupted"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+		if (stop < endStop - 4 * FIX && d->player == selectedPlayer) { addConsoleMessage(_("Train: the track ahead is interrupted"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
 	}
 	place(t, veh, t.speed);
 	trim(t, off);
@@ -888,8 +937,8 @@ bool drawRail(const STRUCTURE *s, PIELIGHT brightness, const glm::mat4 &viewMatr
 		const int a = ew ? 2 : 0;
 		for (int k : { a, a + 4 })
 		{
-			piece(k, sh[END], 40.f, flags, flagData);
-			piece(k, sh[E_END], 40.f, eFlags, eData);
+			piece(k, sh[END], 64.f, flags, flagData);
+			piece(k, sh[E_END], 64.f, eFlags, eData);
 		}
 		return true;
 	}
@@ -903,8 +952,8 @@ bool drawRail(const STRUCTURE *s, PIELIGHT brightness, const glm::mat4 &viewMatr
 	{
 		// Gleisende: gerader Abschluss in Gegenrichtung
 		const int k = (links[0] + 4) % 8;
-		piece(k, sh[END], 40.f, flags, flagData);
-		piece(k, sh[E_END], 40.f, eFlags, eData);
+		piece(k, sh[END], 64.f, flags, flagData);
+		piece(k, sh[E_END], 64.f, eFlags, eData);
 	}
 	else if (!(nl == 2 && links[1] - links[0] == 4))
 	{

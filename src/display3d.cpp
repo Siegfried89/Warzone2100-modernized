@@ -57,6 +57,8 @@
 #include "loop.h"
 #include "atmos.h"
 #include "map.h"
+#include "ai.h"   // MOD (21.11.): Eckmauern - Buendnis der Nachbarmauer
+#include <unordered_map>
 #include "droid.h"
 #include "group.h"
 #include "visibility.h"
@@ -3679,6 +3681,71 @@ static bool modDrawGroundLevels(const iIMDShape *shape, const STRUCTURE *psStruc
 	return true;
 }
 
+// MOD (Wunsch 21.11. 19:35 "Nur maximal so viele Verbindungswege-Stuecke wie absolut notwendig ... in der Kampagne hat ein einfacher rechter
+// Winkel ein +-Stueck an der Ecke, was er nicht braucht und bloed aussieht"): Eckmauern (CORNER WALL), deren Modell das Kreuzstueck eines
+// Mauersatzes ist, zeigen das Stueck, das zu ihren Nachbarn passt - gerade, Ecke (L), T oder Kreuz (wie die normalen Mauerteile).
+// Allein stehend bleibt das Kreuz. Nur Anzeige (Drehung/Modell des Bauwerks bleiben unveraendert).
+static bool modWallCombines(const STRUCTURE_STATS *st)
+{
+	return st->type == REF_WALL || st->type == REF_GATE || st->type == REF_WALLCORNER || st->combinesWithWall;
+}
+
+static bool modCornerWallShape(const STRUCTURE *s, iIMDBaseShape *&imdOut, uint16_t &dirOut)
+{
+	const STRUCTURE_STATS *cs = s->pStructureType;
+	if (cs == nullptr || cs->type != REF_WALLCORNER || cs->pIMD.empty() || cs->pIMD[0] == nullptr)
+	{
+		return false;
+	}
+	static std::unordered_map<const STRUCTURE_STATS *, const STRUCTURE_STATS *> s_wallOf;
+	const STRUCTURE_STATS *wall = nullptr;
+	const auto it = s_wallOf.find(cs);
+	if (it != s_wallOf.end())
+	{
+		wall = it->second;
+	}
+	else
+	{
+		for (UDWORD i = 0; i < numStructureStats; ++i)
+		{
+			const STRUCTURE_STATS &st = asStructureStats[i];
+			if (st.type == REF_WALL && st.pIMD.size() >= 4 && st.pIMD[1] == cs->pIMD[0]) { wall = &st; break; }
+		}
+		s_wallOf[cs] = wall;
+	}
+	if (wall == nullptr)
+	{
+		return false;
+	}
+	const int mx = map_coord(s->pos.x), my = map_coord(s->pos.y);
+	constexpr int step = DIST_TILE / TILE_UNITS;     // Nachbarmauer eine Original-Kachel weiter (Zweig viertel: 2 Feinfelder)
+	auto has = [&](int dx, int dy) {
+		const int x = mx + dx * step, y = my + dy * step;
+		if (x < 0 || y < 0 || x >= gameWorld.map.width || y >= gameWorld.map.height) { return false; }
+		const MAPTILE *t = mapTile(gameWorld.map, x, y);
+		if (!TileHasStructure(t)) { return false; }
+		const STRUCTURE *o = castStructure(t->psObject);
+		return o != nullptr && !o->died && modWallCombines(o->pStructureType) && (o->player == s->player || aiCheckAlliancesInRange(static_cast<int>(o->player), static_cast<int>(s->player)));
+	};
+	const int orient = (has(-1, 0) ? 1 : 0) | (has(1, 0) ? 2 : 0) | (has(0, -1) ? 4 : 0) | (has(0, 1) ? 8 : 0);
+	if (orient == 0)
+	{
+		return false;
+	}
+	// wie wallType()/wallDir() in structure.cpp: Modell 0 = gerade, 1 = Kreuz, 2 = T, 3 = Ecke
+	static const int types[16] = {0, 0, 0, 0, 0, 3, 3, 2, 0, 3, 3, 2, 0, 2, 2, 1};
+	const uint16_t d0 = DEG(0), d1 = DEG(90), d2 = DEG(180), d3 = DEG(270);
+	const uint16_t dirs[16] = {d0, d0, d2, d0, d3, d0, d3, d0, d1, d1, d2, d2, d3, d1, d3, d0};
+	iIMDBaseShape *imd = wall->pIMD[static_cast<size_t>(types[orient])];
+	if (imd == nullptr)
+	{
+		return false;
+	}
+	imdOut = imd;
+	dirOut = dirs[orient];
+	return true;
+}
+
 static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const glm::mat4 &perspectiveViewMatrix)
 {
 	int ecmFlag = 0;
@@ -3713,8 +3780,11 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 	// MOD (17.11.): Graeben im Stellungsnetz - Modell mit Gaengen zu den offenen Seiten (ohne Drehung, siehe modfort.h)
 	const iIMDShape *fortImd = modfort::displayModel(psStructure);
 	if (fortImd != nullptr) { dv.y = modfort::displayHeight(psStructure, dv.y); }   // (17.11. 14:14) tief: Modell auf Originalboden
+	iIMDBaseShape *modCornerImd = nullptr;   // MOD (21.11.): passendes Mauerstueck fuer Eckmauern
+	uint16_t modDrawDir = psStructure->rot.direction;
+	if (fortImd == nullptr && !modCornerWallShape(psStructure, modCornerImd, modDrawDir)) { modCornerImd = nullptr; modDrawDir = psStructure->rot.direction; }
 	const glm::mat4 modelMatrix = fortImd != nullptr ? glm::translate(glm::vec3(dv))
-	                              : glm::translate(glm::vec3(dv)) * glm::rotate(UNDEG(-psStructure->rot.direction), glm::vec3(0.f, 1.f, 0.f));
+	                              : glm::translate(glm::vec3(dv)) * glm::rotate(UNDEG(-modDrawDir), glm::vec3(0.f, 1.f, 0.f));
 
 	/* Actually render it */
 	if (psStructure->status == SS_BEING_BUILT)
@@ -3726,7 +3796,7 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 		}
 		else if (psStructure->sDisplay.imd)
 		{
-			const iIMDShape *shape = getFactionDisplayIMD(faction, psStructure->sDisplay.imd->displayModel());
+			const iIMDShape *shape = getFactionDisplayIMD(faction, (modCornerImd != nullptr ? modCornerImd : psStructure->sDisplay.imd)->displayModel());
 			const int scaleData = static_cast<int>(structHeightScale(psStructure) * pie_RAISE_SCALE);
 			if (!modDrawGroundLevels(shape, psStructure, getPlayerColour(psStructure->player), brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, scaleData, viewMatrix))
 			{
@@ -3747,7 +3817,7 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 			pieFlag = pie_SHADOW;
 			pieFlagData = 0;
 		}
-		iIMDBaseShape *imd = psStructure->sDisplay.imd;
+		iIMDBaseShape *imd = modCornerImd != nullptr ? modCornerImd : psStructure->sDisplay.imd;
 		if (fortImd != nullptr)
 		{
 			pie_Draw3DShape(getFactionDisplayIMD(faction, fortImd), 0, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
