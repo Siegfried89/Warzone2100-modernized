@@ -1607,6 +1607,9 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 	for (unsigned i = 0; i < d->numWeaps && i < MAX_WEAPONS; ++i)
 	{
 		const unsigned lf = d->asWeaps[i].lastFired;
+		// (21.11.) im Brawl stempelt modduel die Nahkampfwaffen jeden Schritt (Warzone soll nicht feuern) - das ist kein Schuss; die
+		// Schlaege kommen allein ueber den Brawl (FIRING mit neuer Startzeit). Vorher: Dauerschleife von Hieben in die Luft.
+		if (modduel::meleeSuppressed(d, static_cast<int>(i))) { da.lastFired[i] = lf; continue; }
 		if (lf != 0 && lf != da.lastFired[i] && lf + 400 >= gameTime)
 		{
 			da.combatUntil = gameTime + 3000;   // jede Waffe (auch die Beinwaffe ohne Arm): Kampfhaltung
