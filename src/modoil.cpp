@@ -127,6 +127,7 @@ std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
 int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwerk-Geschenk, Bit 2 = Raffinerie-Geschenk schon vergeben
 bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
+int s_bank[MAX_PLAYERS] = {};               // (Wunsch 21.11. 20:22) Energie verbrannter Faesser, die noch stetig ins Konto laeuft
 std::vector<std::pair<int, bool>> s_tankRespawn;   // (20.11.) (Spieler, Tanker?) - letzter Oeltanker bzw. letzter Pickup zerstoert
 int s_beepTrack = -2;                       // (20.11. 19:06) Rueckfahr-Piepen beim Abliefern (-2 = noch nicht gesucht)
 bool s_have = false;
@@ -510,7 +511,7 @@ void reset()
 	s_station.clear();
 	s_booms.clear();
 	s_repl.clear();
-	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_bank[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
 	s_tankRespawn.clear();
 	s_have = false;
 }
@@ -539,6 +540,7 @@ void saveState(std::vector<int64_t> &out)
 	{
 		if (s_gift[p] != 0) { out.push_back(10); out.push_back(p); out.push_back(s_gift[p]); }
 		if (s_duty[p]) { out.push_back(11); out.push_back(p); out.push_back(1); }
+		if (s_bank[p] > 0) { out.push_back(12); out.push_back(p); out.push_back(s_bank[p]); }
 	}
 }
 
@@ -557,6 +559,7 @@ void loadState(const std::vector<int64_t> &in)
 		case 4: s_storeR[id] += iv; break;   // (20.11.) Lager hat nur noch veredelte Faesser
 		case 10: if (id < MAX_PLAYERS) { s_gift[id] = iv; } break;
 		case 11: if (id < MAX_PLAYERS) { s_duty[id] = iv != 0; } break;
+		case 12: if (id < MAX_PLAYERS) { s_bank[id] = iv; } break;
 		case 5: s_storeR[id] += iv; break;
 		case 6: s_refIn[id] = iv; break;
 		case 7: s_refOut[id] = iv; break;
@@ -897,8 +900,8 @@ void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool fromStore)
 	const int e = barrelEnergy(gen, fromStore);
 	for (int i = 0; i < barrels; i++)
 	{
-		addPower(player, e);
-		noteIncome(player, INC_BARRELS, e);
+		// (Wunsch 21.11. 20:22 "mein Power supply erhoeht sich nicht (wie im WZ vanilla)"): nicht auf einen Schlag, sondern stetig (payout)
+		if (player >= 0 && player < MAX_PLAYERS) { s_bank[player] += e; }
 		s_fuel[gen->id] += GEN_SECS;
 	}
 	if (barrels > 0 && player >= 0 && player < MAX_PLAYERS) { s_duty[player] = true; }
@@ -1632,6 +1635,17 @@ void tick()
 	s_lastSec = gameTime / 1000;
 	if (!modPresent()) { return; }
 	logistics();
+	// Energie der verbrannten Faesser stetig auszahlen: je Sekunde 1/90 des Rests, mindestens 1 (ein Fass = 100 laeuft in ~1,5 Minuten
+	// ein; mit mehreren Oeltuermen steigt das Konto wie in Vanilla laufend)
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		int &b = s_bank[p];
+		if (b <= 0) { continue; }
+		const int pay = std::min(b, std::max(1, (b + 89) / 90));
+		b -= pay;
+		addPower(p, pay);
+		noteIncome(p, INC_BARRELS, pay);
+	}
 	ledgerReport();
 }
 

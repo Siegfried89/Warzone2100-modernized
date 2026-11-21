@@ -49,6 +49,7 @@
 #include "modrocket.h"
 #include "modapc.h"
 #include "modrail.h"
+#include "modfacing.h"
 #include "modnuke.h"
 #include "modicbm.h"
 #include "modsat.h"
@@ -639,6 +640,7 @@ static void gameStateUpdate()
 	modoutpost::tick(gameWorld); // MOD: Aussenposten-Teleport (MF)
 	modrocket::tick();           // MOD (17.11. 20:56): Raketensilo -> Pioniere in den Orbit
 	modrail::tick();             // MOD (21.11.): Zuege (Gleisnetz, Ankuppeln, Absitz-Knopf der Lok) - vor modapc
+	modfacing::tick();           // MOD (21.11. 20:22): Ausrichten (Ziehen/Taste L), Fahren in der Verfolgerkamera
 	modapc::tick();              // MOD (17.11. 21:01): Halbketten-Schuetzenpanzer (8 Mann)
 	modnuke::tick();             // MOD (17.11. 21:13): Atomkraftwerk + Uranbergwerk
 	modicbm::tick();             // MOD (18.11.): Atomraketen-Silo (erste Rakete, Einschlaege)
