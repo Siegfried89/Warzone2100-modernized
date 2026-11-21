@@ -77,6 +77,7 @@ struct Duel
 	int outcome = HIT;
 	unsigned parryAt = 0;     // dieser Combot pariert einen Schlag, der zu dieser Zeit trifft
 	int parrySlot = -1;
+	bool inReach = false;     // dieser Schritt: auf Schlagweite, Nahkampfwaffen unterdrueckt
 	// alte Einzel-Combots (MFW_, nicht modular): Trefferpunkte je Teil
 	int partHp[NPARTS] = { 0, 0, 0, 0 };
 	bool severed[NPARTS] = { false, false, false, false };
@@ -386,6 +387,17 @@ unsigned parryAt(const DROID *d, int &slot)
 	return it->second.parryAt;
 }
 
+bool meleeSuppressed(const DROID *d, int slot)
+{
+	if (d == nullptr) { return false; }
+	const auto it = s_duels.find(d->id);
+	if (it == s_duels.end() || !it->second.inReach) { return false; }
+	int slots[2];
+	const int n = meleeSlots(d, slots);
+	for (int i = 0; i < n; ++i) { if (slots[i] == slot) { return true; } }
+	return false;
+}
+
 bool isCombot(const DROID *d)
 {
 	if (d == nullptr) { return false; }
@@ -447,7 +459,8 @@ void update(DROID *d)
 		}
 	}
 
-	if (dist > reach + SLACK)
+	du.inReach = dist <= reach + SLACK;
+	if (!du.inReach)
 	{
 		// noch nicht auf Schlagweite: Warzone fuehrt ihn heran (DACTION_MOVETOATTACK). Ein Angenommener ohne eigenes Angriffsziel bekommt es.
 		if (du.paired && !inAttackAction(d) && freeFor(d, t)) { orderDroidObj(d, DORDER_ATTACK, t, ModeImmediate); }

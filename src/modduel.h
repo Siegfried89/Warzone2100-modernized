@@ -22,4 +22,7 @@ int swingSlot(const DROID *psDroid);
 float swingNeedMF(const DROID *psDroid);
 /// (21.11.) Parade: Spielzeit des gegnerischen Schlags, den dieser Combot abwehrt (0 = keine), slot = Waffenplatz des abwehrenden Arms
 unsigned parryAt(const DROID *psDroid, int &slot);
+/// (21.11.) im Brawl auf Schlagweite: die Nahkampfwaffe dieses Platzes feuert nicht auf Warzone-Art (ihr "Schuss"-Zeitstempel wird jeden
+/// Schritt gesetzt) - die Animation darf das nicht als neuen Schuss lesen (sonst schlaegt der Combot ununterbrochen in die Luft)
+bool meleeSuppressed(const DROID *psDroid, int slot);
 }
