@@ -25,6 +25,12 @@ namespace modoil
 {
 /// gilt die Fass-Wirtschaft fuer diesen Spieler?
 bool manages(int player);
+/// (Wunsch 21.11. 15:49 "den Abholbefehl zusaetzlich selber geben koennen, falls sich dennoch mal nichts tut"): Pickup/Oeltanker
+/// waehlen und auf ein eigenes Oel-Gebaeude klicken = dort abholen bzw. abliefern, danach weiter in der Dauerschleife.
+constexpr uint16_t CODE_OIL = 97;   // in DORDER_FORTIFY.direction
+bool isOilTarget(const DROID *psDroid, const STRUCTURE *psStruct);
+/// order.cpp DORDER_FORTIFY: true = Oel-Befehl (uebernommen oder verworfen)
+bool startOrder(DROID *psDroid, int x, int y, uint16_t code);
 /// (17.11. 20:35) Einnahmen-Buch: jede Spielminute steht im Log, woher die Energie kam ("MOD-Wirtschaft ...")
 enum IncomeKind { INC_BARRELS = 0, INC_SOLAR, INC_LAVA, INC_SALVAGE, INC_NUCLEAR, INC_COUNT };
 void noteIncome(int player, int kind, int amount);

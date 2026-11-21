@@ -18,4 +18,8 @@ void updateLeggedAnimation(DROID *psDroid, int moveSpeed);
 constexpr unsigned HIT_DELAY_MS = 800;
 /// Waffenplatz des Arms, der im laufenden Duell-Schlag trifft; -1 = kein Duell
 int swingSlot(const DROID *psDroid);
+/// (21.11.) wie weit muss die Waffe im Treffer-Moment reichen (MF-Einheiten von der Mitte bis zur Brust des Gegners); 0 = egal
+float swingNeedMF(const DROID *psDroid);
+/// (21.11.) Parade: Spielzeit des gegnerischen Schlags, den dieser Combot abwehrt (0 = keine), slot = Waffenplatz des abwehrenden Arms
+unsigned parryAt(const DROID *psDroid, int &slot);
 }

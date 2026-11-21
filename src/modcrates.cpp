@@ -37,6 +37,12 @@
 
 namespace modcrates
 {
+// MOD (21.11.): untaetige Fahrzeuge bekommen von Warzone selbst "Stellung halten" (DORDER_GUARD ohne Ziel) - das ist kein Spieler-Befehl
+static bool idleOrder(const DROID *d)
+{
+	return d->order.type == DORDER_NONE || d->order.type == DORDER_HOLD || d->order.type == DORDER_STOP
+	       || (d->order.type == DORDER_GUARD && d->order.psObj == nullptr);
+}
 namespace
 {
 constexpr unsigned TICK_MS = 250;
@@ -421,7 +427,7 @@ void autopilot()
 		{
 			for (DROID *d : gameWorld.objects.droids[p])
 			{
-				if (d == nullptr || d->died || capacity(d) <= 0 || d->order.type != DORDER_NONE || d->sMove.Status != MOVEINACTIVE) { continue; }
+				if (d == nullptr || d->died || capacity(d) <= 0 || !idleOrder(d) || d->sMove.Status != MOVEINACTIVE) { continue; }
 				const auto it = s_idleSince.find(d->id);
 				idle[d->id] = (it != s_idleSince.end()) ? it->second : gameTime;
 			}
@@ -451,7 +457,7 @@ void autopilot()
 		std::vector<DROID *> trucks;
 		for (DROID *d : gameWorld.objects.droids[p])
 		{
-			if (d == nullptr || d->died || capacity(d) <= 0 || d->order.type != DORDER_NONE) { continue; }
+			if (d == nullptr || d->died || capacity(d) <= 0 || !idleOrder(d)) { continue; }
 			// (Wunsch 18.11. 02:44) "alle Fahrzeuge wie Lkw und Oeltanker nehmen selbstaendig ihre Arbeit auf, immer wieder, falls sie
 			// abbeordert werden, aber mit kurzer Wartezeit": nach einem Spieler-Befehl nur 6 s Pause, sobald der Lkw frei ist
 			if (modoil::isBusy(d->id) || modcontrol::sincePlayerOrder(d) < 6000u || idleMs(d) < 6000u) { continue; }
@@ -700,7 +706,7 @@ void tick()
 		if (t.job != J_NONE)
 		{
 			const bool mine = ownMove(d, t);
-			if (!mine && d->order.type != DORDER_NONE && t.mx >= 0)
+			if (!mine && !idleOrder(d) && t.mx >= 0)
 			{
 				t.job = J_NONE; t.autopilot = false;   // der Spieler hat einen anderen Befehl gegeben
 			}
@@ -719,12 +725,12 @@ void tick()
 					if (d->order.type == DORDER_MOVE) { orderDroid(d, DORDER_STOP, ModeImmediate); }
 					if (t.crates <= 0) { t.autopilot = false; }
 				}
-				else if (d->order.type == DORDER_NONE && t.tries < 4)
+				else if (idleOrder(d) && t.tries < 4)
 				{
 					approach(d, t, s);
 					t.tries++;
 				}
-				else if (d->order.type == DORDER_NONE)
+				else if (idleOrder(d))
 				{
 					t.job = J_NONE;
 				}
@@ -733,19 +739,19 @@ void tick()
 			{
 				if (t.crates <= 0) { t.job = J_NONE; }
 				else if (dist2(d->pos.x, d->pos.y, t.tx, t.ty) <= static_cast<int64_t>(DROP_RANGE) * DROP_RANGE
-				         || (d->order.type == DORDER_NONE && t.tries >= 4 && dist2(d->pos.x, d->pos.y, t.tx, t.ty) <= static_cast<int64_t>(3 * DIST_TILE) * (3 * DIST_TILE)))
+				         || (idleOrder(d) && t.tries >= 4 && dist2(d->pos.x, d->pos.y, t.tx, t.ty) <= static_cast<int64_t>(3 * DIST_TILE) * (3 * DIST_TILE)))
 				{
 					if (d->order.type == DORDER_MOVE) { orderDroid(d, DORDER_STOP, ModeImmediate); }
 					dropPile(d, t);
 					t.job = J_NONE;
 					t.autopilot = false;
 				}
-				else if (d->order.type == DORDER_NONE && t.tries < 4)
+				else if (idleOrder(d) && t.tries < 4)
 				{
 					moveTo(d, t, t.tx, t.ty);
 					t.tries++;
 				}
-				else if (d->order.type == DORDER_NONE)
+				else if (idleOrder(d))
 				{
 					t.job = J_NONE;
 				}

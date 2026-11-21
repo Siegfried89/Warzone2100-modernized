@@ -1644,7 +1644,8 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		break;
 	case DORDER_FORTIFY:
 		// MOD: Befestigungsbau - Auftrag uebernehmen, der Rest laeuft in modbuild::tick
-		if (!modcrates::startOrder(psDroid, psOrder->pos.x, psOrder->pos.y, psOrder->direction))   // MOD: Munitionskisten laden/abladen
+		if (!modoil::startOrder(psDroid, psOrder->pos.x, psOrder->pos.y, psOrder->direction)   // MOD (21.11.): Oel abholen/abliefern
+		    && !modcrates::startOrder(psDroid, psOrder->pos.x, psOrder->pos.y, psOrder->direction))   // MOD: Munitionskisten laden/abladen
 		{
 			modbuild::startOrder(psDroid, psOrder->pos.x, psOrder->pos.y, psOrder->direction);
 		}
@@ -2999,6 +3000,13 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 		{
 			return DroidOrder(DORDER_ATTACK, psObj);
 		}
+	}
+	// MOD (Wunsch 21.11. 15:49): Pickup/Oeltanker + Klick auf ein eigenes Oel-Gebaeude = dort abholen/abliefern (Arbeitsmodus anstossen)
+	if (psObj->type == OBJ_STRUCTURE && modoil::isOilTarget(psDroid, static_cast<STRUCTURE *>(psObj)))
+	{
+		DroidOrder o(DORDER_FORTIFY, psObj->pos.xy());
+		o.direction = modoil::CODE_OIL;
+		return o;
 	}
 	// MOD (Wunsch 18.11. 12:43 "Trucks koennen keine Munitionskisten aufnehmen"): Lkw mit Ladeflaeche + normaler Klick auf eine eigene
 	// Kistenquelle (Fabrik mit Kistenhaufen, Haufen, Depot, Munitionskiste) = dort Kisten laden bzw. einlagern (bisher nur mit Strg)

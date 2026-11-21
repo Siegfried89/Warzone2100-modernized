@@ -2,6 +2,8 @@
 // MOD: Oelkreislauf, siehe modoil.h
 
 #include "modoil.h"
+#include "modcontrol.h"   // (21.11.) Spieler-Befehl unterbricht den Autopiloten kurz
+#include "action.h"
 #include "modterrain.h"
 
 #include "lib/framework/frame.h"
@@ -93,6 +95,7 @@ struct CargoState
 	int x = 0, y = 0, z = 0;    // letzte bekannte Position
 	bool manualWait = false;    // (18.11.) nach einem Spieler-Befehl: erst kurz frei stehen, dann wieder Autopilot
 	int idleSec = 0;
+	bool forced = false;        // (21.11.) Auftrag kam per Klick auf ein Oel-Gebaeude (startOrder) - kein "fremder" Spieler-Befehl
 };
 
 struct Boom
@@ -682,6 +685,45 @@ int roofHeight(const DROID *d)
 	return s->pStructureType->id.startsWith("A0BaBaContainer") ? 54 : 0;   // Containerdach (55 hoch)
 }
 
+bool isOilTarget(const DROID *d, const STRUCTURE *s)
+{
+	if (d == nullptr || s == nullptr || s->died || s->status != SS_BUILT || d->player != s->player || !manages(static_cast<int>(d->player))) { return false; }
+	if (cargoCapacity(d) <= 0) { return false; }
+	const STRUCTURE_STATS *st = s->pStructureType;
+	if (isTank(d)) { return isRefinery(st) || st->type == REF_POWER_GEN || modfuel::isStation(s) || isOilStore(st); }
+	return st->type == REF_RESOURCE_EXTRACTOR || isRefinery(st);
+}
+
+bool startOrder(DROID *d, int x, int y, uint16_t code)
+{
+	if (code != CODE_OIL) { return false; }
+	if (d == nullptr || d->player >= MAX_PLAYERS) { return true; }
+	STRUCTURE *tgt = nullptr;
+	for (STRUCTURE *s : gameWorld.objects.structures[d->player])
+	{
+		if (s != nullptr && s->pos.x == x && s->pos.y == y && isOilTarget(d, s)) { tgt = s; break; }
+	}
+	d->order = DroidOrder(DORDER_NONE);
+	actionDroid(d, DACTION_NONE);
+	CargoState &c = s_cargo[d->id];
+	c.player = static_cast<int>(d->player);
+	c.cap = cargoCapacity(d);
+	c.tank = isTank(d);
+	c.manualWait = false; c.idleSec = 0; c.pause = 0; c.stuck = 0; c.forced = true;
+	c.mode = 0;   // nichts Sinnvolles an diesem Gebaeude (z. B. leer zum Kraftwerk): einfach sofort weiter im Arbeitsmodus
+	if (tgt == nullptr) { return true; }
+	const STRUCTURE_STATS *st = tgt->pStructureType;
+	int mode = 0, kind = 0;
+	if (st->type == REF_RESOURCE_EXTRACTOR) { mode = 1; kind = 3; }                         // Pickup: Rohoel am Oelturm laden
+	else if (isRefinery(st)) { if (c.tank) { mode = c.n < c.cap ? 1 : 0; kind = 2; } else if (c.n > 0) { mode = 2; kind = 2; } }
+	else if (st->type == REF_POWER_GEN) { if (c.n > 0) { mode = 2; kind = 0; } }
+	else if (modfuel::isStation(tgt)) { if (c.n > 0) { mode = 2; kind = 4; } }
+	else if (isOilStore(st)) { if (c.n > 0) { mode = 2; kind = 1; } }
+	if (mode == 0) { return true; }
+	c.mode = mode; c.kind = kind; c.target = tgt->id; c.tx = tgt->pos.x; c.ty = tgt->pos.y;
+	return true;
+}
+
 bool isCargo(uint32_t droidId)
 {
 	return s_cargo.find(droidId) != s_cargo.end();
@@ -1126,14 +1168,25 @@ void logistics()
 			if (c.pause > 0) { c.pause--; continue; }
 
 			const bool ownMove = d->order.type == DORDER_MOVE && d->order.pos == Vector2i(c.tx, c.ty);
-			if (c.mode != 0 && !ownMove && d->order.type != DORDER_NONE)
+			// MOD (Wunsch 21.11. 15:40 "warum tut das Kraftwerk nicht?"): Warzone gibt jedem untaetigen Fahrzeug von selbst den Befehl
+			// "Stellung halten" (DORDER_GUARD ohne Ziel, Halte-Art "Bewachen"). Der Autopilot hielt das fuer einen Spieler-Befehl - alle
+			// Pickups und der Oeltanker warteten fuer immer (Log: "wartend 3"), die Raffinerie blieb voll, das Kraftwerk leer. Jetzt gilt
+			// das wie "kein Befehl".
+			// (15:46 "die Abholmechanik soll in Dauerschleife sein ... nach kurzer Wartezeit wieder in ihren Arbeitsmodus"): auch
+			// "Halten"/"Stopp" eines Spielers ist nach der Wartezeit (5 s Stillstand) vorbei - nur laufende Fahrbefehle warten bis zum Ziel
+			const bool idleOrder = d->order.type == DORDER_NONE || d->order.type == DORDER_HOLD || d->order.type == DORDER_STOP
+			                       || (d->order.type == DORDER_GUARD && d->order.psObj == nullptr);
+			// ein Spieler-Befehl der letzten 5 s (auch "Halten"/"Stopp" waehrend der Fahrt) unterbricht den Autopiloten
+			if (c.forced && modcontrol::sincePlayerOrder(d) >= 5000u) { c.forced = false; }
+			const bool freshOrder = !c.forced && modcontrol::sincePlayerOrder(d) < 5000u;
+			if (c.mode != 0 && ((!ownMove && !idleOrder) || freshOrder))
 			{
 				c.mode = 0;       // der Spieler hat selbst einen Befehl gegeben: Autopilot wartet, bis der Lkw wieder frei ist
 				c.manualWait = true;
 				c.idleSec = 0;
 				continue;
 			}
-			if (c.mode == 0 && d->order.type != DORDER_NONE) { c.manualWait = true; c.idleSec = 0; continue; }
+			if (c.mode == 0 && (!idleOrder || freshOrder)) { c.manualWait = true; c.idleSec = 0; continue; }
 			// (Wunsch 18.11. 02:44) nach einem Spieler-Befehl nimmt der Lkw/Tanker seine Arbeit nach kurzer Wartezeit (5 s frei) wieder auf
 			if (c.mode == 0 && c.manualWait)
 			{
@@ -1211,7 +1264,7 @@ void logistics()
 					}
 					c.mode = 0;
 				}
-				else if (d->order.type == DORDER_NONE)
+				else if (idleOrder)
 				{
 					if (++c.stuck >= 3) { c.mode = 0; c.pause = 10; continue; }
 					go(c.mode, c.kind, c.target, wx, wy);

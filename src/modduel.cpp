@@ -1,14 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Metal-Fatigue-Duellsystem fuer Combots.
-// Ablauf wie in Metal Fatigue: zwei Combots treten in Nahkampfreichweite, bleiben stehen, drehen sich zueinander
-// und schlagen abwechselnd zu. Der Verteidiger blockt zufaellig, weicht gelegentlich aus oder wird an einem
-// zufaelligen Koerperteil getroffen. Teile mit 0 Trefferpunkten werden abgeschlagen (Arm: Waffe weg, Beine: Kriechtempo).
+// MOD: Metal-Fatigue-Nahkampf ("Brawl") fuer Combots - neu (Wunsch 21.11. 15:25 "Denkst du die Combots funktionieren so? Ich denke nicht").
+//
+// Vorher (Aufzeichnung 21.11. 15:24): Duell schon ab 2 Feldern Abstand, keiner ging naeher -> Hiebe 1,5-2 Felder vor dem Gegner in die Luft;
+// jeder feindliche Combot in 2 Feldern wurde sofort "gegriffen" und beide angehalten (Spieler-Befehle uebergangen); ein Combot konnte einen
+// Gegner "duellieren", der schon mit einem anderen kaempfte (Schlaege in den Ruecken, Takt ueber beide Duelle durcheinander); Block und
+// Ausweichen nur unsichtbar im Schaden; Schaden und Trefferpunkte geschaetzt.
+//
+// Jetzt wie MF (mfatigue.exe CRobot::RequestedBrawlBrain, objinfo.tbd):
+//  - Ziel ist das Angriffsziel von Warzone (Befehl des Spielers bzw. eigene Zielwahl) - nichts wird mehr ungefragt gegriffen. Warzone fuehrt
+//    den Combot bis auf die Waffenreichweite heran; die ist jetzt die Schlagweite des Arms (mfreach.py: weiteste Streckung der Waffe in den
+//    MF-Angriffen) - die Klinge trifft den Gegner.
+//  - Brawl-Anfrage: wer zuschlaegt, fordert den Gegner. Ist der frei (kein anderer Brawl, kein laufender Fahr- oder Angriffsbefehl auf ein
+//    anderes Ziel), nimmt er an: er nimmt den Angreifer als Ziel, dreht sich zu ihm und schlaegt zurueck. Ist er beschaeftigt, schlaegt der
+//    Angreifer einseitig zu (MF: die Anfrage wird abgelehnt, der Angriff bleibt).
+//  - Takt: je Arm der MF-Takt (+0x40) nach dem Treffer; im Paar wartet jeder, bis der Schlag des anderen gefallen ist -> abwechselnd.
+//  - Treffer: MF-Treffsicherheit (+0x3c) des Arms; daneben = der Gegner pariert (sichtbar: er fuehrt seine Waffe dem Schlag entgegen) oder
+//    weicht aus. Ein Schild-Arm faengt Schlaege ab (Schaden am Schild). Schaden = MF-Nahkampfschaden mech./Energie (+0x34/+0x38) minus den
+//    MF-Schilden des getroffenen Teils; Arme und Beine haben eigene MF-Trefferpunkte und fallen bei 0 ab (modcombot::meleeHit).
+//  - Der Schaden faellt genau im Treffer-Moment der Animation (weiteste Streckung, modcombot richtet die Animation darauf aus).
 
 #include "modduel.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
 #include "lib/framework/math_ext.h"
+#include "lib/framework/trig.h"
 #include "lib/netplay/netplay.h"
 #include "lib/ivis_opengl/ivisdef.h"
 #include "baseobject.h"
@@ -22,6 +38,7 @@
 #include "geometry.h"
 #include "move.h"
 #include "order.h"
+#include "projectile.h"
 #include "random.h"
 #include "stats.h"
 
@@ -39,25 +56,31 @@ static bool canDuel(const DROID *d);
 namespace
 {
 
-constexpr int ENGAGE_RANGE = 256;     // Welteinheiten (Kachel = 128): Duell beginnt
-constexpr int BREAK_RANGE = 448;      // darueber wird das Duell abgebrochen
-constexpr unsigned ROUND_TIME = 1700; // ms zwischen zwei Schlaegen (langsamer MF-Kampf)
-constexpr unsigned HIT_DELAY = HIT_DELAY_MS;   // ms nach Schlagbeginn bis zum Treffer
-constexpr unsigned BLOCK_PCT = 32;
-constexpr unsigned DODGE_PCT = 12;
+constexpr int SLACK = 40;              // Welteinheiten Spiel um die Schlagweite (Warzone haelt knapp innerhalb der Reichweite an)
+constexpr int BREAK_RANGE = 448;       // darueber ist ein Brawl vorbei
+constexpr unsigned HIT_DELAY = HIT_DELAY_MS;
+constexpr unsigned PAIR_GAP = 250;     // im Paar: Pause nach dem Schlag des anderen, bevor man selbst ausholt
+constexpr int FACE_DEG = 35;           // so genau muss er zum Gegner schauen, um auszuholen
+constexpr int TURN_DEG_PER_S = 270;    // Drehtempo zum Gegner
 
+enum Outcome { HIT = 0, PARRY, SHIELD };
 enum Part { TORSO = 0, RARM, LARM, LEGS, NPARTS };
 
 struct Duel
 {
 	uint32_t opponent = 0;
-	bool myTurn = false;
-	unsigned nextSwing = 0;   // gameTime, wann der naechste Schlag beginnt
+	bool paired = false;      // der Gegner hat die Brawl-Anfrage angenommen (schlaegt zurueck)
+	unsigned nextSwing = 0;   // gameTime, ab wann wieder ausgeholt werden darf
 	unsigned hitAt = 0;       // gameTime des Treffermoments, 0 = kein Schlag unterwegs
+	int slot = -1;            // Waffenplatz des laufenden Schlags
+	unsigned swing = 0;       // zaehlt die Schlaege (zwei Nahkampfarme wechseln sich ab)
+	int outcome = HIT;
+	unsigned parryAt = 0;     // dieser Combot pariert einen Schlag, der zu dieser Zeit trifft
+	int parrySlot = -1;
+	// alte Einzel-Combots (MFW_, nicht modular): Trefferpunkte je Teil
 	int partHp[NPARTS] = { 0, 0, 0, 0 };
 	bool severed[NPARTS] = { false, false, false, false };
 	bool init = false;
-	unsigned swing = 0;       // zaehlt die Schlaege (modulare Combots wechseln den Arm)
 };
 
 std::unordered_map<uint32_t, Duel> s_duels;
@@ -68,7 +91,7 @@ DROID *findDroid(uint32_t id)
 	{
 		for (DROID *d : gameWorld.objects.droids[p])
 		{
-			if (d != nullptr && d->id == id) { return d; }
+			if (d != nullptr && d->id == id && !d->died) { return d; }
 		}
 	}
 	return nullptr;
@@ -80,6 +103,113 @@ int dist2d(const DROID *a, const DROID *b)
 	return static_cast<int>(std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy));
 }
 
+bool enemies(const DROID *a, const DROID *b)
+{
+	return a->player != b->player && !aiCheckAlliances(a->player, b->player);
+}
+
+/// Waffenplaetze der Nahkampfarme (modular), sonst Platz 0 (alte Einzel-Combots)
+int meleeSlots(const DROID *d, int out[2])
+{
+	int n = 0;
+	if (modcombot::isModular(d))
+	{
+		const modcombot::Loadout lo = modcombot::loadoutOf(d);
+		if (lo.armR && lo.armR->st.melee && lo.slotR >= 0 && d->asWeaps[lo.slotR].nStat != 0) { out[n++] = lo.slotR; }
+		if (lo.armL && lo.armL->st.melee && lo.slotL >= 0 && d->asWeaps[lo.slotL].nStat != 0) { out[n++] = lo.slotL; }
+	}
+	else if (d->numWeaps > 0 && d->asWeaps[0].nStat != 0)
+	{
+		out[n++] = 0;
+	}
+	return n;
+}
+
+/// Schlagweite (Welteinheiten) = groesste Reichweite der Nahkampfwaffen (mfreach.py hat sie aus den MF-Angriffen gesetzt)
+int strikeRange(const DROID *d)
+{
+	int slots[2];
+	const int n = meleeSlots(d, slots);
+	int r = 0;
+	for (int i = 0; i < n; ++i)
+	{
+		const unsigned ws = d->asWeaps[slots[i]].nStat;
+		if (ws > 0 && ws < asWeaponStats.size()) { r = std::max(r, proj_GetLongRange(asWeaponStats[ws], d->player)); }
+	}
+	return r > 0 ? r : 128;
+}
+
+bool inAttackAction(const DROID *d)
+{
+	switch (d->action)
+	{
+	case DACTION_ATTACK: case DACTION_MOVETOATTACK: case DACTION_ROTATETOATTACK:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/// darf der Gegner die Brawl-Anfrage annehmen? (frei, kein Fahrbefehl, kein Angriffsbefehl auf ein anderes Ziel)
+bool freeFor(const DROID *t, const DROID *attacker)
+{
+	if (!canDuel(t)) { return false; }
+	const auto it = s_duels.find(t->id);
+	if (it != s_duels.end() && it->second.opponent != 0 && it->second.opponent != attacker->id)
+	{
+		const DROID *o = findDroid(it->second.opponent);
+		if (o != nullptr && dist2d(t, o) <= BREAK_RANGE) { return false; }   // steckt in einem anderen Brawl
+	}
+	switch (t->order.type)
+	{
+	case DORDER_NONE: case DORDER_GUARD: case DORDER_HOLD: case DORDER_STOP:
+		return true;
+	case DORDER_ATTACK:
+		return t->order.psObj == attacker || t->order.psObj == nullptr || t->order.psObj->type != OBJ_DROID || !isCombot(static_cast<const DROID *>(t->order.psObj));
+	default:
+		return false;
+	}
+}
+
+void turnToward(DROID *d, const DROID *t)
+{
+	const uint16_t want = calcDirection(d->pos.x, d->pos.y, t->pos.x, t->pos.y);
+	const int diff = static_cast<int16_t>(want - d->rot.direction);
+	const int step = std::max(1, static_cast<int>(DEG(TURN_DEG_PER_S) * static_cast<int64_t>(deltaGameTime) / GAME_TICKS_PER_SEC));
+	if (std::abs(diff) <= step) { d->rot.direction = want; }
+	else { d->rot.direction = static_cast<uint16_t>(d->rot.direction + (diff > 0 ? step : -step)); }
+}
+
+bool facing(const DROID *d, const DROID *t)
+{
+	const uint16_t want = calcDirection(d->pos.x, d->pos.y, t->pos.x, t->pos.y);
+	return std::abs(static_cast<int>(static_cast<int16_t>(want - d->rot.direction))) <= DEG(FACE_DEG);
+}
+
+// ---------------------------------------------------------------- Rumpf-Wackeln getroffener Panzer (nur Anzeige)
+struct Wobble
+{
+	unsigned start = 0;
+	float dirRel = 0.f;
+	float amp = 0.f;
+};
+std::unordered_map<uint32_t, Wobble> s_wobble;
+
+void noteWobble(const DROID *victim, const DROID *attacker, int dmg)
+{
+	if (victim == nullptr || attacker == nullptr || modcombot::isModular(victim)) { return; }
+	const float dx = static_cast<float>(victim->pos.x - attacker->pos.x);
+	const float dy = static_cast<float>(victim->pos.y - attacker->pos.y);
+	const float worldAng = std::atan2(dx, -dy);
+	const float face = static_cast<float>(victim->rot.direction) * 6.2831853f / 65536.f;
+	Wobble w;
+	w.start = gameTime;
+	w.dirRel = worldAng - face;
+	w.amp = std::clamp(2.0f + static_cast<float>(dmg) * 0.05f, 2.0f, 6.0f);
+	s_wobble[victim->id] = w;
+}
+
+// ---------------------------------------------------------------- alte Einzel-Combots (MFW_)
 void initParts(Duel &du, const DROID *d)
 {
 	const int hp = static_cast<int>(d->originalBody);
@@ -90,49 +220,129 @@ void initParts(Duel &du, const DROID *d)
 	du.init = true;
 }
 
-void sever(DROID *d, Duel &du, Part p)
+void severOld(DROID *d, Duel &du, Part p)
 {
 	du.severed[p] = true;
 	const Vector3i pos(d->pos.x, d->pos.y, d->pos.z + 24);
 	addEffect(&pos, EFFECT_EXPLOSION, EXPLOSION_TYPE_SMALL, false, nullptr, 0, gameTime);
 	if (p == RARM)
 	{
-		// Waffenarm weg: Waffe faellt aus
 		for (unsigned i = 0; i < d->numWeaps; ++i) { d->asWeaps[i].ammo = 0; }
 		if (d->numWeaps > 0) { d->asWeaps[0].nStat = 0; }
 	}
 	else if (p == LEGS)
 	{
-		d->baseSpeed = 1; // kriecht nur noch
+		d->baseSpeed = 1;
 	}
 }
 
-namespace
+/// Funken an der Stelle, wo sich die Waffen treffen (Mitte zwischen beiden, Brusthoehe)
+void sparks(const DROID *a, const DROID *b, bool big)
 {
-struct Wobble
-{
-	unsigned start = 0;
-	float dirRel = 0.f;      // Richtung des Schlags relativ zur Blickrichtung des Opfers (Bogenmass)
-	float amp = 0.f;         // Grad
-};
-std::unordered_map<uint32_t, Wobble> s_wobble;
-
-void noteWobble(const DROID *victim, const DROID *attacker, int dmg)
-{
-	if (victim == nullptr || attacker == nullptr || modcombot::isModular(victim)) { return; }
-	const float dx = static_cast<float>(victim->pos.x - attacker->pos.x);
-	const float dy = static_cast<float>(victim->pos.y - attacker->pos.y);
-	const float worldAng = std::atan2(dx, -dy);                                        // 0 = Norden
-	const float face = static_cast<float>(victim->rot.direction) * 6.2831853f / 65536.f;
-	Wobble w;
-	w.start = gameTime;
-	w.dirRel = worldAng - face;
-	w.amp = std::clamp(2.0f + static_cast<float>(dmg) * 0.05f, 2.0f, 6.0f);
-	s_wobble[victim->id] = w;
+	if (!a->visibleForLocalDisplay() && !b->visibleForLocalDisplay()) { return; }
+	const Vector3i pos((a->pos.x + b->pos.x) / 2, (a->pos.z + b->pos.z) / 2 + 60, (a->pos.y + b->pos.y) / 2);
+	addEffect(&pos, EFFECT_EXPLOSION, big ? EXPLOSION_TYPE_SMALL : EXPLOSION_TYPE_LASER, false, nullptr, 0, gameTime);
 }
+
+void kill(DROID *victim)
+{
+	victim->body = 0;
+	destroyDroid(victim, gameTime, gameWorld);
+}
+
+void applyHit(DROID *att, Duel &ad, DROID *victim)
+{
+	const modcombot::Part *arm = modcombot::armInSlot(att, ad.slot);
+	const int hth = modcombot::isModular(att) ? modcombot::meleePercent(att) : 100;   // MF HTH-Upgrade-Beine
+	if (modcombot::isModular(victim))
+	{
+		float mD = 0.f, eD = 0.f;
+		if (arm != nullptr && (arm->st.md > 0.f || arm->st.ed > 0.f)) { mD = arm->st.md; eD = arm->st.ed; }
+		else
+		{
+			// alte Daten ohne MF-Werte: Warzone-Schaden der Waffe als mechanischer Schaden in MF-Groesse (Torso 179)
+			const unsigned ws = ad.slot >= 0 ? att->asWeaps[ad.slot].nStat : 0;
+			const int wd = (ws > 0 && ws < asWeaponStats.size()) ? weaponDamage(asWeaponStats[ws], att->player) : 40;
+			mD = static_cast<float>(wd) * 0.4f;
+		}
+		mD = mD * static_cast<float>(hth) / 100.f;
+		eD = eD * static_cast<float>(hth) / 100.f;
+		int forceSlot = -1;
+		if (ad.outcome == SHIELD)
+		{
+			// der Schild-Arm faengt den Schlag ab
+			const modcombot::Loadout lo = modcombot::loadoutOf(victim);
+			if (lo.armR && lo.armR->st.blk > 0) { forceSlot = modcombot::SLOT_RARM; }
+			else if (lo.armL && lo.armL->st.blk > 0) { forceSlot = modcombot::SLOT_LARM; }
+		}
+		int partHit = -1;
+		const int body = modcombot::meleeHit(victim, mD, eD, modcombot::isModular(att) ? modcombot::severPercent(att) : 100, partHit, forceSlot);
+		victim->timeLastHit = gameTime;
+		if (body > 0)
+		{
+			if (static_cast<int>(victim->body) <= body) { kill(victim); return; }
+			victim->body -= static_cast<UDWORD>(body);
+		}
+		return;
+	}
+	// Nicht-modularer Gegner (alter Einzel-Combot): Warzone-Schaden der Waffe, Teile mit eigenen Trefferpunkten
+	int dmg = 40;
+	const unsigned ws = ad.slot >= 0 ? att->asWeaps[ad.slot].nStat : 0;
+	if (ws > 0 && ws < asWeaponStats.size()) { dmg = std::max(10, weaponDamage(asWeaponStats[ws], att->player)); }
+	dmg = dmg * hth / 100;
+	if (ad.outcome == SHIELD) { dmg = dmg * 15 / 100; }
+	noteWobble(victim, att, dmg);
+	auto vit = s_duels.find(victim->id);
+	Duel tmp;
+	Duel &vd = vit != s_duels.end() ? vit->second : tmp;
+	if (!vd.init) { initParts(vd, victim); }
+	const unsigned r2 = gameRand(100);
+	const Part part = r2 < 35 ? TORSO : r2 < 60 ? RARM : r2 < 80 ? LARM : LEGS;
+	vd.partHp[part] -= dmg;
+	if (vd.partHp[part] <= 0 && !vd.severed[part] && part != TORSO) { severOld(victim, vd, part); }
+	victim->timeLastHit = gameTime;
+	if (static_cast<int>(victim->body) <= dmg) { kill(victim); return; }
+	victim->body -= static_cast<UDWORD>(dmg);
+}
+
+void beginSwing(DROID *d)
+{
+	d->animationEvent = ANIM_EVENT_FIRING;
+	d->timeAnimationStarted = gameTime;
+}
+
+void endDuel(DROID *d)
+{
+	const auto it = s_duels.find(d->id);
+	if (it == s_duels.end()) { return; }
+	const uint32_t opp = it->second.opponent;
+	s_duels.erase(it);
+	if (d->animationEvent == ANIM_EVENT_FIRING) { resetObjectAnimationState(d); }
+	const auto o = s_duels.find(opp);
+	if (o != s_duels.end() && o->second.opponent == d->id) { o->second.paired = false; }
+}
+
+/// Ziel fuer den Nahkampf: Angriffsziel von Warzone (feindlicher Combot), sonst der angenommene Brawl-Gegner
+DROID *chooseTarget(DROID *d)
+{
+	BASE_OBJECT *at = d->psActionTarget[0];
+	if (inAttackAction(d) && at != nullptr && at->type == OBJ_DROID && !at->died)
+	{
+		DROID *t = static_cast<DROID *>(at);
+		if (isCombot(t) && enemies(d, t)) { return t; }
+	}
+	const auto it = s_duels.find(d->id);
+	if (it != s_duels.end() && it->second.paired)
+	{
+		DROID *o = findDroid(it->second.opponent);
+		if (o != nullptr && enemies(d, o) && dist2d(d, o) <= BREAK_RANGE) { return o; }
+	}
+	return nullptr;
+}
+
 } // namespace
 
-bool hullWobbleImpl(const DROID *d, float &pitchDeg, float &rollDeg)
+bool hullWobble(const DROID *d, float &pitchDeg, float &rollDeg)
 {
 	if (d == nullptr || s_wobble.empty()) { return false; }
 	const auto it = s_wobble.find(d->id);
@@ -145,108 +355,35 @@ bool hullWobbleImpl(const DROID *d, float &pitchDeg, float &rollDeg)
 	return true;
 }
 
-void applyDamage(DROID *victim, Duel &vd, const DROID *attacker, Duel &ad)
-{
-	int dmg = 40;
-	const bool modAtt = modcombot::isModular(attacker);
-	if (modAtt)
-	{
-		// zuschlagender Arm: die Nahkampfarme wechseln sich ab
-		const modcombot::Loadout lo = modcombot::loadoutOf(attacker);
-		int slots[2];
-		int n = 0;
-		if (lo.armR && lo.armR->st.melee && lo.slotR >= 0) { slots[n++] = lo.slotR; }
-		if (lo.armL && lo.armL->st.melee && lo.slotL >= 0) { slots[n++] = lo.slotL; }
-		if (n > 0)
-		{
-			const int slot = slots[ad.swing % static_cast<unsigned>(n)];
-			const unsigned ws = attacker->asWeaps[slot].nStat;
-			if (ws > 0 && ws < asWeaponStats.size()) { dmg = std::max(10, weaponDamage(asWeaponStats[ws], attacker->player)); }
-		}
-		++ad.swing;
-	}
-	else if (attacker->numWeaps > 0 && attacker->asWeaps[0].nStat > 0 && attacker->asWeaps[0].nStat < asWeaponStats.size())
-	{
-		dmg = std::max(10, weaponDamage(asWeaponStats[attacker->asWeaps[0].nStat], attacker->player));
-	}
-	if (modAtt) { dmg = dmg * modcombot::meleePercent(attacker) / 100; }   // MF HTH-Upgrade
-	const unsigned roll = gameRand(100);
-	const unsigned r2 = gameRand(100);
-	const unsigned blockPct = BLOCK_PCT + static_cast<unsigned>(modcombot::blockBonus(victim));
-	if (roll < blockPct)
-	{
-		dmg = dmg * 15 / 100; // geblockt: nur Restschaden
-	}
-	else if (roll < blockPct + DODGE_PCT)
-	{
-		return;              // ausgewichen
-	}
-	if (modcombot::isModular(victim))
-	{
-		// Teil-Treffer: Torso, Arme, Beine; abgeschlagen wird in modcombot
-		const int hit = modcombot::hitRandomPart(victim, modAtt ? dmg * modcombot::severPercent(attacker) / 100 : dmg);   // MF Steady
-		(void)hit;
-		if (static_cast<int>(victim->body) <= dmg)
-		{
-			victim->body = 0;
-			destroyDroid(victim, gameTime, gameWorld);
-			return;
-		}
-		victim->body -= dmg;
-		victim->timeLastHit = gameTime;
-		return;
-	}
-	if (modAtt) { noteWobble(victim, attacker, dmg); }   // MOD: Rumpf des getroffenen Panzers wackelt
-	Part part = r2 < 35 ? TORSO : r2 < 60 ? RARM : r2 < 80 ? LARM : LEGS;
-	if (!vd.init) { initParts(vd, victim); }
-	vd.partHp[part] -= dmg;
-	if (vd.partHp[part] <= 0 && !vd.severed[part] && part != TORSO)
-	{
-		sever(victim, vd, part);
-	}
-	if (static_cast<int>(victim->body) <= dmg)
-	{
-		victim->body = 0;
-		destroyDroid(victim, gameTime, gameWorld);
-		return;
-	}
-	victim->body -= dmg;
-	victim->timeLastHit = gameTime;
-}
-
-void beginSwing(DROID *d)
-{
-	d->animationEvent = ANIM_EVENT_FIRING;
-	d->timeAnimationStarted = gameTime;
-}
-
-void endDuel(DROID *d)
-{
-	s_duels.erase(d->id);
-	if (d->animationEvent == ANIM_EVENT_FIRING) { resetObjectAnimationState(d); }
-}
-
-} // namespace
-
-bool hullWobble(const DROID *d, float &pitchDeg, float &rollDeg)
-{
-	return hullWobbleImpl(d, pitchDeg, rollDeg);   // die Umsetzung steht im anonymen Namensraum (s_wobble), die Schnittstelle in modduel.h
-}
-
 int swingSlot(const DROID *d)
 {
 	if (d == nullptr) { return -1; }
 	const auto it = s_duels.find(d->id);
 	if (it == s_duels.end()) { return -1; }
-	if (!modcombot::isModular(d)) { return 0; }
-	// wie applyDamage: die Nahkampfarme wechseln sich ab (swing zaehlt erst beim Treffer weiter)
-	const modcombot::Loadout lo = modcombot::loadoutOf(d);
+	if (it->second.slot >= 0) { return it->second.slot; }
 	int slots[2];
-	int n = 0;
-	if (lo.armR && lo.armR->st.melee && lo.slotR >= 0) { slots[n++] = lo.slotR; }
-	if (lo.armL && lo.armL->st.melee && lo.slotL >= 0) { slots[n++] = lo.slotL; }
-	if (n == 0) { return lo.slotR >= 0 ? lo.slotR : lo.slotL; }
-	return slots[it->second.swing % static_cast<unsigned>(n)];
+	return meleeSlots(d, slots) > 0 ? slots[0] : -1;
+}
+
+float swingNeedMF(const DROID *d)
+{
+	if (d == nullptr) { return 0.f; }
+	const auto it = s_duels.find(d->id);
+	if (it == s_duels.end()) { return 0.f; }
+	const DROID *o = findDroid(it->second.opponent);
+	if (o == nullptr) { return 0.f; }
+	const float k = std::max(0.1f, modcombot::worldPerMF());
+	return std::max(0.f, static_cast<float>(dist2d(d, o)) / k - modcombot::frontMF());
+}
+
+unsigned parryAt(const DROID *d, int &slot)
+{
+	slot = -1;
+	if (d == nullptr) { return 0; }
+	const auto it = s_duels.find(d->id);
+	if (it == s_duels.end() || it->second.parryAt == 0 || gameTime > it->second.parryAt + 200) { return 0; }
+	slot = it->second.parrySlot;
+	return it->second.parryAt;
 }
 
 bool isCombot(const DROID *d)
@@ -271,85 +408,137 @@ void update(DROID *d)
 	{
 		modcombot::updateAbilities(d);
 		modcombot::enforceWeaponMode(d);
-		if (!canDuel(d))
-		{
-			// im Fernkampf-Modus (oder ohne Nahkampfarm) kein Duell: ein laufendes beenden
-			if (s_duels.count(d->id)) { endDuel(d); }
-			return;
-		}
 	}
-
-	auto it = s_duels.find(d->id);
-	if (it == s_duels.end())
+	if (!canDuel(d) || d->order.type == DORDER_MOVE || d->order.type == DORDER_RTB || d->order.type == DORDER_RTR)
 	{
-		// Gegner suchen
-		if (d->order.type == DORDER_MOVE) { return; } // wer gerade laeuft, flieht / marschiert
-		DROID *best = nullptr;
-		int bestDist = ENGAGE_RANGE + 1;
-		for (int p = 0; p < MAX_PLAYERS; ++p)
-		{
-			if (p == d->player || aiCheckAlliances(p, d->player)) { continue; }
-			for (DROID *o : gameWorld.objects.droids[p])
-			{
-				if (o == nullptr || o->died || !canDuel(o)) { continue; }
-				const int dd = dist2d(d, o);
-				if (dd < bestDist) { bestDist = dd; best = o; }
-			}
-		}
-		if (best == nullptr) { return; }
-		Duel &a = s_duels[d->id];
-		a.opponent = best->id;
-		a.myTurn = d->id < best->id; // deterministisch: kleinere ID beginnt
-		a.nextSwing = gameTime + (a.myTurn ? 300 : ROUND_TIME / 2);
-		initParts(a, d);
-		Duel &b = s_duels[best->id];
-		if (b.opponent == 0)
-		{
-			b.opponent = d->id;
-			b.myTurn = !a.myTurn;
-			b.nextSwing = gameTime + (b.myTurn ? 300 : ROUND_TIME / 2);
-			initParts(b, best);
-		}
-		orderDroid(d, DORDER_STOP, ModeImmediate);
-		orderDroid(best, DORDER_STOP, ModeImmediate);
-		return;
-	}
-
-	Duel &du = it->second;
-	DROID *opp = findDroid(du.opponent);
-	if (opp == nullptr || opp->died || !canDuel(opp) || dist2d(d, opp) > BREAK_RANGE || d->order.type == DORDER_MOVE)
-	{
+		// Fernkampf-Modus, kein Nahkampfarm, oder er soll weg (Rueckzug): kein Brawl
 		endDuel(d);
 		return;
 	}
 
-	// Gegner anblicken, normale WZ-Schuesse unterdruecken (das Duell ersetzt das Standard-Gefecht)
-	d->rot.direction = calcDirection(d->pos.x, d->pos.y, opp->pos.x, opp->pos.y);
-	for (unsigned i = 0; i < MAX_WEAPONS && i < std::max(1u, d->numWeaps); ++i) { d->asWeaps[i].lastFired = gameTime; }
+	DROID *t = chooseTarget(d);
+	if (t == nullptr) { endDuel(d); return; }
+	const int dist = dist2d(d, t);
+	const int reach = strikeRange(d);
 
+	Duel &du = s_duels[d->id];
+	if (du.opponent != t->id)
+	{
+		const unsigned keepParry = du.parryAt;
+		const int keepSlot = du.parrySlot;
+		du = Duel();
+		du.opponent = t->id;
+		du.nextSwing = gameTime + 200 + gameRand(500);
+		du.parryAt = keepParry; du.parrySlot = keepSlot;
+	}
 	if (du.hitAt != 0 && gameTime >= du.hitAt)
 	{
+		// Treffer-Moment: der Ausgang wurde beim Ausholen gewuerfelt (der Gegner konnte parieren)
 		du.hitAt = 0;
-		auto vit = s_duels.find(opp->id);
-		if (vit != s_duels.end()) { applyDamage(opp, vit->second, d, du); }
-		if (opp->died) { endDuel(d); return; }
+		if (dist <= reach + 2 * SLACK && !t->died)
+		{
+			if (du.outcome == PARRY) { sparks(d, t, false); }
+			else
+			{
+				if (du.outcome == SHIELD) { sparks(d, t, true); }
+				applyHit(d, du, t);
+				if (t->died) { endDuel(d); return; }
+			}
+		}
 	}
-	if (du.hitAt == 0 && du.myTurn && gameTime >= du.nextSwing)
+
+	if (dist > reach + SLACK)
 	{
+		// noch nicht auf Schlagweite: Warzone fuehrt ihn heran (DACTION_MOVETOATTACK). Ein Angenommener ohne eigenes Angriffsziel bekommt es.
+		if (du.paired && !inAttackAction(d) && freeFor(d, t)) { orderDroidObj(d, DORDER_ATTACK, t, ModeImmediate); }
+		return;
+	}
+
+	// Brawl-Anfrage an den Gegner (MF CRobot::RequestedBrawl): frei -> er nimmt an, nimmt uns als Ziel und schlaegt zurueck
+	if (canDuel(t))
+	{
+		auto tit = s_duels.find(t->id);
+		const bool already = tit != s_duels.end() && tit->second.opponent == d->id;
+		if (already || freeFor(t, d))
+		{
+			Duel &td = s_duels[t->id];
+			if (td.opponent != d->id)
+			{
+				const unsigned keepParry = td.parryAt;
+				const int keepSlot = td.parrySlot;
+				td = Duel();
+				td.opponent = d->id;
+				td.nextSwing = std::max(gameTime + 600, du.nextSwing + 700);   // wer gefordert wird, holt etwas spaeter aus
+				td.parryAt = keepParry; td.parrySlot = keepSlot;
+			}
+			td.paired = true;
+			du.paired = true;
+			if (t->psActionTarget[0] != d && !(t->order.type == DORDER_ATTACK && t->order.psObj == d))
+			{
+				orderDroidObj(t, DORDER_ATTACK, d, ModeImmediate);
+			}
+		}
+		else
+		{
+			du.paired = false;   // Gegner beschaeftigt: einseitiger Angriff (er dreht sich nicht um)
+		}
+	}
+
+	// Gegner anblicken; die Nahkampfwaffen feuern nicht auf Warzone-Art (der Brawl ersetzt das), Fernwaffen schon
+	turnToward(d, t);
+	int slots[2];
+	const int nMelee = meleeSlots(d, slots);
+	for (int i = 0; i < nMelee; ++i) { d->asWeaps[slots[i]].lastFired = gameTime; }
+	if (nMelee == 0) { return; }
+
+	// ausholen
+	const Duel *od = nullptr;
+	{
+		const auto oit = s_duels.find(t->id);
+		if (oit != s_duels.end() && oit->second.opponent == d->id) { od = &oit->second; }
+	}
+	const bool oppBlowComing = od != nullptr && od->hitAt != 0;
+	const bool parrying = du.parryAt != 0 && gameTime <= du.parryAt + PAIR_GAP;
+	if (du.hitAt == 0 && gameTime >= du.nextSwing && !oppBlowComing && !parrying && facing(d, t))
+	{
+		du.slot = slots[du.swing % static_cast<unsigned>(nMelee)];
+		++du.swing;
 		beginSwing(d);
 		du.hitAt = gameTime + HIT_DELAY;
-		du.nextSwing = gameTime + ROUND_TIME * 2; // zwei Runden: eigene + Gegnerschlag
-		auto vit = s_duels.find(opp->id);
-		if (vit != s_duels.end())
+		const modcombot::Part *arm = modcombot::armInSlot(d, du.slot);
+		const float cyc = arm != nullptr ? arm->st.cyc : 0.75f;
+		const float acc = arm != nullptr ? arm->st.acc : 0.85f;
+		// naechster Schlag: nach dem Treffer der Nachschwung der Animation (~0,4 s) plus der MF-Takt des Arms
+		du.nextSwing = du.hitAt + 400 + static_cast<unsigned>(std::lround(cyc * 1000.f));
+		// Ausgang jetzt wuerfeln, damit der Gegner rechtzeitig parieren kann
+		du.outcome = HIT;
+		if (gameRand(1000) >= static_cast<uint32_t>(acc * 1000.f)) { du.outcome = PARRY; }
+		else if (canDuel(t) && gameRand(100) < static_cast<uint32_t>(std::max(0, modcombot::blockBonus(t)))) { du.outcome = SHIELD; }
+		if (du.outcome != HIT)
 		{
-			vit->second.myTurn = true; // Gegner ist als Naechster dran
-			vit->second.nextSwing = gameTime + ROUND_TIME;
+			// der Gegner fuehrt seine Waffe (bzw. den Schild) dem Schlag entgegen - nur wenn er schaut und nicht selbst gerade zuschlaegt
+			auto tit = s_duels.find(t->id);
+			const bool tSwinging = tit != s_duels.end() && tit->second.hitAt != 0;
+			int tslots[2];
+			const int tn = meleeSlots(t, tslots);
+			if (!tSwinging && tn > 0 && facing(t, d))
+			{
+				Duel &td = s_duels[t->id];
+				if (td.opponent == 0) { td.opponent = d->id; }
+				td.parryAt = du.hitAt;
+				int ps = tslots[0];
+				if (du.outcome == SHIELD)
+				{
+					const modcombot::Loadout lo = modcombot::loadoutOf(t);
+					if (lo.armR && lo.armR->st.blk > 0 && lo.slotR >= 0) { ps = lo.slotR; }
+					else if (lo.armL && lo.armL->st.blk > 0 && lo.slotL >= 0) { ps = lo.slotL; }
+				}
+				td.parrySlot = ps;
+				td.nextSwing = std::max(td.nextSwing, du.hitAt + PAIR_GAP);
+			}
 		}
-		du.myTurn = false;
-		// Waffen abwechseln (nur alte Einzel-Combots; modulare wechseln den Arm in applyDamage)
-		if (d->numWeaps >= 2 && !modcombot::isModular(d)) { std::swap(d->asWeaps[0], d->asWeaps[1]); }
 	}
-	else if (d->animationEvent == ANIM_EVENT_FIRING && du.hitAt == 0 && gameTime > du.nextSwing - ROUND_TIME)
+	else if (d->animationEvent == ANIM_EVENT_FIRING && du.hitAt == 0 && gameTime > d->timeAnimationStarted + 2500)
 	{
 		resetObjectAnimationState(d);
 	}
@@ -358,7 +547,7 @@ void update(DROID *d)
 void updateLeggedAnimation(DROID *d, int moveSpeed)
 {
 	if (d == nullptr || d->animationEvent == ANIM_EVENT_DYING || !isCombot(d)) { return; }
-	if (s_duels.count(d->id)) { return; } // im Duell steuert das Duell die Animation
+	if (s_duels.count(d->id)) { return; } // im Brawl steuert der Brawl die Animation
 	const bool attacking = moveSpeed == 0 && (d->action == DACTION_ATTACK || d->action == DACTION_ROTATETOATTACK);
 	const UBYTE want = attacking ? ANIM_EVENT_FIRING : (moveSpeed != 0 ? ANIM_EVENT_ACTIVE : ANIM_EVENT_NONE);
 	if (d->animationEvent == want) { return; }
