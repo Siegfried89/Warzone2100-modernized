@@ -250,15 +250,16 @@ std::vector<Item> itemsFor(int hex)
 		};
 		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_MINES, true) + 1)) { v.push_back(mines); }
 		// (Wunsch 17.11. 21:01) Halbketten-Schuetzenpanzer: Infanterie absitzen lassen (Zweitbefehl, ueber das Netz abgeglichen)
-		Item unload; unload.img = C_UNLOAD; unload.tip = _("Unload: the infantry in the selected halftrack APCs dismounts (to load: select infantry and click the APC, up to 8)");
+		Item unload; unload.img = C_UNLOAD; unload.tip = _("Unload: the infantry in the selected halftrack APCs, troop wagons or trains dismounts (to load: select infantry and click the APC, the wagon or the locomotive). An empty coupled wagon is uncoupled - it and the wagons behind it stay on the track");
 		unload.action = []() {
 			bool any = false;
 			for (DROID *d : selection())
 			{
-				// (21.11.) auch Loks: alle Truppenwaggons ihres Zuges (modrail gibt den Knopf weiter)
-				if (!modapc::isApc(d) && !modrail::isLoco(d)) { continue; }
+				// (21.11.) auch Loks: alle Truppenwaggons ihres Zuges (modrail gibt den Knopf weiter); leerer gekuppelter Waggon: abkuppeln
+				if (!modapc::isApc(d) && !modrail::isLoco(d) && !modrail::isWagon(d)) { continue; }
 				any = true;
-				if (modapc::load(d) > 0 || modrail::isLoco(d)) { secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_MINECLEAR_SET); }
+				const bool coupledWagon = modrail::isWagon(d) && modrail::locoOf(d) != 0;
+				if (modapc::load(d) > 0 || modrail::isLoco(d) || coupledWagon) { secondarySetState(d, gameWorld.objects, DSO_MINECLEAR, DSS_MINECLEAR_SET); }
 			}
 			if (!any) { addConsoleMessage(_("Unload: select a halftrack APC, a troop wagon or a locomotive"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
 		};

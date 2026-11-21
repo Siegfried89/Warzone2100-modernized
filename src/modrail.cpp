@@ -754,6 +754,25 @@ void tick()
 				}
 			}
 		}
+		// Unload-Knopf an einem LEEREN gekuppelten Waggon (Truppenwaggon ohne Insassen, MG-Flachwagen): abkuppeln - er und die Waggons
+		// dahinter bleiben auf dem Gleis stehen (Truppenwaggons mit Insassen: modapc laesst sie aussteigen)
+		for (DROID *w : gameWorld.objects.droids[p])
+		{
+			if (w->died || !isWagon(w) || (w->secondaryOrder & DSS_MINECLEAR_MASK) == 0) { continue; }
+			if (modapc::isApc(w) && modapc::load(w) > 0) { continue; }
+			w->secondaryOrder &= ~static_cast<UDWORD>(DSS_MINECLEAR_MASK);
+			w->secondaryOrderPending &= ~static_cast<uint32_t>(DSS_MINECLEAR_MASK);
+			const auto c = s_coupled.find(w->id);
+			if (c == s_coupled.end()) { continue; }
+			const auto it = s_trains.find(c->second);
+			if (it == s_trains.end()) { s_coupled.erase(c); continue; }
+			std::vector<uint32_t> &wl = it->second.wagons;
+			const auto at = std::find(wl.begin(), wl.end(), w->id);
+			const int n = static_cast<int>(wl.end() - at);
+			for (auto q = at; q != wl.end(); ++q) { s_coupled.erase(*q); }
+			wl.erase(at, wl.end());
+			if (p == selectedPlayer) { addConsoleMessage(n > 1 ? _("Train: wagons uncoupled") : _("Train: wagon uncoupled"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+		}
 	}
 	// erster Schritt nach Laden/Spielbeginn: Waggons, die direkt hinter einer Lok stehen, kuppeln wieder an (Zuege stehen nicht im Spielstand)
 	if (s_afterLoad)
