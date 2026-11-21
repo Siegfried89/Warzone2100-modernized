@@ -887,6 +887,9 @@ static bool modInfantryCovered(const DROID *psDroid)
 	return false;
 }
 
+// MOD (Wunsch 21.11. 23:56): neue Modelle (rodinscav.py) haben zusaetzlich "<Name>-shoulder.pie" (Gewehr in Kopfhoehe an der Schulter).
+// Dann wechseln sich im Freien ALLE Schuss-Animationen ab (aus der Huefte / Schulter / kniend, je Einheit versetzt alle 4 s);
+// "-aim" ist bei ihnen die Ueber-Kopf-Animation und kommt NUR hinter Deckung ("hinter der Deckung hervorschiessen").
 static const iIMDBaseShape *modAimVariant(const DROID *psDroid, const iIMDBaseShape *fireShape)
 {
 	if (fireShape == nullptr || psDroid->numWeaps == 0) { return fireShape; }
@@ -894,6 +897,13 @@ static const iIMDBaseShape *modAimVariant(const DROID *psDroid, const iIMDBaseSh
 	{
 		const iIMDBaseShape *aim = modShapeVariant(fireShape, "-aim");
 		return aim ? aim : fireShape;
+	}
+	if (const iIMDBaseShape *shoulder = modShapeVariant(fireShape, "-shoulder"))
+	{
+		const iIMDBaseShape *pick[3] = {fireShape, shoulder, modShapeVariant(fireShape, "-kneel")};
+		const uint32_t n = pick[2] ? 3u : 2u;
+		const uint32_t slot = (graphicsTime + psDroid->id * 1597u) / 4000u + psDroid->id * 7u;
+		return pick[slot % n];
 	}
 	// im Freien: abwechselnd kniend und wie bisher (Ziel-Animation fuer das leichte MG, sonst aus der Huefte)
 	const uint32_t h = (psDroid->id * 2654435761u) ^ (psDroid->timeAnimationStarted / 500u * 40503u);
