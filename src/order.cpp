@@ -2731,8 +2731,13 @@ DROID_ORDER chooseOrderLoc(DROID *psDroid, UDWORD x, UDWORD y, bool altOrder)
 		propulsion = PROPULSION_TYPE_WHEELED;
 	}
 	propulsion = modlayer::effectivePropulsion(psDroid, propulsion);   // MOD: Untergrund-Einheiten duerfen ueberall hin
+	// MOD (Wunsch 22.11. 17:03 "das auf Klippengelaende klicken - bohren - funktionierte nicht. Er sollte doch einen Tunnel durch Klippen
+	// bohren koennen und bei zu grossen in den Untergrund"): Klippen blockieren - der Fahrbefehl wurde gar nicht erst erteilt. Das
+	// Bohrfahrzeug darf jetzt jedes Feld anfahren; modlayerdig bohrt sich durch die Klippe (ab 3 Klippenfeldern am Stueck nach unten)
+	const bool modDrillAnywhere = modlayerdig::isDrill(psDroid) && worldOnMap(gameWorld.map, static_cast<int>(x), static_cast<int>(y));
 	if (!fpathBlockingTile(gameWorld.map, map_coord(x), map_coord(y), propulsion)
-	    || modlayer::isPortalTile(psDroid->player, map_coord(x), map_coord(y)))   // MOD: Schacht anklicken = hinfahren
+	    || modlayer::isPortalTile(psDroid->player, map_coord(x), map_coord(y))   // MOD: Schacht anklicken = hinfahren
+	    || modDrillAnywhere)
 	{
 		order = DORDER_MOVE;
 	}
@@ -2839,7 +2844,8 @@ void orderSelectedLoc(uint32_t player, uint32_t x, uint32_t y, bool add)
 		for (size_t i = 0; i < todo.size(); ++i)
 		{
 			const DROID *d = todo[i].first;
-			if ((todo[i].second == DORDER_MOVE || todo[i].second == DORDER_SCOUT) && !d->isVtol() && !d->isTransporter())
+			if ((todo[i].second == DORDER_MOVE || todo[i].second == DORDER_SCOUT) && !d->isVtol() && !d->isTransporter()
+			    && !modlayerdig::isDrill(d))   // MOD (22.11.): Bohrfahrzeuge behalten das angeklickte Feld (Bohrziel, auch in einer Klippe)
 			{
 				movers.push_back(i);
 			}
