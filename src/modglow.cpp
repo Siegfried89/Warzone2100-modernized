@@ -276,6 +276,15 @@ void bars(const std::vector<std::pair<glm::vec2, glm::vec2>> &list, float halfW,
 	flush(mesh);
 }
 
+void fan(const glm::vec2 &center, const std::vector<glm::vec2> &ring, Colour c, float alpha, float centerWhite)
+{
+	if (ring.size() < 3 || alpha <= 0.f) { return; }
+	Mesh mesh;
+	const RGBA edge = mix(c, 0.f, alpha), mid = mix(c, centerWhite, alpha);
+	for (size_t i = 0; i < ring.size(); ++i) { mesh.tri(center, ring[i], ring[(i + 1) % ring.size()], mid, edge, edge); }
+	flush(mesh);
+}
+
 void shutdown()
 {
 	s_pool.clear();

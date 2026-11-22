@@ -447,6 +447,47 @@ void drawBtn(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		return;
 	}
 	const bool on = (b == B_MAP && s_mode != 0) || (b == B_SYM && modtactical::enabled());
+	if (b == B_MAP || b == B_SYM)
+	{
+		// (Wunsch 22.11. 16:20 "Aus den Knoepfen Map und Symbols statt Schrift lieber Bilder machen - eine symbolische Kartendarstellung
+		// und ein taktisches Symbol")
+		modui::wzButton(x, y, w, h, "", on, hover, down, sc, nullptr);
+		const PIELIGHT ink = on || hover ? pal_RGBA(235, 245, 255, 255) : pal_RGBA(185, 200, 230, 255);
+		const int ih = h - static_cast<int>(6 * s), iw = std::min(w - static_cast<int>(8 * s), ih * 3 / 2);
+		const int ix = x + (w - iw) / 2, iy = y + (h - ih) / 2;
+		if (b == B_MAP)
+		{
+			// gefaltete Karte: drei Bahnen, gruene Landflaeche, blauer Fluss, rote Marke
+			pie_UniTransBoxFill(ix, iy, ix + iw, iy + ih, pal_RGBA(226, 214, 170, 255));
+			pie_UniTransBoxFill(ix + iw / 6, iy + ih / 5, ix + iw / 2, iy + ih * 3 / 4, pal_RGBA(120, 175, 95, 255));
+			pie_UniTransBoxFill(ix + iw * 2 / 3, iy + ih / 3, ix + iw * 5 / 6, iy + ih * 4 / 5, pal_RGBA(140, 190, 110, 255));
+			for (int t = 0; t < 2; ++t)
+			{
+				iV_Line(ix + 1, iy + ih * 4 / 5 + t, ix + iw / 3, iy + ih / 2 + t, pal_RGBA(70, 130, 210, 255));
+				iV_Line(ix + iw / 3, iy + ih / 2 + t, ix + iw - 1, iy + ih / 4 + t, pal_RGBA(70, 130, 210, 255));
+			}
+			iV_Line(ix + iw / 3, iy, ix + iw / 3, iy + ih, pal_RGBA(120, 100, 70, 200));
+			iV_Line(ix + iw * 2 / 3, iy, ix + iw * 2 / 3, iy + ih, pal_RGBA(120, 100, 70, 200));
+			pie_UniTransBoxFill(ix + iw * 3 / 5 - 2, iy + ih / 2 - 2, ix + iw * 3 / 5 + 2, iy + ih / 2 + 2, pal_RGBA(230, 50, 40, 255));
+			iV_Box(ix, iy, ix + iw, iy + ih, ink);
+		}
+		else
+		{
+			// taktisches Zeichen: blauer Rahmen (eigene Einheit) mit Ellipse (Panzer) und Kreuz (Infanterie) = Panzergrenadiere
+			pie_UniTransBoxFill(ix, iy, ix + iw, iy + ih, pal_RGBA(150, 205, 255, on ? 120 : 70));
+			iV_Box(ix, iy, ix + iw, iy + ih, ink);
+			iV_Box(ix + 1, iy + 1, ix + iw - 1, iy + ih - 1, ink);
+			iV_Line(ix + 1, iy + 1, ix + iw - 1, iy + ih - 1, ink);
+			iV_Line(ix + 1, iy + ih - 1, ix + iw - 1, iy + 1, ink);
+			const float ecx = ix + iw * 0.5f, ecy = iy + ih * 0.5f, ea = iw * 0.32f, eb = ih * 0.26f;
+			for (int k = 0; k < 20; ++k)
+			{
+				const float a0 = k * 0.3141593f, a1 = (k + 1) * 0.3141593f;
+				iV_Line(static_cast<int>(ecx + ea * std::cos(a0)), static_cast<int>(ecy + eb * std::sin(a0)), static_cast<int>(ecx + ea * std::cos(a1)), static_cast<int>(ecy + eb * std::sin(a1)), ink);
+			}
+		}
+		return;
+	}
 	static const PIELIGHT accent = pal_RGBA(110, 200, 255, 255);
 	modui::wzButton(x, y, w, h, btnLabel(b), on, hover, down, sc, b == B_CLOSE ? nullptr : &accent);
 }
@@ -471,8 +512,8 @@ void ensureScreen()
 	screen->psForm->hide();   // durchlaessige Wurzel (siehe modpaint)
 	s_btn.clear();
 	static const char *tips[B_COUNT] = {
-		"Strategic map - also opens with a click on the minimap. Home: split screen, End: back to the battlefield",
-		"Tactical symbols: at medium and far zoom the units are shown as military map symbols instead of models/sprites",
+		"Map: strategic map - also opens with a click on the minimap. Home: split screen, End: back to the battlefield",
+		"Symbols: at medium and far zoom the units are shown as military map symbols instead of models/sprites",
 		"Split screen: strategic map on the left half, battlefield on the right half (Home)",
 		"Single view: strategic map over the whole screen",
 		"Close the strategic map - back to the battlefield (End)",
@@ -525,8 +566,10 @@ void layout()
 		rx = radar->x() + std::max(0, (radar->width() - (2 * bw + gap)) / 2);
 		ry = radar->y() - bh - gap - m;
 	}
-	s_btn[B_MAP]->setGeometry(rx, ry, bw, bh);
-	s_btn[B_SYM]->setGeometry(rx + bw + gap, ry, bw, bh);
+	// (22.11.) Bildknoepfe: etwas hoeher und schmaler als die Textknoepfe, rechtsbuendig in derselben Zeile
+	const int iw = static_cast<int>(34 * s), ih = static_cast<int>(22 * s);
+	s_btn[B_MAP]->setGeometry(rx + 2 * bw + gap - 2 * iw - gap, ry - (ih - bh), iw, ih);
+	s_btn[B_SYM]->setGeometry(rx + 2 * bw + gap - iw, ry - (ih - bh), iw, ih);
 	// Titelleiste der Karte: links die Anzeigearten und "Resource Icons", rechts Teilung (Haelfte / ganz) und "Close"
 	const Rect p = panel();
 	const int by = static_cast<int>(p.y0 + (barH() - static_cast<float>(bh)) * 0.5f);

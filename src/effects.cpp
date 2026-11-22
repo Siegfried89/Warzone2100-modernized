@@ -976,7 +976,7 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 	// MOD: liegende Messinghuelse - bleibt eine Weile am Boden, dann weg
 	if (psEffect->type == GRAVITON_TYPE_CASING && psEffect->specific >= 100)
 	{
-		return graphicsTime < psEffect->birthTime + 30000;
+		return graphicsTime < psEffect->birthTime + 180000;   // (Wunsch 22.11. 16:15) ein paar Minuten liegen lassen (vorher 30 s)
 	}
 
 	if (psEffect->type != GRAVITON_TYPE_GIBLET && psEffect->type != GRAVITON_TYPE_CASING && psEffect->type != GRAVITON_TYPE_DIRT)
@@ -2742,7 +2742,7 @@ bool readFXData(const char *fileName, WorldMapState& mapState)
 
 
 // MOD (Wunsch 16.11. 20:50): Artillerie wirft beim Schuss goldene Messinghuelsen aus (wie auf dem Ladebild) - sie springen seitlich
-// heraus, huepfen ein paar Mal und bleiben ~30 s liegen. Nur Anzeige (keine Spielzustaende, Zufall ausserhalb der Spiellogik).
+// heraus, huepfen ein paar Mal und bleiben ein paar Minuten liegen (22.11.: dicht neben dem Fahrzeug, 3 Minuten). Nur Anzeige (keine Spielzustaende, Zufall ausserhalb der Spiellogik).
 void modEjectCasings(const Vector3i &worldPos, uint16_t weaponDir, int count)
 {
 	static iIMDBaseShape *casing = nullptr;
@@ -2754,7 +2754,7 @@ void modEjectCasings(const Vector3i &worldPos, uint16_t weaponDir, int count)
 	{
 		if (e.group == EFFECT_GRAVITON && e.type == GRAVITON_TYPE_CASING) { ++alive; }
 	}
-	if (alive > 400) { return; }   // nicht unbegrenzt viele liegen lassen
+	if (alive > 700) { return; }   // nicht unbegrenzt viele liegen lassen (22.11.: mehr, weil sie jetzt Minuten liegen)
 	const float a = static_cast<float>(weaponDir) * (2.f * 3.14159265f / 65536.f);
 	const float fx = std::sin(a), fz = std::cos(a);       // Schussrichtung (Welt x/y)
 	for (int i = 0; i < std::clamp(count, 1, 4); ++i)
@@ -2763,9 +2763,10 @@ void modEjectCasings(const Vector3i &worldPos, uint16_t weaponDir, int count)
 		const float side = (rand() % 2 == 0) ? 1.f : -1.f;
 		const float back = 0.5f + static_cast<float>(rand() % 50) / 100.f;
 		const float sx = fz * side, sz = -fx * side;
-		Vector3i p(worldPos.x + static_cast<int>(-fx * 18.f), worldPos.z + 26, worldPos.y + static_cast<int>(-fz * 18.f));
-		const float speed = static_cast<float>(160 + rand() % 120);
-		Vector3f vel((sx - fx * back) * speed, static_cast<float>(260 + rand() % 160), (sz - fz * back) * speed);
+		Vector3i p(worldPos.x + static_cast<int>(-fx * 9.f), worldPos.z + 16, worldPos.y + static_cast<int>(-fz * 9.f));
+		// (Wunsch 22.11. 16:15 "viel naeher beim Panzer ausgeworfen werden"): sanfter Auswurf, landet gleich neben dem Fahrzeug
+		const float speed = static_cast<float>(38 + rand() % 34);
+		Vector3f vel((sx - fx * back) * speed, static_cast<float>(140 + rand() % 60), (sz - fz * back) * speed);
 		addEffect(&p, EFFECT_GRAVITON, GRAVITON_TYPE_CASING, true, casing->displayModel(), 0, graphicsTime, nullptr, &vel);
 	}
 }
