@@ -5986,13 +5986,13 @@ static bool loadSaveDroid(const char *pFileName, GameWorld& world, PerPlayerDroi
 			}
 			templ.numWeaps = static_cast<int8_t>(clip(savedNumWeaps, 0, MAX_WEAPONS));
 			ini.beginGroup("parts");	// the following is copy-pasted from loadSaveTemplate() -- fixme somehow
-			templ.asParts[COMP_BODY] = getCompFromName_NullCompOnFail<uint8_t>(COMP_BODY, ini.value("body", "ZNULLBODY").toWzString());
-			templ.asParts[COMP_BRAIN] = getCompFromName_NullCompOnFail<uint8_t>(COMP_BRAIN, ini.value("brain", "ZNULLBRAIN").toWzString());
-			templ.asParts[COMP_PROPULSION] = getCompFromName_NullCompOnFail<uint8_t>(COMP_PROPULSION, ini.value("propulsion", "ZNULLPROP").toWzString());
-			templ.asParts[COMP_REPAIRUNIT] = getCompFromName_NullCompOnFail<uint8_t>(COMP_REPAIRUNIT, ini.value("repair", "ZNULLREPAIR").toWzString());
-			templ.asParts[COMP_ECM] = getCompFromName_NullCompOnFail<uint8_t>(COMP_ECM, ini.value("ecm", "ZNULLECM").toWzString());
-			templ.asParts[COMP_SENSOR] = getCompFromName_NullCompOnFail<uint8_t>(COMP_SENSOR, ini.value("sensor", "ZNULLSENSOR").toWzString());
-			templ.asParts[COMP_CONSTRUCT] = getCompFromName_NullCompOnFail<uint8_t>(COMP_CONSTRUCT, ini.value("construct", "ZNULLCONSTRUCT").toWzString());
+			templ.asParts[COMP_BODY] = getCompFromName_NullCompOnFail<uint16_t>(COMP_BODY, ini.value("body", "ZNULLBODY").toWzString());
+			templ.asParts[COMP_BRAIN] = getCompFromName_NullCompOnFail<uint16_t>(COMP_BRAIN, ini.value("brain", "ZNULLBRAIN").toWzString());
+			templ.asParts[COMP_PROPULSION] = getCompFromName_NullCompOnFail<uint16_t>(COMP_PROPULSION, ini.value("propulsion", "ZNULLPROP").toWzString());
+			templ.asParts[COMP_REPAIRUNIT] = getCompFromName_NullCompOnFail<uint16_t>(COMP_REPAIRUNIT, ini.value("repair", "ZNULLREPAIR").toWzString());
+			templ.asParts[COMP_ECM] = getCompFromName_NullCompOnFail<uint16_t>(COMP_ECM, ini.value("ecm", "ZNULLECM").toWzString());
+			templ.asParts[COMP_SENSOR] = getCompFromName_NullCompOnFail<uint16_t>(COMP_SENSOR, ini.value("sensor", "ZNULLSENSOR").toWzString());
+			templ.asParts[COMP_CONSTRUCT] = getCompFromName_NullCompOnFail<uint16_t>(COMP_CONSTRUCT, ini.value("construct", "ZNULLCONSTRUCT").toWzString());
 			for (int w = 0; w < MAX_WEAPONS; ++w)   // MOD (18.11.): alle Waffenplaetze (Fatboy 8), vorher nur 3
 			{
 				templ.asWeaps[w] = getCompFromName_NullCompOnFail<uint32_t>(COMP_WEAPON, ini.value("weapon/" + WzString::number(w + 1), "ZNULLWEAPON").toWzString());

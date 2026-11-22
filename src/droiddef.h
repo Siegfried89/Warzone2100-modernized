@@ -74,7 +74,7 @@ struct DROID_TEMPLATE : public BASE_STATS
 	 *
 	 * Weapons are stored in asWeaps, _not_ here at index COMP_WEAPON! (Which is the reason we do not have a COMP_NUMCOMPONENTS sized array here.)
 	 */
-	uint8_t         asParts[DROID_MAXCOMP];
+	uint16_t        asParts[DROID_MAXCOMP];   // MOD (22.11. 20:26 "Body-Limit auf 500"): 16 Bit statt 8 - bis 65535 Bauteile je Art
 	/* The weapon systems */
 	int8_t          numWeaps;                   ///< Number of weapons
 	uint32_t        asWeaps[MAX_WEAPONS];       ///< weapon indices
@@ -145,7 +145,7 @@ struct DROID : public BASE_OBJECT
 	 *  per part to be calculated. Indexed by COMPONENT_TYPE.
 	 *  Weapons need to be dealt with separately.
 	 */
-	uint8_t         asBits[DROID_MAXCOMP];
+	uint16_t        asBits[DROID_MAXCOMP];    // MOD (22.11.): 16 Bit wie DROID_TEMPLATE::asParts
 	/* The other droid data.  These are all derived from the components
 	 * but stored here for easy access
 	 */

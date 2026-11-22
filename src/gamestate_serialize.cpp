@@ -2635,7 +2635,7 @@ static void readDroidPass1(GameWorld &world, const nlohmann::ordered_json &j, st
 	const nlohmann::ordered_json &parts = j.at("parts");
 	const auto part = [&parts](COMPONENT_TYPE compType, const char *key, const char *nullName)
 	{
-		return compIndexFromId<uint8_t>(compType, WzString::fromUtf8(parts.value(key, nullName)));
+		return compIndexFromId<uint16_t>(compType, WzString::fromUtf8(parts.value(key, nullName)));
 	};
 	templ.asParts[COMP_BODY] = part(COMP_BODY, "body", "ZNULLBODY");
 	templ.asParts[COMP_BRAIN] = part(COMP_BRAIN, "brain", "ZNULLBRAIN");

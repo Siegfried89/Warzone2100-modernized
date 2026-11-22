@@ -312,13 +312,13 @@ void sendStructureInfo(const STRUCTURE *psStruct, STRUCTURE_INFO structureInfo_,
 		NETwzstring(w, pT->name);
 		NETuint32_t(w, pT->multiPlayerID);
 		NETint32_t(w, droidType);
-		NETuint8_t(w, pT->asParts[COMP_BODY]);
-		NETuint8_t(w, pT->asParts[COMP_BRAIN]);
-		NETuint8_t(w, pT->asParts[COMP_PROPULSION]);
-		NETuint8_t(w, pT->asParts[COMP_REPAIRUNIT]);
-		NETuint8_t(w, pT->asParts[COMP_ECM]);
-		NETuint8_t(w, pT->asParts[COMP_SENSOR]);
-		NETuint8_t(w, pT->asParts[COMP_CONSTRUCT]);
+		NETuint16_t(w, pT->asParts[COMP_BODY]);
+		NETuint16_t(w, pT->asParts[COMP_BRAIN]);
+		NETuint16_t(w, pT->asParts[COMP_PROPULSION]);
+		NETuint16_t(w, pT->asParts[COMP_REPAIRUNIT]);
+		NETuint16_t(w, pT->asParts[COMP_ECM]);
+		NETuint16_t(w, pT->asParts[COMP_SENSOR]);
+		NETuint16_t(w, pT->asParts[COMP_CONSTRUCT]);
 		NETint8_t(w, pT->numWeaps);
 		for (int i = 0; i < pT->numWeaps; i++)
 		{
@@ -380,13 +380,13 @@ void recvStructureInfo(NETQUEUE queue)
 		pT->name = name;
 		NETuint32_t(r, pT->multiPlayerID);
 		NETint32_t(r, droidType);
-		NETuint8_t(r, pT->asParts[COMP_BODY]);
-		NETuint8_t(r, pT->asParts[COMP_BRAIN]);
-		NETuint8_t(r, pT->asParts[COMP_PROPULSION]);
-		NETuint8_t(r, pT->asParts[COMP_REPAIRUNIT]);
-		NETuint8_t(r, pT->asParts[COMP_ECM]);
-		NETuint8_t(r, pT->asParts[COMP_SENSOR]);
-		NETuint8_t(r, pT->asParts[COMP_CONSTRUCT]);
+		NETuint16_t(r, pT->asParts[COMP_BODY]);
+		NETuint16_t(r, pT->asParts[COMP_BRAIN]);
+		NETuint16_t(r, pT->asParts[COMP_PROPULSION]);
+		NETuint16_t(r, pT->asParts[COMP_REPAIRUNIT]);
+		NETuint16_t(r, pT->asParts[COMP_ECM]);
+		NETuint16_t(r, pT->asParts[COMP_SENSOR]);
+		NETuint16_t(r, pT->asParts[COMP_CONSTRUCT]);
 		NETint8_t(r, pT->numWeaps);
 		if (pT->numWeaps < 0 || pT->numWeaps > ARRAY_SIZE(pT->asWeaps))
 		{

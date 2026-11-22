@@ -141,13 +141,13 @@ bool droidTemplate_LoadPartByName(COMPONENT_TYPE compType, const WzString &name,
 		debug(LOG_ERROR, "Stored template contains an unknown (type: %d) component: %s.", compType, name.toUtf8().c_str());
 		return false;
 	}
-	if (index > UINT8_MAX)
+	if (index > UINT16_MAX)
 	{
-		// returned index exceeds uint8_t max - consider changing type of asParts in DROID_TEMPLATE?
-		debug(LOG_ERROR, "Stored template contains a (type: %d) component (%s) index that exceeds UINT8_MAX: %d", compType, name.toUtf8().c_str(), index);
+		// MOD (22.11.): asParts ist 16 Bit
+		debug(LOG_ERROR, "Stored template contains a (type: %d) component (%s) index that exceeds UINT16_MAX: %d", compType, name.toUtf8().c_str(), index);
 		return false;
 	}
-	outputTemplate.asParts[compType] = static_cast<uint8_t>(index);
+	outputTemplate.asParts[compType] = static_cast<uint16_t>(index);
 	return true;
 }
 
@@ -707,7 +707,7 @@ DROID_TEMPLATE::DROID_TEMPLATE()  // This constructor replaces a memset in scrAs
 	, enabled(false)
 	, hidden(false)
 {
-	std::fill_n(asParts, DROID_MAXCOMP, static_cast<uint8_t>(0));
+	std::fill_n(asParts, DROID_MAXCOMP, static_cast<uint16_t>(0));
 	std::fill_n(asWeaps, MAX_WEAPONS, 0);
 }
 

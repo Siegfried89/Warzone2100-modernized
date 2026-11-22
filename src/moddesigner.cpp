@@ -552,8 +552,8 @@ bool makeTemplate(DROID_TEMPLATE &tpl, std::string &err)
 	const COMPONENT_STATS *prop = getCompStatsFromName(WzString::fromUtf8("MFL_" + g->id));
 	if (body == nullptr || prop == nullptr) { err = "Torso or legs are not available in this game."; return false; }
 	tpl = DROID_TEMPLATE();
-	tpl.asParts[COMP_BODY] = static_cast<uint8_t>(body->index);
-	tpl.asParts[COMP_PROPULSION] = static_cast<uint8_t>(prop->index);
+	tpl.asParts[COMP_BODY] = static_cast<uint16_t>(body->index);
+	tpl.asParts[COMP_PROPULSION] = static_cast<uint16_t>(prop->index);
 	tpl.numWeaps = 0;
 	for (const Part *a : arms)
 	{
