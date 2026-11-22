@@ -1430,6 +1430,24 @@ LoadingTask<> imdLoadLevelTexturesTask(
 LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 {
 	gfx_api::modTexLoadStatsReset();   // MOD (20.11.): Ladezeit je Texturart messen (Bericht unten)
+	{
+		// MOD (22.11.): alle gleich benoetigten Texturseiten in Ladereihenfolge sammeln - Hilfsfaeden entpacken die PNGs im Voraus
+		std::vector<std::pair<std::string, gfx_api::texture_type>> pages;
+		for (auto& keyvaluepair : models)
+		{
+			for (iIMDShape *pShape = keyvaluepair.second->mutableDisplayModel(); pShape != nullptr; pShape = pShape->next.get())
+			{
+				ImdResolvedLevelTextureFiles r;
+				if (pShape->m_textures->initialized || !imdResolveLevelTextureFiles(*pShape, currentTilesetIdx, r)) { continue; }
+				pages.emplace_back(r.diffuseFile, gfx_api::texture_type::game_texture);
+				if (r.tcmaskFile.has_value()) { pages.emplace_back(*r.tcmaskFile, gfx_api::texture_type::alpha_mask); }
+				if (r.normalFile.has_value()) { pages.emplace_back(*r.normalFile, gfx_api::texture_type::normal_map); }
+				if (r.specularFile.has_value()) { pages.emplace_back(*r.specularFile, gfx_api::texture_type::specular_map); }
+			}
+		}
+		iV_PrefetchTexturePages(pages);
+	}
+	struct ModPrefetchGuard { ~ModPrefetchGuard() { iV_PrefetchTexturePagesEnd(); } } modPrefetchGuard;   // auch bei Abbruch
 	for (auto& keyvaluepair : models)
 	{
 		iIMDBaseShape& baseModel = *keyvaluepair.second.get();
@@ -1451,6 +1469,7 @@ LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 		co_await controller.yieldFrame();
 	}
 
+	iV_PrefetchTexturePagesEnd();
 	{
 		// MOD (20.11.): Bericht "wo bleibt die Zeit" - je Texturart Anzahl, Megapixel und ms fuer Dekodieren / Vorbereiten / Hochladen /
 		// Mipmaps rechnen / Mipmaps hochladen (nur neu geladene Texturen; schon geladene kosten nichts)

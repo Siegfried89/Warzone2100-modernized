@@ -55,6 +55,10 @@ optional<size_t> iV_GetTexture(const char *filename, gfx_api::texture_type textu
 class ResourceLoadingController;
 
 LoadingTask<optional<size_t>> iV_GetTextureTask(ResourceLoadingController& controller, const char *filename, gfx_api::texture_type textureType, int maxWidth = -1, int maxHeight = -1);
+/// MOD (22.11.): diese Texturseiten werden gleich in dieser Reihenfolge geladen - schon geladene werden uebersprungen, die PNGs der
+/// uebrigen entpacken Hilfsfaeden im Voraus (gfx_api::modPngPrefetchBegin). Ende mit iV_PrefetchTexturePagesEnd().
+void iV_PrefetchTexturePages(const std::vector<std::pair<std::string, gfx_api::texture_type>> &pages);
+void iV_PrefetchTexturePagesEnd();
 void iV_unloadImage(iV_Image *image);
 gfx_api::pixel_format iV_getPixelFormat(const iV_Image *image);
 

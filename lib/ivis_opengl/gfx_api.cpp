@@ -31,6 +31,10 @@
 #include <unordered_map>
 #include <chrono>
 #include <algorithm>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include "lib/framework/wzparallel.h"
 
 static gfx_api::backend_type backend = gfx_api::backend_type::opengl_backend;
 bool uses_gfx_debug = false;
@@ -286,6 +290,98 @@ static inline uint64_t modUsSince(std::chrono::steady_clock::time_point t0)
 	return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t0).count());
 }
 
+// MOD (22.11.): paralleles Entpacken mit begrenztem Vorlauf (siehe gfx_api.h)
+namespace
+{
+struct ModPngSlot
+{
+	std::string file;
+	bool forceRGB = false;
+	bool done = false, ok = false, taken = false;
+	iV_Image img;
+};
+std::vector<ModPngSlot> s_pngSlots;
+std::unordered_map<std::string, size_t> s_pngIndex;
+std::mutex s_pngMx;
+std::condition_variable s_pngCv;
+size_t s_pngNext = 0, s_pngFront = 0, s_pngAhead = 8;
+bool s_pngStop = false;
+std::vector<std::thread> s_pngThreads;
+
+void modPngWorker()
+{
+	for (;;)
+	{
+		size_t i;
+		{
+			std::unique_lock<std::mutex> lk(s_pngMx);
+			s_pngCv.wait(lk, [] { return s_pngStop || s_pngNext >= s_pngSlots.size() || s_pngNext < s_pngFront + s_pngAhead; });
+			if (s_pngStop || s_pngNext >= s_pngSlots.size()) { return; }
+			i = s_pngNext++;
+		}
+		iV_Image img;
+		const bool ok = iV_loadImage_PNG2(s_pngSlots[i].file.c_str(), img, s_pngSlots[i].forceRGB, true);
+		{
+			std::lock_guard<std::mutex> lk(s_pngMx);
+			if (ok) { s_pngSlots[i].img = std::move(img); }
+			s_pngSlots[i].ok = ok;
+			s_pngSlots[i].done = true;
+		}
+		s_pngCv.notify_all();
+	}
+}
+
+/// liegt die Datei im Vorlauf? Dann auf sie warten und das Bild uebernehmen (true); false = selbst laden
+bool modPngTake(const std::string &file, bool forceRGB, iV_Image &out)
+{
+	if (s_pngThreads.empty()) { return false; }
+	std::unique_lock<std::mutex> lk(s_pngMx);
+	const auto it = s_pngIndex.find(file);
+	if (it == s_pngIndex.end()) { return false; }
+	ModPngSlot &slot = s_pngSlots[it->second];
+	if (slot.taken || slot.forceRGB != forceRGB) { return false; }
+	slot.taken = true;
+	s_pngFront = std::max(s_pngFront, it->second + 1);
+	s_pngCv.notify_all();
+	s_pngCv.wait(lk, [&slot] { return slot.done; });
+	if (!slot.ok) { return false; }   // Fehler: der normale Weg laedt noch einmal und meldet ihn
+	out = std::move(slot.img);
+	return true;
+}
+}
+
+void gfx_api::modPngPrefetchBegin(std::vector<std::pair<std::string, bool>> files)
+{
+	modPngPrefetchEnd();
+	if (files.size() < 4) { return; }
+	s_pngSlots.resize(files.size());
+	for (size_t i = 0; i < files.size(); ++i)
+	{
+		s_pngSlots[i].file = std::move(files[i].first);
+		s_pngSlots[i].forceRGB = files[i].second;
+		s_pngIndex.emplace(s_pngSlots[i].file, i);
+	}
+	const unsigned workers = std::max(1u, wzparallel::workerCount() - 1);   // der Hauptfaden laedt hoch
+	s_pngAhead = 2 * workers + 2;
+	s_pngNext = 0; s_pngFront = 0; s_pngStop = false;
+	for (unsigned t = 0; t < workers; ++t) { s_pngThreads.emplace_back(modPngWorker); }
+}
+
+void gfx_api::modPngPrefetchEnd()
+{
+	{
+		std::lock_guard<std::mutex> lk(s_pngMx);
+		s_pngStop = true;
+	}
+	s_pngCv.notify_all();
+	for (auto &th : s_pngThreads) { th.join(); }
+	s_pngThreads.clear();
+	s_pngSlots.clear();
+	s_pngSlots.shrink_to_fit();
+	s_pngIndex.clear();
+	s_pngStop = false;
+}
+
 static gfx_api::texture* loadImageTextureFromFile_PNG(const std::string& filename, gfx_api::texture_type textureType, int maxWidth /*= -1*/, int maxHeight /*= -1*/, bool quiet)
 {
 	iV_Image loadedUncompressedImage;
@@ -293,7 +389,7 @@ static gfx_api::texture* loadImageTextureFromFile_PNG(const std::string& filenam
 	// 1.) Load the PNG into an iV_Image
 	bool forceRGB = (textureType == gfx_api::texture_type::game_texture) || (textureType == gfx_api::texture_type::user_interface);
 	const auto modT0 = std::chrono::steady_clock::now();   // MOD (20.11.): Ladezeit-Messung
-	if (!iV_loadImage_PNG2(filename.c_str(), loadedUncompressedImage, forceRGB, quiet))
+	if (!modPngTake(filename, forceRGB, loadedUncompressedImage) && !iV_loadImage_PNG2(filename.c_str(), loadedUncompressedImage, forceRGB, quiet))   // MOD (22.11.): aus dem Vorlauf
 	{
 		// Failed to load the image
 		return nullptr;
