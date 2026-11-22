@@ -250,13 +250,13 @@ bool SendDroid(const DROID_TEMPLATE *pTemplate, uint32_t x, uint32_t y, uint8_t 
 		NETPosition(w, pos);
 		NETwzstring(w, pTemplate->name);
 		NETint32_t(w, droidType);
-		NETuint8_t(w, pTemplate->asParts[COMP_BODY]);
-		NETuint8_t(w, pTemplate->asParts[COMP_BRAIN]);
-		NETuint8_t(w, pTemplate->asParts[COMP_PROPULSION]);
-		NETuint8_t(w, pTemplate->asParts[COMP_REPAIRUNIT]);
-		NETuint8_t(w, pTemplate->asParts[COMP_ECM]);
-		NETuint8_t(w, pTemplate->asParts[COMP_SENSOR]);
-		NETuint8_t(w, pTemplate->asParts[COMP_CONSTRUCT]);
+		NETuint16_t(w, pTemplate->asParts[COMP_BODY]);
+		NETuint16_t(w, pTemplate->asParts[COMP_BRAIN]);
+		NETuint16_t(w, pTemplate->asParts[COMP_PROPULSION]);
+		NETuint16_t(w, pTemplate->asParts[COMP_REPAIRUNIT]);
+		NETuint16_t(w, pTemplate->asParts[COMP_ECM]);
+		NETuint16_t(w, pTemplate->asParts[COMP_SENSOR]);
+		NETuint16_t(w, pTemplate->asParts[COMP_CONSTRUCT]);
 		NETint8_t(w, pTemplate->numWeaps);
 		for (int i = 0; i < pTemplate->numWeaps; i++)
 		{
@@ -301,13 +301,13 @@ bool recvDroid(NETQUEUE queue)
 		pT->name = name;
 		pT->id = pT->name;
 		NETint32_t(r, droidType);
-		NETuint8_t(r, pT->asParts[COMP_BODY]);
-		NETuint8_t(r, pT->asParts[COMP_BRAIN]);
-		NETuint8_t(r, pT->asParts[COMP_PROPULSION]);
-		NETuint8_t(r, pT->asParts[COMP_REPAIRUNIT]);
-		NETuint8_t(r, pT->asParts[COMP_ECM]);
-		NETuint8_t(r, pT->asParts[COMP_SENSOR]);
-		NETuint8_t(r, pT->asParts[COMP_CONSTRUCT]);
+		NETuint16_t(r, pT->asParts[COMP_BODY]);
+		NETuint16_t(r, pT->asParts[COMP_BRAIN]);
+		NETuint16_t(r, pT->asParts[COMP_PROPULSION]);
+		NETuint16_t(r, pT->asParts[COMP_REPAIRUNIT]);
+		NETuint16_t(r, pT->asParts[COMP_ECM]);
+		NETuint16_t(r, pT->asParts[COMP_SENSOR]);
+		NETuint16_t(r, pT->asParts[COMP_CONSTRUCT]);
 		NETint8_t(r, pT->numWeaps);
 		validTemplate = pT->numWeaps >= 0 && pT->numWeaps <= ARRAY_SIZE(pT->asWeaps) && droidType >= 0 && droidType < DROID_ANY;
 		if (validTemplate)

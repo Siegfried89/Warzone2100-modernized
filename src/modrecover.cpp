@@ -172,7 +172,7 @@ bool restoreWreck(const Tow &t, const DROID *truck)
 	if (fac == nullptr) { return false; }
 	DROID_TEMPLATE templ;
 	templ.name = WzString::fromUtf8("Salvaged vehicle");
-	for (int c = 0; c < DROID_MAXCOMP; ++c) { templ.asParts[c] = static_cast<uint8_t>(t.info.parts[c]); }
+	for (int c = 0; c < DROID_MAXCOMP; ++c) { templ.asParts[c] = static_cast<uint16_t>(t.info.parts[c]); }
 	templ.numWeaps = static_cast<int8_t>(std::min<unsigned>(t.info.numWeaps, MAX_WEAPONS));
 	for (int i = 0; i < templ.numWeaps; ++i) { templ.asWeaps[i] = t.info.weaps[i]; }
 	templ.droidType = static_cast<DROID_TYPE>(t.info.droidType);

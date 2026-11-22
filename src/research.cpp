@@ -2077,7 +2077,7 @@ static void switchComponent(DROID *psDroid, UDWORD oldType, UDWORD oldCompInc,
 	case COMP_CONSTRUCT:
 		if (psDroid->asBits[oldType] == oldCompInc)
 		{
-			psDroid->asBits[oldType] = (UBYTE)newCompInc;
+			psDroid->asBits[oldType] = static_cast<uint16_t>(newCompInc);
 		}
 		break;
 	case COMP_WEAPON:

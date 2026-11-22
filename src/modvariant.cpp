@@ -32,7 +32,7 @@ static void applyBody(DROID *psDroid, size_t bodyIndex, bool rename)
 {
 	const BODY_STATS *oldStats = psDroid->getBodyStats();
 	const bool nameWasModelName = (oldStats != nullptr) && (std::string(psDroid->aName) == getStatsName(oldStats) || std::string(psDroid->aName).empty());
-	psDroid->asBits[COMP_BODY] = static_cast<uint8_t>(bodyIndex);
+	psDroid->asBits[COMP_BODY] = static_cast<uint16_t>(bodyIndex);
 	if (rename || nameWasModelName)
 	{
 		droidSetName(psDroid, getStatsName(&asBodyStats[bodyIndex]));

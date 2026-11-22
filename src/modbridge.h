@@ -6,7 +6,8 @@
 //  - Fertige Brueckenfelder ueber Wasser sind fuer Bodeneinheiten befahrbar (Sperrbit WATER_BLOCKED faellt weg, Kontinente neu); Schiffe
 //    fahren weiter darunter durch.
 //  - Fahrbahn auf Hoehe des umgebenden Landes (Wasseroberflaeche + 1/3 Feld); Einheiten und Zuege fahren darauf.
-//  - Eigene Darstellung: Fahrbahnplatte, Pfeiler bis zum Grund, Gelaender an den Seiten, an denen Wasser ohne Bruecke liegt.
+//  - Darstellung (22.11. 20:26) mit den Vanilla-Modellen: Brueckenmitte mit Pfeiler (mibridge) ueber Wasser, Brueckenende (mibridg1) am Ufer;
+//    eine zerstoerte Bruecke hinterlaesst das Vanilla-Wrack (Merkmal A0BridgeWreck, mibrdfuk).
 // Spielzustand nur aus Spielzustand (fertige Bauwerke, feste Reihenfolge) - auf allen Rechnern gleich.
 #pragma once
 
@@ -17,6 +18,7 @@
 
 struct STRUCTURE;
 struct STRUCTURE_STATS;
+struct GameWorld;
 
 namespace modbridge
 {
@@ -31,6 +33,8 @@ int structureDeckHeight(const STRUCTURE *s);
 /// Sperrbits und Kontinente nachfuehren (jeden Spielschritt; billig, solange sich nichts aendert)
 void tick();
 void reset();
-/// Bruecke zeichnen (Platte, Pfeiler, Gelaender); true = fertig, Bauwerksmodell nicht zeichnen
+/// Bruecke zeichnen (Vanilla-Mitte/-Ende); true = fertig, Bauwerksmodell nicht zeichnen
 bool drawBridge(const STRUCTURE *s, PIELIGHT brightness, const glm::mat4 &viewMatrix);
+/// structure.cpp destroyStruct (nach removeStruct): zerstoerte Bruecke hinterlaesst Wracks
+void onDestroyed(const STRUCTURE *s, GameWorld &world);
 }

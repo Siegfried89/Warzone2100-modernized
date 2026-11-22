@@ -5409,6 +5409,7 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 	tileSetFire(world.map, psDel->pos.x, psDel->pos.y, burnDuration);
 
 	const bool resourceFound = removeStruct(psDel, true, world);
+	modbridge::onDestroyed(psDel, world);   // MOD (22.11.): Brueckenwrack
 	psDel->died = impactTime;
 
 	// Leave burn marks in the ground where building once stood

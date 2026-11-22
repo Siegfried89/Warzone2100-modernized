@@ -1719,7 +1719,7 @@ DROID_TYPE droidTemplateType(const DROID_TEMPLATE *psTemplate)
 }
 
 template <typename F, typename G>
-static unsigned calcSum(const uint8_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], F func, G propulsionFunc)
+static unsigned calcSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], F func, G propulsionFunc)
 {
 	unsigned sum =
 		func(asBrainStats    [asParts[COMP_BRAIN]]) +
@@ -1739,7 +1739,7 @@ static unsigned calcSum(const uint8_t (&asParts)[DROID_MAXCOMP], int numWeaps, c
 	ASSERT_OR_RETURN(retVal, player >= 0 && player < MAX_PLAYERS, "Invalid player: %" PRIu32 "", player);
 
 template <typename F, typename G>
-static unsigned calcUpgradeSum(const uint8_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], int player, F func, G propulsionFunc)
+static unsigned calcUpgradeSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], int player, F func, G propulsionFunc)
 {
 	ASSERT_PLAYER_OR_RETURN(0, player);
 	unsigned sum =
