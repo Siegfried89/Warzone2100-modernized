@@ -2347,7 +2347,8 @@ void fixRefs()
 		if (u.stage != 0 && elem(u.stage) == nullptr) { u.stage = 0; }
 		if (u.target != 0 && elem(u.target) == nullptr) { u.target = 0; u.slot = -1; }
 		if (u.phase == U_ATTACK) { ++it; continue; }
-		DROID *d = findDroid(it->first);
+		bool aboard = false;
+		DROID *d = findDroid(it->first, &aboard);
 		if (d == nullptr) { it = s_units.erase(it); continue; }
 		if ((u.phase == U_TO_STAGE || u.phase == U_AT_STAGE || u.phase == U_FERRY) && u.stage == 0)
 		{
@@ -2371,7 +2372,8 @@ void fixRefs()
 		if (u.phase == U_FERRY)
 		{
 			const Elem *s = elem(u.stage);
-			if (s == nullptr || !s->beacon) { u.phase = U_AT_STAGE; u.since = gameTime; }
+			if (u.target == 0) { u.target = pickTarget(); u.slot = -1; }   // Ziel weg: neues Ziel (auch fuer Einheiten im Transporter)
+			if ((s == nullptr || !s->beacon || u.target == 0) && !aboard) { u.phase = U_AT_STAGE; u.since = gameTime; }
 		}
 		++it;
 	}
@@ -2573,7 +2575,7 @@ void unitStep()
 			if (aboard || modtunnel::inTransit(d)) { break; }
 			const Elem *s = elem(u.stage);
 			const Elem *t = elem(u.target);
-			if (t == nullptr) { break; }
+			if (t == nullptr) { u.target = pickTarget(); u.slot = -1; break; }
 			if (dist2(d->pos.xy(), dropPoint(*t)) <= static_cast<int64_t>(8 * DIST_TILE) * (8 * DIST_TILE))
 			{
 				// abgesetzt: zum Platz am Ziel
@@ -2664,7 +2666,15 @@ void ferryStep()
 		{
 		case T_IDLE:
 		{
-			if (!transporterIsEmpty(t)) { if (tg != nullptr) { sendT(DroidOrder(DORDER_DISEMBARK, dropPoint(*tg))); r.phase = T_OUTBOUND; } break; }
+			if (!transporterIsEmpty(t))
+			{
+				// noch beladen (z. B. Ziel entfernt): zum Ziel der Fracht, sonst an Ort und Stelle absetzen
+				if (tg == nullptr) { r.target = pickTarget(); tg = elem(r.target); }
+				sendT(DroidOrder(DORDER_DISEMBARK, tg != nullptr ? dropPoint(*tg) : t->pos.xy()));
+				r.phase = T_OUTBOUND;
+				r.since = gameTime;
+				break;
+			}
 			const Demand *pick = nullptr;
 			for (const Demand &dm : demand) { if (!served.count(dm.stage * 65536u + dm.target)) { pick = &dm; break; } }
 			if (pick == nullptr && !demand.empty()) { pick = &demand.front(); }   // mehrere Transporter fuer die wichtigste Nachfrage
@@ -3061,7 +3071,7 @@ void drawVectors(const glm::mat4 &m, int alpha, bool hits)
 			continue;
 		}
 		// gemeinsamer Stamm: Mittel der Wege, solange sie nah beieinander bleiben (hoechstens 70 % des kuerzesten Weges)
-		double minL = INT64_MAX;
+		double minL = 1e30;
 		for (const Elem *v : mem) { minL = std::min(minL, pathLen(v->pts)); }
 		std::vector<Vector2i> trunk;
 		double split = 0.0;
