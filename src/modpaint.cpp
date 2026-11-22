@@ -22,6 +22,7 @@
 #include "map.h"
 #include "modarty.h"
 #include "modbuild.h"
+#include "modterrain.h"
 #include "modcombot.h"
 #include "moddesigner.h"
 #include "modlayer.h"
@@ -70,6 +71,7 @@ enum Mode
 {
 	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_DEFNET, M_RAIL,
 	M_STAGING, M_FERRY, M_BRIDGEHEAD, M_GO, M_CLEARPLAN, M_TUNNEL,   // (22.11.) Angriffsplaner + Tunnel; M_GO/M_CLEARPLAN = Sofort-Befehle
+	M_RESTORE,   // (22.11. 21:19) Krater zuschuetten
 	M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
@@ -118,6 +120,9 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Attack!", "Attack!: every bridgehead and assault line attacks now with the units that have arrived - the next wave keeps gathering", "", 255, 70, 55, false },
 	{ "Clear Plan", "Clear Plan: click twice - removes all staging zones, beacons, bridgeheads, assault lines and vectors of the attack plan (units keep their last orders)", "", 160, 165, 175, false },
 	{ "Dig Tunnel", "Dig Tunnel: drag a line from the entrance to the exit - a drill rig (selected, or the nearest one) digs a tunnel underground; send units onto a tunnel mouth (right click) and they come out at the other end. Easy to destroy: if a mouth falls, the tunnel caves in and everyone inside is lost", "Dig Tunnel: drag from the entrance to the exit (right click cancels)", 185, 140, 80, false },
+	// MOD (Wunsch 22.11. 21:19 "ein neuer Generals Baubefehl 'restore' - Kreis zeichnen, in dem alle Krater wiederhergestellt werden und das
+	// Terrain wieder auf Missionsbeginn ... (mit Ausnahme von Tunneln und Durchbruechen)")
+	{ "Restore", "Restore: drag a circle - builders fill in every crater and hole in it, so the ground is back to how it was at mission start (tunnels, drilled breakthroughs and your trenches stay)", "Restore: drag a circle around the craters (right click cancels)", 150, 205, 110, true },
 };
 
 // MOD (Wunsch 21.11. 17:59 "Die Befehlsbuttons besser nach Kategorie sortieren (aehnliches zu aehnlichem), ausserdem Icons zu jedem dazu"):
@@ -138,7 +143,7 @@ constexpr Group kGroups[] = {
 	// (22.11.) Angriffsplaner: Zonen, Leuchtfeuer, Brueckenkopf, Angriffslinie, Vektoren, Tunnel, Angriff, Plan loeschen
 	{ "Attack plan", 8, { M_STAGING, M_FERRY, M_BRIDGEHEAD, M_OFFENSE, M_ATTACK, M_TUNNEL, M_GO, M_CLEARPLAN } },
 	{ "Combat",  4, { M_DEFEND, M_ARTY, M_AIR, M_COMBOT, 0, 0, 0, 0 } },
-	{ "Build",   6, { M_DEFNET, M_ARTYBASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH, 0, 0 } },
+	{ "Build",   7, { M_DEFNET, M_ARTYBASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH, M_RESTORE, 0 } },
 	{ "Support", 2, { M_CLEARMINES, M_RECOVER, 0, 0, 0, 0, 0, 0 } },
 };
 constexpr int NGROUPS = static_cast<int>(sizeof(kGroups) / sizeof(kGroups[0]));
@@ -371,6 +376,11 @@ void drawIcon(int m, const Pen &p)
 		break;
 	case M_DEMOLISH:   // Abrissbirne
 		p.l(-0.8f, -0.9f, 0.4f, -0.9f); p.l(-0.8f, -0.9f, -0.8f, 0.9f); p.l(0.25f, -0.9f, 0.25f, 0.1f); p.dot(0.25f, 0.45f, 0.35f);
+		break;
+	case M_RESTORE:   // Krater-Mulde, gestrichelt zugeschuettet, Pfeil nach oben
+		p.l(-0.95f, 0.05f, -0.6f, 0.05f); p.l(0.6f, 0.05f, 0.95f, 0.05f); p.arc(0.f, 0.05f, 0.6f, 0.f, kPi, 10);
+		for (int k = 0; k < 3; ++k) { const float x = -0.42f + k * 0.42f; p.l(x - 0.1f, 0.05f, x + 0.1f, 0.05f); }
+		p.l(0.f, 0.45f, 0.f, -0.85f); p.l(0.f, -0.85f, -0.3f, -0.55f); p.l(0.f, -0.85f, 0.3f, -0.55f);
 		break;
 	case M_CLEARMINES:   // Mine, durchgestrichen
 		p.circ(0.f, 0.f, 0.45f); p.dot(0.f, 0.f, 0.2f); p.l(0.f, -0.45f, 0.f, -0.75f); p.l(-0.45f, 0.f, -0.75f, 0.f); p.l(0.45f, 0.f, 0.75f, 0.f);
@@ -703,6 +713,7 @@ bool fits(Mode m, const DROID *d)
 	case M_OFFENSE: return isCombat(d) || isBuilder(d) || modcombot::isModular(d);
 	case M_CLEARMINES: return (modmines::isFlail(d) || modoil::isInfantry(d)) && !isAir(d);
 	case M_DEMOLISH: return isBuilder(d);
+	case M_RESTORE: return isBuilder(d) && !isAir(d);
 	default: return false;
 	}
 }
@@ -1842,6 +1853,26 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		if (!crew.empty()) { give(crew, sweepLanes(raw, DIST_TILE * 4, std::min<size_t>(crew.size(), 12)), false); }
 		s_nextSweep = 0;
 		addConsoleMessage(_("Mine sweep: the area is combed lane by lane"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		break;
+	}
+	case M_RESTORE:
+	{
+		// (22.11. 21:19) alle Krater/Loecher im Gebiet (nur zuschuettbare Mulden - Tunnel, Durchbrueche und Graben-Bauwerke nicht)
+		int x0 = INT32_MAX, y0 = INT32_MAX, x1 = INT32_MIN, y1 = INT32_MIN;
+		for (const Vector2i &p : raw) { x0 = std::min(x0, map_coord(p.x)); y0 = std::min(y0, map_coord(p.y)); x1 = std::max(x1, map_coord(p.x)); y1 = std::max(y1, map_coord(p.y)); }
+		x0 = std::max(0, x0); y0 = std::max(0, y0); x1 = std::min(x1, gameWorld.map.width - 1); y1 = std::min(y1, gameWorld.map.height - 1);
+		std::vector<Vector2i> tiles;
+		for (int ty = y0; ty <= y1; ++ty)
+		{
+			for (int tx = x0; tx <= x1; ++tx)
+			{
+				if (modterrain::craterDepthAt(tx, ty) <= 0) { continue; }
+				if (insidePoly(raw, world_coord(tx) + TILE_UNITS / 2, world_coord(ty) + TILE_UNITS / 2)) { tiles.emplace_back(tx, ty); }
+			}
+		}
+		if (tiles.empty()) { addConsoleMessage(_("Restore: no craters in this area"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); break; }
+		modbuild::startRestore(units, tiles);
+		addConsoleMessage(_("Restore: builders fill in the craters in the area"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 		break;
 	}
 	case M_DEMOLISH:

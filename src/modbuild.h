@@ -90,6 +90,10 @@ std::vector<Placement> planRailLine(unsigned player, const std::vector<Vector2i>
 
 /// jeden Spielschritt
 void tick(GameWorld &world);
+/// (Wunsch 22.11. 21:19 "Generals-Baubefehl 'restore' - Kreis zeichnen, in dem alle Krater wiederhergestellt werden und das Terrain wieder
+/// auf Missionsbeginn ... (mit Ausnahme von Tunneln und Durchbruechen)"): diese Bauer schuetten gemeinsam alle Krater und Loecher in den
+/// Feldern zu (naechstes zuerst, jeder ein eigenes); zugeschuettet ist die Kachel wieder wie zu Missionsbeginn (Originaltextur, eben)
+void startRestore(const std::vector<DROID *> &builders, const std::vector<Vector2i> &tiles);
 /// bei neuem Spiel
 void reset();
 }

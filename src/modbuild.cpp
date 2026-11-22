@@ -27,6 +27,8 @@
 #include "statsdef.h"
 #include "structure.h"
 #include "action.h"
+#include "console.h"
+#include "lighting.h"
 #include "random.h"
 #include "ai.h"
 
@@ -801,6 +803,140 @@ void startOrder(DROID *psDroid, int worldX, int worldY, int tier)
 	s_jobs[psDroid->id] = j;
 }
 
+// --- (Wunsch 22.11. 21:19) Battle-Plan "Restore": Krater und Loecher in einem Gebiet zuschuetten
+namespace
+{
+struct RestoreArea
+{
+	unsigned player = 0;
+	std::vector<Vector2i> tiles;     // Kacheln mit Mulde beim Befehl
+	std::set<int> skipped;           // unerreichbar (Index in tiles)
+	int x0 = 0, y0 = 0, x1 = 0, y1 = 0;   // Rechteck um das Gebiet (Brandflecken wegnehmen)
+};
+struct RestoreJob
+{
+	uint32_t area = 0;
+	int cur = -1;                    // Index der Kachel, die dieser Bauer gerade zuschuettet
+	bool moving = false;
+	Vector2i moveTarget{0, 0};
+	unsigned tileSince = 0;          // seit wann an dieser Kachel (unerreichbar -> ueberspringen)
+	unsigned startTime = 0;
+};
+std::map<uint32_t, RestoreArea> s_areas;   // sortiert: feste Reihenfolge
+std::map<uint32_t, RestoreJob> s_restore;
+uint32_t s_nextArea = 1;
+
+Vector2i tileWorld(const Vector2i &t) { return Vector2i(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2); }
+
+void restoreTick()
+{
+	if (s_restore.empty()) { s_areas.clear(); return; }
+	std::vector<uint32_t> done;
+	for (auto &kv : s_restore)
+	{
+		RestoreJob &j = kv.second;
+		auto ait = s_areas.find(j.area);
+		if (ait == s_areas.end()) { done.push_back(kv.first); continue; }
+		RestoreArea &a = ait->second;
+		DROID *d = IdToDroid(gameWorld.objects, kv.first, a.player);
+		if (d == nullptr || d->died) { done.push_back(kv.first); continue; }
+		if (d->order.type != DORDER_NONE)
+		{
+			if (j.moving && d->order.type == DORDER_MOVE && d->order.pos == j.moveTarget) { continue; }   // laeuft zur Mulde
+			done.push_back(kv.first);   // ein anderer Befehl des Spielers beendet die Arbeit
+			continue;
+		}
+		j.moving = false;
+		// noch offen? sonst die naechste freie Mulde (die anderer Bauer nur, wenn sonst nichts mehr da ist)
+		if (j.cur < 0 || modterrain::craterDepthAt(a.tiles[static_cast<size_t>(j.cur)].x, a.tiles[static_cast<size_t>(j.cur)].y) <= 0)
+		{
+			std::set<int> claimed;
+			for (const auto &o : s_restore) { if (o.first != kv.first && o.second.area == j.area && o.second.cur >= 0) { claimed.insert(o.second.cur); } }
+			int best = -1, bestTaken = -1;
+			int64_t bd = INT64_MAX, bdTaken = INT64_MAX;
+			for (size_t i = 0; i < a.tiles.size(); ++i)
+			{
+				if (a.skipped.count(static_cast<int>(i)) != 0 || modterrain::craterDepthAt(a.tiles[i].x, a.tiles[i].y) <= 0) { continue; }
+				const Vector2i w = tileWorld(a.tiles[i]);
+				const int64_t dx = d->pos.x - w.x, dy = d->pos.y - w.y, dd = dx * dx + dy * dy;
+				if (claimed.count(static_cast<int>(i)) != 0) { if (dd < bdTaken) { bdTaken = dd; bestTaken = static_cast<int>(i); } }
+				else if (dd < bd) { bd = dd; best = static_cast<int>(i); }
+			}
+			j.cur = best >= 0 ? best : bestTaken;
+			j.tileSince = gameTime;
+			if (j.cur < 0) { done.push_back(kv.first); continue; }   // alles zu
+		}
+		const Vector2i dw = tileWorld(a.tiles[static_cast<size_t>(j.cur)]);
+		const int dx = d->pos.x - dw.x, dy = d->pos.y - dw.y;
+		if (dx * dx + dy * dy > (DIST_TILE * 2) * (DIST_TILE * 2))
+		{
+			if (gameTime - j.tileSince > 40 * GAME_TICKS_PER_SEC)   // kommt nicht hin: diese Mulde auslassen
+			{
+				a.skipped.insert(j.cur);
+				j.cur = -1;
+				continue;
+			}
+			j.moving = true;
+			j.moveTarget = dw;
+			orderDroidLoc(d, DORDER_MOVE, dw.x, dw.y, ModeImmediate);
+		}
+		else if (((gameTime / GAME_TICKS_PER_UPDATE) + kv.first) % 2 == 0)
+		{
+			modterrain::fillTile(a.tiles[static_cast<size_t>(j.cur)].x, a.tiles[static_cast<size_t>(j.cur)].y, 2);
+		}
+		if (gameTime - j.startTime > 15 * 60 * GAME_TICKS_PER_SEC) { done.push_back(kv.first); }   // Sicherung gegen Endlosschleife
+	}
+	for (uint32_t id : done) { s_restore.erase(id); }
+	// fertige Gebiete melden
+	for (auto it = s_areas.begin(); it != s_areas.end();)
+	{
+		bool busy = false;
+		for (const auto &o : s_restore) { if (o.second.area == it->first) { busy = true; break; } }
+		if (busy) { ++it; continue; }
+		// Brandflecken zerstoerter Bauwerke (abgedunkelte Kacheln) verschwinden mit: Licht wie zu Missionsbeginn
+		const RestoreArea &ra = it->second;
+		if (ra.x1 > ra.x0 && ra.y1 > ra.y0)
+		{
+			initLighting(gameWorld.map, static_cast<UDWORD>(ra.x0), static_cast<UDWORD>(ra.y0), static_cast<UDWORD>(ra.x1), static_cast<UDWORD>(ra.y1));
+			for (int ty = ra.y0; ty < ra.y1; ++ty) { for (int tx = ra.x0; tx < ra.x1; ++tx) { markTileDirty(tx, ty); } }
+		}
+		if (it->second.player == selectedPlayer)
+		{
+			int open = 0;
+			for (const Vector2i &t : it->second.tiles) { if (modterrain::craterDepthAt(t.x, t.y) > 0) { ++open; } }
+			addConsoleMessage(open == 0 ? _("Restore: the area is back to its original state") : _("Restore: work stopped - some craters are left"),
+			                  DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		}
+		it = s_areas.erase(it);
+	}
+}
+}
+
+void startRestore(const std::vector<DROID *> &builders, const std::vector<Vector2i> &tiles)
+{
+	if (builders.empty() || tiles.empty()) { return; }
+	const uint32_t id = s_nextArea++;
+	RestoreArea a;
+	a.player = builders.front()->player;
+	a.tiles = tiles;
+	a.x0 = a.x1 = tiles.front().x; a.y0 = a.y1 = tiles.front().y;
+	for (const Vector2i &t : tiles) { a.x0 = std::min(a.x0, t.x); a.y0 = std::min(a.y0, t.y); a.x1 = std::max(a.x1, t.x); a.y1 = std::max(a.y1, t.y); }
+	a.x0 = std::max(1, a.x0 - 2); a.y0 = std::max(1, a.y0 - 2);
+	a.x1 = std::min(gameWorld.map.width - 1, a.x1 + 3); a.y1 = std::min(gameWorld.map.height - 1, a.y1 + 3);
+	s_areas[id] = a;
+	for (DROID *d : builders)
+	{
+		if (d == nullptr || d->died) { continue; }
+		s_jobs.erase(d->id);
+		d->order = DroidOrder(DORDER_NONE);
+		actionDroid(d, DACTION_NONE);
+		RestoreJob j;
+		j.area = id;
+		j.startTime = gameTime;
+		s_restore[d->id] = j;
+	}
+}
+
 namespace { const std::vector<Placement> *s_external = nullptr; }   // (18.11.) fremder Bauplan als Vorschau
 
 void updatePreview(bool wanted, const Vector2i &worldPos)
@@ -921,6 +1057,7 @@ void autoHelp(GameWorld &world)
 		{
 			if (d->died || (d->droidType != DROID_CONSTRUCT && d->droidType != DROID_CYBORG_CONSTRUCT)) { continue; }
 			Helper &h = s_helpers[d->id];
+			if (s_restore.count(d->id) != 0) { h.wasBuilding = false; h.idleSince = 0; if (cleanup) { alive[d->id] = h; } continue; }   // (22.11.) schuettet zu
 			const DROID_ORDER o = d->order.type;
 			if (buildOrder(o)) { h.wasBuilding = true; h.idleSince = 0; }
 			else if (o != DORDER_NONE) { h.wasBuilding = false; h.idleSince = 0; }   // anderer Auftrag (Fahrt ...): dort bleiben
@@ -961,6 +1098,7 @@ void autoHelp(GameWorld &world)
 void tick(GameWorld &world)
 {
 	autoHelp(world);   // (20.11.) Baufahrzeuge helfen nach ihrem Bau in der Naehe mit
+	restoreTick();     // (22.11. 21:19) Battle-Plan "Restore"
 	if (s_jobs.empty()) { return; }
 	std::vector<uint32_t> done;
 	for (auto &kv : s_jobs)
@@ -1120,6 +1258,9 @@ void reset()
 	s_previewOn = false;
 	s_previewTile = Vector2i(-1, -1);
 	s_jobs.clear();
+	s_restore.clear();   // (22.11.)
+	s_areas.clear();
+	s_nextArea = 1;
 	s_helpers.clear();   // (20.11.)
 	s_nextHelp = 0;
 	s_nextHelperCleanup = 0;

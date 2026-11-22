@@ -132,6 +132,7 @@
 #include "modtunnel.h"
 #include "modtutorial.h"
 #include "modruin.h"
+#include "modshockwave.h"
 #include "modroad.h"
 #include "modferry.h"
 #include "modgroundfire.h"
@@ -818,6 +819,7 @@ void interfaceShutDown()
 	modrail::reset();
 	modbridge::reset();      // MOD (22.11.): Bruecken        // MOD (21.11.): Zuege
 	modruin::reset();
+	modshockwave::reset();   // MOD (22.11. 21:19)
 	modroad::reset();
 	modfacing::reset();      // MOD (21.11. 20:22): Ausrichten / Fahren
 	modnuke::reset();        // MOD (17.11. 21:13): Atomkraftwerk
