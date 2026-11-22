@@ -3705,6 +3705,11 @@ void shutdown()
 	s_planClearArmed = 0;
 }
 
+bool planHasElements()
+{
+	return plan::hasElems();
+}
+
 void savePlan(std::vector<int64_t> &out)
 {
 	plan::save(out);

@@ -130,6 +130,7 @@
 #include "modcontrol.h"
 #include "modincoming.h"
 #include "modtunnel.h"
+#include "modtutorial.h"
 #include "modferry.h"
 #include "modgroundfire.h"
 #include "modradio.h"
@@ -774,6 +775,7 @@ void interfaceShutDown()
 	modrosette::shutdown();  // MOD (17.11.)
 	modunitstats::shutdown(); // MOD (17.11. 22:42)
 	modoilui::shutdown();     // MOD (20.11.): Oel-Fenster
+	modtutorial::shutdown();  // MOD (22.11.): Tutorial
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
@@ -1283,6 +1285,7 @@ INT_RETVAL intRunWidgets()
 	modrosette::tick();    // MOD (17.11.): Mod-Rosette im WZ-Stil
 	modunitstats::tick();  // MOD (17.11. 22:42): Werteleiste der gewaehlten Einheit
 	modoilui::tick();      // MOD (20.11.): Oel-Fenster (Oelkreislauf)
+	modtutorial::tick();   // MOD (22.11.): Tutorial (nur Herausforderung auf Wuestenland)
 	moddesigner::tick();   // MOD: Combot-Designer
 	modfleetdesigner::tick();   // MOD (17.11. 21:48): Einheiteneditor aus dem Flotten-Menue
 
