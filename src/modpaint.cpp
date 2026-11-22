@@ -26,6 +26,7 @@
 #include "moddesigner.h"
 #include "modlayer.h"
 #include "modui.h"
+#include "modglow.h"
 #include "modrosette.h"
 #include "multiplay.h"
 #include "modincoming.h"
@@ -112,7 +113,7 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Railway", "Railway: drag a route - builders lay a railway track along it (straight and diagonal, around obstacles, joining your existing tracks). Locomotives and wagons come from the train depot and run on the tracks", "Railway: drag the route of the track (right click cancels)", 175, 140, 95, false },
 	// MOD (Wunsch 22.11. 01:11): Angriffsplaner - "Kein Micromanager. Indirekte Steuerung. Eher lenken, als alles selbst zu machen."
 	{ "Staging Zone", "Staging Zone: drag a circle (or click) where your units gather - new units from the factories and idle units in the zone join the attack plan and are brought on to the bridgeheads (by ferry, by tunnel or on their own). Badge = priority 1-5 (click), right click on it removes the zone", "Staging Zone: drag a circle around the gathering area (right click cancels)", 70, 205, 215, true },
-	{ "Ferry Beacon", "Ferry Beacon: click into a staging zone - your transports pick up the units waiting there and fly them to the bridgeheads in a loop, like in Supreme Commander. Clicked into a bridgehead it marks the landing spot. Placed by button, nothing is built. Right click on the beacon removes it", "Ferry Beacon: click into a staging zone (right click cancels)", 125, 100, 235, false },
+	{ "Ferry Beacon", "Ferry Beacon: click into a staging zone - your transports pick up the units waiting there and fly them to the bridgeheads in a loop. Clicked into a bridgehead it marks the landing spot. Placed by button, nothing is built. Right click on the beacon removes it", "Ferry Beacon: click into a staging zone (right click cancels)", 125, 100, 235, false },
 	{ "Bridgehead", "Bridgehead: drag a circle near the enemy base - units are brought here and wait until the target strength is reached (second badge, click: 4 / 8 / 12 / 16 / 24 / 32 / Hold) or you press Attack!, then they storm along the attack vectors that start here. Priority badge: who gets units and transports first", "Bridgehead: drag a circle around the jump-off area (right click cancels)", 245, 115, 45, true },
 	{ "Attack!", "Attack!: every bridgehead and assault line attacks now with the units that have arrived - the next wave keeps gathering", "", 255, 70, 55, false },
 	{ "Clear Plan", "Clear Plan: click twice - removes all staging zones, beacons, bridgeheads, assault lines and vectors of the attack plan (units keep their last orders)", "", 160, 165, 175, false },
@@ -392,7 +393,7 @@ void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int fh = (sc <= 0) ? 9 : (sc == 1 ? 12 : 16);
 	const int tx = x0 + static_cast<int>(8.f * s + 2.f * ir) + static_cast<int>(3 * s);
 	const bool armed = m == M_CLEARPLAN && s_planClearArmed != 0 && realTime - s_planClearArmed < 4000;
-	modui::text(armed ? _("Click again!") : mi.label, tx, y0 + (h - fh) / 2 - 1, (active || hl || armed) ? WZCOL_TEXT_BRIGHT : WZCOL_TEXT_MEDIUM, sc);
+	modui::text(armed ? _("Click again!") : mi.label, tx, y0 + (h - fh) / 2 - 1, modui::buttonText(active || hl || armed), sc);
 }
 
 void ensureScreen()
@@ -1345,13 +1346,113 @@ std::vector<Vector2i> fieldSpots(const std::vector<Vector2i> &raw, bool mines)
 			out.emplace_back(cx, cy);
 		}
 	}
-	const size_t cap = mines ? 40 : 64;
+	// (Wunsch 22.11. 15:59 "Die Minen und Panzerfallen sollen weiter auseinander verteilt sein bis fast an den Rand"): bei zu vielen Stellen
+	// nicht mehr nur die mittleren behalten (das ergab einen Klumpen in der Mitte), sondern gleichmaessig ueber die ganze Flaeche verteilen:
+	// immer die Stelle nehmen, die am weitesten von allen schon gewaehlten entfernt ist (beginnt am Rand, fuellt dann die Luecken)
+	const size_t cap = mines ? 44 : 64;
 	if (out.size() > cap)
 	{
+		std::vector<Vector2i> pick;
+		std::vector<int64_t> best(out.size(), INT64_MAX);
 		const Vector2i c = centroid(raw);
-		std::stable_sort(out.begin(), out.end(), [&c](const Vector2i &a, const Vector2i &b) { return dist2(a, c) < dist2(b, c); });
-		out.resize(cap);
+		size_t cur = 0;
+		for (size_t i = 1; i < out.size(); ++i) { if (dist2(out[i], c) > dist2(out[cur], c)) { cur = i; } }
+		while (pick.size() < cap)
+		{
+			pick.push_back(out[cur]);
+			best[cur] = -1;
+			size_t nxt = cur;
+			int64_t far = -1;
+			for (size_t i = 0; i < out.size(); ++i)
+			{
+				if (best[i] < 0) { continue; }
+				best[i] = std::min(best[i], dist2(out[i], out[cur]));
+				if (best[i] > far) { far = best[i]; nxt = i; }
+			}
+			if (far < 0) { break; }
+			cur = nxt;
+		}
+		out.swap(pick);
 	}
+	return out;
+}
+
+// (Wunsch 22.11. 15:59 "Diese Schlenker beim Auswahlgebiet zeichnen duerfen nicht mehr vorkommen"): gezeichnete Flaechen werden sauber
+// geschlossen - Anlauf am Anfang und Ueberschwung am Ende abschneiden (dort, wo Anfang und Ende sich am naechsten kommen), dann Schleifen
+// entfernen (kreuzt sich der Umriss, bleibt nur die groesste Schleife)
+namespace
+{
+double polyArea(const std::vector<glm::dvec2> &p)
+{
+	double a = 0.0;
+	for (size_t i = 0, j = p.size() - 1; i < p.size(); j = i++) { a += p[j].x * p[i].y - p[i].x * p[j].y; }
+	return std::fabs(a) * 0.5;
+}
+
+bool segCross(const glm::dvec2 &a, const glm::dvec2 &b, const glm::dvec2 &c, const glm::dvec2 &d, glm::dvec2 &x)
+{
+	const glm::dvec2 r = b - a, s = d - c;
+	const double den = r.x * s.y - r.y * s.x;
+	if (std::fabs(den) < 1e-9) { return false; }
+	const double t = ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / den;
+	const double u = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / den;
+	if (t <= 1e-6 || t >= 1.0 - 1e-6 || u <= 1e-6 || u >= 1.0 - 1e-6) { return false; }
+	x = a + r * t;
+	return true;
+}
+}
+
+std::vector<Vector2i> cleanLoop(const std::vector<Vector2i> &raw)
+{
+	if (raw.size() < 8) { return raw; }
+	const size_t n0 = raw.size();
+	// 1. Anlauf/Ueberschwung: naechstes Paar aus erstem und letztem Viertel
+	size_t bi = 0, bj = n0 - 1;
+	int64_t bd = INT64_MAX;
+	for (size_t i = 0; i <= n0 / 4; ++i)
+	{
+		for (size_t j = n0 - 1 - n0 / 4; j < n0; ++j)
+		{
+			if (j <= i + 2) { continue; }
+			const int64_t d = dist2(raw[i], raw[j]);
+			if (d < bd) { bd = d; bi = i; bj = j; }
+		}
+	}
+	std::vector<glm::dvec2> p;
+	for (size_t i = bi; i <= bj; ++i) { p.emplace_back(raw[i].x, raw[i].y); }
+	// 2. Schleifen: bei jeder Kreuzung die groessere Teilschleife behalten (hoechstens einige Durchgaenge)
+	for (int pass = 0; pass < 6 && p.size() >= 4; ++pass)
+	{
+		const size_t n = p.size();
+		std::vector<glm::dvec2> bestLoop;
+		double bestA = -1.0;
+		for (size_t a = 0; a < n; ++a)
+		{
+			const glm::dvec2 A0 = p[a], A1 = p[(a + 1) % n];
+			for (size_t b = a + 2; b < n; ++b)
+			{
+				if (a == 0 && b == n - 1) { continue; }   // ueber den Schluss benachbart
+				glm::dvec2 x;
+				if (!segCross(A0, A1, p[b], p[(b + 1) % n], x)) { continue; }
+				std::vector<glm::dvec2> in, out;
+				in.push_back(x);
+				for (size_t k = a + 1; k <= b; ++k) { in.push_back(p[k]); }
+				out.push_back(x);
+				for (size_t k = b + 1; k < n; ++k) { out.push_back(p[k]); }
+				for (size_t k = 0; k <= a; ++k) { out.push_back(p[k]); }
+				const double ai = in.size() >= 3 ? polyArea(in) : 0.0, ao = out.size() >= 3 ? polyArea(out) : 0.0;
+				std::vector<glm::dvec2> &keep = ai >= ao ? in : out;
+				const double ak = std::max(ai, ao);
+				// die erste Kreuzung reicht fuer diesen Durchgang (die groessere Haelfte); unter mehreren die mit der groessten Restflaeche
+				if (ak > bestA) { bestA = ak; bestLoop = keep; }
+			}
+		}
+		if (bestA < 0.0) { break; }
+		p.swap(bestLoop);
+	}
+	std::vector<Vector2i> out;
+	for (const glm::dvec2 &q : p) { out.emplace_back(static_cast<int>(std::lround(q.x)), static_cast<int>(std::lround(q.y))); }
+	if (out.size() < 3) { return raw; }
 	return out;
 }
 
@@ -1895,36 +1996,6 @@ bool projectF(const glm::vec2 &w, const glm::mat4 &m, glm::vec2 &out)
 	return true;
 }
 
-// MOD (Wunsch 17.11. 18:10): Verteidigungslinie wie auf Kriegskarten (Ultimate General): Linie mit kurzen Querstrichen zur Feindseite
-void tickSegs(std::vector<Seg> &out, const std::vector<Vector2i> &pts, int side, float w, float alpha, const glm::mat4 &m)
-{
-	if (side == 0) { return; }
-	const std::vector<glm::vec2> wp = smoothWorld(pts);
-	if (wp.size() < 2) { return; }
-	std::vector<float> acc(wp.size(), 0.f);
-	for (size_t i = 1; i < wp.size(); ++i) { acc[i] = acc[i - 1] + glm::length(wp[i] - wp[i - 1]); }
-	const float L = acc.back();
-	const float step = DIST_TILE * 1.3f, tickLen = DIST_TILE * 0.7f;
-	auto at = [&](float s) {
-		s = std::clamp(s, 0.f, L);
-		size_t i = 1;
-		while (i + 1 < wp.size() && acc[i] < s) { ++i; }
-		const float seg = std::max(0.001f, acc[i] - acc[i - 1]);
-		return wp[i - 1] + (wp[i] - wp[i - 1]) * ((s - acc[i - 1]) / seg);
-	};
-	for (float s = step * 0.5f; s <= L - step * 0.25f; s += step)
-	{
-		glm::vec2 t = at(s + DIST_TILE * 0.3f) - at(s - DIST_TILE * 0.3f);
-		if (glm::length(t) < 0.01f) { continue; }
-		t = glm::normalize(t);
-		const glm::vec2 n = glm::vec2(-t.y, t.x) * static_cast<float>(side);
-		const glm::vec2 p = at(s);
-		glm::vec2 a, b;
-		if (!projectF(p, m, a) || !projectF(p + n * tickLen, m, b)) { continue; }
-		out.push_back(Seg{ a, b, w * 0.8f, alpha, false });
-	}
-}
-
 // MOD (Wunsch 17.11. 18:12): Panzersperrenfeld - gruene Pyramiden an den geplanten Stellen
 void pyramidSegs(std::vector<Seg> &out, std::vector<Seg> &facets, const std::vector<Vector2i> &marks, float alpha, const glm::mat4 &m)
 {
@@ -1957,6 +2028,42 @@ void mineSegs(std::vector<Seg> &out, std::vector<Seg> &cross, const std::vector<
 	}
 }
 
+// MOD (Wunsch 22.11. 15:47/15:49): Striche jetzt aus sauberen Baendern (modglow) statt aus ueberlappenden Kapseln - durchgehend leuchtend
+// wie die Reichweitenringe, ohne Perlen und ohne "Zwischenraum". Pfeile: dicker Stamm, Spitze nur etwa doppelt so breit wie der Stamm und
+// mit der Pfeillaenge begrenzt (auf der verkleinerten Karte deckten die Spitzen alles zu). Verteidigungs-/Angriffslinien: kraeftige Linie
+// mit kurzen, dichten Querstrichen (wie auf Lagekarten), Abstand und Laenge in Bildpunkten - auf jeder Zoomstufe gleich.
+bool s_noTaper = false;   // Zweige eines gespaltenen Angriffspfeils beginnen in voller Breite am Stamm
+
+float pathLength(const std::vector<glm::vec2> &p)
+{
+	float L = 0.f;
+	for (size_t i = 1; i < p.size(); ++i) { L += glm::length(p[i] - p[i - 1]); }
+	return L;
+}
+
+/// Bildschirmseite der Feindseite: +1 = links der Laufrichtung (Normale (-dy, dx)), -1 = rechts; aus der Weltrichtung abgeleitet
+float screenSide(const std::vector<Vector2i> &pts, int side, const std::vector<glm::vec2> &sp, const glm::mat4 &m)
+{
+	const std::vector<glm::vec2> wp = smoothWorld(pts);
+	if (wp.size() < 2 || sp.size() < 2 || side == 0) { return 0.f; }
+	const size_t mi = wp.size() / 2;
+	glm::vec2 t = wp[std::min(wp.size() - 1, mi + 1)] - wp[mi > 0 ? mi - 1 : 0];
+	if (glm::length(t) < 0.01f) { return static_cast<float>(side); }
+	t = glm::normalize(t);
+	const glm::vec2 nW = glm::vec2(-t.y, t.x) * static_cast<float>(side);
+	glm::vec2 a, b;
+	if (!projectF(wp[mi], m, a) || !projectF(wp[mi] + nW * (DIST_TILE * 0.4f), m, b)) { return static_cast<float>(side); }
+	// naechster Bildschirmpunkt und dessen Normale
+	size_t best = 0;
+	float bd = 1e30f;
+	for (size_t i = 0; i < sp.size(); ++i) { const float d = glm::length(sp[i] - a); if (d < bd) { bd = d; best = i; } }
+	glm::vec2 ts = sp[std::min(sp.size() - 1, best + 1)] - sp[best > 0 ? best - 1 : 0];
+	if (glm::length(ts) < 0.01f) { return static_cast<float>(side); }
+	ts = glm::normalize(ts);
+	const glm::vec2 nS(-ts.y, ts.x);
+	return glm::dot(nS, b - a) >= 0.f ? 1.f : -1.f;
+}
+
 void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm::mat4 &m, const std::vector<Vector2i> *marks = nullptr, int side = 0, float widthScale = 1.f, bool head = true)
 {
 	const ModeInfo &mi = kModes[mode];
@@ -1968,44 +2075,91 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 	std::vector<glm::vec2> p = screenPath(pts, m, closed);
 	if (p.size() < 2 || alpha <= 0) { return; }
 	const float sc = modui::uiScale();
-	const float body = ((arrow || shaftOnly) ? 18.f : 11.f) * sc * widthScale;   // Strichstaerke (17.11. 18:10: noch dicker)
-	std::vector<Seg> segs;
-	// Pfeil: Spitze am Ende, Koerper endet an ihrer Basis
-	glm::vec2 tip = p.back(), dir(1.f, 0.f);
-	float headL = 0.f, headW = 0.f;
-	if (arrow)
+	const modglow::Colour col{ mi.r, mi.g, mi.b };
+	const float L = pathLength(p);
+	if (L < 2.f) { return; }
+	if (arrow || shaftOnly)
 	{
-		headL = body * 2.6f; headW = body * 2.7f;
-		size_t k = p.size() - 1;
-		float back = 0.f;
-		while (k > 0 && back < headL) { back += glm::length(p[k] - p[k - 1]); --k; }
-		dir = tip - p[k];
-		if (glm::length(dir) < 0.01f) { dir = glm::vec2(1.f, 0.f); } else { dir = glm::normalize(dir); }
-		while (p.size() > 2 && glm::length(p.back() - tip) < headL * 0.8f && glm::dot(tip - p.back(), dir) < headL * 0.8f) { p.pop_back(); }
-		p.push_back(tip - dir * (headL * 0.8f));
+		// halbe Stammbreite: kraeftig, aber bei kurzen Pfeilen (verkleinerte Karte) im Verhaeltnis zur Laenge
+		const float hw = std::clamp(std::min(8.f * sc * widthScale, L * 0.065f), 2.5f * sc, 40.f * sc);
+		const float glow = 3.f * sc + hw * 0.5f;
+		float headL = 0.f, headHalf = 0.f;
+		glm::vec2 tip = p.back(), dir(1.f, 0.f);
+		if (arrow)
+		{
+			headL = std::min(hw * 3.4f, L * 0.36f);
+			headHalf = std::min(hw * 2.35f, headL * 0.9f);
+			// Richtung der Spitze aus dem letzten Stueck des Weges
+			size_t k = p.size() - 1;
+			float back = 0.f;
+			while (k > 0 && back < headL) { back += glm::length(p[k] - p[k - 1]); --k; }
+			dir = tip - p[k];
+			dir = glm::length(dir) < 0.01f ? glm::vec2(1.f, 0.f) : glm::normalize(dir);
+			// Stamm endet knapp hinter der Basis der Spitze (unter der Flaeche der Spitze)
+			const glm::vec2 base = tip - dir * headL;
+			while (p.size() > 2 && glm::dot(p.back() - base, dir) > -headL * 0.05f) { p.pop_back(); }
+			p.push_back(base + dir * (headL * 0.18f));
+		}
+		const size_t n = p.size();
+		std::vector<float> scl(n, 1.f), am(n, 1.f);
+		float acc = 0.f;
+		const float Lb = std::max(1.f, pathLength(p));
+		for (size_t i = 0; i < n; ++i)
+		{
+			if (i > 0) { acc += glm::length(p[i] - p[i - 1]); }
+			const float s = acc / Lb;
+			// Schwanz: schmal und durchsichtig, nach gut einem Drittel voll (wie Kriegskarten-Pfeile)
+			scl[i] = s_noTaper ? 1.f : 0.5f + 0.5f * std::min(1.f, s / 0.32f);
+			am[i] = s_noTaper ? 1.f : std::min(1.f, 0.3f + s / 0.32f);
+		}
+		modglow::ribbon(p, hw, glow, col, static_cast<float>(alpha), false, scl, am, !arrow);
+		if (arrow) { modglow::arrowHead(tip - dir * headL, tip, headHalf, glow * 0.8f, col, static_cast<float>(alpha)); }
+		return;
 	}
-	const size_t n = p.size();
-	// Felder (Panzersperren/Minen): Umriss nur schwach, die Zeichen tragen die Aussage
-	const float outlineA = (field && marks != nullptr && !marks->empty()) ? static_cast<float>(alpha) * 0.3f : static_cast<float>(alpha);
-	for (size_t i = 1; i < n; ++i)
+	if (lineWithTicks)
 	{
-		const float s = static_cast<float>(i) / static_cast<float>(n - 1);
-		// Pfeil: schmaler, durchsichtiger Schwanz -> voller Koerper (wie die Kriegskarten-Pfeile); Linien/Kreise gleichmaessig
-		const float taper = arrow ? (0.35f + 0.65f * std::min(1.f, s / 0.45f)) : (field ? 0.55f : 1.f);
-		const float fade = arrow ? std::min(1.f, 0.15f + s / 0.4f) : 1.f;
-		segs.push_back(Seg{ p[i - 1], p[i], body * taper, outlineA * fade, false });
+		const float hw = std::clamp(std::min(5.5f * sc * widthScale, L * 0.05f), 2.f * sc, 24.f * sc);
+		const float glow = 3.f * sc + hw * 0.7f;
+		// kurze, dichte Querstriche zur Feindseite (in Bildpunkten): erst die Striche, dann die Linie darueber
+		const float sgn = screenSide(pts, side, p, m);
+		if (sgn != 0.f)
+		{
+			std::vector<std::pair<glm::vec2, glm::vec2>> ticks;
+			const float spacing = hw * 1.9f, len = hw * 1.55f;
+			float acc = 0.f, next = spacing * 0.5f;
+			for (size_t i = 1; i < p.size() && ticks.size() < 600; ++i)
+			{
+				const glm::vec2 a = p[i - 1], b = p[i];
+				const float seg = glm::length(b - a);
+				if (seg < 1e-3f) { continue; }
+				const glm::vec2 t = (b - a) / seg, nS = glm::vec2(-t.y, t.x) * sgn;
+				while (acc + seg >= next)
+				{
+					const glm::vec2 q = a + t * (next - acc);
+					if (next > spacing * 0.3f && next < L - spacing * 0.3f) { ticks.emplace_back(q + nS * (hw * 0.4f), q + nS * (hw + len)); }
+					next += spacing;
+				}
+				acc += seg;
+			}
+			modglow::bars(ticks, std::max(1.2f, hw * 0.36f), col, static_cast<float>(alpha) * 0.95f);
+		}
+		modglow::ribbon(p, hw, glow, col, static_cast<float>(alpha), false);
+		return;
 	}
-	if (arrow) { triangleSegs(segs, tip - dir * headL, tip, headW * 0.5f, static_cast<float>(alpha)); }
-	if (lineWithTicks) { tickSegs(segs, pts, side, body, static_cast<float>(alpha), m); }
-	std::vector<Seg> extra;
-	if (field && marks != nullptr)
+	// Gebiete und einfache Linien (Kreise, Sammelpunkt-Spirale, Felder)
 	{
+		const float hw = std::clamp(4.5f * sc * widthScale, 1.5f * sc, 20.f * sc);
+		const float glow = 3.f * sc + hw * 0.8f;
+		// Felder (Panzersperren/Minen): Umriss nur schwach, die Zeichen tragen die Aussage
+		const float outlineA = (field && marks != nullptr && !marks->empty()) ? static_cast<float>(alpha) * 0.45f : static_cast<float>(alpha);
+		modglow::ribbon(p, field ? hw * 0.7f : hw, glow, col, outlineA, closed);
+	}
+	if (field && marks != nullptr && !marks->empty())
+	{
+		std::vector<Seg> segs, extra;
 		if (mode == M_TRAPS) { pyramidSegs(segs, extra, *marks, static_cast<float>(alpha), m); }
 		else { mineSegs(segs, extra, *marks, static_cast<float>(alpha), m); }
-	}
-	drawSegs(segs, mi);
-	if (!extra.empty())
-	{
+		drawSegs(segs, mi);
 		// Pyramiden-Flanke heller, Zuendkreuz der Mine fast weiss
 		for (const Seg &g : extra) { drawSegLayer(g, 2, mi, mode == M_TRAPS ? 0.7f : 0.92f); }
 	}
@@ -3066,7 +3220,7 @@ void drawVectors(const glm::mat4 &m, int alpha, bool hits)
 		for (size_t i = 0; i < vs.size(); ++i) { if (grp[i] == g) { mem.push_back(vs[i]); } }
 		if (mem.size() == 1)
 		{
-			drawStroke(mem[0]->pts, M_ATTACK, alpha, m, nullptr, 0, 1.5f);
+			drawStroke(mem[0]->pts, M_ATTACK, alpha, m, nullptr, 0, 1.4f);
 			badge(*mem[0], mem[0]->pts.front(), m, alpha, hits);
 			continue;
 		}
@@ -3087,15 +3241,17 @@ void drawVectors(const glm::mat4 &m, int alpha, bool hits)
 		}
 		if (trunk.size() < 3)
 		{
-			for (const Elem *v : mem) { drawStroke(v->pts, M_ATTACK, alpha, m, nullptr, 0, 1.5f); badge(*v, v->pts.front(), m, alpha, hits); }
+			for (const Elem *v : mem) { drawStroke(v->pts, M_ATTACK, alpha, m, nullptr, 0, 1.4f); badge(*v, v->pts.front(), m, alpha, hits); }
 			continue;
 		}
-		drawStroke(trunk, M_ATTACK, alpha, m, nullptr, 0, 2.6f, false);
+		drawStroke(trunk, M_ATTACK, alpha, m, nullptr, 0, 2.2f, false);
 		for (const Elem *v : mem)
 		{
 			std::vector<Vector2i> br = pathFrom(v->pts, split);
 			br.front() = trunk.back();
-			if (br.size() >= 2) { drawStroke(br, M_ATTACK, alpha, m, nullptr, 0, 1.6f); }
+			s_noTaper = true;
+			if (br.size() >= 2) { drawStroke(br, M_ATTACK, alpha, m, nullptr, 0, 1.3f); }
+			s_noTaper = false;
 		}
 		// Schilder nebeneinander am Stamm
 		for (size_t k = 0; k < mem.size(); ++k)
@@ -3377,6 +3533,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 			return true;
 		}
 	}
+	if (kModes[m].area && s_cur.size() >= 8) { s_cur = cleanLoop(s_cur); }   // (22.11.) keine Schlenker an Flaechen
 	const bool shift = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
 	if (!shift) { s_chain.clear(); }
 	s_append = shift;

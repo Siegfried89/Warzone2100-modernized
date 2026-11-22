@@ -187,7 +187,9 @@ bool processMouse(bool overUi, const Vector2i &world)
 {
 	if (!s_armed)
 	{
-		if (!mousePressed(MOUSE_LMB) || overUi || ctrlShiftDown())
+		// (Wunsch 22.11. 15:47 "Doppelklick auf Einheiten ... funktioniert nicht mehr"): der zweite Klick eines Doppelklicks gehoert WZ
+		// (alle gleichen Einheiten im Bild waehlen) - nicht zum Ausrichten
+		if (!mousePressed(MOUSE_LMB) || mouseDClicked(MOUSE_LMB) || overUi || ctrlShiftDown())
 		{
 			return false;
 		}

@@ -55,5 +55,7 @@ void ring(int cx, int cy, int r, PIELIGHT colour);
 /// MOD (16.11. Punkt 1): Bedienelemente im Warzone-2100-Stil (Farben/Rahmen wie die WZ-Menues und -Formulare)
 void wzPanel(int x0, int y0, int x1, int y1, const char *title = nullptr, int sizeClass = 0);
 void wzButton(int x0, int y0, int w, int h, const std::string &label, bool active, bool hover, bool down, int sizeClass = 0, const PIELIGHT *accent = nullptr);
+/// (22.11.) Schriftfarbe auf den Knoepfen: hell (normal) bzw. weiss (aktiv/Maus darueber) - kontrastreich auf dem dunklen Knopfgrund
+PIELIGHT buttonText(bool bright);
 
 }

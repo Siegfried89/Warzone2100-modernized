@@ -2,6 +2,7 @@
 // MOD: Transport-Dauerschleife (siehe modferry.h)
 
 #include "modferry.h"
+#include "modglow.h"
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -228,36 +229,22 @@ void drawFerryRoute(const Vector2i &from, const Vector2i &to, const glm::mat4 &m
 	const float headL = DIST_TILE * 0.9f;                   // grosse Spitze am Ende
 	const float bodyEnd = L - headL * 0.85f;
 	const int alpha = hot ? 0xdd : 0xaa;
-	const PIELIGHT band = pal_RGBA(0x65, 0x4b, 0xc2, static_cast<UBYTE>(alpha * 0.42f));
-	const PIELIGHT glow = pal_RGBA(0x75, 0x58, 0xe2, static_cast<UBYTE>(alpha * 0.16f));
-	// MOD (Wunsch 17.11. 18:10): leuchtend wie die Sensor-/Reichweitenringe - weiter, sehr weicher Lichthof und heller Kernstreifen
-	const PIELIGHT halo = pal_RGBA(0x8a, 0x70, 0xff, static_cast<UBYTE>(alpha * 0.07f));
-	const PIELIGHT hotLine = pal_RGBA(0xc8, 0xbc, 0xff, static_cast<UBYTE>(alpha * 0.55f));
-	// 1. Band (Hof + Kern) in Abschnitten von 1/2 Feld, perspektivisch breit
-	RoutePt prev = projectOnGround(A, perp, halfW, m);
-	for (float s = DIST_TILE * 0.5f; ; s += DIST_TILE * 0.5f)
+	// 1. Band: (22.11.) ein sauberer, durchgehend leuchtender Streifen (modglow) statt ueberlappender Kapseln - Breite perspektivisch
 	{
-		const float t = std::min(s, bodyEnd);
-		const RoutePt cur = projectOnGround(A + dir * t, perp, halfW, m);
-		if (prev.ok && cur.ok)
+		std::vector<glm::vec2> bp;
+		std::vector<float> bw;
+		for (float s = 0.f; ; s += DIST_TILE * 0.5f)
 		{
-			const float w = prev.halfW + cur.halfW;            // = volle Breite (Mittel der beiden Enden x 2 / 2)
-			{
-				const glm::vec2 dd = cur.c - prev.c;
-				const float ll = glm::length(dd);
-				if (ll > 0.01f)
-				{
-					const glm::vec2 cc = (prev.c + cur.c) * 0.5f;
-					const float hw = w * 2.6f;
-					pie_DrawSoftRoundedBoxRotated(cc.x, cc.y, ll + hw * 0.5f, hw, std::atan2(dd.y, dd.x), halo, hw * 0.5f, hw * 0.45f);
-				}
-			}
-			softSeg(prev.c, cur.c, w * 1.55f, glow);
-			softSeg(prev.c, cur.c, w, band);
-			softSeg(prev.c, cur.c, std::max(2.f, w * 0.16f), hotLine);
+			const float t = std::min(s, bodyEnd);
+			const RoutePt cur = projectOnGround(A + dir * t, perp, halfW, m);
+			if (cur.ok) { bp.push_back(cur.c); bw.push_back(cur.halfW); }
+			if (t >= bodyEnd) { break; }
 		}
-		prev = cur;
-		if (t >= bodyEnd) { break; }
+		float wMax = 1.f;
+		for (float w : bw) { wMax = std::max(wMax, w); }
+		std::vector<float> scl(bw.size());
+		for (size_t i = 0; i < bw.size(); ++i) { scl[i] = bw[i] / wMax; }
+		modglow::ribbon(bp, wMax, std::max(4.f, wMax * 0.9f), modglow::Colour{ 0x75, 0x58, 0xe2 }, static_cast<float>(alpha) * 0.6f, false, scl, {}, true);
 	}
 	// 2. laufende Winkel-Pfeile im Band (ein Pfeil je zwei Bandbreiten, 0,2 Wiederholungen pro Sekunde wie in SupCom ... etwas flotter)
 	const float spacing = halfW * 4.f;
@@ -279,29 +266,12 @@ void drawFerryRoute(const Vector2i &from, const Vector2i &to, const glm::mat4 &m
 		softSeg(l.c, tip.c, th * 2.4f, g); softSeg(r.c, tip.c, th * 2.4f, g);
 		softSeg(l.c, tip.c, th, c); softSeg(r.c, tip.c, th, c);
 	}
-	// 3. Spitze am Front-Leuchtfeuer (gefuelltes Dreieck aus Querscheiben, wie orderline_arrow04)
+	// 3. Spitze am Front-Leuchtfeuer (wie orderline_arrow04) - (22.11.) sauber gefuellt mit Lichthof
 	const RoutePt base = projectOnGround(A + dir * (L - headL), perp, halfW * 2.1f, m);
 	const RoutePt tipP = projectOnGround(B, perp, halfW, m);
-	if (base.ok && tipP.ok)
+	if (base.ok && tipP.ok && glm::length(tipP.c - base.c) > 2.f)
 	{
-		const glm::vec2 d = tipP.c - base.c;
-		const float len = glm::length(d);
-		if (len > 2.f)
-		{
-			const float ang = std::atan2(d.y, d.x);
-			const int K = 12;
-			for (int pass = 0; pass < 2; ++pass)
-			{
-				for (int k = 0; k < K; ++k)
-				{
-					const float f = (static_cast<float>(k) + 0.5f) / static_cast<float>(K);
-					const glm::vec2 c = base.c + d * f;
-					const float across = base.halfW * 2.f * (1.f - f) + (pass == 0 ? base.halfW * 0.5f : 0.f);
-					pie_DrawSoftRoundedBoxRotated(c.x, c.y, len / static_cast<float>(K) + 2.f, std::max(1.f, across), ang,
-					                              pass == 0 ? glow : pal_RGBA(0x75, 0x58, 0xe2, static_cast<UBYTE>(alpha * 0.8f)), 1.f, 1.2f);
-				}
-			}
-		}
+		modglow::arrowHead(base.c, tipP.c, base.halfW, std::max(4.f, base.halfW * 0.5f), modglow::Colour{ 0x75, 0x58, 0xe2 }, static_cast<float>(alpha));
 	}
 }
 }
