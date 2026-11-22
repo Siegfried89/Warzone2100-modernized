@@ -127,6 +127,7 @@
 #include "modcrates.h"
 #include "modcontrol.h"
 #include "modincoming.h"
+#include "modtunnel.h"
 #include "modferry.h"
 #include "modgroundfire.h"
 #include "modradio.h"
@@ -781,6 +782,7 @@ void interfaceShutDown()
 	modcrates::reset();      // MOD
 	modcontrol::reset();     // MOD
 	modferry::reset();       // MOD
+	modtunnel::reset();      // MOD (22.11.)
 	modgroundfire::reset();  // MOD
 	modterrain::reset();     // MOD
 	modfort::reset();        // MOD 17.11.

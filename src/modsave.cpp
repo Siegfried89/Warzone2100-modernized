@@ -16,6 +16,8 @@
 #include "modrecover.h"
 #include "modlayer.h"
 #include "modcrew.h"
+#include "modtunnel.h"
+#include "modpaint.h"
 #include "featuredef.h"
 #include "feature.h"
 #include "game_world.h"
@@ -159,6 +161,11 @@ void write(const std::string &folder)
 		std::vector<int64_t> crew;
 		modcrew::saveState(crew);   // MOD (18.11.): Piloten mit Namen/Stufen, Combots ohne Besatzung
 		j["crew"] = crew;
+		std::vector<int64_t> tunnels, plan;
+		modtunnel::saveState(tunnels);   // MOD (22.11.): Tunnel, Grabungen, Einheiten im Gang
+		j["tunnels"] = tunnels;
+		modpaint::savePlan(plan);        // MOD (22.11.): Angriffsplaner (Zonen, Brueckenkoepfe, Vektoren, Einheiten)
+		j["planner"] = plan;
 		const std::string path = folder + "/modstate.json";
 		const std::string text = j.dump();
 		if (!saveFile(path.c_str(), text.c_str(), text.size()))
@@ -236,6 +243,11 @@ void applyPending()
 		std::vector<int64_t> crew;
 		readArray(*j, "crew", crew);
 		modcrew::loadState(crew);
+		std::vector<int64_t> tunnels, plan;
+		readArray(*j, "tunnels", tunnels);
+		modtunnel::loadState(tunnels);
+		readArray(*j, "planner", plan);
+		modpaint::loadPlan(plan);
 		debug(LOG_INFO, "MOD: Mod-Zustand geladen (%zu Krater, %zu Tankfuellungen)", terrain.size() / 6, fuel.size() / 2);
 	}
 	catch (const std::exception &e)

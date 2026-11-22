@@ -141,6 +141,7 @@
 #include "modcrates.h"
 #include "modincoming.h"
 #include "modterrain.h"
+#include "modtunnel.h"
 #include "modferry.h"
 #include "modgroundfire.h"
 #include "modbuild.h"
@@ -635,6 +636,7 @@ static void gameStateUpdate()
 	modcrew::tick();             // MOD (18.11. 17:52): MF-Besatzung (Piloten mit Stufen, Aussteigen, neutrale Combots)
 	modgdiart::tick();           // MOD (18.11. 19:09): GDI-Artillerie verankert sich zum Feuern (Juggernaut)
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
+	modtunnel::tick(gameWorld);  // MOD (22.11.): Tunnel wie Nydus-Kanaele (Bohrer graebt, Einheiten reisen durch, Einsturz)
 	modbuild::tick(gameWorld);   // MOD: Befestigungsbau (Mulden zuschaufeln, Bauplan einreihen)
 	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)
 	modoutpost::tick(gameWorld); // MOD: Aussenposten-Teleport (MF)

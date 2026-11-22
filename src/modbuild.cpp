@@ -2,6 +2,7 @@
 // MOD: Befestigungsbau - siehe modbuild.h
 #include "modcrates.h"
 #include "modbuild.h"
+#include "modlayerdig.h"
 #include "modfort.h"
 #include "feature.h"
 
@@ -51,6 +52,8 @@ bool isInfantryBuilder(const DROID *d)
 
 bool mayBuild(const DROID *d, const STRUCTURE_STATS *st)
 {
+	// MOD (22.11.): den Tunnelmund graebt nur das Bohrfahrzeug
+	if (st != nullptr && st->id == "A0TunnelMouth") { return d != nullptr && modlayerdig::isDrill(d); }
 	if (st == nullptr || !isInfantryBuilder(d)) { return true; }
 	return st->infantryBuildable;
 }
