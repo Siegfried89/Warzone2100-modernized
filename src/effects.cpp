@@ -962,6 +962,27 @@ static bool updatePolySmoke(EFFECT *psEffect)
 	return true;
 }
 
+// MOD (Wunsch 22.11. 16:37 "Die Artillerie-Shells sollen mit einem 'Kliing'-Sound zu Boden fallen"): beim ersten Bodenkontakt der
+// Messinghuelse ein heller Metallklang am Ort (casing_clink_0..2.ogg aus clink_snd.py); dichte Salven nicht jede Huelse einzeln
+static void modCasingClink(const EFFECT *psEffect)
+{
+	static int s_ids[3] = { -2, -2, -2 };
+	static unsigned s_next = 0;
+	if (realTime < s_next) { return; }
+	const int k = rand() % 3;
+	if (s_ids[k] == -2)
+	{
+		char fn[32];
+		snprintf(fn, sizeof(fn), "casing_clink_%d.ogg", k);
+		s_ids[k] = audio_GetTrackID(fn);
+	}
+	if (s_ids[k] < 0) { return; }
+	if (audio_PlayStaticTrack(static_cast<SDWORD>(psEffect->position.x), static_cast<SDWORD>(psEffect->position.z), s_ids[k]))
+	{
+		s_next = realTime + 45;
+	}
+}
+
 /**
 	Gravitons just fly up for a bit and then drop down and are
 	killed off when they hit the ground
@@ -1077,6 +1098,10 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 		}
 		else if ((int)psEffect->velocity.y < 0) // Are we falling - rather than rising?
 		{
+			if (psEffect->type == GRAVITON_TYPE_CASING && psEffect->specific == 0)
+			{
+				modCasingClink(psEffect);   // MOD: "Kliing" beim ersten Aufprall
+			}
 			/* Has it sufficient energy to keep bouncing? */
 			if (psEffect->type == GRAVITON_TYPE_CASING && !(abs(psEffect->velocity.y) > 40 && psEffect->specific <= 3))
 			{
