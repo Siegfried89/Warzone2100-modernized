@@ -52,6 +52,10 @@ bool pie_Draw3DShape(const iIMDShape *shape, int frame, int team, PIELIGHT colou
 // Modellebene (ohne Leucht-/Schild-Effekte) mit ihrer Lage. nullptr schaltet ihn ab.
 typedef void (*PiePickRecorder)(const iIMDShape *shape, const glm::mat4 &modelMatrix, void *user);
 void pie_SetPickRecorder(PiePickRecorder recorder, void *user);
+/// MOD (Wunsch 22.11. 22:54 "Glowmaps"): Leucht-Ebenen. Eine Modell-Ebene mit eigenem TYPE-Flag iV_IMD_ADDITIVE wird ueber diesen
+/// Rueckruf gefragt: -1 = keine Leucht-Ebene (normal zeichnen), sonst Deckkraft 0..255 (additiv, unbeleuchtet; 0 = diesmal nicht zeichnen).
+typedef int (*PieGlowLevelHook)(const iIMDShape *level, int pieFlag, const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix);
+void pie_SetGlowLevelHook(PieGlowLevelHook hook);
 void pie_Draw3DButton(const iIMDShape *shape, PIELIGHT teamcolour, const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix);
 
 void pie_GetResetCounts(size_t *pPieCount, size_t *pPolyCount);
