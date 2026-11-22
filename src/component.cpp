@@ -674,6 +674,33 @@ static void modGaitTorso(const DROID *psDroid, float &yaw, float &lean)
 	lean = -fade * 0.14f * run;   // rund 8 Grad nach vorn beim Rennen
 }
 
+// MOD (Wunsch 22.11. 18:36 "deutlich geringere Low-Poly-Variante unserer neuen Infanteristen" + "alles so effizient wie moeglich"):
+// Infanteristen, die klein im Bild sind, zeichnen die Low-Poly-Fassung <modell>_lp.pie (rodinscav.py --lp: rund 1/4 der Dreiecke, gleiche
+// Ebenen und Animationen). Nah bleibt das volle Modell. Die Fassung wird beim ersten Bedarf geladen und je Modell gemerkt.
+static constexpr unsigned MOD_LOWPOLY_PX = 26;   // Bildradius, unter dem die Low-Poly-Fassung gilt
+static const iIMDShape *modLowPolyShape(const iIMDShape *shape, unsigned screenR)
+{
+	if (shape == nullptr || screenR == 0 || screenR >= MOD_LOWPOLY_PX) { return shape; }
+	static std::unordered_map<const iIMDShape *, const iIMDShape *> s_lp;
+	static unsigned s_gen = 0;
+	if (modelCacheStale(s_gen)) { s_lp.clear(); }
+	const auto it = s_lp.find(shape);
+	if (it != s_lp.end()) { return it->second != nullptr ? it->second : shape; }
+	const iIMDShape *lp = nullptr;
+	const std::string n = shape->modelName.toStdString();
+	if (n.size() > 4 && n.compare(n.size() - 4, 4, ".pie") == 0)
+	{
+		const std::string lpName = n.substr(0, n.size() - 4) + "_lp.pie";
+		if (PHYSFS_exists(("components/bodies/" + lpName).c_str()))
+		{
+			const iIMDBaseShape *b = modelGet(WzString::fromUtf8(lpName));
+			lp = b != nullptr ? b->displayModel() : nullptr;
+		}
+	}
+	s_lp[shape] = lp;
+	return lp != nullptr ? lp : shape;
+}
+
 // MOD (19.11. "Die Walkeranimation von allen Mechs soll realistisch sein"): Blaetter-Animation (je Bild eine Ebene, ANIMOBJECT blendet die
 // Ebenen der Reihe nach ein): die gerade sichtbare Ebene. Hat sie eigene Anschlusspunkte, sitzen Torso/Waffen daran - so wippt der
 // Oberkoerper eines Mechs mit jedem Schritt mit (Becken senkt sich beim Auftreten, hebt sich in der Standphase).
@@ -1107,6 +1134,10 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 				evShape = modAimVariant(psDroid, evShape);
 			}
 			strImd = evShape->displayModel();
+		}
+		if (!bButton && psDroid->droidType == DROID_PERSON)
+		{
+			strImd = modLowPolyShape(strImd, psDroid->sDisplay.screenR);   // MOD (22.11.): klein im Bild -> Low-Poly
 		}
 		// MOD: Rumpf-Wackeln nach Combot-Nahkampftreffern - nur der Rumpf kippt, Turm und Waffen bleiben ruhig
 		glm::mat4 bodyMatrix = modifiedModelMatrix;

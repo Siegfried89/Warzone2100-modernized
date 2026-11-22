@@ -541,7 +541,9 @@ gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& 
 		unsigned int output_w = std::max<unsigned int>(1, image.width() >> 1);
 		unsigned int output_h = std::max<unsigned int>(1, image.height() >> 1);
 
-		bool resizeResult = image.resize(output_w, output_h, alphaChannelOverride);
+		// MOD (22.11.): schnelles exaktes Halbieren (2x2-Kasten), sonst wie bisher
+		bool resizeResult = (output_w == std::max<unsigned int>(1, image.width() >> 1) && output_h == std::max<unsigned int>(1, image.height() >> 1) && image.halve_box())
+		                    || image.resize(output_w, output_h, alphaChannelOverride);
 		ASSERT_OR_RETURN(nullptr, resizeResult, "Failed to resize image mipmap [%zu] to output size (%u x %u): %s", i, output_w, output_h, filename.c_str());
 		modStats.mipResizeUs += modUsSince(modT0);
 		modT0 = std::chrono::steady_clock::now();

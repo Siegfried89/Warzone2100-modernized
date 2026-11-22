@@ -272,6 +272,8 @@ public:
 	bool convert_to_single_channel(unsigned int channel = 0);
 
 	bool resize(int newWidth, int newHeight, optional<int> alphaChannelOverride = nullopt);
+	// MOD (22.11.): schnelle Mipmap-Stufe - exakt halbieren mit 2x2-Kasten (false, wenn eine Seite ungerade und > 1 ist)
+	bool halve_box();
 	bool resizedFromOther(const iV_Image& other, int output_w, int output_h, optional<int> alphaChannelOverride = nullopt);
 	bool scale_image_max_size(int maxWidth, int maxHeight);
 

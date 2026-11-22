@@ -381,6 +381,40 @@ bool iV_Image::resizeInternal(const iV_Image& source, int output_w, int output_h
 	return true;
 }
 
+// MOD (Wunsch 22.11. 18:36 "Tu alles um Ladezeiten ... so effizient wie moeglich zu machen"): Mipmaps wurden mit dem Mitchell-Filter von
+// stb_image_resize gerechnet - 4,4 s von 14 s beim Vorladen der Modell-Texturen (223 Megapixel). Fuer das exakte Halbieren einer Stufe
+// genuegt ein 2x2-Kasten (wie die Grafikkarten selbst Mipmaps bilden): rund zehnmal schneller. Wie bisher ohne Alpha-Gewichtung.
+bool iV_Image::halve_box()
+{
+	if (m_bmp == nullptr || m_channels == 0 || m_channels > 4) { return false; }
+	if ((m_width > 1 && (m_width & 1u) != 0) || (m_height > 1 && (m_height & 1u) != 0)) { return false; }
+	const unsigned int ow = std::max(1u, m_width >> 1), oh = std::max(1u, m_height >> 1);
+	const size_t C = m_channels;
+	unsigned char *out = static_cast<unsigned char *>(malloc(static_cast<size_t>(ow) * static_cast<size_t>(oh) * C));
+	if (out == nullptr) { return false; }
+	const size_t dx = m_width > 1 ? C : 0;                                       // zweite Spalte (bei Breite 1 dieselbe)
+	const size_t dy = m_height > 1 ? static_cast<size_t>(m_width) * C : 0;       // zweite Zeile
+	for (unsigned int y = 0; y < oh; ++y)
+	{
+		const unsigned char *row = m_bmp + static_cast<size_t>(m_height > 1 ? y * 2 : y) * static_cast<size_t>(m_width) * C;
+		unsigned char *o = out + static_cast<size_t>(y) * ow * C;
+		for (unsigned int x = 0; x < ow; ++x)
+		{
+			const unsigned char *s = row + static_cast<size_t>(m_width > 1 ? x * 2 : x) * C;
+			for (size_t c = 0; c < C; ++c)
+			{
+				o[c] = static_cast<unsigned char>((static_cast<unsigned>(s[c]) + s[c + dx] + s[c + dy] + s[c + dx + dy] + 2u) >> 2);
+			}
+			o += C;
+		}
+	}
+	free(m_bmp);
+	m_bmp = out;
+	m_width = ow;
+	m_height = oh;
+	return true;
+}
+
 bool iV_Image::resize(int output_w, int output_h, optional<int> alphaChannelOverride /*= nullopt*/)
 {
 	if (output_w == m_width && output_h == m_height)
