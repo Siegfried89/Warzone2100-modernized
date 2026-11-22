@@ -38,6 +38,9 @@ bool droidInCover(const DROID *psDroid);
 int fillTile(int tileX, int tileY, int amount);
 /// Kachel (Mitte) der naechsten Mulde im Umkreis (Kacheln) um einen Weltpunkt mit Mindesttiefe; false, wenn keine.
 bool findDent(const Vector2i &worldCenter, int radiusTiles, int minDepth, Vector2i &outTile);
+/// (22.11. 21:19, Battle-Plan "Restore") Tiefe des Kraters/Lochs auf der Kachel (nur zuschuettbare Mulden; Graben-Bauwerke, Tunnel und
+/// Durchbrueche zaehlen nicht), 0 = unberuehrt
+int craterDepthAt(int tileX, int tileY);
 
 /// Eine Kachel absenken (Graben) und optional links/rechts davon einen kleinen Erdwall anheben (dir: 0..65535, Laengsrichtung
 /// des Grabens). Wird vom Befestigungsbau fuer reine Erdgraeben verwendet.

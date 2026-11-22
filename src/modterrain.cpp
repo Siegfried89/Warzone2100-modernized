@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "modterrain.h"
+#include "modroad.h"
 #include "lib/ivis_opengl/imd.h"
 #include "lib/ivis_opengl/ivisdef.h"
 
@@ -417,6 +418,7 @@ bool addCrater(int worldX, int worldY, int size)
 	{
 		for (int xx = x0; xx < x0 + n; xx++)
 		{
+			modroad::onCrater(xx, yy);   // MOD (22.11. 20:50): Krater zerstoert Strassen (das Strassen-Bauwerk weicht, dann entsteht der Krater)
 			if (!tileOk(m, xx, yy)) { continue; }
 			const uint64_t k = keyOf(layerTag(), xx, yy);
 			Cell &c = s_cells[k];
@@ -542,6 +544,12 @@ int fillTile(int tileX, int tileY, int amount)
 	dirtyAround(tileX, tileY);
 	tidy(k, tileX, tileY);   // ganz zu -> Originaltextur zurueck
 	return depthAtTile(tileX, tileY);
+}
+
+int craterDepthAt(int tileX, int tileY)
+{
+	if (s_cells.empty()) { return 0; }
+	return cellDyn(layerTag(), tileX, tileY);
 }
 
 bool findDent(const Vector2i &worldCenter, int radiusTiles, int minDepth, Vector2i &outTile)

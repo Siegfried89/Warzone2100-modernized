@@ -109,6 +109,7 @@
 #include "modferry.h"
 #include "modrail.h"   // MOD (21.11.): Gleise
 #include "modbridge.h"   // MOD (22.11.): Bruecken
+#include "modroad.h"   // MOD (22.11.): Strassen
 #include "modheadlights.h"
 #include "modnightlights.h"
 #include "modrocket.h"
@@ -122,6 +123,7 @@
 #include "modoil.h"
 #include "modcrates.h"
 #include "modshield.h"
+#include "modshockwave.h"
 #include "modtracks.h"
 #include "modrecover.h"
 #include "modnestcrew.h"
@@ -1572,6 +1574,7 @@ static void drawTiles(iView *player, LightingData& lightData, LightMap& lightmap
 	modrailbeam::draw3D(viewMatrix); // MOD (19.11.): blaue Railgun-Strahlen (Zone Trooper, Kommando)
 	modicbm::draw3D(viewMatrix);     // MOD (18.11.): Atomrakete im Flug, Atompilz
 	modshield::draw3D(viewMatrix);   // MOD (18.11.): Schildkuppeln, Einschlag-Aufblitzen
+	modshockwave::draw3D(viewMatrix);   // MOD (22.11. 21:19): Druckwelle grosser Oel-/Munitionsexplosionen
 	modtracks::draw3D(viewMatrix);   // MOD (18.11.): Fahrspuren
 	modrocket::draw3D(viewMatrix);   // MOD (17.11. 20:56): Raketen im Silo, Countdown-Dampf, Start   // MOD (17.11. 20:44): warmweisse Nachtlichter an Masten, Kraenen, Tuermen, Gebaeuden
 	display3DProjectiles(viewMatrix, perspectiveViewMatrix); // may be bucket render implemented
@@ -3427,6 +3430,12 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 
 	// MOD (22.11.): Strassenbruecke - Platte, Pfeiler, Gelaender (Eisenbahnbruecken zeichnet modrail mit Schienen)
 	if (modbridge::isBridge(psStructure) && !modrail::isRail(psStructure) && modbridge::drawBridge(psStructure, buildingBrightness, viewMatrix))
+	{
+		setScreenDispWithPerspective(&psStructure->sDisplay, perspectiveViewMatrix * modelMatrix);
+		return;
+	}
+	// MOD (22.11. 21:19): fertige Strasse - die Kachel zeigt sie (modroad); das Bauwerk selbst unsichtbar, bleibt anklickbar (Abriss)
+	if (modroad::isRoad(psStructure) && psStructure->status == SS_BUILT)
 	{
 		setScreenDispWithPerspective(&psStructure->sDisplay, perspectiveViewMatrix * modelMatrix);
 		return;

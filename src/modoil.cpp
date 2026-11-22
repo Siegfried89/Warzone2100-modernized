@@ -2,6 +2,7 @@
 // MOD: Oelkreislauf, siehe modoil.h
 
 #include "modoil.h"
+#include "modshockwave.h"
 #include "modcontrol.h"   // (21.11.) Spieler-Befehl unterbricht den Autopiloten kurz
 #include "action.h"
 #include "modterrain.h"
@@ -271,6 +272,7 @@ void boomEffects(int x, int y, int z, int n)
 	}
 	shakeStart(200 + 40 * static_cast<unsigned>(m));
 	audio_PlayStaticTrack(x, y, ID_SOUND_EXPLOSION);
+	if (n >= 5) { modshockwave::spawn(x, y, z, m); }   // MOD (22.11. 21:19): Druckwelle bei grossen Oel-Explosionen
 }
 
 void areaDamage(int x, int y, int radius, int base)

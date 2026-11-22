@@ -2,6 +2,7 @@
 // MOD: Munitions-Nachschub Fabrik -> Lkw -> Depot -> Front (siehe modcrates.h)
 
 #include "modcrates.h"
+#include "modshockwave.h"
 #include "modammo.h"
 #include "modcontrol.h"
 #include "modoil.h"
@@ -289,6 +290,7 @@ void effects(int x, int y, int z, int n)
 	}
 	shakeStart(300 + 60 * static_cast<unsigned>(m));
 	audio_PlayStaticTrack(x, y, ID_SOUND_EXPLOSION);
+	if (n >= 3) { modshockwave::spawn(x, y, z, std::min(10, 2 + n / 3)); }   // MOD (22.11. 21:19): Druckwelle bei grossen Munitionsexplosionen
 }
 
 void areaDamage(int x, int y, int radius, int base)
@@ -658,7 +660,9 @@ void onStructureDestroyed(const STRUCTURE *s)
 	int n = 0;
 	if (it != s_stock.end()) { n = cratesIn(it->second); s_stock.erase(it); }
 	else if (isPile(s)) { n = 2; }
-	if (isPile(s) && n > 0)
+	else if (isDepot(s)) { n = DEPOT_START; }   // nie benutztes Depot: Anfangsvorrat
+	// (Wunsch 22.11. 21:19 "grosse Ammodepot-Explosionen"): ein fertiges Munitionsdepot geht mit seinem Vorrat hoch wie ein Kistenhaufen
+	if ((isPile(s) || (isDepot(s) && s->status == SS_BUILT)) && n > 0)
 	{
 		s_booms.push_back({ gameTime + 60 + static_cast<unsigned>(s->id % 4u) * 40u, s->pos.x, s->pos.y, s->pos.z, n });
 	}

@@ -34,6 +34,7 @@
 
 #include "objects.h"
 #include "order.h"
+#include "modruin.h"
 #include "modfuel.h"
 #include "modicbm.h"
 #include "modarty.h"
@@ -2971,6 +2972,11 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 	if (modcrew::canBoard(psDroid, psObj))
 	{
 		return DroidOrder(DORDER_MOVE, psObj->pos.xy());
+	}
+	// MOD (22.11. 21:19): Baufahrzeug + Rechtsklick auf eine Ruine = das alte Bauwerk wieder aufbauen
+	if (modruin::rebuildOrder(psDroid, psObj, order))
+	{
+		return order;
 	}
 	// MOD (22.11.): Rechtsklick auf einen eigenen Tunnelmund = hinfahren und durch den Tunnel (Bauer reparieren ihn weiterhin)
 	if (!psDroid->isConstructionDroid() && modtunnel::canUse(psDroid) && modtunnel::usableMouth(psObj, psDroid->player))

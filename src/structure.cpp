@@ -44,6 +44,7 @@
 #include "visibility.h"
 #include "structure.h"
 #include "modbridge.h"
+#include "modruin.h"
 #include "modicbm.h"
 #include "modupgrade.h"
 #include "modgroundfire.h"   // MOD
@@ -4988,7 +4989,7 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 					for (int i = 0; i < b.size.x; ++i)
 					{
 						MAPTILE const *psTile = mapTile(world.map, b.map.x + i, b.map.y + j);
-						if (TileIsKnownOccupied(psTile, player))
+						if (TileIsKnownOccupied(psTile, player) && !modruin::isRuinTile(psTile))   // MOD (22.11.): Ruinen werden beim Bauen weggeraeumt
 						{
 							if (TileHasWall(psTile) && (psBuilding->type == REF_DEFENSE || psBuilding->type == REF_GATE || psBuilding->type == REF_WALL))
 							{
@@ -5408,6 +5409,7 @@ bool destroyStruct(STRUCTURE *psDel, unsigned impactTime, GameWorld& world)
 	// Actually set the tiles on fire - even if the effect is not visible.
 	tileSetFire(world.map, psDel->pos.x, psDel->pos.y, burnDuration);
 
+	modruin::onDestroyed(psDel);   // MOD (22.11. 20:50): Ruine (vor removeStruct merken, angelegt im naechsten Schritt)
 	const bool resourceFound = removeStruct(psDel, true, world);
 	modbridge::onDestroyed(psDel, world);   // MOD (22.11.): Brueckenwrack
 	psDel->died = impactTime;
