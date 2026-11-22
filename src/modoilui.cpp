@@ -133,10 +133,16 @@ IMAGEFILE *images()
 	return (img != nullptr && img->imageDefs.size() > static_cast<size_t>(IC_BTN_HI)) ? img : nullptr;
 }
 
+// (22.11.) Absturz beim zweiten Spielstart in derselben Sitzung (Warzone2100.RPT 22.11. 16:28, bind_textures mit ungueltiger Textur aus
+// images/modoil.img): die Bildliste lag in einer Funktions-Statik und ueberlebte das Spielende, ihre Texturen aber nicht. Jetzt wie bei
+// den anderen Bildlisten (modrosette, modunitstats): in shutdown() freigeben und beim naechsten Spiel neu laden.
+IMAGEFILE *s_oilImg = nullptr;
+bool s_oilTried = false;
+
 IMAGEFILE *oilImages()
 {
-	static IMAGEFILE *s_img = nullptr;
-	static bool s_tried = false;
+	IMAGEFILE *&s_img = s_oilImg;
+	bool &s_tried = s_oilTried;
 	if (!s_tried)
 	{
 		s_tried = true;
@@ -501,5 +507,7 @@ void shutdown()
 {
 	if (s_screen) { widgRemoveOverlayScreen(s_screen); }
 	s_screen = nullptr; s_panel = nullptr; s_toggle = nullptr; s_tiles.clear();
+	if (s_oilImg != nullptr) { iV_FreeImageFile(s_oilImg); s_oilImg = nullptr; }
+	s_oilTried = false;
 }
 }
