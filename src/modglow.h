@@ -28,6 +28,9 @@ void arrowHead(const glm::vec2 &base, const glm::vec2 &tip, float halfW, float g
 /// kurze Querstriche (Verteidigungslinie): alle in einem Aufruf, mit weicher Kante statt grossem Lichthof
 void bars(const std::vector<std::pair<glm::vec2, glm::vec2>> &bars, float halfW, Colour c, float alpha);
 
+/// gefuellte Form um einen Mittelpunkt (sternfoermig erreichbar, z. B. ein Stern): Faecher, Mitte heller (centerWhite 0..1)
+void fan(const glm::vec2 &center, const std::vector<glm::vec2> &ring, Colour c, float alpha, float centerWhite = 0.f);
+
 /// GPU-Puffer freigeben (Spielende)
 void shutdown();
 }
