@@ -1482,6 +1482,13 @@ void pie_SetPickRecorder(PiePickRecorder recorder, void *user)
 	s_modPickUser = user;
 }
 
+static PieGlowLevelHook s_modGlowLevelHook = nullptr;   // MOD (22.11. 22:54): Leucht-Ebenen
+
+void pie_SetGlowLevelHook(PieGlowLevelHook hook)
+{
+	s_modGlowLevelHook = hook;
+}
+
 bool pie_Draw3DShape(const iIMDShape *shape, int frame, int team, PIELIGHT colour, int pieFlag, int pieFlagData, const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix, float stretchDepth, bool onlySingleLevel)
 {
 	pieCount++;
@@ -1496,7 +1503,22 @@ bool pie_Draw3DShape(const iIMDShape *shape, int frame, int team, PIELIGHT colou
 	const iIMDShape *pCurrShape = shape;
 	do
 	{
-		if (pieFlag & pie_BUTTON)
+		// MOD (22.11. 22:54): Leucht-Ebene (eigenes TYPE-Flag additiv) - additiv und unbeleuchtet mit der Deckkraft des Rueckrufs;
+		// in Knoepfen, Bauplaenen, Schild-/Bau-Durchgaengen gar nicht
+		int glowAlpha = -1;
+		if (s_modGlowLevelHook != nullptr && (pCurrShape->flags & iV_IMD_ADDITIVE) && !(pieFlag & pie_ADDITIVE))
+		{
+			glowAlpha = s_modGlowLevelHook(pCurrShape, pieFlag, modelMatrix, viewMatrix);
+		}
+		if (glowAlpha >= 0)
+		{
+			if (glowAlpha > 0 && !(pieFlag & (pie_BUTTON | pie_TRANSLUCENT | pie_PREMULTIPLIED | pie_SHIELD | pie_HEIGHT_SCALED | pie_RAISE)))
+			{
+				instancedMeshRenderer.Draw3DShape(pCurrShape, frame, teamcolour, WZCOL_WHITE, pie_ADDITIVE, std::min(glowAlpha, 255), modelMatrix, viewMatrix, stretchDepth);
+			}
+			retVal = true;
+		}
+		else if (pieFlag & pie_BUTTON)
 		{
 			pie_Draw3DButton(pCurrShape, teamcolour, modelMatrix, viewMatrix);
 			retVal = true;
