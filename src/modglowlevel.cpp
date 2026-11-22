@@ -6,7 +6,8 @@
 //  - "glowlvl-eye": ruhiges Leuchten mit leichtem Flackern, dazu ein kleiner Lichthof mit sehr kurzen, langsam drehenden Strahlen
 //    (God-Rays wie beim Combot-Auge; effects/modeyerays.pie) an der Mitte der Ebene - die roten Kybernetik-Augen der Kollektiv-Infanterie.
 //  - "glowlvl-pulse": glueht ab und zu auf (alle 6-13 Sekunden gut 2 Sekunden, je Gebaeude zu einem anderen Zeitpunkt) - die blauen
-//    Scheiben des Indirect Weapons Lab und die langen roten Scheiben des Laser Optics Lab.
+//    Scheiben des Indirect Weapons Lab und die langen roten Scheiben des Laser Optics Lab; dabei beleuchten sie die naehere Umgebung in
+//    ihrer Farbe (Seitenname mit "blue"/"red").
 // Nur Anzeige.
 #include "modglowlevel.h"
 
@@ -16,6 +17,7 @@
 #include "lib/ivis_opengl/imd.h"
 #include "lib/ivis_opengl/ivisdef.h"
 #include "lib/ivis_opengl/piedef.h"
+#include "lib/ivis_opengl/pielighting.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/piestate.h"
 
@@ -65,7 +67,21 @@ int glowHook(const iIMDShape *lvl, int pieFlag, const glm::mat4 &model, const gl
 		const float x = static_cast<float>(local) / static_cast<float>(GLOW_MS);
 		const float env = std::pow(std::sin(x * 3.14159265f), 1.4f);
 		const float flick = 0.9f + 0.1f * std::sin(t * 23.f + ph);
-		return std::clamp(static_cast<int>(255.f * env * flick), 0, 255);
+		const int a = std::clamp(static_cast<int>(255.f * env * flick), 0, 255);
+		// (Wunsch 23:16 "soll ausserdem einen kleinen Bereich in der naeheren Umgebung in diesem Blau beleuchten - das rote Labor auch"):
+		// Punktlicht in der Farbe der Scheiben an der Mitte der Leucht-Ebene, so hell wie sie gerade glueht
+		if (a > 8)
+		{
+			const glm::vec3 c = (glm::vec3(lvl->min) + glm::vec3(lvl->max)) * 0.5f;
+			const glm::vec3 wp = glm::vec3(model * glm::vec4(c, 1.f));
+			LIGHT l;
+			l.position = Vector3i(static_cast<int>(wp.x), static_cast<int>(wp.y), static_cast<int>(-wp.z));
+			l.range = 300;
+			l.colour = tex.find("blue") != std::string::npos ? pal_Colour(80, 165, 255) : (tex.find("red") != std::string::npos ? pal_Colour(255, 70, 40) : pal_Colour(255, 240, 220));
+			l.intensity = 1.5f * static_cast<float>(a) / 255.f;
+			getCurrentLightingData().lights.push_back(l);
+		}
+		return a;
 	}
 	// ruhiges Leuchten (Augen): leichtes Flackern
 	const int alpha = std::clamp(static_cast<int>(205.f + 35.f * std::sin(t * 6.1f + ph) + 15.f * std::sin(t * 17.3f + ph * 1.7f)), 0, 255);
@@ -76,12 +92,13 @@ int glowHook(const iIMDShape *lvl, int pieFlag, const glm::mat4 &model, const gl
 		{
 			const glm::vec3 c = (glm::vec3(lvl->min) + glm::vec3(lvl->max)) * 0.5f;
 			const glm::vec3 wp = glm::vec3(model * glm::vec4(c, 1.f));
-			const float k = 1.f + 0.08f * std::sin(t * 7.3f + ph) + 0.05f * std::sin(t * 17.1f + ph * 0.5f);
+			// wie das Combot-Auge (modcombot drawEffectPiece): leichtes Pulsieren, langsam drehende Strahlen, Deckkraft 130..200
+			const float k = 1.f + 0.07f * std::sin(t * 7.3f + ph) + 0.04f * std::sin(t * 17.1f + ph * 0.5f);
 			const float sc = glm::length(glm::vec3(model[0])) * k;
 			const glm::mat3 camRot(view);
 			const glm::mat4 bb = glm::translate(glm::mat4(1.f), wp) * glm::mat4(glm::transpose(camRot))
 			                     * glm::rotate(glm::mat4(1.f), t * 0.35f + ph, glm::vec3(0.f, 0.f, 1.f)) * glm::scale(glm::mat4(1.f), glm::vec3(sc));
-			pie_Draw3DShape(rays, 0, 0, WZCOL_WHITE, pie_ADDITIVE, std::clamp(alpha - 40, 0, 255), bb, view, 0.f, true);
+			pie_Draw3DShape(rays, 0, 0, WZCOL_WHITE, pie_ADDITIVE, std::clamp(static_cast<int>(165.f + 35.f * std::sin(t * 5.1f + ph)), 0, 255), bb, view, 0.f, true);
 		}
 	}
 	return alpha;
