@@ -6,6 +6,8 @@
 //   Kollektiv     Leopard, Panther, Tiger
 //   Nexus         Retaliation, Retribution, Vengeance
 // Scavengers (und Spieler ohne gewaehlte Fraktion, z. B. Kampagnen-Gegner) bleiben unbeschraenkt.
+// (22.11. 20:01) Infanterie ist an die Fraktion gebunden, auch fuer die Scavengers: Scav-Infanterie (B1BaBa*) nur Scavengers,
+// NP-Soldaten nur New Paradigm, Nexus-/Kollektiv-/Project-Soldaten nur ihre Fraktion; Kampagne: Spieler 0 = Project, Gegner frei.
 // Wirkt im Designer (Rumpfliste) und bei allen Vorlagen (Fabrikliste, KI-Bau ueber researchedTemplate) - fuer alle Spieler gleich.
 // Dazu (Punkt 6/7): Originalfarben je Fraktion und zufaellige Fraktion fuer Computer-Gegner (multiint.cpp, Spielstart des Hosts).
 #pragma once

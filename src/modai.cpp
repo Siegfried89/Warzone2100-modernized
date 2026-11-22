@@ -18,6 +18,9 @@
 #include "modtunnel.h"
 #include "group.h"
 #include "modlayerdig.h"
+#include "modapc.h"
+#include "modoil.h"
+#include "modrail.h"
 #include "multiplay.h"
 #include "objmem.h"
 #include "order.h"
@@ -511,7 +514,7 @@ bool combatIdle(const DROID *d)
 	if (d->died || d->numWeaps == 0 || d->isTransporter() || d->isVtol() || d->isFlying() || d->isConstructionDroid()) { return false; }
 	if (d->droidType == DROID_COMMAND || d->droidType == DROID_SENSOR || d->droidType == DROID_REPAIR || d->droidType == DROID_CYBORG_REPAIR) { return false; }
 	if (d->psGroup != nullptr && d->psGroup->type == GT_COMMAND) { return false; }
-	if (modlayer::layerOf(d) != modlayer::SURFACE || modtunnel::inTransit(d)) { return false; }
+	if (modlayer::layerOf(d) != modlayer::SURFACE || modtunnel::inTransit(d) || modapc::aboard(d) || modrail::isTrain(d)) { return false; }
 	return d->order.type == DORDER_NONE && d->action == DACTION_NONE;
 }
 
@@ -600,6 +603,23 @@ void tryDrill(GameWorld &w, unsigned p, const Vector2i &stage, const Vector2i &t
 	s_nextDrill[p] = gameTime + 120000;
 }
 
+// ---------------------------------------------------------------- (Wunsch 22.11. 20:01 "KI koennen und sollten Zuege bauen")
+// Eisenbahn der KI: liegt der naechste Gegner weit weg (ab 36 Feldern), legt die KI eine Gleisstrecke von Bahnhof A (5 Felder vor der eigenen
+// Basis) bis Bahnhof B (14 Felder vor der feindlichen Basis) - mit hoechstens 2 untaetigen Lkw, ueber Wasser mit Eisenbahnbruecken
+// (modbuild::planRailLine). Steht die Strecke, baut sie bei A einen Lokschuppen und darin einen Zug: MG-Lok, 2 Truppenwaggons, MG-Flachwagen.
+// Untaetige Infanterie steigt bei A ein; voll (oder nach einer Minute mit mindestens 4 Mann) faehrt der Zug nach B, alle steigen aus und
+// greifen die feindliche Basis an, der Zug kehrt nach A zurueck. Faellt die Lok aus, baut der Lokschuppen eine neue.
+constexpr int RAIL_MIN_DIST = 36 * DIST_TILE;
+constexpr unsigned RAIL_REPLAN_MS = 15000;
+unsigned s_nextRail[MAX_PLAYERS] = {};
+bool s_railOn[MAX_PLAYERS] = {};
+bool s_railDone[MAX_PLAYERS] = {};
+Vector2i s_railA[MAX_PLAYERS], s_railB[MAX_PLAYERS];
+unsigned s_loadSince[MAX_PLAYERS] = {};
+unsigned s_phaseSince[MAX_PLAYERS] = {};
+enum TrainPhase : uint8_t { TP_LOAD = 0, TP_GO = 1, TP_BACK = 2 };
+uint8_t s_trainPhase[MAX_PLAYERS] = {};
+
 void planTick(GameWorld &w, unsigned p, const Vector2i &base)
 {
 	Vector2i target;
@@ -615,6 +635,12 @@ void planTick(GameWorld &w, unsigned p, const Vector2i &base)
 	for (DROID *d : w.objects.droids[p])
 	{
 		if (!combatIdle(d)) { continue; }
+		if (s_railDone[p] && iHypot(d->pos.xy() - s_railB[p]) < 10 * DIST_TILE)
+		{
+			// mit dem Zug angekommen: gleich angreifen statt zurueck zum Bereitstellungsraum
+			orderDroidLoc(d, DORDER_SCOUT, static_cast<UDWORD>(target.x), static_cast<UDWORD>(target.y), ModeImmediate);
+			continue;
+		}
 		const int dd = iHypot(d->pos.xy() - stage);
 		if (dd <= STAGE_R) { atStage.push_back(d); continue; }
 		// zum Bereitstellungsraum (leicht verteilt)
@@ -640,6 +666,217 @@ void planTick(GameWorld &w, unsigned p, const Vector2i &base)
 		{
 			orderDroidLoc(d, DORDER_SCOUT, static_cast<UDWORD>(target.x), static_cast<UDWORD>(target.y), ModeImmediate);
 		}
+	}
+}
+
+bool ownRailNear(GameWorld &w, unsigned p, const Vector2i &pos, int r)
+{
+	for (const STRUCTURE *s : w.objects.structures[p])
+	{
+		if (!s->died && s->status == SS_BUILT && modrail::isRail(s) && iHypot(s->pos.xy() - pos) <= r) { return true; }
+	}
+	return false;
+}
+
+STRUCTURE *ownDepot(GameWorld &w, unsigned p)
+{
+	for (STRUCTURE *s : w.objects.structures[p])
+	{
+		if (!s->died && s->pStructureType->trainDepot) { return s; }
+	}
+	return nullptr;
+}
+
+bool trainProduce(GameWorld &w, unsigned p, STRUCTURE *depot, const char *id, const char *alt = nullptr)
+{
+	DROID_TEMPLATE *t = findTemplate(p, id);
+	if ((t == nullptr || !researchedTemplate(t, static_cast<int>(p), true)) && alt != nullptr) { t = findTemplate(p, alt); }
+	if (t == nullptr || !researchedTemplate(t, static_cast<int>(p), true) || getPower(p) < static_cast<int>(calcTemplatePower(t)) + 100) { return false; }
+	return validTemplateForFactory(t, depot, false) && structSetManufacture(depot, t, ModeImmediate);
+}
+
+void railTick(GameWorld &w, unsigned p, const Vector2i &base)
+{
+	if (gameTime < 8 * 60000) { return; }
+	STRUCTURE_STATS *rail = available(p, "A0RailTrack");
+	STRUCTURE_STATS *depotStats = available(p, "A0RailDepot");
+	if (rail == nullptr || depotStats == nullptr) { return; }
+	if (!s_railOn[p])
+	{
+		Vector2i target;
+		if (!enemyBase(w, p, base, target)) { return; }
+		const int dist = iHypot(target - base);
+		if (dist < RAIL_MIN_DIST) { return; }
+		auto clampMap = [&w](Vector2i v) {
+			v.x = std::clamp(v.x, world_coord(3), world_coord(w.map.width - 4));
+			v.y = std::clamp(v.y, world_coord(3), world_coord(w.map.height - 4));
+			return v;
+		};
+		s_railA[p] = clampMap(lerpW(base, target, 5 * DIST_TILE, dist));
+		s_railB[p] = clampMap(lerpW(target, base, 14 * DIST_TILE, dist));
+		s_railOn[p] = true;
+		s_railDone[p] = false;
+		s_trainPhase[p] = TP_LOAD;
+	}
+	const Vector2i A = s_railA[p], B = s_railB[p];
+	// 1. Strecke bauen (Plan enthaelt nur noch fehlende Stuecke; vorhandene eigene Gleise werden mitbenutzt)
+	if (gameTime >= s_nextRail[p])
+	{
+		s_nextRail[p] = gameTime + RAIL_REPLAN_MS;
+		const std::vector<modbuild::Placement> plan = modbuild::planRailLine(p, {A, B});
+		s_railDone[p] = plan.empty() && ownRailNear(w, p, A, 2 * DIST_TILE) && ownRailNear(w, p, B, 3 * DIST_TILE);
+		int busy = 0;
+		for (const DROID *d : w.objects.droids[p])
+		{
+			if (!d->died && d->isConstructionDroid() && (d->order.type == DORDER_LINEBUILD || d->order.type == DORDER_BUILD)
+			    && d->order.psStats != nullptr && modrail::isRailStats(d->order.psStats)) { busy++; }
+		}
+		if (!plan.empty() && busy == 0 && getPower(p) >= 150)
+		{
+			std::vector<DROID *> trucks;
+			for (DROID *d : w.objects.droids[p])
+			{
+				if (trucks.size() >= 2) { break; }
+				if (d->died || !d->isConstructionDroid() || modlayer::layerOf(d) != modlayer::SURFACE || modbuild::isInfantryBuilder(d)) { continue; }
+				if (d->order.type == DORDER_NONE && d->action == DACTION_NONE) { trucks.push_back(d); }
+			}
+			if (!trucks.empty())
+			{
+				// jeder Lkw bekommt einen zusammenhaengenden Abschnitt; der erste beginnt an der eigenen Basis
+				auto worldOf = [](const Vector2i &t) { return Vector2i(world_coord(t.x) + TILE_UNITS / 2, world_coord(t.y) + TILE_UNITS / 2); };
+				const size_t n = trucks.size();
+				for (size_t k = 0; k < plan.size(); ++k)
+				{
+					DROID *t = trucks[std::min(n - 1, k * n / plan.size())];
+					const modbuild::Placement &pl = plan[k];
+					const Vector2i a = worldOf(pl.tile), b = worldOf(pl.tile2);
+					const bool first = k == 0 || trucks[std::min(n - 1, (k - 1) * n / plan.size())] != t;
+					if (first) { orderDroidStatsTwoLocDir(t, DORDER_LINEBUILD, pl.stats, a.x, a.y, b.x, b.y, static_cast<uint16_t>(pl.direction), ModeImmediate); }
+					else { orderDroidStatsTwoLocDirAdd(t, DORDER_LINEBUILD, pl.stats, a.x, a.y, b.x, b.y, static_cast<uint16_t>(pl.direction)); }
+				}
+			}
+		}
+	}
+	if (!s_railDone[p]) { return; }
+	// 2. Lokschuppen bei Bahnhof A
+	STRUCTURE *depot = ownDepot(w, p);
+	if (depot == nullptr)
+	{
+		if (getPower(p) < static_cast<int>(depotStats->powerToBuild) + 100) { return; }
+		DROID *t = idleTruck(w, p);
+		Vector2i at;
+		if (t != nullptr && findSpot(w, p, depotStats, A, 1, 6, at)) { orderDroidStatsLocDir(t, DORDER_BUILD, depotStats, at.x, at.y, 0, ModeImmediate); }
+		return;
+	}
+	if (depot->status != SS_BUILT) { return; }
+	// 3. Zug: Lok, 2 Truppenwaggons, MG-Flachwagen
+	DROID *loco = nullptr;
+	int troop = 0, flat = 0;
+	for (DROID *d : w.objects.droids[p])
+	{
+		if (d->died || !modrail::isTrain(d)) { continue; }
+		if (modrail::isLoco(d)) { if (loco == nullptr) { loco = d; } }
+		else if (modapc::isApc(d)) { troop++; }
+		else { flat++; }
+	}
+	if (depot->isIdle())
+	{
+		if (loco == nullptr) { trainProduce(w, p, depot, "TrainRailBusMG", "TrainFireLocoFlamer"); }
+		else if (troop < 2) { trainProduce(w, p, depot, "TrainTroopWagon"); }
+		else if (flat < 1) { trainProduce(w, p, depot, "TrainMGFlatcar"); }
+	}
+	if (loco == nullptr || troop == 0) { return; }
+	// 4. Fahrbetrieb
+	std::vector<DROID *> wagons;
+	int aboardN = 0;
+	for (DROID *d : w.objects.droids[p])
+	{
+		if (!d->died && modrail::isWagon(d) && modapc::isApc(d) && modrail::locoOf(d) == loco->id) { wagons.push_back(d); aboardN += modapc::load(d); }
+	}
+	const bool locoIdle = loco->order.type == DORDER_NONE && loco->sMove.Status == MOVEINACTIVE;
+	switch (s_trainPhase[p])
+	{
+	case TP_LOAD:
+	{
+		if (iHypot(loco->pos.xy() - A) > 6 * DIST_TILE)
+		{
+			if (locoIdle) { orderDroidLoc(loco, DORDER_MOVE, static_cast<UDWORD>(A.x), static_cast<UDWORD>(A.y), ModeImmediate); }
+			return;
+		}
+		if (wagons.empty()) { return; }   // Waggons kuppeln noch an
+		int seats = modrail::freeSeats(loco);
+		// untaetige Infanterie aus der Basisgegend steigt ein (jeder zu einem Waggon mit freien Plaetzen)
+		size_t wi = 0;
+		std::vector<int> wagonFree;
+		for (DROID *wg : wagons) { wagonFree.push_back(modapc::capacity(wg) - modapc::load(wg)); }
+		// schon auf dem Weg zu einem Waggon: deren Plaetze sind vergeben
+		for (const DROID *d : w.objects.droids[p])
+		{
+			if (d->died || d->order.type != DORDER_GUARD || d->order.psObj == nullptr || modapc::aboard(d)) { continue; }
+			for (size_t k = 0; k < wagons.size(); ++k)
+			{
+				if (d->order.psObj == wagons[k]) { wagonFree[k]--; seats--; break; }
+			}
+		}
+		for (DROID *d : w.objects.droids[p])
+		{
+			if (seats <= 0) { break; }
+			if (!combatIdle(d) || !modoil::isInfantry(d) || iHypot(d->pos.xy() - base) > 30 * DIST_TILE) { continue; }
+			while (wi < wagons.size() && wagonFree[wi] <= 0) { wi++; }
+			if (wi >= wagons.size()) { break; }
+			orderDroidObj(d, DORDER_GUARD, wagons[wi], ModeImmediate);
+			wagonFree[wi]--;
+			seats--;
+		}
+		if (aboardN > 0 && s_loadSince[p] == 0) { s_loadSince[p] = gameTime; }
+		const bool full = modrail::freeSeats(loco) == 0 && aboardN > 0;
+		const bool waited = aboardN >= 4 && s_loadSince[p] != 0 && gameTime - s_loadSince[p] > 60000;
+		if (full || waited)
+		{
+			// wer noch auf dem Weg zum Waggon ist, bleibt hier (laeuft dem Zug nicht hinterher)
+			for (DROID *d : w.objects.droids[p])
+			{
+				if (d->died || d->order.type != DORDER_GUARD || modapc::aboard(d)) { continue; }
+				if (std::find(wagons.begin(), wagons.end(), d->order.psObj) != wagons.end()) { orderDroid(d, DORDER_STOP, ModeImmediate); }
+			}
+			orderDroidLoc(loco, DORDER_MOVE, static_cast<UDWORD>(B.x), static_cast<UDWORD>(B.y), ModeImmediate);
+			s_trainPhase[p] = TP_GO;
+			s_phaseSince[p] = gameTime;
+			s_loadSince[p] = 0;
+		}
+		break;
+	}
+	case TP_GO:
+	{
+		const bool there = iHypot(loco->pos.xy() - B) <= 4 * DIST_TILE;
+		const bool stuck = gameTime - s_phaseSince[p] > 180000;   // Strecke unterbrochen: dort aussteigen, wo der Zug steht
+		if (locoIdle && !there && !stuck)
+		{
+			orderDroidLoc(loco, DORDER_MOVE, static_cast<UDWORD>(B.x), static_cast<UDWORD>(B.y), ModeImmediate);
+			return;
+		}
+		if ((there && locoIdle) || stuck)
+		{
+			loco->secondaryOrder |= DSS_MINECLEAR_SET;   // alle aussteigen (modrail gibt es an die Truppenwaggons weiter)
+			s_trainPhase[p] = TP_BACK;
+			s_phaseSince[p] = gameTime;
+		}
+		break;
+	}
+	case TP_BACK:
+	default:
+		if (aboardN == 0 && gameTime - s_phaseSince[p] > 3000)
+		{
+			orderDroidLoc(loco, DORDER_MOVE, static_cast<UDWORD>(A.x), static_cast<UDWORD>(A.y), ModeImmediate);
+			s_trainPhase[p] = TP_LOAD;
+			s_phaseSince[p] = gameTime;
+		}
+		else if (aboardN > 0 && gameTime - s_phaseSince[p] > 10000)
+		{
+			loco->secondaryOrder |= DSS_MINECLEAR_SET;   // noch jemand drin: nochmal
+			s_phaseSince[p] = gameTime;
+		}
+		break;
 	}
 }
 
@@ -671,7 +908,11 @@ void tick(GameWorld &world)
 		if (gameTime < s_nextPlan[p]) { continue; }
 		s_nextPlan[p] = gameTime + PLAN_MS;
 		Vector2i base;
-		if (baseCenter(world, p, base)) { planTick(world, p, base); }
+		if (baseCenter(world, p, base))
+		{
+			railTick(world, p, base);
+			planTick(world, p, base);
+		}
 	}
 }
 
@@ -679,5 +920,11 @@ void reset()
 {
 	for (unsigned p = 0; p < MAX_PLAYERS; p++) { s_next[p] = s_nextFortify[p] = s_nextOrbit[p] = s_nextMF[p] = s_nextHydro[p] = s_nextDown[p] = s_nextUp[p] = 0; }
 	for (unsigned p = 0; p < MAX_PLAYERS; p++) { s_nextPlan[p] = s_stageSince[p] = s_nextDrill[p] = 0; }
+	for (unsigned p = 0; p < MAX_PLAYERS; p++)
+	{
+		s_nextRail[p] = s_loadSince[p] = s_phaseSince[p] = 0;
+		s_railOn[p] = s_railDone[p] = false;
+		s_trainPhase[p] = TP_LOAD;
+	}
 }
 }
