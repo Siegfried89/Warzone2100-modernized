@@ -920,6 +920,12 @@ static bool SetDecals(const char *filename, const char *decal_type)
 }
 // hasDecals()
 // Checks to see if the requested tile has a decal on it or not.
+// MOD (22.11.): ist diese Bodenkachel ein Abziehbild (modroad)?
+bool modTileTextureIsDecal(int tileNo)
+{
+	return tileNo >= 0 && tileNo < MAX_TERRAIN_TILES && mapDecals != nullptr && mapDecals[tileNo];
+}
+
 static bool hasDecals(WorldMapState& mapState, int i, int j)
 {
 	int index = 0;

@@ -1871,6 +1871,7 @@ void	effectSetupFirework(EFFECT& effect)
 
 void	effectSetupSmoke(EFFECT& effect)
 {
+	const iIMDShape *const specifiedImd = effect.imd;   // MOD (22.11.): vorgegebenes Rauchmodell behalten (schwarzer Ruinenrauch, modruin)
 	/* everything except steam drifts about */
 	if (effect.type == SMOKE_TYPE_STEAM)
 	{
@@ -1937,6 +1938,7 @@ void	effectSetupSmoke(EFFECT& effect)
 		ASSERT(false, "Weird smoke type");
 		break;
 	}
+	if (specifiedImd != nullptr) { effect.imd = specifiedImd; }
 
 	/* It always faces you */
 	SET_FACING(effect);

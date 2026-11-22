@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "modterrain.h"
+#include "modroad.h"
 #include "lib/ivis_opengl/imd.h"
 #include "lib/ivis_opengl/ivisdef.h"
 
@@ -412,6 +413,7 @@ bool addCrater(int worldX, int worldY, int size)
 	// (Wunsch 18.11. 13:04 "die Kratergroesse ist viel zu gross - maximal ein Viertel Tile, genau in der Mitte, weicher Rand"):
 	// keine ganze Kratertextur-Kachel mehr - der Kraterfleck (modcraterdecal.pie, weicher Rand) wird in die Kachelmitte gelegt
 	if (before <= 0) { c.born = gameTime; }
+	modroad::onCrater(tx, ty);   // MOD (22.11. 20:50): Krater zerstoert Strassen
 	if (c.dyn == before)
 	{
 		return false;
