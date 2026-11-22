@@ -5,6 +5,7 @@
 // fliessendem Querschnitt (weisser Kern - Farbe - weicher Lichthof), ohne Ueberlappung, also sauber wie die Reichweitenringe.
 #pragma once
 
+#include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/glm.hpp>
 
 #include <utility>

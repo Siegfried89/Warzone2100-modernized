@@ -1420,14 +1420,14 @@ std::vector<Vector2i> fieldSpots(const std::vector<Vector2i> &raw, bool mines)
 			pick.push_back(out[cur]);
 			best[cur] = -1;
 			size_t nxt = cur;
-			int64_t far = -1;
+			int64_t farthest = -1;   // nicht "far": unter Windows ein Makro
 			for (size_t i = 0; i < out.size(); ++i)
 			{
 				if (best[i] < 0) { continue; }
 				best[i] = std::min(best[i], dist2(out[i], out[cur]));
-				if (best[i] > far) { far = best[i]; nxt = i; }
+				if (best[i] > farthest) { farthest = best[i]; nxt = i; }
 			}
-			if (far < 0) { break; }
+			if (farthest < 0) { break; }
 			cur = nxt;
 		}
 		out.swap(pick);
