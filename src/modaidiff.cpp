@@ -21,7 +21,9 @@ struct Row { int damage; int cost; int production; };
 const Row kTable[5] = {
 	{  42, 200,  25 },   // SUPEREASY = MF Leicht
 	{  65, 160,  38 },   // EASY      = zwischen Leicht und Normal
-	{ 100, 120,  50 },   // MEDIUM    = MF Normal
+	// (Wunsch 22.11. 17:46 "KI auf Normal wieder mit vollem Fabrik-Tempo und normalen Kosten"): Normal = Original-Warzone,
+	// vorher MF-Normal {100, 120, 50} - die Gegner bauten nur halb so schnell und zahlten 20 % mehr
+	{ 100, 100, 100 },   // MEDIUM    = Original (Schaden, Kosten, Fabrik-Tempo je 100 %)
 	{ 120, 110,  75 },   // HARD      = zwischen Normal und Schwer
 	{ 144, 100, 100 },   // INSANE    = MF Schwer
 };
