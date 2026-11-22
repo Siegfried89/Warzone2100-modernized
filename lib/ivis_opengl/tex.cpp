@@ -21,6 +21,8 @@
 */
 
 #include "lib/framework/frame.h"
+#include <unordered_set>
+#include <physfs.h>
 #include "lib/framework/loading_task.h"
 #include "lib/framework/resource_loading_controller.h"
 
@@ -241,6 +243,29 @@ optional<size_t> loadTexturePageSync(const char *filename, gfx_api::texture_type
 optional<size_t> iV_GetTexture(const char *filename, gfx_api::texture_type textureType, int maxWidth /*= -1*/, int maxHeight /*= -1*/)
 {
 	return loadTexturePageSync(filename, textureType, maxWidth, maxHeight);
+}
+
+void iV_PrefetchTexturePages(const std::vector<std::pair<std::string, gfx_api::texture_type>> &pages)
+{
+	std::vector<std::pair<std::string, bool>> files;
+	std::unordered_set<std::string> seen;
+	for (const auto &pg : pages)
+	{
+		if (pg.first.empty() || _NAME_TO_TEX_PAGE_MAP.count(pg.first) != 0 || !seen.insert(pg.first).second) { continue; }
+		// gleiche Reihenfolge wie loadTextureHandleGraphicsOverrides: erst die Grafik-Ersetzungen, dann texpages/
+		std::string path = WZ_CURRENT_GRAPHICS_OVERRIDES_PREFIX "/texpages/" + pg.first;
+		if (!PHYSFS_exists(path.c_str())) { path = "texpages/" + pg.first; }
+		const WzString load = gfx_api::imageLoadFilenameFromInputFilename(WzString::fromUtf8(path));
+		if (!load.endsWith(".png")) { continue; }
+		const bool forceRGB = pg.second == gfx_api::texture_type::game_texture || pg.second == gfx_api::texture_type::user_interface;
+		files.emplace_back(load.toUtf8(), forceRGB);
+	}
+	gfx_api::modPngPrefetchBegin(std::move(files));
+}
+
+void iV_PrefetchTexturePagesEnd()
+{
+	gfx_api::modPngPrefetchEnd();
 }
 
 LoadingTask<optional<size_t>> iV_GetTextureTask(

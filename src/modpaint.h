@@ -43,4 +43,6 @@ void shutdown();
 /// (22.11.) Angriffsplaner im Spielstand (Zonen, Leuchtfeuer, Brueckenkoepfe, Vektoren, Einheiten, Transporter)
 void savePlan(std::vector<int64_t> &out);
 void loadPlan(const std::vector<int64_t> &in);
+/// (22.11.) hat der Spieler einen Angriffsplan angelegt? (Tutorial)
+bool planHasElements();
 }

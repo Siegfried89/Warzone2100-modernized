@@ -88,6 +88,12 @@ namespace gfx_api
 	};
 	ModTexLoadStats (&modTexLoadStats())[6];
 	void modTexLoadStatsReset();
+
+	// MOD (22.11. "Ladezeiten so effizient wie moeglich"): PNG-Dateien fuer das Vorladen der Modell-Texturen werden von Hilfsfaeden
+	// entpackt, waehrend der Hauptfaden die vorigen hochlaedt (begrenzter Vorlauf, damit der Speicher klein bleibt). files = Pfad +
+	// forceRGB in der Reihenfolge, in der sie danach geladen werden. Was nicht in der Liste steht, laedt wie bisher.
+	void modPngPrefetchBegin(std::vector<std::pair<std::string, bool>> files);
+	void modPngPrefetchEnd();
 }
 
 namespace gfx_api

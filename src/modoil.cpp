@@ -43,6 +43,7 @@
 #include <climits>
 #include <cmath>
 #include <map>
+#include <unordered_map>
 #include <set>
 #include <string>
 #include <utility>
@@ -71,6 +72,18 @@ constexpr int START_FUEL = 0;               // (20.11.) neues Kraftwerk startet 
 constexpr int PULL_BELOW = 60;              // das Kraftwerk holt ein Fass aus dem Lager, wenn der Vorrat darunter faellt
 constexpr int HUNGRY_BELOW = 180;           // (20.11. Punkt 7 "etwas frueher") Tanker beliefern ein Kraftwerk mit hoechstens 3 Minuten zuerst
 constexpr int STORAGE_CAP = 8;              // Fass-Plaetze im Lager (Oellager / Wasserturm)
+// (Wunsch 22.11. 18:27 "grosses Oellager"): Grosses Oellager "A0BaBaOilStoreBig" (schwarze Lagerhallen, 3x2) fasst 48 Faesser
+constexpr int STORAGE_CAP_BIG = 48;
+std::unordered_map<uint32_t, int> s_storeCapById;   // Fass-Plaetze je Lager (fehlt = STORAGE_CAP)
+int storeCapOf(const STRUCTURE_STATS *st)
+{
+	return st != nullptr && st->id.startsWith("A0BaBaOilStoreBig") ? STORAGE_CAP_BIG : STORAGE_CAP;
+}
+int storeCapById(uint32_t id)
+{
+	const auto it = s_storeCapById.find(id);
+	return it == s_storeCapById.end() ? STORAGE_CAP : it->second;
+}
 constexpr int REF_CAP = 10;                 // Fass-Plaetze in der Raffinerie (je Eingang und Ausgang)
 constexpr int REF_SECS = 20;                // Sekunden je veredeltes Fass
 constexpr int REF_SECS_NOPOWER = 40;        // (20.11.) Notbetrieb ohne Strom: halbes Tempo (sonst steht der Kreislauf, wenn das Kraftwerk leer ist)
@@ -466,6 +479,7 @@ int storeBarrels(const STRUCTURE *st, int &cap)
 {
 	cap = STORAGE_CAP;
 	if (st == nullptr || st->pStructureType == nullptr || !isOilStore(st->pStructureType)) { return -1; }
+	cap = storeCapOf(st->pStructureType);
 	const auto it = s_store.find(st->id);
 	const auto ir = s_storeR.find(st->id);
 	return (it == s_store.end() ? 0 : it->second) + (ir == s_storeR.end() ? 0 : ir->second);
@@ -502,6 +516,7 @@ void reset()
 	s_progress.clear();
 	s_fuel.clear();
 	s_store.clear();
+	s_storeCapById.clear();
 	s_storeR.clear();
 	s_refIn.clear();
 	s_refOut.clear();
@@ -909,7 +924,7 @@ void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool fromStore)
 
 int storeRoom(uint32_t id)
 {
-	return std::max(0, STORAGE_CAP - s_store[id] - s_storeR[id]);
+	return std::max(0, storeCapById(id) - s_store[id] - s_storeR[id]);
 }
 
 // Automatische Ausbildung: fehlt der erste Fracht-Lkw (bzw. Tanker), startet eine freie Fabrik selbst einen (normale Kosten, normaler Bau)
@@ -971,7 +986,12 @@ void logistics()
 		std::vector<BASE_OBJECT *> towers = featureTowers;
 		for (STRUCTURE *s : gameWorld.objects.structures[p])
 		{
-			if (s != nullptr && !s->died && s->status == SS_BUILT && isOilStore(s->pStructureType)) { towers.push_back(s); liveStruct.insert(s->id); }
+			if (s != nullptr && !s->died && s->status == SS_BUILT && isOilStore(s->pStructureType))
+			{
+				towers.push_back(s); liveStruct.insert(s->id);
+				const int cap = storeCapOf(s->pStructureType);
+				if (cap != STORAGE_CAP) { s_storeCapById[s->id] = cap; }
+			}
 		}
 		std::map<uint32_t, BASE_OBJECT *> towerById;
 		for (BASE_OBJECT *t : towers) { towerById[t->id] = t; }
@@ -1765,7 +1785,9 @@ void drawOverlay(const glm::mat4 &m)
 			const auto it = s_store.find(s->id);
 			const auto ir = s_storeR.find(s->id);
 			const int have = (it == s_store.end() ? 0 : it->second) + (ir == s_storeR.end() ? 0 : ir->second);
-			squares(m, s->pos.x, s->pos.y, s->pos.z + 330, have, STORAGE_CAP, storeOn, storeOff);
+			const int cap = storeCapOf(s->pStructureType);
+			if (cap > STORAGE_CAP) { squares(m, s->pos.x, s->pos.y, s->pos.z + 200, (have + 3) / 4, cap / 4, storeOn, storeOff); }   // je Feld 4 Faesser
+			else { squares(m, s->pos.x, s->pos.y, s->pos.z + 330, have, STORAGE_CAP, storeOn, storeOff); }
 		}
 		else if (s->pStructureType->type == REF_POWER_GEN)
 		{
