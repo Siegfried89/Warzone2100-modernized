@@ -2641,6 +2641,53 @@ static void displayCraterPiles(const glm::mat4 &viewMatrix)
 				{
 					pie_Draw3DShape(decal, 0, 0, WZCOL_WHITE, pie_TRANSLUCENT, alpha, modelMatrix, viewMatrix);
 				}
+				// MOD (Wunsch 22.11. 23:41 "in jeden Krater ein Debris Wreck0 - Wreck5, plus die Erdhaufen und den kleinen Erdrand, dann sieht
+				// es endlich wie ein richtiger Krater aus"): Truemmer (Vanilla-Merkmal-Modelle miwreck/miwrek1-5) auf dem Kraterboden, ein
+				// niedriger Erdwall rundherum (effects/modcraterrim.pie) und zwei kleine Erdhaufen am Rand - alles schrumpft beim Zuschaufeln
+				if (d.alpha >= 0.6f)
+				{
+					static const iIMDShape *wrecks[6] = {};
+					static const iIMDShape *rim = nullptr;
+					static unsigned wTried = 0;
+					if (modelCacheStale(wTried))
+					{
+						static const char *names[6] = { "miwreck.pie", "miwrek1.pie", "miwrek2.pie", "miwrek3.pie", "miwrek4.pie", "miwrek5.pie" };
+						for (int k = 0; k < 6; ++k) { const iIMDBaseShape *b = modelGet(names[k]); wrecks[k] = b != nullptr ? b->displayModel() : nullptr; }
+						const iIMDBaseShape *r = modelGet("modcraterrim.pie");
+						rim = r != nullptr ? r->displayModel() : nullptr;
+					}
+					const unsigned hh = static_cast<unsigned>(d.tileX) * 73856093u ^ static_cast<unsigned>(d.tileY) * 19349663u;
+					const float dep = std::clamp(d.depth, 0.f, 1.f);
+					const float floorY = base - sink;
+					if (rim != nullptr)
+					{
+						const glm::mat4 rm = glm::translate(glm::vec3(static_cast<float>(d.worldX), base - 1.f, -static_cast<float>(d.worldY)))
+							* shear * glm::scale(glm::vec3(d.scale, std::max(0.2f, dep), d.scale)) * glm::rotate(UNDEG(DEG(d.rotDeg + 37)), glm::vec3(0.f, 1.f, 0.f));
+						pie_Draw3DShape(rim, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, rm, viewMatrix);
+					}
+					const iIMDShape *w = wrecks[hh % 6u];
+					if (w != nullptr)
+					{
+						const float ws = 0.62f * d.scale * (0.55f + 0.45f * dep);
+						const glm::mat4 wm = glm::translate(glm::vec3(static_cast<float>(d.worldX), floorY + 0.5f, -static_cast<float>(d.worldY)))
+							* shear * glm::rotate(UNDEG(DEG(static_cast<int>((hh >> 7) % 360u))), glm::vec3(0.f, 1.f, 0.f)) * glm::scale(glm::vec3(ws, ws * 0.7f, ws));
+						pie_Draw3DShape(w, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, wm, viewMatrix);
+					}
+					if (pile != nullptr)
+					{
+						for (int k = 0; k < 2; ++k)
+						{
+							const float a = glm::radians(static_cast<float>(d.rotDeg + 110 + k * 130));
+							const float rr = 58.f * d.scale;
+							const int px = d.worldX + static_cast<int>(std::cos(a) * rr), py = d.worldY + static_cast<int>(std::sin(a) * rr);
+							if (!worldOnMap(gameWorld.map, px, py)) { continue; }
+							const float ps = (0.42f - 0.1f * static_cast<float>(k)) * std::max(0.3f, dep);
+							const glm::mat4 pm = glm::translate(glm::vec3(static_cast<float>(px), static_cast<float>(map_Height(gameWorld.map, px, py)) - 1.f, -static_cast<float>(py)))
+								* glm::rotate(UNDEG(DEG(static_cast<int>((hh >> (3 + k * 5)) % 360u))), glm::vec3(0.f, 1.f, 0.f)) * glm::scale(glm::vec3(ps, ps * 0.8f, ps));
+							pie_Draw3DShape(pile, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, pm, viewMatrix);
+						}
+					}
+				}
 			}
 		}
 	}
