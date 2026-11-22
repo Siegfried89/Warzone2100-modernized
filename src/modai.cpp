@@ -15,6 +15,9 @@
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modrocket.h"
+#include "modtunnel.h"
+#include "group.h"
+#include "modlayerdig.h"
 #include "multiplay.h"
 #include "objmem.h"
 #include "order.h"
@@ -489,6 +492,157 @@ bool tryOrbitBase(GameWorld &w, unsigned p, const Vector2i &base)
 }
 }
 
+// ---------------------------------------------------------------- (Wunsch 22.11. 18:27 "Die Computergegner nutzen Planer und Tunnel noch nicht")
+// Angriffsplaner der KI (wie der Schlachtplan des Spielers): je KI ein Bereitstellungsraum zwischen eigener Basis und dem naechsten
+// Gegner. Untaetige Kampfeinheiten sammeln sich dort; ab 8 (oder 4, wenn sie schon eine Minute warten) greifen sie gemeinsam an -
+// durch einen eigenen Tunnel, wenn einer vom Bereitstellungsraum in Gegnernaehe fuehrt, sonst auf dem Landweg (Angriffs-Marsch).
+// Tunnel: die KI haelt ein Bohrfahrzeug vor und graebt damit vom Bereitstellungsraum einen Gang bis 12 Felder vor die feindliche Basis.
+constexpr unsigned PLAN_MS = 4000;
+constexpr int STAGE_R = 5 * DIST_TILE;
+constexpr int GROUP_MIN = 8;
+constexpr int GROUP_SMALL = 4;
+constexpr unsigned GROUP_WAIT_MS = 60000;
+unsigned s_nextPlan[MAX_PLAYERS] = {};
+unsigned s_stageSince[MAX_PLAYERS] = {};
+unsigned s_nextDrill[MAX_PLAYERS] = {};
+
+bool combatIdle(const DROID *d)
+{
+	if (d->died || d->numWeaps == 0 || d->isTransporter() || d->isVtol() || d->isFlying() || d->isConstructionDroid()) { return false; }
+	if (d->droidType == DROID_COMMAND || d->droidType == DROID_SENSOR || d->droidType == DROID_REPAIR || d->droidType == DROID_CYBORG_REPAIR) { return false; }
+	if (d->psGroup != nullptr && d->psGroup->type == GT_COMMAND) { return false; }
+	if (modlayer::layerOf(d) != modlayer::SURFACE || modtunnel::inTransit(d)) { return false; }
+	return d->order.type == DORDER_NONE && d->action == DACTION_NONE;
+}
+
+/// naechste feindliche Basis (HQ > Fabrik > irgendein Gebaeude) vom Punkt aus
+bool enemyBase(GameWorld &w, unsigned p, const Vector2i &from, Vector2i &out)
+{
+	int best = INT32_MAX, bestRank = 9;
+	for (unsigned e = 0; e < MAX_PLAYERS; e++)
+	{
+		if (e == p || aiCheckAlliances(p, e)) { continue; }
+		for (const STRUCTURE *s : w.objects.structures[e])
+		{
+			if (s->died || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+			const STRUCTURE_TYPE ty = s->pStructureType->type;
+			const int rank = ty == REF_HQ ? 0 : (s->isFactory() ? 1 : 2);
+			const int d = iHypot(s->pos.xy() - from);
+			if (rank < bestRank || (rank == bestRank && d < best)) { best = d; bestRank = rank; out = s->pos.xy(); }
+		}
+	}
+	return bestRank < 9;
+}
+
+Vector2i lerpW(const Vector2i &a, const Vector2i &b, int num, int den)
+{
+	return Vector2i(a.x + (b.x - a.x) * num / den, a.y + (b.y - a.y) * num / den);
+}
+
+/// Tunnel der KI, dessen einer Mund nahe beim Bereitstellungsraum liegt: Eingang/Ausgang
+bool stageTunnel(unsigned p, const Vector2i &stage, Vector2i &in, Vector2i &out)
+{
+	for (const modtunnel::Info &ti : modtunnel::tunnels(p))
+	{
+		if (iHypot(ti.a - stage) < 9 * DIST_TILE) { in = ti.a; out = ti.b; return true; }
+		if (iHypot(ti.b - stage) < 9 * DIST_TILE) { in = ti.b; out = ti.a; return true; }
+	}
+	return false;
+}
+
+void tryDrill(GameWorld &w, unsigned p, const Vector2i &stage, const Vector2i &target)
+{
+	if (gameTime < s_nextDrill[p] || gameTime < 6 * 60000) { return; }
+	s_nextDrill[p] = gameTime + 30000;
+	Vector2i in, out;
+	if (stageTunnel(p, stage, in, out)) { return; }   // Tunnel steht schon
+	DROID *drill = nullptr;
+	int drills = 0;
+	for (DROID *d : w.objects.droids[p])
+	{
+		if (d->died || !modlayerdig::isDrill(d)) { continue; }
+		drills++;
+		if (modtunnel::digging(d) || modtunnel::inTransit(d)) { return; }   // graebt schon
+		if (drill == nullptr && d->order.type == DORDER_NONE && modlayer::layerOf(d) == modlayer::SURFACE) { drill = d; }
+	}
+	if (drills == 0)
+	{
+		// ein Bohrfahrzeug bauen (untaetige Fabrik)
+		DROID_TEMPLATE *t = findTemplate(p, "DrillTruckScav");
+		if (t == nullptr || !researchedTemplate(t, static_cast<int>(p), true)) { t = findTemplate(p, "DrillTruck"); }
+		if (t == nullptr || !researchedTemplate(t, static_cast<int>(p), true) || getPower(p) < static_cast<int>(calcTemplatePower(t)) + 200) { return; }
+		for (STRUCTURE *s : w.objects.structures[p])
+		{
+			if (s->died || s->status != SS_BUILT || !s->isFactory() || !s->isIdle() || modlayer::layerOf(s) != modlayer::SURFACE) { continue; }
+			if (validTemplateForFactory(t, s, false) && structSetManufacture(s, t, ModeImmediate)) { return; }
+		}
+		return;
+	}
+	if (drill == nullptr) { return; }
+	STRUCTURE_STATS *mouth = nullptr;
+	for (unsigned i = 0; i < numStructureStats; i++)
+	{
+		if (modtunnel::isMouthStat(&asStructureStats[i])) { mouth = &asStructureStats[i]; break; }
+	}
+	if (mouth == nullptr || getPower(p) < static_cast<int>(mouth->powerToBuild) + 150) { return; }
+	if (iHypot(drill->pos.xy() - stage) > 3 * DIST_TILE)
+	{
+		orderDroidLoc(drill, DORDER_MOVE, static_cast<UDWORD>(stage.x), static_cast<UDWORD>(stage.y), ModeImmediate);   // erst zum Eingang
+		s_nextDrill[p] = gameTime + 8000;
+		return;
+	}
+	// Ausgang 12 Felder vor der feindlichen Basis (auf der Seite der KI), auf freiem Boden
+	const int dist = std::max(1, iHypot(target - stage));
+	Vector2i exit = lerpW(target, stage, 12 * DIST_TILE, dist);
+	Vector2i spot;
+	if (findSpot(w, p, mouth, exit, 0, 4, spot)) { exit = spot; } else { return; }
+	orderDroidStatsLocDir(drill, DORDER_BUILD, mouth, exit.x, exit.y, 0, ModeImmediate);
+	s_nextDrill[p] = gameTime + 120000;
+}
+
+void planTick(GameWorld &w, unsigned p, const Vector2i &base)
+{
+	Vector2i target;
+	if (!enemyBase(w, p, base, target)) { return; }
+	const int dist = iHypot(target - base);
+	if (dist < 16 * DIST_TILE) { return; }   // Gegner direkt nebenan: die Skript-KI kaempft selbst
+	// Bereitstellungsraum: 9 Felder vor der eigenen Basis in Richtung Gegner
+	Vector2i stage = lerpW(base, target, 9 * DIST_TILE, dist);
+	stage.x = std::clamp(stage.x, world_coord(3), world_coord(w.map.width - 4));
+	stage.y = std::clamp(stage.y, world_coord(3), world_coord(w.map.height - 4));
+	tryDrill(w, p, stage, target);
+	std::vector<DROID *> atStage;
+	for (DROID *d : w.objects.droids[p])
+	{
+		if (!combatIdle(d)) { continue; }
+		const int dd = iHypot(d->pos.xy() - stage);
+		if (dd <= STAGE_R) { atStage.push_back(d); continue; }
+		// zum Bereitstellungsraum (leicht verteilt)
+		const int jx = static_cast<int>(d->id % 7) * (DIST_TILE / 2) - 3 * (DIST_TILE / 2), jy = static_cast<int>((d->id / 7) % 7) * (DIST_TILE / 2) - 3 * (DIST_TILE / 2);
+		orderDroidLoc(d, DORDER_MOVE, static_cast<UDWORD>(stage.x + jx), static_cast<UDWORD>(stage.y + jy), ModeImmediate);
+	}
+	if (atStage.empty()) { s_stageSince[p] = 0; return; }
+	if (s_stageSince[p] == 0) { s_stageSince[p] = gameTime; }
+	const bool full = static_cast<int>(atStage.size()) >= GROUP_MIN;
+	const bool waited = static_cast<int>(atStage.size()) >= GROUP_SMALL && gameTime - s_stageSince[p] > GROUP_WAIT_MS;
+	if (!full && !waited) { return; }
+	s_stageSince[p] = 0;
+	Vector2i in, out;
+	const bool tunnel = stageTunnel(p, stage, in, out) && iHypot(out - target) < iHypot(stage - target) / 2;
+	for (DROID *d : atStage)
+	{
+		if (tunnel && modtunnel::canUse(d))
+		{
+			orderDroidLoc(d, DORDER_MOVE, static_cast<UDWORD>(in.x), static_cast<UDWORD>(in.y), ModeImmediate);   // in den Tunnel
+			orderDroidLoc(d, DORDER_SCOUT, static_cast<UDWORD>(target.x), static_cast<UDWORD>(target.y), ModeQueue);   // danach angreifen
+		}
+		else
+		{
+			orderDroidLoc(d, DORDER_SCOUT, static_cast<UDWORD>(target.x), static_cast<UDWORD>(target.y), ModeImmediate);
+		}
+	}
+}
+
 void tick(GameWorld &world)
 {
 	if (&world != &gameWorld || !bMultiPlayer) { return; }   // nur Gefecht/Mehrspieler (die Kampagne hat ihre eigene Skript-KI)
@@ -509,10 +663,21 @@ void tick(GameWorld &world)
 		// Stufe 3: je Runde hoechstens ein Bauauftrag fuer Kraftwerke/Ebenen
 		if (!tryHydro(world, p, base) && !tryNuclear(world, p, base) && !tryUnderground(world, p, base)) { tryOrbitBase(world, p, base); }
 	}
+	// Angriffsplaner + Tunnel (eigener, schnellerer Takt)
+	for (unsigned p = 0; p < MAX_PLAYERS; p++)
+	{
+		if (!isAI(p)) { continue; }
+		if (s_nextPlan[p] == 0) { s_nextPlan[p] = 90000 + p * 700; }
+		if (gameTime < s_nextPlan[p]) { continue; }
+		s_nextPlan[p] = gameTime + PLAN_MS;
+		Vector2i base;
+		if (baseCenter(world, p, base)) { planTick(world, p, base); }
+	}
 }
 
 void reset()
 {
 	for (unsigned p = 0; p < MAX_PLAYERS; p++) { s_next[p] = s_nextFortify[p] = s_nextOrbit[p] = s_nextMF[p] = s_nextHydro[p] = s_nextDown[p] = s_nextUp[p] = 0; }
+	for (unsigned p = 0; p < MAX_PLAYERS; p++) { s_nextPlan[p] = s_stageSince[p] = s_nextDrill[p] = 0; }
 }
 }
