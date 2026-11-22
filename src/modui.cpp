@@ -143,12 +143,13 @@ void wzPanel(int x0, int y0, int x1, int y1, const char *title, int sizeClass)
 void wzButton(int x0, int y0, int w, int h, const std::string &label, bool active, bool hover, bool down, int sizeClass, const PIELIGHT *accent)
 {
 	const int x1 = x0 + w, y1 = y0 + h;
-	// Knopf wie die WZ-Textknoepfe/Reiter: Rahmen WZCOL_MENU_BORDER, aktiv = helle Formularfarbe, Maus darueber = Hervorhebung
-	PIELIGHT fill = active ? WZCOL_FORM_LIGHT : WZCOL_FORM_BACKGROUND;
-	fill.byte.a = active ? 235 : 215;
-	if (down) { fill = WZCOL_FORM_HILITE; fill.byte.a = 240; }
+	// (Wunsch 22.11. 15:47 "Der Hintergrund ist richtig schlecht mit dem grau, der Kontrast ist nicht gut"): statt grauer Flaeche mit
+	// blauer Schrift jetzt dunkles Marineblau (wie die WZ-Formulare) mit heller, fast weisser Schrift; aktiv = kraeftiges Blau
+	PIELIGHT fill = active ? pal_RGBA(34, 62, 150, 240) : pal_RGBA(12, 18, 62, 230);
+	if (hover && !active) { fill = pal_RGBA(24, 38, 104, 238); }
+	if (down) { fill = pal_RGBA(52, 92, 196, 245); }
 	pie_UniTransBoxFill(x0, y0, x1, y1, fill);
-	iV_Box(x0, y0, x1 - 1, y1 - 1, (hover || active) ? WZCOL_FORM_HILITE : WZCOL_MENU_BORDER);
+	iV_Box(x0, y0, x1 - 1, y1 - 1, active ? pal_RGBA(150, 200, 255, 255) : (hover ? pal_RGBA(120, 170, 255, 255) : pal_RGBA(58, 84, 172, 255)));
 	if (accent != nullptr)
 	{
 		pie_BoxFill(x0 + 2, y0 + 3, x0 + 5, y1 - 3, *accent);   // kleine Farbmarke (Art des Befehls)
@@ -156,7 +157,12 @@ void wzButton(int x0, int y0, int w, int h, const std::string &label, bool activ
 	const int tw = textWidth(label, sizeClass);
 	const int textX = x0 + (accent ? 6 : 0) + std::max(0, (w - (accent ? 6 : 0) - tw) / 2);
 	const int fh = (sizeClass <= 0) ? 9 : (sizeClass == 1 ? 12 : 16);
-	text(label, textX, y0 + (h - fh) / 2 - 1, (active || hover) ? WZCOL_TEXT_BRIGHT : WZCOL_TEXT_MEDIUM, sizeClass);
+	text(label, textX, y0 + (h - fh) / 2 - 1, buttonText(active || hover), sizeClass);
+}
+
+PIELIGHT buttonText(bool bright)
+{
+	return bright ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(214, 224, 246, 255);
 }
 
 void disc(int cx, int cy, int r, PIELIGHT colour)

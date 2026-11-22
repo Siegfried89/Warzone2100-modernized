@@ -99,6 +99,7 @@
 #include "modrailbeam.h"
 #include "modmines.h"
 #include "modbigmap.h"
+#include "modglow.h"
 #include "modfuel.h"
 #include "modai.h"
 #include "modpointdef.h"
@@ -768,6 +769,7 @@ void interfaceShutDown()
 	modpanel::shutdown();    // MOD
 	modpaint::shutdown();    // MOD
 	modbigmap::shutdown();   // MOD (17.11.): strategische Karte
+	modglow::shutdown();     // MOD (22.11.): Puffer der leuchtenden Baender
 	modrosette::shutdown();  // MOD (17.11.)
 	modunitstats::shutdown(); // MOD (17.11. 22:42)
 	modoilui::shutdown();     // MOD (20.11.): Oel-Fenster

@@ -4,6 +4,7 @@
 
 #include "lib/framework/frame.h"
 #include "lib/framework/input.h"
+#include "lib/framework/wzapp.h"
 #include "lib/framework/vector.h"
 #include "lib/gamelib/gtime.h"
 #include "lib/ivis_opengl/gfx_api.h"
@@ -59,7 +60,7 @@ bool s_res = true;
 int s_texView = -1;
 GFX *s_gfx = nullptr;
 iV_Image s_img;
-int s_texW = 0, s_texH = 0;
+int s_texW = 0, s_texH = 0, s_texF = 2;
 unsigned s_texAt = 0;
 // Maus
 bool s_lDown = false, s_dragSel = false, s_mDown = false;
@@ -69,7 +70,10 @@ Vector2i s_lastClickPos(0, 0);
 // Knoepfe
 std::shared_ptr<W_SCREEN> s_screen;
 std::vector<std::shared_ptr<W_BUTTON>> s_btn;
-enum Btn { B_MAP = 0, B_SYM, B_SPLIT, B_CLOSE, B_VIEW, B_RES, B_COUNT };
+// (Wunsch 22.11. 15:47) Kartenoptionen wie die Map Options in Supreme Commander: Anzeigeart als Auswahlkaestchen (eins aktiv) und
+// "Resource Icons" als Haekchen; Bildschirmteilung mit zwei Knoepfen (Haelfte / ganz) wie die geteilte Ansicht dort (Pos1 / Ende)
+enum Btn { B_MAP = 0, B_SYM, B_SPLIT, B_FULL, B_CLOSE, B_V_TERRAIN, B_V_CARTO, B_V_ELEV, B_V_STRAT, B_RES, B_COUNT };
+bool isViewBtn(int b) { return b >= B_V_TERRAIN && b <= B_V_STRAT; }
 
 struct Rect { float x0, y0, x1, y1; };
 
@@ -125,7 +129,10 @@ void rebuildTexture()
 {
 	const int mw = gameWorld.map.width, mh = gameWorld.map.height;
 	if (mw <= 0 || mh <= 0) { return; }
-	const int tw = mw * 2, th = mh * 2;   // doppelt aufgeloest + geglaettet
+	// (22.11.) feiner aufgeloest (bis zu 4 Texel je Feld) und weich verlaufend - vorher grob und pixelig
+	const int F = std::clamp(1024 / std::max(mw, mh), 2, 4);
+	s_texF = F;
+	const int tw = mw * F, th = mh * F;
 	if (s_gfx == nullptr || tw != s_texW || th != s_texH)
 	{
 		if (s_gfx == nullptr) { s_gfx = new GFX(GFX_TEXTURE, 2); }
@@ -197,14 +204,16 @@ void rebuildTexture()
 			}
 			default:
 			{
+				// (Wunsch 22.11. 15:47 "Der Hintergrund ist richtig schlecht mit dem grau, der Kontrast ist nicht gut"): kraeftige, helle
+				// Bodenfarben mit deutlichem Relief statt entsaettigtem Grau; Unerforschtes dunkles Marineblau (nicht grauschwarz)
 				const PIELIGHT c = radarTileColour(TileNumber_tile(t->texture));
-				// leicht entsaettigt und abgedunkelt (strategische Karte), Unerforschtes fast schwarz
 				const float lum = (c.byte.r * 0.3f + c.byte.g * 0.59f + c.byte.b * 0.11f);
-				const float k = (seen ? 0.78f : 0.16f) * shade;
-				o[0] = (c.byte.r * 0.7f + lum * 0.3f) * k;
-				o[1] = (c.byte.g * 0.7f + lum * 0.3f) * k;
-				o[2] = (c.byte.b * 0.7f + lum * 0.3f) * k + (seen ? 6.f : 3.f);
-				if (wat[i]) { o[0] = 30.f * k; o[1] = 70.f * k; o[2] = 120.f * k + 10.f; }
+				const float sat = 1.45f;
+				const float rr = lum + (c.byte.r - lum) * sat, gg = lum + (c.byte.g - lum) * sat, bb = lum + (c.byte.b - lum) * sat;
+				const float k = 1.08f * (1.f + (shade - 1.f) * 1.25f);
+				o[0] = rr * k; o[1] = gg * k; o[2] = bb * k;
+				if (wat[i]) { o[0] = 38.f * shade; o[1] = 96.f * shade; o[2] = 168.f * shade; }
+				if (!seen) { o[0] = 12.f + 6.f * e; o[1] = 18.f + 8.f * e; o[2] = 36.f + 10.f * e; }
 				break;
 			}
 			}
@@ -218,7 +227,8 @@ void rebuildTexture()
 		for (int x = 0; x < tw; ++x)
 		{
 			// bilinear zwischen den Kachelmitten
-			const float fx = (static_cast<float>(x) + 0.5f) * 0.5f - 0.5f, fy = (static_cast<float>(y) + 0.5f) * 0.5f - 0.5f;
+			const float inv = 1.f / static_cast<float>(F);
+			const float fx = (static_cast<float>(x) + 0.5f) * inv - 0.5f, fy = (static_cast<float>(y) + 0.5f) * inv - 0.5f;
 			const int x0 = std::clamp(static_cast<int>(std::floor(fx)), 0, mw - 1), y0 = std::clamp(static_cast<int>(std::floor(fy)), 0, mh - 1);
 			const int x1 = std::min(mw - 1, x0 + 1), y1 = std::min(mh - 1, y0 + 1);
 			const float ax = std::clamp(fx - static_cast<float>(x0), 0.f, 1.f), ay = std::clamp(fy - static_cast<float>(y0), 0.f, 1.f);
@@ -250,7 +260,7 @@ void rebuildTexture()
 				if (c0 == cr && c0 == cd) { continue; }
 				const bool index = (std::max({ c0, cr, cd }) % 5) == 0;
 				unsigned char *p = dst + (static_cast<size_t>(y) * tw + x) * 4;
-				if (wat[static_cast<size_t>(std::min(mh - 1, y / 2)) * mw + std::min(mw - 1, x / 2)]) { continue; }
+				if (wat[static_cast<size_t>(std::min(mh - 1, y / F)) * mw + std::min(mw - 1, x / F)]) { continue; }
 				if (s_view == V_CARTO)
 				{
 					const float k = index ? 0.55f : 0.75f;
@@ -348,13 +358,28 @@ const char *btnLabel(int b)
 	{
 	case B_MAP: return s_mode != 0 ? "Map: on" : "Map";
 	case B_SYM: return modtactical::enabled() ? "Symbols: on" : "Symbols";
-	case B_SPLIT: return s_mode == 2 ? "Full" : "Split";
+	case B_SPLIT: return "Split";
+	case B_FULL: return "Full";
 	case B_CLOSE: return "Close";
-	case B_VIEW:
-		switch (s_view) { case V_CARTO: return "View: Cartographic"; case V_ELEV: return "View: Elevation"; case V_STRAT: return "View: Strategic"; default: return "View: Terrain"; }
-	case B_RES: return s_res ? "Resources: on" : "Resources";
+	case B_V_TERRAIN: return "Terrain";
+	case B_V_CARTO: return "Cartographic";
+	case B_V_ELEV: return "Elevation";
+	case B_V_STRAT: return "Strategic";
+	case B_RES: return "Resource Icons";
 	default: return "";
 	}
+}
+
+bool btnChecked(int b)
+{
+	if (isViewBtn(b)) { return s_view == b - B_V_TERRAIN; }
+	return b == B_RES && s_res;
+}
+
+/// Breite eines Auswahlkaestchens samt Beschriftung
+int checkWidth(int b, float s)
+{
+	return static_cast<int>(18 * s) + modui::textWidth(btnLabel(b), modui::sizeClassFor(s)) + static_cast<int>(10 * s);
 }
 
 void drawBtn(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -362,10 +387,68 @@ void drawBtn(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int b = static_cast<int>(psWidget->UserData);
 	const W_BUTTON *wb = static_cast<const W_BUTTON *>(psWidget);
 	const float s = modui::uiScale();
-	const bool on = (b == B_MAP && s_mode != 0) || (b == B_SYM && modtactical::enabled()) || (b == B_SPLIT && s_mode == 2) || (b == B_RES && s_res);
+	const int x = static_cast<int>(xOffset) + psWidget->x(), y = static_cast<int>(yOffset) + psWidget->y();
+	const int w = psWidget->width(), h = psWidget->height();
+	const bool hover = (wb->getState() & WBUT_HIGHLIGHT) != 0, down = (wb->getState() & WBUT_DOWN) != 0;
+	const int sc = modui::sizeClassFor(s);
+	const int fh = (sc <= 0) ? 9 : (sc == 1 ? 12 : 16);
+	if (isViewBtn(b) || b == B_RES)
+	{
+		// Auswahlkaestchen wie in den Kartenoptionen: rund = eine von mehreren Anzeigearten, eckig = an/aus
+		const bool on = btnChecked(b);
+		if (hover) { pie_UniTransBoxFill(x, y, x + w, y + h, pal_RGBA(40, 64, 140, 130)); }
+		const float bs = std::min(static_cast<float>(h) - 6.f * s, 12.f * s);
+		const float cx = static_cast<float>(x) + 4.f * s + bs * 0.5f, cy = static_cast<float>(y) + static_cast<float>(h) * 0.5f;
+		const PIELIGHT rim = on ? pal_RGBA(150, 205, 255, 255) : pal_RGBA(120, 140, 190, 255);
+		if (isViewBtn(b))
+		{
+			pie_DrawSoftRoundedBox(cx - bs * 0.5f, cy - bs * 0.5f, cx + bs * 0.5f, cy + bs * 0.5f, rim, bs * 0.5f, 1.f);
+			pie_DrawSoftRoundedBox(cx - bs * 0.5f + 1.5f * s, cy - bs * 0.5f + 1.5f * s, cx + bs * 0.5f - 1.5f * s, cy + bs * 0.5f - 1.5f * s, pal_RGBA(8, 12, 40, 255), bs * 0.5f, 1.f);
+			if (on) { pie_DrawSoftRoundedBox(cx - bs * 0.25f, cy - bs * 0.25f, cx + bs * 0.25f, cy + bs * 0.25f, pal_RGBA(140, 215, 255, 255), bs * 0.25f, 1.f); }
+		}
+		else
+		{
+			const int bx0 = static_cast<int>(cx - bs * 0.5f), by0 = static_cast<int>(cy - bs * 0.5f), bx1 = static_cast<int>(cx + bs * 0.5f), by1 = static_cast<int>(cy + bs * 0.5f);
+			pie_UniTransBoxFill(bx0, by0, bx1, by1, pal_RGBA(8, 12, 40, 255));
+			iV_Box(bx0, by0, bx1, by1, rim);
+			if (on)
+			{
+				const PIELIGHT ck = pal_RGBA(140, 255, 120, 255);
+				for (int t = 0; t < 2; ++t)
+				{
+					iV_Line(bx0 + 2, (by0 + by1) / 2 + t, (bx0 + bx1) / 2 - 1, by1 - 3 + t, ck);
+					iV_Line((bx0 + bx1) / 2 - 1, by1 - 3 + t, bx1 - 2, by0 + 2 + t, ck);
+				}
+			}
+		}
+		modui::text(btnLabel(b), x + static_cast<int>(8.f * s + bs), y + (h - fh) / 2 - 1, on || hover ? modui::buttonText(true) : pal_RGBA(178, 190, 220, 255), sc);
+		return;
+	}
+	if (b == B_SPLIT || b == B_FULL)
+	{
+		// Teilung als kleines Bild: zwei Haelften bzw. ein ganzer Schirm, daneben die Beschriftung
+		const bool on = (b == B_SPLIT && s_mode == 2) || (b == B_FULL && s_mode == 1);
+		modui::wzButton(x, y, w, h, "", on, hover, down, sc, nullptr);
+		const int iw = static_cast<int>(16 * s), ih = static_cast<int>(10 * s);
+		const int ix = x + static_cast<int>(5 * s), iy = y + (h - ih) / 2;
+		const PIELIGHT ic = on ? pal_RGBA(150, 210, 255, 255) : pal_RGBA(150, 165, 210, 255);
+		iV_Box(ix, iy, ix + iw, iy + ih, ic);
+		if (b == B_SPLIT)
+		{
+			pie_UniTransBoxFill(ix + 2, iy + 2, ix + iw / 2 - 1, iy + ih - 1, pal_RGBA(ic.byte.r, ic.byte.g, ic.byte.b, 200));
+			iV_Line(ix + iw / 2, iy, ix + iw / 2, iy + ih, ic);
+		}
+		else
+		{
+			pie_UniTransBoxFill(ix + 2, iy + 2, ix + iw - 1, iy + ih - 1, pal_RGBA(ic.byte.r, ic.byte.g, ic.byte.b, 200));
+		}
+		const int tx = ix + iw + static_cast<int>(6 * s);
+		modui::text(btnLabel(b), tx, y + (h - fh) / 2 - 1, modui::buttonText(on || hover), sc);
+		return;
+	}
+	const bool on = (b == B_MAP && s_mode != 0) || (b == B_SYM && modtactical::enabled());
 	static const PIELIGHT accent = pal_RGBA(110, 200, 255, 255);
-	modui::wzButton(static_cast<int>(xOffset) + psWidget->x(), static_cast<int>(yOffset) + psWidget->y(), psWidget->width(), psWidget->height(),
-	                btnLabel(b), on, (wb->getState() & WBUT_HIGHLIGHT) != 0, (wb->getState() & WBUT_DOWN) != 0, modui::sizeClassFor(s), &accent);
+	modui::wzButton(x, y, w, h, btnLabel(b), on, hover, down, sc, b == B_CLOSE ? nullptr : &accent);
 }
 
 void open(int mode)
@@ -388,12 +471,16 @@ void ensureScreen()
 	screen->psForm->hide();   // durchlaessige Wurzel (siehe modpaint)
 	s_btn.clear();
 	static const char *tips[B_COUNT] = {
-		"Strategic map (like Supreme Commander) - also opens with a click on the minimap",
+		"Strategic map - also opens with a click on the minimap. Home: split screen, End: back to the battlefield",
 		"Tactical symbols: at medium and far zoom the units are shown as military map symbols instead of models/sprites",
-		"Split screen: strategic map on the left, normal view on the right",
-		"Close the strategic map",
-		"Display mode like in Supreme Commander: terrain / cartographic (paper map with contour lines) / elevation (height colours) / strategic (dark relief)",
-		"Show the resources (oil resources and derricks) on the strategic map" };
+		"Split screen: strategic map on the left half, battlefield on the right half (Home)",
+		"Single view: strategic map over the whole screen",
+		"Close the strategic map - back to the battlefield (End)",
+		"Terrain: the ground in its own colours with relief",
+		"Cartographic: paper map with contour lines",
+		"Elevation: height colours with contour lines",
+		"Strategic: dark relief - the symbols stand out the most",
+		"Resource icons: all oil resources (not yet explored ones dimmed) and the derricks standing on them" };
 	for (int b = 0; b < B_COUNT; ++b)
 	{
 		auto w = std::make_shared<W_BUTTON>();
@@ -406,11 +493,13 @@ void ensureScreen()
 			{
 			case B_MAP: open(s_mode != 0 ? 0 : 1); break;
 			case B_SYM: modtactical::toggle(); break;
-			case B_SPLIT: open(s_mode == 2 ? 1 : 2); break;
+			case B_SPLIT: open(2); break;
+			case B_FULL: open(1); break;
 			case B_CLOSE: open(0); break;
-			case B_VIEW: s_view = (s_view + 1) % V_COUNT; s_texAt = 0; break;
 			case B_RES: s_res = !s_res; break;
-			default: break;
+			default:
+				if (isViewBtn(b)) { s_view = b - B_V_TERRAIN; s_texAt = 0; }
+				break;
 			}
 		}); });
 		s_btn.push_back(w);
@@ -438,18 +527,22 @@ void layout()
 	}
 	s_btn[B_MAP]->setGeometry(rx, ry, bw, bh);
 	s_btn[B_SYM]->setGeometry(rx + bw + gap, ry, bw, bh);
-	// "Split"/"Close" in der Titelleiste der Karte
+	// Titelleiste der Karte: links die Anzeigearten und "Resource Icons", rechts Teilung (Haelfte / ganz) und "Close"
 	const Rect p = panel();
 	const int by = static_cast<int>(p.y0 + (barH() - static_cast<float>(bh)) * 0.5f);
+	const int sw = static_cast<int>(64 * s);
 	s_btn[B_CLOSE]->setGeometry(static_cast<int>(p.x1) - bw - gap * 2, by, bw, bh);
-	s_btn[B_SPLIT]->setGeometry(static_cast<int>(p.x1) - 2 * bw - gap * 3, by, bw, bh);
-	const int vw = static_cast<int>(120 * s), rw = static_cast<int>(84 * s);
-	s_btn[B_VIEW]->setGeometry(static_cast<int>(p.x0) + static_cast<int>(130 * s), by, vw, bh);
-	s_btn[B_RES]->setGeometry(static_cast<int>(p.x0) + static_cast<int>(130 * s) + vw + gap, by, rw, bh);
-	s_btn[B_SPLIT]->show(s_mode != 0);
-	s_btn[B_CLOSE]->show(s_mode != 0);
-	s_btn[B_VIEW]->show(s_mode != 0);
-	s_btn[B_RES]->show(s_mode != 0);
+	s_btn[B_FULL]->setGeometry(static_cast<int>(p.x1) - bw - sw - gap * 3, by, sw, bh);
+	s_btn[B_SPLIT]->setGeometry(static_cast<int>(p.x1) - bw - 2 * sw - gap * 4, by, sw, bh);
+	int cx = static_cast<int>(p.x0) + modui::textWidth("Strategic map", modui::sizeClassFor(s)) + static_cast<int>(22 * s);
+	for (int b = B_V_TERRAIN; b <= B_RES; ++b)
+	{
+		const int cw = checkWidth(b, s);
+		if (b == B_RES) { cx += static_cast<int>(12 * s); }
+		s_btn[b]->setGeometry(cx, by, cw, bh);
+		cx += cw + gap;
+	}
+	for (int b = B_SPLIT; b < B_COUNT; ++b) { s_btn[b]->show(s_mode != 0); }
 }
 } // namespace
 
@@ -463,6 +556,12 @@ void tick()
 	s_btn[B_MAP]->show(!design);
 	s_btn[B_SYM]->show(!design);
 	if (design) { return; }
+	// (22.11.) wie die geteilte Ansicht in Supreme Commander: Pos1 = Bildschirm teilen, Ende = zurueck zur einfachen Ansicht
+	if (!isInTextInputMode())
+	{
+		if (keyPressed(KEY_HOME)) { open(2); }
+		else if (keyPressed(KEY_END) && s_mode != 0) { open(0); }
+	}
 	layout();
 	if (s_mode != 0 && (s_texAt == 0 || s_texView != s_view || realTime - s_texAt > 3000u)) { rebuildTexture(); }
 }
@@ -575,12 +674,8 @@ void draw()
 	pie_UniTransBoxFill(static_cast<int>(p.x0), static_cast<int>(p.y0), static_cast<int>(p.x1), static_cast<int>(p.y1), pal_RGBA(8, 12, 22, 255));
 	if (s_gfx == nullptr) { rebuildTexture(); }
 	drawTerrain();
-	// strategischer Blauschleier (nur Gelaende-Ansicht) + Gitter (alle 16 Felder)
-	if (s_view == V_TERRAIN)
-	{
-		pie_UniTransBoxFill(static_cast<int>(a.x0), static_cast<int>(a.y0), static_cast<int>(a.x1), static_cast<int>(a.y1), pal_RGBA(10, 30, 70, 50));
-	}
-	const PIELIGHT gridCol = s_view == V_CARTO ? pal_RGBA(90, 70, 50, 45) : pal_RGBA(150, 200, 255, 38);
+	// Gitter (alle 16 Felder); (22.11.) kein grauer Blauschleier mehr ueber dem Gelaende
+	const PIELIGHT gridCol = s_view == V_CARTO ? pal_RGBA(90, 70, 50, 45) : pal_RGBA(170, 210, 255, 34);
 	const float step = static_cast<float>(world_coord(16));
 	for (float gx = 0.f; gx <= worldW(); gx += step)
 	{
@@ -596,20 +691,37 @@ void draw()
 	}
 	const modlayer::Layer view = modlayer::current();
 	const float ss = symbolScale();
-	// Rohstoffe (wie die Massepunkte in Supreme Commander): freie Oelquellen als leuchtende Ringe, Bohrtuerme mit Punkt
+	// Rohstoffe: freie Oelquellen als leuchtende gruene Ringe, Bohrtuerme mit einem Ring in Spielerfarbe.
+	// (Wunsch 22.11. 15:47 "Funktioniert Resources on ueberhaupt?"): vorher nur erkundete freie Quellen - im Nebel war nichts zu sehen.
+	// Jetzt alle Oelquellen (wie die Massepunkte auf strategischen Karten bekannt), noch nicht erkundete gedaempft, und groesser.
 	if (s_res)
 	{
-		const float r = std::clamp(5.5f * sc * (s_fit / std::max(1.f, s_wpp)) * 0.5f, 3.5f * sc, 9.f * sc);
+		const float r = std::clamp(7.f * sc * std::sqrt(s_fit / std::max(1.f, s_wpp)), 5.f * sc, 12.f * sc);
 		for (const FEATURE *f : gameWorld.objects.features[0])
 		{
 			if (f == nullptr || f->died || f->psStats == nullptr || f->psStats->subType != FEAT_OIL_RESOURCE) { continue; }
-			if (selectedPlayer < MAX_PLAYERS && !TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(mapTile(gameWorld.map, map_coord(f->pos.x), map_coord(f->pos.y)))) { continue; }
+			const bool known = selectedPlayer >= MAX_PLAYERS || TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(mapTile(gameWorld.map, map_coord(f->pos.x), map_coord(f->pos.y)));
 			const glm::vec2 c = toScreen(static_cast<float>(f->pos.x), static_cast<float>(f->pos.y));
 			if (!inRect(a, c.x, c.y)) { continue; }
-			pie_DrawSoftRoundedBox(c.x - r * 1.8f, c.y - r * 1.8f, c.x + r * 1.8f, c.y + r * 1.8f, pal_RGBA(120, 255, 90, 50), r * 1.8f, r);
-			pie_DrawSoftRoundedBox(c.x - r, c.y - r, c.x + r, c.y + r, pal_RGBA(20, 40, 10, 230), r, 1.f);
-			pie_DrawSoftRoundedBox(c.x - r + 1.5f * sc, c.y - r + 1.5f * sc, c.x + r - 1.5f * sc, c.y + r - 1.5f * sc, pal_RGBA(130, 255, 90, 255), r, 1.f);
-			pie_DrawSoftRoundedBox(c.x - r * 0.45f, c.y - r * 0.45f, c.x + r * 0.45f, c.y + r * 0.45f, pal_RGBA(20, 40, 10, 255), r * 0.45f, 1.f);
+			const float k = known ? 1.f : 0.5f;
+			pie_DrawSoftRoundedBox(c.x - r * 2.f, c.y - r * 2.f, c.x + r * 2.f, c.y + r * 2.f, pal_RGBA(120, 255, 90, static_cast<UBYTE>(70 * k)), r * 2.f, r * 1.2f);
+			pie_DrawSoftRoundedBox(c.x - r, c.y - r, c.x + r, c.y + r, pal_RGBA(10, 30, 8, static_cast<UBYTE>(235 * k)), r, 1.f);
+			pie_DrawSoftRoundedBox(c.x - r + 2.f * sc, c.y - r + 2.f * sc, c.x + r - 2.f * sc, c.y + r - 2.f * sc, pal_RGBA(140, 255, 100, static_cast<UBYTE>(255 * k)), r, 1.f);
+			pie_DrawSoftRoundedBox(c.x - r * 0.42f, c.y - r * 0.42f, c.x + r * 0.42f, c.y + r * 0.42f, pal_RGBA(10, 30, 8, static_cast<UBYTE>(255 * k)), r * 0.42f, 1.f);
+		}
+		for (unsigned pl = 0; pl < MAX_PLAYERS; ++pl)
+		{
+			const PIELIGHT tc = pal_GetTeamColour(getPlayerColour(pl));
+			for (const STRUCTURE *st : gameWorld.objects.structures[pl])
+			{
+				if (!visibleObj(st) || st->pStructureType == nullptr || st->pStructureType->type != REF_RESOURCE_EXTRACTOR) { continue; }
+				const glm::vec2 c = toScreen(static_cast<float>(st->pos.x), static_cast<float>(st->pos.y));
+				if (!inRect(a, c.x, c.y)) { continue; }
+				const float rr = r * 1.35f;
+				pie_DrawSoftRoundedBox(c.x - rr * 1.6f, c.y - rr * 1.6f, c.x + rr * 1.6f, c.y + rr * 1.6f, pal_RGBA(120, 255, 90, 60), rr * 1.6f, rr);
+				pie_DrawSoftRoundedBox(c.x - rr, c.y - rr, c.x + rr, c.y + rr, pal_RGBA(140, 255, 100, 255), rr, 1.f);
+				pie_DrawSoftRoundedBox(c.x - rr + 2.5f * sc, c.y - rr + 2.5f * sc, c.x + rr - 2.5f * sc, c.y + rr - 2.5f * sc, pal_RGBA(tc.byte.r, tc.byte.g, tc.byte.b, 255), rr, 1.f);
+			}
 		}
 	}
 	// Bauwerke: kleine Flaechen in Spielerfarbe, wichtige als Symbol

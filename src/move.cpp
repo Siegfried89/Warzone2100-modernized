@@ -2149,8 +2149,18 @@ static bool modReverseEligible(const DROID *psDroid, const PROPULSION_STATS *psP
 	}
 }
 
-static int modReversePercent(const PROPULSION_STATS *psPropStats)
+// MOD (Wunsch 22.11. 15:59 "Bagger sehr viel beweglicher machen. Sie sind quaelend langsam im Rueckwaertsgang. Und im Drehen auch. Auch
+// vorwaerts soll schneller sein. Sie sollen sich auf der Stelle drehen koennen."): Bagger (Rumpf B2crane...) fahren schneller, setzen fast so
+// schnell zurueck wie sie vorwaerts fahren, drehen sehr flink auf der Stelle und beschleunigen rasch
+static bool modIsBagger(const DROID *psDroid)
 {
+	const BODY_STATS *psBody = psDroid->getBodyStats();
+	return psBody != nullptr && psBody->id.startsWith("B2crane");
+}
+
+static int modReversePercent(const PROPULSION_STATS *psPropStats, bool bagger = false)
+{
+	if (bagger) { return 92; }
 	switch (psPropStats->propulsionType)
 	{
 	case PROPULSION_TYPE_TRACKED: return 55;
@@ -2225,12 +2235,20 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	turnSpeed = psDroid->baseSpeed * psPropStats->turnSpeed;
 	spinAngle = DEG(psPropStats->spinAngle);
 	const bool modPivot = modPivotTurn(psDroid, psPropStats);
+	const bool modBagger = modIsBagger(psDroid);
 	if (modPivot)   // MOD: auf der Stelle drehen
 	{
 		// (Wunsch 21.11. 18:31 "mach sie einfach wieder so wie vorher"): Bagger wie Kettenfahrzeuge - mindestens 40 Grad/s
 		spinAngle = std::min<int32_t>(spinAngle, DEG(25));
 		spinSpeed = std::max<int32_t>(spinSpeed, DEG(40));
 		turnSpeed = std::min<int32_t>(turnSpeed, spinSpeed);
+	}
+	if (modBagger)   // (22.11.) Bagger: flink auf der Stelle drehen (170 Grad/s), schon ab 20 Grad Richtungsaenderung
+	{
+		spinAngle = std::min<int32_t>(spinAngle, DEG(20));
+		spinSpeed = std::max<int32_t>(spinSpeed, DEG(170));
+		turnSpeed = std::max<int32_t>(turnSpeed, DEG(120));
+		speed = speed * 165 / 100;   // vorwaerts deutlich schneller (die Obergrenze des Antriebs gilt fuer Bagger nicht)
 	}
 
 	moveCheckFinalWaypoint(psDroid, &speed);
@@ -2241,7 +2259,7 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	if (modRev)
 	{
 		psDroid->rot.direction += 0x8000;   // Cast wrapping intended.
-		speed = speed * modReversePercent(psPropStats) / 100;
+		speed = speed * modReversePercent(psPropStats, modBagger) / 100;
 	}
 
 	// MOD (Wunsch 18.11. 12:44 "Lkw/Trucks drehen seltsam - das sind keine Kettenfahrzeuge, und die Drehung ist nicht mittig"):
@@ -2275,8 +2293,8 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	}
 
 	// MOD (17.11. 19:45): Traegheit - mittlere Panzer beschleunigen/bremsen etwas, schwere deutlich langsamer
-	const SDWORD modAccel = std::max<SDWORD>(1, psPropStats->acceleration * modinertia::accelPercent(psDroid) / 100);
-	const SDWORD modDecel = std::max<SDWORD>(1, psPropStats->deceleration * modinertia::decelPercent(psDroid) / 100);
+	const SDWORD modAccel = std::max<SDWORD>(1, psPropStats->acceleration * modinertia::accelPercent(psDroid) / 100 * (modBagger ? 3 : 1));
+	const SDWORD modDecel = std::max<SDWORD>(1, psPropStats->deceleration * modinertia::decelPercent(psDroid) / 100 * (modBagger ? 3 : 1));
 	fNormalSpeed = moveCalcNormalSpeed(psDroid, speed, iDroidDir, modAccel, modDecel);
 	fPerpSpeed   = moveCalcPerpSpeed(psDroid, iDroidDir, psPropStats->skidDeceleration);
 
