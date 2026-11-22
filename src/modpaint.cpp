@@ -45,12 +45,19 @@
 #include "ordersource.h"
 #include "stats.h"
 #include "structure.h"
+#include "transporter.h"
+#include "group.h"
+#include "ai.h"
+#include "modtunnel.h"   // MOD 22.11.: Tunnel (Nydus)
+#include "modferry.h"    // MOD 22.11.: SupCom-Transportpfeil fuer die Fahrschleifen des Planers
+#include "modlayerdig.h"
 
 #include <algorithm>
 #include <cmath>
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -60,7 +67,9 @@ namespace
 {
 enum Mode
 {
-	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_DEFNET, M_RAIL, M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
+	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_DEFNET, M_RAIL,
+	M_STAGING, M_FERRY, M_BRIDGEHEAD, M_GO, M_CLEARPLAN, M_TUNNEL,   // (22.11.) Angriffsplaner + Tunnel; M_GO/M_CLEARPLAN = Sofort-Befehle
+	M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
 struct ModeInfo
@@ -77,7 +86,7 @@ struct ModeInfo
 const ModeInfo kModes[M_COUNT] = {
 	{ "Move", "Move: draw a path - the selected units drive exactly along it", "Move: drag a path (right click cancels)", 60, 220, 90, false },
 	{ "Rally Point", "Rally Point: units gather at this spot (for example before an attack) and wait there", "Rally Point: drag around the rally point (right click cancels)", 255, 150, 40, false },
-	{ "Attack Vector", "Attack Vector: draw the direction of attack - units advance along the line and fight everything on the way", "Attack Vector: drag the direction of attack (right click cancels)", 235, 50, 40, false },
+	{ "Attack Vector", "Attack Vector: draw the direction of attack. With selected units they advance along it right away and fight everything on the way. Without a selection it becomes part of the attack plan: the waves from the nearest bridgehead or assault line storm along it (vectors that start close together merge into one thick arrow that splits). Badge = priority (1 gets the most units), right click on it removes the vector", "Attack Vector: drag the direction of attack (right click cancels)", 235, 50, 40, false },
 	// MOD (Wunsch 21.11. 00:21): "Die Defensive Line ist weiterhin nur zur Formation fuer Fahrzeuge, um sie an eine Frontlinie zu schicken
 	// wie bisher, ohne Bauwerke" - gebaut wird nur noch ueber den eigenen Knopf (M_DEFNET)
 	{ "Defensive Line", "Defensive Line: combat units take up positions along the line, facing the enemy side, and hold it. Nothing is built - use \"Trench Network\" for trenches", "Defensive Line: drag the line to hold (right click cancels)", 60, 130, 255, false },
@@ -92,7 +101,7 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Tank Traps", "Tank Traps: drag an area - builders put a staggered field of tank traps into it (vehicles cannot pass)", "Tank Traps: drag the area (right click cancels)", 40, 200, 80, true },
 	{ "Minefield", "Minefield: drag an area - builders lay hidden mines in it; they blow up enemy ground units that drive over them", "Minefield: drag the area (right click cancels)", 255, 90, 40, true },
 	// MOD (Wunsch 17.11. 18:37): Offensivlinie (rot) - wie die Verteidigungslinie, aber auf Angriff ausgerichtet
-	{ "Assault Line", "Assault Line: many combat units mass on the line in two ranks, ready to storm forward (they chase enemies that come close); builders only add a few short trenches and MG posts as a jump-off point", "Assault Line: drag the line to mass on (right click cancels)", 240, 45, 45, false },
+	{ "Assault Line", "Assault Line: with selected units they mass on the line in two ranks, ready to storm forward (builders add a few short trenches and MG posts). Without a selection it becomes part of the attack plan: units are brought here, wait in a double row until the target strength is reached (badge, click to change) or you press Attack!, then storm along the attack vectors", "Assault Line: drag the line to mass on (right click cancels)", 240, 45, 45, false },
 	// MOD (Wunsch 17.11. 19:36 / 19.11. 17:34): Raeumpanzer (Walze an) und Infanterie durchkaemmen das Gebiet in Bahnen
 	{ "Mine Sweep", "Mine Sweep: drag a circle - mine flails (drum on) and infantry sweep the whole area lane by lane, also where no mines are known. Infantry spots mines within 2.5 tiles, disarms them (3 s each) and does not set off anti-tank mines; flails beat them off ahead", "Mine Sweep: drag a circle around the area to sweep (right click cancels)", 230, 200, 60, true },
 	// MOD (Wunsch 19.11. 17:34 "Neue kreis ziehen = demolish alles in diesem Gebiet")
@@ -101,6 +110,13 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Trench Network", "Trench Network: drag a line - builders dig a trench network along it (main trench, pits, MG posts, connecting trenches to the rear), front towards the enemy side. Combat units are not moved", "Trench Network: drag the line of the trenches (right click cancels)", 120, 190, 230, false },
 	// MOD (Wunsch 21.11. 00:21, Zugsystem): Gleisstrecke frei zeichnen (gerade Stuecke gehen auch wie Mauern ueber das Baumenue)
 	{ "Railway", "Railway: drag a route - builders lay a railway track along it (straight and diagonal, around obstacles, joining your existing tracks). Locomotives and wagons come from the train depot and run on the tracks", "Railway: drag the route of the track (right click cancels)", 175, 140, 95, false },
+	// MOD (Wunsch 22.11. 01:11): Angriffsplaner - "Kein Micromanager. Indirekte Steuerung. Eher lenken, als alles selbst zu machen."
+	{ "Staging Zone", "Staging Zone: drag a circle (or click) where your units gather - new units from the factories and idle units in the zone join the attack plan and are brought on to the bridgeheads (by ferry, by tunnel or on their own). Badge = priority 1-5 (click), right click on it removes the zone", "Staging Zone: drag a circle around the gathering area (right click cancels)", 70, 205, 215, true },
+	{ "Ferry Beacon", "Ferry Beacon: click into a staging zone - your transports pick up the units waiting there and fly them to the bridgeheads in a loop, like in Supreme Commander. Clicked into a bridgehead it marks the landing spot. Placed by button, nothing is built. Right click on the beacon removes it", "Ferry Beacon: click into a staging zone (right click cancels)", 125, 100, 235, false },
+	{ "Bridgehead", "Bridgehead: drag a circle near the enemy base - units are brought here and wait until the target strength is reached (second badge, click: 4 / 8 / 12 / 16 / 24 / 32 / Hold) or you press Attack!, then they storm along the attack vectors that start here. Priority badge: who gets units and transports first", "Bridgehead: drag a circle around the jump-off area (right click cancels)", 245, 115, 45, true },
+	{ "Attack!", "Attack!: every bridgehead and assault line attacks now with the units that have arrived - the next wave keeps gathering", "", 255, 70, 55, false },
+	{ "Clear Plan", "Clear Plan: click twice - removes all staging zones, beacons, bridgeheads, assault lines and vectors of the attack plan (units keep their last orders)", "", 160, 165, 175, false },
+	{ "Dig Tunnel", "Dig Tunnel: drag a line from the entrance to the exit - a drill rig (selected, or the nearest one) digs a tunnel underground; send units onto a tunnel mouth (right click) and they come out at the other end. Easy to destroy: if a mouth falls, the tunnel caves in and everyone inside is lost", "Dig Tunnel: drag from the entrance to the exit (right click cancels)", 185, 140, 80, false },
 };
 
 // MOD (Wunsch 21.11. 17:59 "Die Befehlsbuttons besser nach Kategorie sortieren (aehnliches zu aehnlichem), ausserdem Icons zu jedem dazu"):
@@ -113,12 +129,14 @@ constexpr int COLS = 2;
 constexpr int TITLE_H = 13;    // Titelzeile "Battle plan"
 constexpr int GROUP_H = 12;    // Gruppen-Ueberschrift
 constexpr int GROUP_GAP = 3;   // Abstand nach einer Gruppe
-struct Group { const char *title; int n; int modes[6]; };
+struct Group { const char *title; int n; int modes[8]; };
 constexpr Group kGroups[] = {
-	{ "Units",   4, { M_MOVE, M_RALLY, M_SPREAD, M_COVER, 0, 0 } },
-	{ "Combat",  6, { M_ATTACK, M_OFFENSE, M_DEFEND, M_ARTY, M_AIR, M_COMBOT } },
-	{ "Build",   6, { M_DEFNET, M_ARTYBASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH } },
-	{ "Support", 2, { M_CLEARMINES, M_RECOVER, 0, 0, 0, 0 } },
+	{ "Units",   4, { M_MOVE, M_RALLY, M_SPREAD, M_COVER, 0, 0, 0, 0 } },
+	// (22.11.) Angriffsplaner: Zonen, Leuchtfeuer, Brueckenkopf, Angriffslinie, Vektoren, Tunnel, Angriff, Plan loeschen
+	{ "Attack plan", 8, { M_STAGING, M_FERRY, M_BRIDGEHEAD, M_OFFENSE, M_ATTACK, M_TUNNEL, M_GO, M_CLEARPLAN } },
+	{ "Combat",  4, { M_DEFEND, M_ARTY, M_AIR, M_COMBOT, 0, 0, 0, 0 } },
+	{ "Build",   6, { M_DEFNET, M_ARTYBASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH, 0, 0 } },
+	{ "Support", 2, { M_CLEARMINES, M_RECOVER, 0, 0, 0, 0, 0, 0 } },
 };
 constexpr int NGROUPS = static_cast<int>(sizeof(kGroups) / sizeof(kGroups[0]));
 constexpr int groupRows(int n) { return (n + COLS - 1) / COLS; }
@@ -159,6 +177,16 @@ std::vector<uint32_t> s_chain;   // Einheiten, die in der laufenden Shift-Folge 
 std::shared_ptr<W_SCREEN> s_infScreen;
 std::shared_ptr<W_CLICKFORM> s_infRoot;
 std::shared_ptr<W_BUTTON> s_infBtn;
+// (22.11.) Angriffsplaner (Abschnitt weiter unten)
+unsigned s_planClearArmed = 0;   // "Clear Plan": erster Klick macht scharf, zweiter (binnen 4 s) loescht
+namespace plan
+{
+void attackNow();
+void clearAll();
+bool hasElems();
+void fromStroke(Mode m, const std::vector<Vector2i> &raw);
+}
+bool s_lastPlanned = false;   // die letzte Zeichnung wurde Teil des Angriffsplans (kein verblassender Strich)
 
 // ------------------------------------------------------------------------------------------------- Anzeige der Knoepfe
 
@@ -314,6 +342,27 @@ void drawIcon(int m, const Pen &p)
 		p.l(-0.85f, -0.85f, 0.6f, -0.85f); p.l(0.1f, -0.85f, 0.1f, 0.15f); p.arc(-0.15f, 0.15f, 0.25f, 0.f, kPi); p.l(-0.4f, 0.15f, -0.4f, 0.f);
 		p.l(-0.75f, 0.55f, 0.75f, 0.55f); p.l(-0.75f, 0.55f, -0.55f, 0.9f); p.l(0.75f, 0.55f, 0.55f, 0.9f); p.l(-0.55f, 0.9f, 0.55f, 0.9f);
 		break;
+	case M_STAGING:   // Kreis mit Sammelpunkten
+		p.circ(0.f, 0.f, 0.85f); p.dot(-0.3f, -0.15f, 0.14f); p.dot(0.3f, -0.15f, 0.14f); p.dot(0.f, 0.32f, 0.14f);
+		break;
+	case M_FERRY:   // Landeplatz mit Schleife
+		p.l(0.f, -0.85f, 0.85f, 0.f); p.l(0.85f, 0.f, 0.f, 0.85f); p.l(0.f, 0.85f, -0.85f, 0.f); p.l(-0.85f, 0.f, 0.f, -0.85f);
+		p.arc(0.f, 0.f, 0.4f, -2.6f, 2.6f, 10); p.l(0.34f, -0.21f, 0.5f, -0.45f);
+		break;
+	case M_BRIDGEHEAD:   // Kreis mit Fadenkreuz
+		p.circ(0.f, 0.f, 0.8f); p.l(-0.95f, 0.f, -0.35f, 0.f); p.l(0.35f, 0.f, 0.95f, 0.f); p.l(0.f, -0.95f, 0.f, -0.35f); p.l(0.f, 0.35f, 0.f, 0.95f);
+		break;
+	case M_GO:   // Pfeilbuendel nach vorn
+		p.l(-0.85f, 0.6f, 0.75f, -0.7f); p.l(0.75f, -0.7f, 0.25f, -0.7f); p.l(0.75f, -0.7f, 0.75f, -0.2f);
+		p.l(-0.85f, -0.1f, 0.3f, -0.1f); p.l(-0.4f, 0.85f, 0.3f, 0.2f);
+		break;
+	case M_CLEARPLAN:   // Kreuz
+		p.l(-0.7f, -0.7f, 0.7f, 0.7f); p.l(0.7f, -0.7f, -0.7f, 0.7f);
+		break;
+	case M_TUNNEL:   // Bogen ueber gestricheltem Gang
+		p.arc(-0.45f, 0.35f, 0.4f, kPi, 2.f * kPi, 10); p.arc(0.45f, 0.35f, 0.4f, kPi, 2.f * kPi, 10);
+		for (int k = 0; k < 3; ++k) { const float x = -0.3f + k * 0.3f; p.l(x - 0.08f, 0.7f, x + 0.08f, 0.7f); }
+		break;
 	default:
 		p.dot(0.f, 0.f, 0.4f);
 		break;
@@ -342,7 +391,8 @@ void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	drawIcon(m, pen);
 	const int fh = (sc <= 0) ? 9 : (sc == 1 ? 12 : 16);
 	const int tx = x0 + static_cast<int>(8.f * s + 2.f * ir) + static_cast<int>(3 * s);
-	modui::text(mi.label, tx, y0 + (h - fh) / 2 - 1, (active || hl) ? WZCOL_TEXT_BRIGHT : WZCOL_TEXT_MEDIUM, sc);
+	const bool armed = m == M_CLEARPLAN && s_planClearArmed != 0 && realTime - s_planClearArmed < 4000;
+	modui::text(armed ? _("Click again!") : mi.label, tx, y0 + (h - fh) / 2 - 1, (active || hl || armed) ? WZCOL_TEXT_BRIGHT : WZCOL_TEXT_MEDIUM, sc);
 }
 
 void ensureScreen()
@@ -362,6 +412,25 @@ void ensureScreen()
 		b->UserData = static_cast<UDWORD>(m);
 		b->setTip(kModes[m].tip);
 		b->addOnClickHandler([m](W_BUTTON &) { widgScheduleTask([m]() {
+			if (m == M_GO)
+			{
+				// MOD (22.11.): Angriffsplaner - alle Brueckenkoepfe und Angriffslinien greifen jetzt an
+				plan::attackNow();
+				s_mode = -1; s_drawing = false; s_cur.clear();
+				return;
+			}
+			if (m == M_CLEARPLAN)
+			{
+				if (s_planClearArmed != 0 && realTime - s_planClearArmed < 4000)
+				{
+					plan::clearAll();
+					s_planClearArmed = 0;
+					addConsoleMessage(_("Attack plan cleared"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+				}
+				else if (plan::hasElems()) { s_planClearArmed = std::max(1u, realTime); }
+				s_mode = -1; s_drawing = false; s_cur.clear();
+				return;
+			}
 			if (m == M_COVER)
 			{
 				// MOD (Wunsch 17.11.): Sofort-Befehl "Take cover" - Infanterie bemannt Graeben/Gruben/Haeuser in der Naehe
@@ -1359,7 +1428,18 @@ void distributePlan(const std::vector<DROID *> &builders, const std::vector<modb
 
 void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 {
+	s_lastPlanned = false;
 	if (raw.empty()) { return; }
+	// MOD (Wunsch 22.11. 01:11): Angriffsplaner - Zonen, Leuchtfeuer, Brueckenkopf und Tunnel immer; Angriffslinie und Angriffsvektor,
+	// wenn keine Einheit gewaehlt ist (mit Auswahl bleiben sie Sofort-Befehle wie bisher)
+	bool anySel = false;
+	if (selectedPlayer < MAX_PLAYERS) { for (const DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d != nullptr && !d->died && d->selected) { anySel = true; break; } } }
+	if (m == M_STAGING || m == M_BRIDGEHEAD || m == M_FERRY || m == M_TUNNEL || ((m == M_ATTACK || m == M_OFFENSE) && !anySel))
+	{
+		plan::fromStroke(m, raw);
+		s_lastPlanned = true;
+		return;
+	}
 	if (m == M_RECOVER)
 	{
 		const Vector2i c = centroid(raw);
@@ -1877,17 +1957,18 @@ void mineSegs(std::vector<Seg> &out, std::vector<Seg> &cross, const std::vector<
 	}
 }
 
-void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm::mat4 &m, const std::vector<Vector2i> *marks = nullptr, int side = 0)
+void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm::mat4 &m, const std::vector<Vector2i> *marks = nullptr, int side = 0, float widthScale = 1.f, bool head = true)
 {
 	const ModeInfo &mi = kModes[mode];
 	const bool closed = mi.area;
 	const bool field = mode == M_TRAPS || mode == M_MINES;
 	const bool lineWithTicks = mode == M_DEFEND || mode == M_OFFENSE || mode == M_DEFNET;   // Verteidigungs-/Offensivlinie, Grabennetz: Linie mit Querstrichen zum Feind
-	const bool arrow = !closed && mode != M_RALLY && !lineWithTicks;    // Rally = Kreis/Spirale
+	const bool shaftOnly = !head && !closed && !lineWithTicks;            // (22.11.) Pfeilstamm ohne Spitze (Angriffsplaner: Vektoren spalten sich)
+	const bool arrow = !closed && mode != M_RALLY && !lineWithTicks && head;    // Rally = Kreis/Spirale
 	std::vector<glm::vec2> p = screenPath(pts, m, closed);
 	if (p.size() < 2 || alpha <= 0) { return; }
 	const float sc = modui::uiScale();
-	const float body = (arrow ? 18.f : 11.f) * sc;   // Strichstaerke (17.11. 18:10: noch dicker)
+	const float body = ((arrow || shaftOnly) ? 18.f : 11.f) * sc * widthScale;   // Strichstaerke (17.11. 18:10: noch dicker)
 	std::vector<Seg> segs;
 	// Pfeil: Spitze am Ende, Koerper endet an ihrer Basis
 	glm::vec2 tip = p.back(), dir(1.f, 0.f);
@@ -1929,6 +2010,1248 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 		for (const Seg &g : extra) { drawSegLayer(g, 2, mi, mode == M_TRAPS ? 0.7f : 0.92f); }
 	}
 }
+
+// ------------------------------------------------------------------------------------------------- Angriffsplaner (Wunsch 22.11. 01:11)
+// "Es soll ein Angriffsplaner sein. Kein Micromanager. Indirekte Steuerung. Eher lenken, als alles selbst zu machen."
+// Bausteine (bleiben stehen, bis man sie mit Rechtsklick auf ihr Zahlenschild oder "Clear Plan" entfernt):
+//  - Staging Zone (Bereitstellungsraum): neue Einheiten aus den Fabriken und untaetige Einheiten in der Zone kommen in den Plan und
+//    sammeln sich dort. Ferry Beacon (per Knopf, nicht gebaut) in der Zone: Transporter holen sie ab und fliegen sie in einer Schleife
+//    wie in Supreme Commander zu den Brueckenkoepfen. Liegt ein Tunnel passend, fahren sie durch den Tunnel, sonst auf eigene Faust.
+//  - Bridgehead (Brueckenkopf) / Assault Line (Doppelreihe): dort warten die Einheiten, bis die Sollstaerke erreicht ist (Schild "7/12",
+//    Klick schaltet um, "Hold" = nur auf Knopfdruck) oder man "Attack!" drueckt; dann stuermen sie entlang der Attack Vectors, die am
+//    naechsten bei ihnen anfangen (ohne Vektor zum naechsten bekannten Feindgebaeude). Die naechste Welle sammelt sich schon.
+//  - Prioritaet 1-5 (Zahlenschild, Klick schaltet weiter): bestimmt, wer zuerst Einheiten und Transporter bekommt (1 = zuerst) und bei
+//    Vektoren, wie viele Einheiten jeder bekommt. Alles arbeitet gleichzeitig, sobald es etwas zu tun hat.
+// Die Verwaltung laeuft beim eigenen Spieler und gibt gewoehnliche Befehle (wie Mausklicks) - also auch im Mehrspieler synchron.
+// Ein eigener Befehl an eine Einheit nimmt sie aus dem Plan. Im Spielstand gespeichert (modsave).
+namespace plan
+{
+constexpr unsigned STEP_MS = 1000;
+constexpr int GROUP_MIN = 5;                  // so viele fahren gemeinsam aus dem Bereitstellungsraum los
+constexpr unsigned STAGE_WAIT_MAX = 25000;    // laenger wartet niemand auf eine volle Gruppe
+constexpr unsigned ATTACK_MAX = 240000;       // danach ist eine Einheit aus dem Angriff entlassen
+constexpr unsigned LOAD_MAX_MS = 20000;
+constexpr unsigned LOAD_MIN_MS = 5000;
+constexpr int kGoals[] = { 4, 8, 12, 16, 24, 32, 0 };   // 0 = Hold (nur auf Knopfdruck)
+constexpr int NGOALS = static_cast<int>(sizeof(kGoals) / sizeof(kGoals[0]));
+
+enum Kind { K_STAGING = 0, K_BRIDGEHEAD, K_ASSAULT, K_VECTOR };
+struct Elem
+{
+	uint32_t id = 0;
+	int kind = K_STAGING;
+	int prio = 1;
+	std::vector<Vector2i> pts;   // Angriffslinie / Vektor (Welt)
+	Vector2i c{0, 0};            // Zonen: Mitte
+	int r = 0;                   //        Radius
+	bool beacon = false;
+	Vector2i beaconPos{0, 0};
+	int goal = 12;
+	int side = 1;
+	unsigned waves = 0;
+};
+enum UPhase { U_TO_STAGE = 0, U_AT_STAGE, U_FERRY, U_TO_TARGET, U_AT_TARGET, U_ATTACK };
+struct URec
+{
+	uint32_t stage = 0, target = 0;
+	int phase = U_TO_STAGE;
+	unsigned since = 0, sent = 0;
+	int slot = -1;
+};
+enum TPhase { T_IDLE = 0, T_TO_PICKUP, T_LOADING, T_OUTBOUND, T_RETURN };
+struct TRec
+{
+	int phase = T_IDLE;
+	uint32_t stage = 0, target = 0;
+	unsigned since = 0, sent = 0;
+};
+struct Hit { uint32_t elem; int what; int x0, y0, x1, y1; };   // what: 0 Prioritaet, 1 Sollstaerke, 2 Leuchtfeuer
+
+std::vector<Elem> s_elems;
+uint32_t s_nextId = 1;
+std::map<uint32_t, URec> s_units;
+std::map<uint32_t, TRec> s_trans;
+std::set<uint32_t> s_known;
+bool s_knownInit = false;
+unsigned s_nextStep = 0;
+unsigned s_clearArmed = 0;
+std::vector<Hit> s_hits;
+
+Elem *elem(uint32_t id)
+{
+	for (Elem &e : s_elems) { if (e.id == id) { return &e; } }
+	return nullptr;
+}
+bool isTarget(const Elem &e) { return e.kind == K_BRIDGEHEAD || e.kind == K_ASSAULT; }
+bool anyKind(int k) { for (const Elem &e : s_elems) { if (e.kind == k) { return true; } } return false; }
+bool anyTarget() { return anyKind(K_BRIDGEHEAD) || anyKind(K_ASSAULT); }
+bool active() { return anyTarget() || anyKind(K_STAGING); }
+
+Vector2i clampMap(Vector2i p)
+{
+	p.x = std::clamp(p.x, TILE_UNITS * 2, world_coord(gameWorld.map.width - 3));
+	p.y = std::clamp(p.y, TILE_UNITS * 2, world_coord(gameWorld.map.height - 3));
+	return p;
+}
+Vector2i lineMid(const Elem &e) { return e.pts.empty() ? e.c : resample(e.pts, 3)[1]; }
+Vector2i anchor(const Elem &e)
+{
+	if (e.kind == K_STAGING || e.kind == K_BRIDGEHEAD) { return e.c; }
+	if (e.kind == K_ASSAULT) { return lineMid(e); }
+	return e.pts.empty() ? e.c : e.pts.front();
+}
+bool inside(const Elem &z, const Vector2i &p, int extra = 0)
+{
+	const int64_t r = z.r + extra;
+	return dist2(z.c, p) <= r * r;
+}
+int64_t distTo(const Elem &e, const Vector2i &p)
+{
+	if (e.kind == K_STAGING || e.kind == K_BRIDGEHEAD)
+	{
+		const int64_t d = static_cast<int64_t>(std::sqrt(static_cast<double>(dist2(e.c, p))));
+		return std::max<int64_t>(0, d - e.r);
+	}
+	int64_t best = INT64_MAX;
+	for (const Vector2i &q : resample(e.pts, std::max<size_t>(8, e.pts.size()))) { best = std::min(best, dist2(q, p)); }
+	return static_cast<int64_t>(std::sqrt(static_cast<double>(best)));
+}
+
+bool fitsPlan(const DROID *d)
+{
+	if (d == nullptr || d->died || d->isTransporter() || isAir(d)) { return false; }
+	return (isCombat(d) && !isArty(d)) || modcombot::isModular(d);
+}
+
+/// eigene Einheit, auch wenn sie gerade in einem Transporter sitzt
+DROID *findDroid(uint32_t id, bool *aboard = nullptr)
+{
+	if (aboard != nullptr) { *aboard = false; }
+	if (selectedPlayer >= MAX_PLAYERS) { return nullptr; }
+	DROID *d = IdToDroid(gameWorld.objects, id, selectedPlayer);
+	if (d != nullptr) { return d->died ? nullptr : d; }
+	for (DROID *t : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (t == nullptr || t->died || !t->isTransporter() || t->psGroup == nullptr) { continue; }
+		for (DROID *c : t->psGroup->psList)
+		{
+			if (c != nullptr && c != t && c->id == id) { if (aboard != nullptr) { *aboard = true; } return c->died ? nullptr : c; }
+		}
+	}
+	return nullptr;
+}
+
+void order(DROID *d, URec &u, const DroidOrder &o, bool add = false)
+{
+	send(d, o, add);
+	u.sent = gameTime;
+}
+
+/// hat der Spieler der Einheit seit unserem letzten Befehl selbst etwas befohlen? (dann gehoert sie wieder ihm)
+bool overridden(const DROID *d, unsigned sent)
+{
+	const unsigned since = modcontrol::sincePlayerOrder(d);
+	if (since >= gameTime) { return false; }
+	return gameTime - since > sent + 2500;
+}
+
+int countUnits(uint32_t target, int phaseFrom, int phaseTo)
+{
+	int n = 0;
+	for (const auto &kv : s_units) { if (kv.second.target == target && kv.second.phase >= phaseFrom && kv.second.phase <= phaseTo) { ++n; } }
+	return n;
+}
+int assigned(uint32_t target) { return countUnits(target, U_TO_STAGE, U_AT_TARGET); }
+int arrived(uint32_t target) { return countUnits(target, U_AT_TARGET, U_AT_TARGET); }
+
+/// Ziel fuer die naechste Einheit: erst fuellt Prioritaet 1 ihre Sollstaerke, dann 2 ... - danach beginnt die naechste Welle wieder bei 1
+uint32_t pickTarget()
+{
+	const Elem *best = nullptr;
+	int64_t bestKey = INT64_MAX;
+	for (const Elem &e : s_elems)
+	{
+		if (!isTarget(e)) { continue; }
+		const int n = assigned(e.id);
+		const int g = e.goal > 0 ? e.goal : 100000;
+		const int64_t key = static_cast<int64_t>(n / g) * 1000000 + e.prio * 100000 + std::min(n, 99999);
+		if (key < bestKey) { bestKey = key; best = &e; }
+	}
+	return best != nullptr ? best->id : 0u;
+}
+
+uint32_t nearestStage(const Vector2i &p)
+{
+	const Elem *best = nullptr;
+	int64_t bd = INT64_MAX;
+	for (const Elem &e : s_elems)
+	{
+		if (e.kind != K_STAGING) { continue; }
+		const int64_t d = dist2(e.c, p) + static_cast<int64_t>(e.prio - 1) * DIST_TILE * DIST_TILE * 4;   // Prioritaet als leichter Vorzug
+		if (d < bd) { bd = d; best = &e; }
+	}
+	return best != nullptr ? best->id : 0u;
+}
+
+int freeSlot(uint32_t target)
+{
+	std::set<int> used;
+	for (const auto &kv : s_units) { if (kv.second.target == target && kv.second.phase < U_ATTACK && kv.second.slot >= 0) { used.insert(kv.second.slot); } }
+	int s = 0;
+	while (used.count(s)) { ++s; }
+	return s;
+}
+
+/// Feindrichtung der Angriffslinie an der Stelle p (Normale zur Seite der Querstriche)
+std::pair<double, double> lineEnemyDir(const Elem &t, const Vector2i &p)
+{
+	const std::vector<Vector2i> fl = resample(t.pts, std::max<size_t>(24, t.pts.size()));
+	size_t bi = 0;
+	int64_t bd = INT64_MAX;
+	for (size_t k = 0; k < fl.size(); ++k) { const int64_t dd = dist2(fl[k], p); if (dd < bd) { bd = dd; bi = k; } }
+	const Vector2i a = fl[bi > 0 ? bi - 1 : 0], b = fl[std::min(bi + 1, fl.size() - 1)];
+	const double tx = b.x - a.x, ty = b.y - a.y, l = std::max(1.0, std::sqrt(tx * tx + ty * ty));
+	return std::make_pair(-ty / l * t.side, tx / l * t.side);
+}
+
+Vector2i targetSpot(const Elem &t, int slot)
+{
+	slot = std::max(0, slot);
+	if (t.kind == K_BRIDGEHEAD) { return clampMap(spread(t.c, static_cast<size_t>(slot))); }
+	// Angriffslinie: zwei Reihen (vorn / gut ein Feld dahinter), weitere Einheiten in weiteren Reihen
+	const int cap = std::max(8, t.goal > 0 ? t.goal : 16);
+	const int perRank = std::max(1, (cap + 1) / 2);
+	const int row = slot / perRank;   // 0,1 = Doppelreihe; abwechselnd vorn/hinten verteilt
+	const int idx = slot % perRank;
+	const std::vector<Vector2i> line = resample(t.pts, static_cast<size_t>(perRank));
+	Vector2i p = line[static_cast<size_t>(std::min(idx, static_cast<int>(line.size()) - 1))];
+	const auto e = lineEnemyDir(t, p);
+	const double back = DIST_TILE * 1.2 * row;
+	p.x -= static_cast<int>(e.first * back);
+	p.y -= static_cast<int>(e.second * back);
+	return clampMap(p);
+}
+
+Vector2i dropPoint(const Elem &t)
+{
+	if (t.beacon) { return t.beaconPos; }
+	if (t.kind == K_BRIDGEHEAD) { return t.c; }
+	const Vector2i m = lineMid(t);
+	const auto e = lineEnemyDir(t, m);
+	return clampMap(Vector2i(m.x - static_cast<int>(e.first * DIST_TILE * 3), m.y - static_cast<int>(e.second * DIST_TILE * 3)));
+}
+
+bool haveTransporters()
+{
+	if (selectedPlayer >= MAX_PLAYERS) { return false; }
+	for (const DROID *t : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (t != nullptr && !t->died && t->isTransporter() && modlayer::layerOf(t) == modlayer::SURFACE) { return true; }
+	}
+	return false;
+}
+
+/// passender Tunnel vom Bereitstellungsraum zum Ziel: Eingang hoechstens 4 Felder vor der Zone, Ausgang hoechstens 10 Felder vom Ziel
+bool tunnelFor(const Elem &s, const Elem &t, Vector2i &entry)
+{
+	bool found = false;
+	int64_t best = INT64_MAX;
+	for (const modtunnel::Info &tn : modtunnel::tunnels(selectedPlayer))
+	{
+		for (int dir = 0; dir < 2; ++dir)
+		{
+			const Vector2i in = dir == 0 ? tn.a : tn.b, out = dir == 0 ? tn.b : tn.a;
+			if (!inside(s, in, 4 * DIST_TILE)) { continue; }
+			const int64_t dOut = distTo(t, out);
+			if (dOut > 10 * DIST_TILE) { continue; }
+			if (dOut < best) { best = dOut; entry = in; found = true; }
+		}
+	}
+	return found;
+}
+
+void join(DROID *d, uint32_t stage, uint32_t target)
+{
+	if (d == nullptr || s_units.count(d->id)) { return; }
+	URec u;
+	u.since = gameTime;
+	if (target != 0 && elem(target) != nullptr)
+	{
+		u.target = target;
+		u.slot = freeSlot(target);
+		u.phase = U_TO_TARGET;
+		order(d, u, DroidOrder(DORDER_SCOUT, targetSpot(*elem(target), u.slot)));
+	}
+	else
+	{
+		if (stage == 0) { stage = nearestStage(d->pos.xy()); }
+		if (stage != 0)
+		{
+			u.stage = stage;
+			u.phase = U_TO_STAGE;
+			const size_t k = static_cast<size_t>(d->id % 23u);
+			order(d, u, DroidOrder(DORDER_MOVE, clampMap(spread(elem(stage)->c, k))));
+		}
+		else
+		{
+			u.target = pickTarget();
+			if (u.target == 0) { return; }
+			u.slot = freeSlot(u.target);
+			u.phase = U_TO_TARGET;
+			order(d, u, DroidOrder(DORDER_SCOUT, targetSpot(*elem(u.target), u.slot)));
+		}
+	}
+	s_units[d->id] = u;
+}
+
+void initKnown()
+{
+	s_known.clear();
+	if (selectedPlayer < MAX_PLAYERS)
+	{
+		for (const DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d != nullptr) { s_known.insert(d->id); } }
+		for (const DROID *t : gameWorld.objects.droids[selectedPlayer])
+		{
+			if (t == nullptr || !t->isTransporter() || t->psGroup == nullptr) { continue; }
+			for (const DROID *c : t->psGroup->psList) { if (c != nullptr) { s_known.insert(c->id); } }
+		}
+	}
+	s_knownInit = true;
+}
+
+/// neue Einheiten aus den Fabriken und untaetige Einheiten in einem Bereitstellungsraum kommen in den Plan
+void intake()
+{
+	if (!s_knownInit) { initKnown(); }
+	const bool on = active();
+	for (DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d == nullptr || d->died) { continue; }
+		const bool isNew = s_known.insert(d->id).second;
+		if (!on || s_units.count(d->id) || !fitsPlan(d) || modlayer::layerOf(d) != modlayer::SURFACE || modtunnel::inTransit(d)) { continue; }
+		bool take = isNew;
+		if (!take && idleUnit(d) && !modcontrol::manual(d) && !inOp(d->id) && s_plan.count(d->id) == 0)
+		{
+			for (const Elem &e : s_elems) { if (e.kind == K_STAGING && inside(e, d->pos.xy())) { take = true; break; } }
+		}
+		if (take) { join(d, 0, 0); }
+	}
+}
+
+/// nach einer Aenderung am Plan: Einheiten, deren Zone/Ziel weg ist, bekommen neue (oder werden entlassen)
+void fixRefs()
+{
+	for (auto it = s_units.begin(); it != s_units.end();)
+	{
+		URec &u = it->second;
+		if (u.stage != 0 && elem(u.stage) == nullptr) { u.stage = 0; }
+		if (u.target != 0 && elem(u.target) == nullptr) { u.target = 0; u.slot = -1; }
+		if (u.phase == U_ATTACK) { ++it; continue; }
+		DROID *d = findDroid(it->first);
+		if (d == nullptr) { it = s_units.erase(it); continue; }
+		if ((u.phase == U_TO_STAGE || u.phase == U_AT_STAGE || u.phase == U_FERRY) && u.stage == 0)
+		{
+			u.stage = nearestStage(d->pos.xy());
+			if (u.stage == 0 && u.target == 0) { it = s_units.erase(it); continue; }
+			u.phase = u.stage != 0 ? U_TO_STAGE : U_TO_TARGET;
+			u.sent = 0;   // im naechsten Schritt neu losschicken
+		}
+		if ((u.phase == U_TO_TARGET || u.phase == U_AT_TARGET) && u.target == 0)
+		{
+			u.target = pickTarget();
+			if (u.target == 0)
+			{
+				u.stage = nearestStage(d->pos.xy());
+				if (u.stage == 0) { it = s_units.erase(it); continue; }
+				u.phase = U_TO_STAGE;
+			}
+			else { u.slot = freeSlot(u.target); u.phase = U_TO_TARGET; }
+			u.sent = 0;
+		}
+		if (u.phase == U_FERRY)
+		{
+			const Elem *s = elem(u.stage);
+			if (s == nullptr || !s->beacon) { u.phase = U_AT_STAGE; u.since = gameTime; }
+		}
+		++it;
+	}
+}
+
+uint32_t linkedTarget(const Elem &v)
+{
+	if (v.pts.empty()) { return 0; }
+	const Elem *best = nullptr;
+	int64_t bd = INT64_MAX;
+	for (const Elem &e : s_elems)
+	{
+		if (!isTarget(e)) { continue; }
+		const int64_t d = distTo(e, v.pts.front());
+		if (d < bd) { bd = d; best = &e; }
+	}
+	return best != nullptr ? best->id : 0u;
+}
+
+/// naechstes bekanntes Feindgebaeude (oder sichtbare Feindeinheit) zum Punkt
+bool enemyNear(const Vector2i &p, Vector2i &out)
+{
+	bool found = false;
+	int64_t bd = INT64_MAX;
+	for (unsigned q = 0; q < MAX_PLAYERS; ++q)
+	{
+		if (q == selectedPlayer || aiCheckAlliances(q, selectedPlayer)) { continue; }
+		for (const STRUCTURE *st : gameWorld.objects.structures[q])
+		{
+			if (st == nullptr || st->died || st->visible[selectedPlayer] == 0) { continue; }
+			const int64_t d = dist2(st->pos.xy(), p);
+			if (d < bd) { bd = d; out = st->pos.xy(); found = true; }
+		}
+	}
+	return found;
+}
+
+void launch(Elem &t)
+{
+	std::vector<std::pair<uint32_t, DROID *>> units;
+	for (auto &kv : s_units)
+	{
+		if (kv.second.target != t.id || kv.second.phase != U_AT_TARGET) { continue; }
+		bool aboard = false;
+		DROID *d = findDroid(kv.first, &aboard);
+		if (d != nullptr && !aboard) { units.emplace_back(kv.first, d); }
+	}
+	if (units.empty()) { return; }
+	std::vector<const Elem *> vecs;
+	for (const Elem &v : s_elems) { if (v.kind == K_VECTOR && v.pts.size() >= 2 && linkedTarget(v) == t.id) { vecs.push_back(&v); } }
+	std::stable_sort(vecs.begin(), vecs.end(), [](const Elem *a, const Elem *b) { return a->prio != b->prio ? a->prio < b->prio : a->id < b->id; });
+	std::vector<std::vector<Vector2i>> routes(units.size());
+	if (!vecs.empty())
+	{
+		// Einheiten nach Gewicht (Prioritaet 1 = 5 Teile ... 5 = 1 Teil) auf die Vektoren verteilen, jeder bekommt die naechsten Einheiten
+		int wsum = 0;
+		for (const Elem *v : vecs) { wsum += 6 - std::clamp(v->prio, 1, 5); }
+		std::vector<size_t> want(vecs.size(), 0);
+		size_t given = 0;
+		for (size_t k = 0; k < vecs.size(); ++k) { want[k] = units.size() * static_cast<size_t>(6 - std::clamp(vecs[k]->prio, 1, 5)) / static_cast<size_t>(std::max(1, wsum)); given += want[k]; }
+		for (size_t k = 0; given < units.size(); k = (k + 1) % vecs.size()) { ++want[k]; ++given; }
+		std::vector<bool> used(units.size(), false);
+		for (size_t k = 0; k < vecs.size(); ++k)
+		{
+			const std::vector<Vector2i> wp = resample(vecs[k]->pts, std::min<size_t>(6, std::max<size_t>(2, vecs[k]->pts.size())));
+			for (size_t n = 0; n < want[k]; ++n)
+			{
+				int best = -1;
+				int64_t bd = INT64_MAX;
+				for (size_t i = 0; i < units.size(); ++i) { if (!used[i]) { const int64_t dd = dist2(units[i].second->pos.xy(), wp.front()); if (dd < bd) { bd = dd; best = static_cast<int>(i); } } }
+				if (best < 0) { break; }
+				used[static_cast<size_t>(best)] = true;
+				std::vector<Vector2i> r(wp.begin() + 1, wp.end());
+				r.back() = clampMap(spread(r.back(), n));
+				routes[static_cast<size_t>(best)] = r;
+			}
+		}
+	}
+	Vector2i goal;
+	const bool haveEnemy = enemyNear(anchor(t), goal);
+	if (!haveEnemy)
+	{
+		// kein Feind bekannt: 20 Felder weiter, weg von der eigenen Basis
+		int64_t sx = 0, sy = 0, cnt = 0;
+		for (const STRUCTURE *st : gameWorld.objects.structures[selectedPlayer]) { if (st != nullptr && !st->died) { sx += st->pos.x; sy += st->pos.y; ++cnt; } }
+		const Vector2i a = anchor(t);
+		double dx = 1.0, dy = 0.0;
+		if (cnt > 0) { dx = a.x - static_cast<double>(sx / cnt); dy = a.y - static_cast<double>(sy / cnt); }
+		const double l = std::max(1.0, std::sqrt(dx * dx + dy * dy));
+		goal = clampMap(Vector2i(a.x + static_cast<int>(dx / l * DIST_TILE * 20), a.y + static_cast<int>(dy / l * DIST_TILE * 20)));
+	}
+	for (size_t i = 0; i < units.size(); ++i)
+	{
+		DROID *d = units[i].second;
+		URec &u = s_units[units[i].first];
+		if (routes[i].empty()) { routes[i].push_back(clampMap(spread(goal, i))); }
+		for (size_t k = 0; k < routes[i].size(); ++k) { order(d, u, DroidOrder(DORDER_SCOUT, routes[i][k]), k > 0); }
+		if (!modcombot::isModular(d)) { secondarySetState(d, gameWorld.objects, DSO_HALTTYPE, DSS_HALT_PURSUE); }
+		u.phase = U_ATTACK;
+		u.since = gameTime;
+		u.slot = -1;
+	}
+	++t.waves;
+	char msg[200];
+	snprintf(msg, sizeof(msg), _("Attack plan: wave %u from the %s attacks (%u units)"), t.waves, t.kind == K_BRIDGEHEAD ? _("bridgehead") : _("assault line"),
+	         static_cast<unsigned>(units.size()));
+	addConsoleMessage(msg, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+}
+
+void attackNow()
+{
+	bool any = false;
+	for (Elem &t : s_elems) { if (isTarget(t) && arrived(t.id) > 0) { launch(t); any = true; } }
+	if (!any) { addConsoleMessage(_("Attack plan: no units are waiting at a bridgehead or assault line yet"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+}
+
+/// Bereitstellungsraum: Gruppen fahren gemeinsam los (Tunnel, Transporter oder auf eigene Faust)
+void departStep()
+{
+	const bool trans = haveTransporters();
+	for (const Elem &s : s_elems)
+	{
+		if (s.kind != K_STAGING) { continue; }
+		std::map<uint32_t, std::vector<uint32_t>> byTarget;
+		for (auto &kv : s_units) { if (kv.second.stage == s.id && kv.second.phase == U_AT_STAGE && kv.second.target != 0) { byTarget[kv.second.target].push_back(kv.first); } }
+		for (auto &bt : byTarget)
+		{
+			const Elem *t = elem(bt.first);
+			if (t == nullptr) { continue; }
+			Vector2i entry;
+			const bool tunnel = tunnelFor(s, *t, entry);
+			const bool ferry = !tunnel && s.beacon && trans && distTo(*t, s.c) > 15 * DIST_TILE;
+			if (ferry)
+			{
+				size_t i = 0;
+				for (uint32_t id : bt.second)
+				{
+					DROID *d = findDroid(id);
+					if (d == nullptr) { continue; }
+					URec &u = s_units[id];
+					u.phase = U_FERRY;
+					u.since = gameTime;
+					order(d, u, DroidOrder(DORDER_MOVE, clampMap(spread(s.beaconPos, 1 + i++))));
+				}
+				continue;
+			}
+			unsigned oldest = gameTime;
+			for (uint32_t id : bt.second) { oldest = std::min(oldest, s_units[id].since); }
+			const int en = countUnits(t->id, U_FERRY, U_AT_TARGET);
+			int need = GROUP_MIN;   // naechste Welle: in Gruppen
+			if (t->goal > 0 && t->goal - en > 0) { need = std::min(GROUP_MIN, t->goal - en); }   // es fehlen nur noch wenige bis zur Sollstaerke
+			if (static_cast<int>(bt.second.size()) < need && gameTime - oldest < STAGE_WAIT_MAX) { continue; }
+			for (uint32_t id : bt.second)
+			{
+				DROID *d = findDroid(id);
+				if (d == nullptr) { continue; }
+				URec &u = s_units[id];
+				if (u.slot < 0) { u.slot = freeSlot(t->id); }
+				const Vector2i spot = targetSpot(*t, u.slot);
+				if (tunnel)
+				{
+					order(d, u, DroidOrder(DORDER_MOVE, entry));          // in den Tunnel ...
+					order(d, u, DroidOrder(DORDER_SCOUT, spot), true);   // ... und nach dem Austritt zum Platz
+				}
+				else { order(d, u, DroidOrder(DORDER_SCOUT, spot)); }
+				u.phase = U_TO_TARGET;
+				u.since = gameTime;
+			}
+		}
+	}
+}
+
+void unitStep()
+{
+	const int64_t near2 = static_cast<int64_t>(5 * DIST_TILE / 2) * (5 * DIST_TILE / 2);
+	for (auto it = s_units.begin(); it != s_units.end();)
+	{
+		URec &u = it->second;
+		bool aboard = false;
+		DROID *d = findDroid(it->first, &aboard);
+		if (d == nullptr) { it = s_units.erase(it); continue; }
+		if (!aboard && !modtunnel::inTransit(d) && overridden(d, u.sent)) { it = s_units.erase(it); continue; }   // der Spieler hat uebernommen
+		const bool idle = d->order.type == DORDER_NONE || d->order.type == DORDER_GUARD || d->order.type == DORDER_HOLD;
+		switch (u.phase)
+		{
+		case U_TO_STAGE:
+		{
+			const Elem *s = elem(u.stage);
+			if (s == nullptr) { break; }
+			if (inside(*s, d->pos.xy(), DIST_TILE)) { u.phase = U_AT_STAGE; u.since = gameTime; }
+			else if ((idle && gameTime - u.sent > 6000) || u.sent == 0) { order(d, u, DroidOrder(DORDER_MOVE, clampMap(spread(s->c, d->id % 23u)))); }
+			break;
+		}
+		case U_AT_STAGE:
+			if (u.target == 0 || elem(u.target) == nullptr) { u.target = pickTarget(); u.slot = -1; }
+			break;
+		case U_FERRY:
+		{
+			if (aboard || modtunnel::inTransit(d)) { break; }
+			const Elem *s = elem(u.stage);
+			const Elem *t = elem(u.target);
+			if (t == nullptr) { break; }
+			if (dist2(d->pos.xy(), dropPoint(*t)) <= static_cast<int64_t>(8 * DIST_TILE) * (8 * DIST_TILE))
+			{
+				// abgesetzt: zum Platz am Ziel
+				if (u.slot < 0) { u.slot = freeSlot(t->id); }
+				order(d, u, DroidOrder(DORDER_SCOUT, targetSpot(*t, u.slot)));
+				u.phase = U_TO_TARGET;
+				u.since = gameTime;
+			}
+			else if (s != nullptr && idle && d->order.type != DORDER_EMBARK && dist2(d->pos.xy(), s->beaconPos) > static_cast<int64_t>(6 * DIST_TILE) * (6 * DIST_TILE)
+			         && gameTime - u.sent > 8000)
+			{
+				order(d, u, DroidOrder(DORDER_MOVE, clampMap(spread(s->beaconPos, 1 + d->id % 11u))));
+			}
+			break;
+		}
+		case U_TO_TARGET:
+		{
+			const Elem *t = elem(u.target);
+			if (t == nullptr || aboard || modtunnel::inTransit(d)) { break; }
+			if (u.slot < 0) { u.slot = freeSlot(t->id); }
+			const Vector2i spot = targetSpot(*t, u.slot);
+			const bool there = dist2(d->pos.xy(), spot) <= near2 || (idle && distTo(*t, d->pos.xy()) <= 3 * DIST_TILE);
+			if (there) { u.phase = U_AT_TARGET; u.since = gameTime; }
+			else if ((idle && gameTime - u.sent > 8000) || u.sent == 0) { order(d, u, DroidOrder(DORDER_SCOUT, spot)); }
+			break;
+		}
+		case U_AT_TARGET:
+		{
+			const Elem *t = elem(u.target);
+			if (t == nullptr || aboard) { break; }
+			const Vector2i spot = targetSpot(*t, u.slot);
+			if (idle && dist2(d->pos.xy(), spot) > static_cast<int64_t>(5 * DIST_TILE) * (5 * DIST_TILE) && gameTime - u.sent > 20000)
+			{
+				order(d, u, DroidOrder(DORDER_MOVE, spot));   // abgedriftet (Gefecht): zurueck auf den Platz
+			}
+			break;
+		}
+		case U_ATTACK:
+			if ((idle && gameTime - u.since > 20000) || gameTime - u.since > ATTACK_MAX) { it = s_units.erase(it); continue; }
+			break;
+		default:
+			break;
+		}
+		++it;
+	}
+}
+
+/// Transportschleife: freie Transporter holen wartende Einheiten an den Leuchtfeuern ab (Ziel-Prioritaet zuerst)
+void ferryStep()
+{
+	if (selectedPlayer >= MAX_PLAYERS) { return; }
+	// Nachfrage: (Zone, Ziel) -> wartende Einheiten am Leuchtfeuer
+	struct Demand { uint32_t stage, target; std::vector<DROID *> units; int key; };
+	std::vector<Demand> demand;
+	const int64_t at2 = static_cast<int64_t>(6 * DIST_TILE) * (6 * DIST_TILE);
+	for (auto &kv : s_units)
+	{
+		if (kv.second.phase != U_FERRY) { continue; }
+		bool aboard = false;
+		DROID *d = findDroid(kv.first, &aboard);
+		const Elem *s = elem(kv.second.stage);
+		const Elem *t = elem(kv.second.target);
+		if (d == nullptr || aboard || s == nullptr || t == nullptr || !s->beacon) { continue; }
+		if (dist2(d->pos.xy(), s->beaconPos) > at2 || d->order.type == DORDER_EMBARK) { continue; }
+		auto dm = std::find_if(demand.begin(), demand.end(), [&](const Demand &x) { return x.stage == s->id && x.target == t->id; });
+		if (dm == demand.end()) { demand.push_back(Demand{ s->id, t->id, {}, t->prio * 10 + s->prio }); dm = demand.end() - 1; }
+		dm->units.push_back(d);
+	}
+	std::stable_sort(demand.begin(), demand.end(), [](const Demand &a, const Demand &b) { return a.key != b.key ? a.key < b.key : a.units.size() > b.units.size(); });
+	std::set<uint32_t> served;   // Nachfrage, die schon ein Transporter anfliegt
+	for (const auto &kv : s_trans) { if (kv.second.phase == T_TO_PICKUP || kv.second.phase == T_LOADING) { served.insert(kv.second.stage * 65536u + kv.second.target); } }
+	for (DROID *t : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (t == nullptr || t->died || !t->isTransporter() || modlayer::layerOf(t) != modlayer::SURFACE || modlayer::inTransition(t)) { continue; }
+		auto ti = s_trans.find(t->id);
+		const bool idle = t->order.type == DORDER_NONE || t->order.type == DORDER_HOLD;
+		if (ti == s_trans.end())
+		{
+			if (!idle || modcontrol::manual(t) || demand.empty()) { continue; }
+			ti = s_trans.emplace(t->id, TRec()).first;
+		}
+		TRec &r = ti->second;
+		if (overridden(t, r.sent)) { s_trans.erase(ti); continue; }
+		auto sendT = [&](const DroidOrder &o) { send(t, o, false); r.sent = gameTime; };
+		const Elem *s = elem(r.stage);
+		const Elem *tg = elem(r.target);
+		switch (r.phase)
+		{
+		case T_IDLE:
+		{
+			if (!transporterIsEmpty(t)) { if (tg != nullptr) { sendT(DroidOrder(DORDER_DISEMBARK, dropPoint(*tg))); r.phase = T_OUTBOUND; } break; }
+			const Demand *pick = nullptr;
+			for (const Demand &dm : demand) { if (!served.count(dm.stage * 65536u + dm.target)) { pick = &dm; break; } }
+			if (pick == nullptr && !demand.empty()) { pick = &demand.front(); }   // mehrere Transporter fuer die wichtigste Nachfrage
+			if (pick == nullptr) { break; }
+			r.stage = pick->stage; r.target = pick->target;
+			served.insert(pick->stage * 65536u + pick->target);
+			sendT(DroidOrder(DORDER_MOVE, elem(r.stage)->beaconPos));
+			r.phase = T_TO_PICKUP;
+			r.since = gameTime;
+			break;
+		}
+		case T_TO_PICKUP:
+		{
+			if (s == nullptr || tg == nullptr || !s->beacon) { r = TRec(); r.sent = gameTime; break; }
+			if (dist2(t->pos.xy(), s->beaconPos) <= static_cast<int64_t>(4 * DIST_TILE) * (4 * DIST_TILE) && idle)
+			{
+				r.phase = T_LOADING;
+				r.since = gameTime;
+			}
+			else if (idle && gameTime - r.sent > 5000) { sendT(DroidOrder(DORDER_MOVE, s->beaconPos)); }
+			break;
+		}
+		case T_LOADING:
+		{
+			if (s == nullptr || tg == nullptr) { r = TRec(); r.sent = gameTime; break; }
+			int space = calcRemainingCapacity(t);
+			bool coming = false;
+			for (const DROID *u : gameWorld.objects.droids[selectedPlayer]) { if (u != nullptr && !u->died && u->order.type == DORDER_EMBARK && u->order.psObj == t) { coming = true; space -= transporterSpaceRequired(u); } }
+			for (const Demand &dm : demand)
+			{
+				if (dm.stage != r.stage || dm.target != r.target) { continue; }
+				for (DROID *u : dm.units)
+				{
+					if (space <= 0) { break; }
+					if (u->order.type == DORDER_EMBARK || !checkTransporterSpace(t, u, false)) { continue; }
+					const int need = transporterSpaceRequired(u);
+					if (need > space) { continue; }
+					send(u, DroidOrder(DORDER_EMBARK, t), false);
+					s_units[u->id].sent = gameTime;
+					space -= need;
+					coming = true;
+				}
+			}
+			const unsigned waited = gameTime - r.since;
+			const bool empty = transporterIsEmpty(t);
+			if (!empty && (calcRemainingCapacity(t) <= 0 || waited >= LOAD_MAX_MS || (!coming && waited >= LOAD_MIN_MS)))
+			{
+				sendT(DroidOrder(DORDER_DISEMBARK, dropPoint(*tg)));
+				r.phase = T_OUTBOUND;
+				r.since = gameTime;
+			}
+			else if (empty && !coming && waited >= LOAD_MAX_MS) { r.phase = T_IDLE; }
+			break;
+		}
+		case T_OUTBOUND:
+			if (transporterIsEmpty(t) && idle && gameTime - r.since > 3000)
+			{
+				r.phase = T_IDLE;
+				r.since = gameTime;
+				if (demand.empty() && s != nullptr && s->beacon) { sendT(DroidOrder(DORDER_MOVE, s->beaconPos)); r.phase = T_RETURN; }
+			}
+			break;
+		case T_RETURN:
+			if (idle || !demand.empty()) { r.phase = T_IDLE; }
+			break;
+		default:
+			r.phase = T_IDLE;
+			break;
+		}
+	}
+	for (auto it = s_trans.begin(); it != s_trans.end();)
+	{
+		const DROID *t = IdToDroid(gameWorld.objects, it->first, selectedPlayer);
+		it = (t == nullptr || t->died) ? s_trans.erase(it) : std::next(it);
+	}
+}
+
+void step()
+{
+	if (selectedPlayer >= MAX_PLAYERS) { return; }
+	if (s_elems.empty() && s_units.empty() && s_trans.empty()) { return; }
+	if (gameTime < s_nextStep) { return; }
+	s_nextStep = gameTime + STEP_MS;
+	intake();
+	unitStep();
+	departStep();
+	ferryStep();
+	// Sollstaerke erreicht -> Angriff
+	for (Elem &t : s_elems)
+	{
+		if (isTarget(t) && t.goal > 0 && arrived(t.id) >= t.goal) { launch(t); }
+	}
+}
+
+int defaultPrio(int kind)
+{
+	int n = 0;
+	for (const Elem &e : s_elems) { if (e.kind == kind) { ++n; } }
+	return std::clamp(n + 1, 1, 5);
+}
+
+Elem &add(int kind)
+{
+	if (!s_knownInit || s_elems.empty()) { initKnown(); }
+	Elem e;
+	e.id = s_nextId++;
+	e.kind = kind;
+	e.prio = defaultPrio(kind);
+	s_elems.push_back(e);
+	return s_elems.back();
+}
+
+STRUCTURE_STATS *tunnelStats()
+{
+	for (unsigned i = 0; i < numStructureStats; ++i) { if (modtunnel::isMouthStat(&asStructureStats[i])) { return &asStructureStats[i]; } }
+	return nullptr;
+}
+
+void digTunnel(const std::vector<Vector2i> &raw)
+{
+	STRUCTURE_STATS *st = tunnelStats();
+	if (st == nullptr || raw.size() < 2) { return; }
+	const Vector2i a = raw.front(), b = raw.back();
+	std::vector<DROID *> drills;
+	for (DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d != nullptr && !d->died && d->selected && modlayerdig::isDrill(d) && !modtunnel::digging(d)) { drills.push_back(d); } }
+	if (drills.empty())
+	{
+		DROID *best = nullptr;
+		int64_t bd = INT64_MAX;
+		for (DROID *d : gameWorld.objects.droids[selectedPlayer])
+		{
+			if (d == nullptr || d->died || !modlayerdig::isDrill(d) || modtunnel::digging(d) || modlayer::layerOf(d) != modlayer::SURFACE) { continue; }
+			const int64_t dd = dist2(d->pos.xy(), a) + (idleUnit(d) ? 0 : static_cast<int64_t>(40 * DIST_TILE) * (40 * DIST_TILE));
+			if (dd < bd) { bd = dd; best = d; }
+		}
+		if (best != nullptr) { drills.push_back(best); }
+	}
+	if (drills.empty())
+	{
+		addConsoleMessage(_("Dig Tunnel: no drill rig - train one at the factory first"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		return;
+	}
+	DROID *d = drills.front();   // ein Bohrer je Tunnel
+	const Vector2i dv = b - a;
+	const uint16_t dir = static_cast<uint16_t>(iAtan2(dv.x, dv.y));
+	if (dist2(d->pos.xy(), a) > static_cast<int64_t>(2 * DIST_TILE) * (2 * DIST_TILE))
+	{
+		send(d, DroidOrder(DORDER_MOVE, a), false);
+		send(d, DroidOrder(DORDER_BUILD, st, b, dir), true);
+	}
+	else { send(d, DroidOrder(DORDER_BUILD, st, b, dir), false); }
+	addConsoleMessage(_("Dig Tunnel: the drill rig drives to the entrance and digs towards the exit"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+}
+
+/// eine Zeichnung im Schlachtplan wird Teil des Angriffsplans
+void fromStroke(Mode m, const std::vector<Vector2i> &raw)
+{
+	if (selectedPlayer >= MAX_PLAYERS || raw.empty()) { return; }
+	std::vector<DROID *> sel;
+	for (DROID *d : gameWorld.objects.droids[selectedPlayer]) { if (d != nullptr && !d->died && d->selected && fitsPlan(d) && modlayer::layerOf(d) == modlayer::SURFACE) { sel.push_back(d); } }
+	const Vector2i c = centroid(raw);
+	int64_t far2 = 0;
+	for (const Vector2i &p : raw) { far2 = std::max(far2, dist2(p, c)); }
+	const int rr = static_cast<int>(std::sqrt(static_cast<double>(far2)));
+	switch (m)
+	{
+	case M_STAGING:
+	{
+		Elem &e = add(K_STAGING);
+		e.c = clampMap(c);
+		e.r = rr < DIST_TILE ? 5 * DIST_TILE : std::clamp(rr, 3 * DIST_TILE, 16 * DIST_TILE);
+		const uint32_t id = e.id;
+		for (DROID *d : sel) { s_units.erase(d->id); join(d, id, 0); }
+		addConsoleMessage(_("Attack plan: staging zone set - new units gather here"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		break;
+	}
+	case M_BRIDGEHEAD:
+	{
+		Elem &e = add(K_BRIDGEHEAD);
+		e.c = clampMap(c);
+		e.r = rr < DIST_TILE ? 6 * DIST_TILE : std::clamp(rr, 3 * DIST_TILE, 14 * DIST_TILE);
+		e.goal = 12;
+		const uint32_t id = e.id;
+		for (DROID *d : sel) { s_units.erase(d->id); join(d, 0, id); }
+		fixRefs();
+		addConsoleMessage(_("Attack plan: bridgehead set - units are brought here and attack at full strength (or on Attack!)"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		break;
+	}
+	case M_OFFENSE:
+	{
+		if (raw.size() < 2) { return; }
+		Elem &e = add(K_ASSAULT);
+		e.pts = raw;
+		e.c = c;
+		e.side = defendSide(raw);
+		e.goal = 12;
+		fixRefs();
+		addConsoleMessage(_("Attack plan: assault line set - units line up in a double row and attack at full strength (or on Attack!)"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		break;
+	}
+	case M_ATTACK:
+	{
+		if (raw.size() < 2) { return; }
+		Elem &e = add(K_VECTOR);
+		e.pts = raw;
+		e.c = c;
+		break;
+	}
+	case M_FERRY:
+	{
+		const Vector2i p = clampMap(raw.back());
+		Elem *zone = nullptr;
+		int64_t bd = INT64_MAX;
+		for (Elem &e : s_elems)
+		{
+			if ((e.kind == K_STAGING || e.kind == K_BRIDGEHEAD) && inside(e, p, DIST_TILE))
+			{
+				const int64_t d = dist2(e.c, p);
+				if (d < bd) { bd = d; zone = &e; }
+			}
+		}
+		if (zone == nullptr)
+		{
+			zone = &add(K_STAGING);
+			zone->c = p;
+			zone->r = 5 * DIST_TILE;
+		}
+		zone->beacon = true;
+		zone->beaconPos = p;
+		addConsoleMessage(zone->kind == K_STAGING ? _("Attack plan: ferry beacon set - transports pick up the units here and fly them to the bridgeheads")
+		                                          : _("Attack plan: landing spot of the transports set"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		break;
+	}
+	case M_TUNNEL:
+		digTunnel(raw);
+		break;
+	default:
+		break;
+	}
+}
+
+void removeElem(uint32_t id)
+{
+	s_elems.erase(std::remove_if(s_elems.begin(), s_elems.end(), [id](const Elem &e) { return e.id == id; }), s_elems.end());
+	fixRefs();
+}
+
+bool hasElems() { return !s_elems.empty(); }
+
+void clearAll()
+{
+	s_elems.clear();
+	s_units.clear();
+	s_trans.clear();
+	s_known.clear();
+	s_knownInit = false;
+	s_nextStep = 0;
+	s_clearArmed = 0;
+	s_hits.clear();
+}
+
+// ---------------------------------------------------------------- Anzeige
+/// Punkt im Abstand s entlang des Weges
+Vector2i pathAt(const std::vector<Vector2i> &p, double s)
+{
+	if (p.empty()) { return Vector2i(0, 0); }
+	for (size_t i = 1; i < p.size(); ++i)
+	{
+		const double l = std::sqrt(static_cast<double>(dist2(p[i], p[i - 1])));
+		if (s <= l && l > 0.0)
+		{
+			const double f = s / l;
+			return Vector2i(p[i - 1].x + static_cast<int>((p[i].x - p[i - 1].x) * f), p[i - 1].y + static_cast<int>((p[i].y - p[i - 1].y) * f));
+		}
+		s -= l;
+	}
+	return p.back();
+}
+double pathLen(const std::vector<Vector2i> &p)
+{
+	double L = 0.0;
+	for (size_t i = 1; i < p.size(); ++i) { L += std::sqrt(static_cast<double>(dist2(p[i], p[i - 1]))); }
+	return L;
+}
+/// Weg ab dem Abstand s (erster Punkt = pathAt(s))
+std::vector<Vector2i> pathFrom(const std::vector<Vector2i> &p, double s)
+{
+	std::vector<Vector2i> out;
+	out.push_back(pathAt(p, s));
+	double acc = 0.0;
+	for (size_t i = 1; i < p.size(); ++i)
+	{
+		acc += std::sqrt(static_cast<double>(dist2(p[i], p[i - 1])));
+		if (acc > s) { out.push_back(p[i]); }
+	}
+	return out;
+}
+
+PIELIGHT prioCol(int prio, int a)
+{
+	static const unsigned char C[5][3] = { { 255, 215, 80 }, { 255, 165, 70 }, { 235, 235, 235 }, { 165, 190, 215 }, { 130, 140, 155 } };
+	const int k = std::clamp(prio, 1, 5) - 1;
+	return pal_RGBA(C[k][0], C[k][1], C[k][2], static_cast<UBYTE>(std::clamp(a, 0, 255)));
+}
+
+void badge(const Elem &e, const Vector2i &world, const glm::mat4 &m, int alpha, bool hits)
+{
+	Vector2i sp(0, 0);
+	if (!project(world, m, sp)) { return; }
+	const float s = modui::uiScale();
+	const int sc = modui::sizeClassFor(s);
+	const int fh = (sc <= 0) ? 9 : (sc == 1 ? 12 : 16);
+	const int h = fh + static_cast<int>(8 * s);
+	char num[8];
+	snprintf(num, sizeof(num), "%d", e.prio);
+	const int w0 = std::max(h, modui::textWidth(num, sc) + static_cast<int>(10 * s));
+	const int x0 = sp.x - w0 / 2, y0 = sp.y - h / 2;
+	pie_DrawSoftRoundedBoxRotated(static_cast<float>(sp.x), static_cast<float>(sp.y), static_cast<float>(w0 + 6 * s), static_cast<float>(h + 6 * s), 0.f, pal_RGBA(0, 0, 0, static_cast<UBYTE>(alpha * 0.45f)), h * 0.5f, 4.f * s);
+	pie_DrawSoftRoundedBoxRotated(static_cast<float>(sp.x), static_cast<float>(sp.y), static_cast<float>(w0), static_cast<float>(h), 0.f, prioCol(e.prio, alpha), h * 0.45f, 1.5f);
+	modui::text(num, sp.x - modui::textWidth(num, sc) / 2, y0 + (h - fh) / 2 - 1, pal_RGBA(20, 20, 25, static_cast<UBYTE>(alpha)), sc);
+	if (hits) { s_hits.push_back(Hit{ e.id, 0, x0, y0, x0 + w0, y0 + h }); }
+	// zweites Schild: Staerke (Ziele) bzw. wartende Einheiten (Bereitstellungsraum)
+	char info[48] = "";
+	if (isTarget(e))
+	{
+		const int n = arrived(e.id), all = assigned(e.id);
+		if (e.goal > 0) { snprintf(info, sizeof(info), "%d/%d", n, e.goal); } else { snprintf(info, sizeof(info), "%d  %s", n, _("Hold")); }
+		if (all > n) { const size_t l = strlen(info); snprintf(info + l, sizeof(info) - l, "  +%d", all - n); }
+	}
+	else if (e.kind == K_STAGING)
+	{
+		int n = 0;
+		for (const auto &kv : s_units) { if (kv.second.stage == e.id && (kv.second.phase == U_AT_STAGE || kv.second.phase == U_FERRY)) { ++n; } }
+		snprintf(info, sizeof(info), "%d", n);
+	}
+	if (info[0] == '\0') { return; }
+	const int w1 = modui::textWidth(info, sc) + static_cast<int>(12 * s);
+	const int x1 = x0 + w0 + static_cast<int>(4 * s);
+	pie_DrawSoftRoundedBoxRotated(static_cast<float>(x1 + w1 / 2), static_cast<float>(sp.y), static_cast<float>(w1), static_cast<float>(h), 0.f, pal_RGBA(15, 22, 32, static_cast<UBYTE>(alpha * 0.85f)), h * 0.3f, 1.5f);
+	modui::text(info, x1 + static_cast<int>(6 * s), y0 + (h - fh) / 2 - 1, pal_RGBA(230, 235, 240, static_cast<UBYTE>(alpha)), sc);
+	if (hits && isTarget(e)) { s_hits.push_back(Hit{ e.id, 1, x1, y0, x1 + w1, y0 + h }); }
+}
+
+void beaconMark(const Elem &e, const glm::mat4 &m, int alpha, bool hits)
+{
+	const int pulse = static_cast<int>(alpha * (0.75 + 0.25 * std::sin(static_cast<double>(realTime) / 220.0)));
+	drawStroke(circlePts(e.beaconPos, DIST_TILE * 7 / 10, 14), M_FERRY, pulse, m);
+	drawStroke(circlePts(e.beaconPos, DIST_TILE / 4, 8), M_FERRY, pulse, m);
+	Vector2i sp(0, 0);
+	if (hits && project(e.beaconPos, m, sp))
+	{
+		const int r = static_cast<int>(14 * modui::uiScale());
+		s_hits.push_back(Hit{ e.id, 2, sp.x - r, sp.y - r, sp.x + r, sp.y + r });
+	}
+}
+
+/// Angriffsvektoren: nahe beieinander beginnende Pfeile (bis 3) laufen erst als ein dicker Pfeil und spalten sich dann auf
+void drawVectors(const glm::mat4 &m, int alpha, bool hits)
+{
+	std::vector<const Elem *> vs;
+	for (const Elem &e : s_elems) { if (e.kind == K_VECTOR && e.pts.size() >= 2) { vs.push_back(&e); } }
+	std::vector<int> grp(vs.size(), -1);
+	auto startDir = [](const Elem *v) {
+		const Vector2i a = v->pts.front(), b = pathAt(v->pts, std::min(pathLen(v->pts) * 0.5, 3.0 * DIST_TILE));
+		const double dx = b.x - a.x, dy = b.y - a.y, l = std::max(1.0, std::sqrt(dx * dx + dy * dy));
+		return std::make_pair(dx / l, dy / l);
+	};
+	int ng = 0;
+	for (size_t i = 0; i < vs.size(); ++i)
+	{
+		if (grp[i] >= 0) { continue; }
+		grp[i] = ng;
+		int members = 1;
+		const auto di = startDir(vs[i]);
+		for (size_t j = i + 1; j < vs.size() && members < 3; ++j)
+		{
+			if (grp[j] >= 0) { continue; }
+			if (dist2(vs[i]->pts.front(), vs[j]->pts.front()) > static_cast<int64_t>(5 * DIST_TILE) * (5 * DIST_TILE)) { continue; }
+			const auto dj = startDir(vs[j]);
+			if (di.first * dj.first + di.second * dj.second < 0.77) { continue; }   // mehr als ~40 Grad auseinander
+			grp[j] = ng;
+			++members;
+		}
+		++ng;
+	}
+	for (int g = 0; g < ng; ++g)
+	{
+		std::vector<const Elem *> mem;
+		for (size_t i = 0; i < vs.size(); ++i) { if (grp[i] == g) { mem.push_back(vs[i]); } }
+		if (mem.size() == 1)
+		{
+			drawStroke(mem[0]->pts, M_ATTACK, alpha, m, nullptr, 0, 1.5f);
+			badge(*mem[0], mem[0]->pts.front(), m, alpha, hits);
+			continue;
+		}
+		// gemeinsamer Stamm: Mittel der Wege, solange sie nah beieinander bleiben (hoechstens 70 % des kuerzesten Weges)
+		double minL = INT64_MAX;
+		for (const Elem *v : mem) { minL = std::min(minL, pathLen(v->pts)); }
+		std::vector<Vector2i> trunk;
+		double split = 0.0;
+		for (double s = 0.0; s <= minL * 0.7; s += DIST_TILE * 0.5)
+		{
+			std::vector<Vector2i> at;
+			for (const Elem *v : mem) { at.push_back(pathAt(v->pts, s)); }
+			int64_t spreadMax = 0;
+			for (size_t a = 0; a < at.size(); ++a) { for (size_t b = a + 1; b < at.size(); ++b) { spreadMax = std::max(spreadMax, dist2(at[a], at[b])); } }
+			if (s > 0.0 && spreadMax > static_cast<int64_t>(4 * DIST_TILE) * (4 * DIST_TILE)) { break; }
+			trunk.push_back(centroid(at));
+			split = s;
+		}
+		if (trunk.size() < 3)
+		{
+			for (const Elem *v : mem) { drawStroke(v->pts, M_ATTACK, alpha, m, nullptr, 0, 1.5f); badge(*v, v->pts.front(), m, alpha, hits); }
+			continue;
+		}
+		drawStroke(trunk, M_ATTACK, alpha, m, nullptr, 0, 2.6f, false);
+		for (const Elem *v : mem)
+		{
+			std::vector<Vector2i> br = pathFrom(v->pts, split);
+			br.front() = trunk.back();
+			if (br.size() >= 2) { drawStroke(br, M_ATTACK, alpha, m, nullptr, 0, 1.6f); }
+		}
+		// Schilder nebeneinander am Stamm
+		for (size_t k = 0; k < mem.size(); ++k)
+		{
+			const Vector2i p = trunk.front() + Vector2i(static_cast<int>((static_cast<int>(k) - static_cast<int>(mem.size() / 2)) * DIST_TILE * 1.1), 0);
+			badge(*mem[k], p, m, alpha, hits);
+		}
+	}
+}
+
+void draw(const glm::mat4 &m)
+{
+	const bool hits = !s_proj;
+	if (hits) { s_hits.clear(); }
+	if (s_elems.empty() || selectedPlayer >= MAX_PLAYERS) { return; }
+	const bool open = modrosette::planOpen() || s_proj;
+	const int alpha = open ? 215 : 95;
+	const bool clickable = hits && modrosette::planOpen();
+	// Transportschleifen (SupCom-Pfeile) von den Leuchtfeuern zu den Zielen, die gerade per Transporter versorgt werden
+	if (haveTransporters())
+	{
+		std::set<uint64_t> routes;
+		for (const auto &kv : s_units) { if (kv.second.phase == U_FERRY && kv.second.stage != 0 && kv.second.target != 0) { routes.insert(static_cast<uint64_t>(kv.second.stage) << 32 | kv.second.target); } }
+		for (const auto &kv : s_trans) { if (kv.second.stage != 0 && kv.second.target != 0 && kv.second.phase != T_IDLE) { routes.insert(static_cast<uint64_t>(kv.second.stage) << 32 | kv.second.target); } }
+		for (uint64_t k : routes)
+		{
+			const Elem *s = elem(static_cast<uint32_t>(k >> 32));
+			const Elem *t = elem(static_cast<uint32_t>(k & 0xffffffffu));
+			if (s == nullptr || t == nullptr || !s->beacon) { continue; }
+			if (s_proj) { drawStroke({ s->beaconPos, dropPoint(*t) }, M_FERRY, alpha, m); }
+			else { modferry::drawRoute(s->beaconPos, dropPoint(*t), m, open); }
+		}
+	}
+	for (const Elem &e : s_elems)
+	{
+		switch (e.kind)
+		{
+		case K_STAGING:
+			drawStroke(circlePts(e.c, e.r, 40), M_STAGING, alpha, m);
+			if (e.beacon) { beaconMark(e, m, alpha, clickable); }
+			badge(e, e.c + Vector2i(0, -e.r), m, alpha, clickable);
+			break;
+		case K_BRIDGEHEAD:
+			drawStroke(circlePts(e.c, e.r, 40), M_BRIDGEHEAD, alpha, m);
+			drawStroke(circlePts(e.c, std::max(DIST_TILE, e.r / 3), 20), M_BRIDGEHEAD, alpha * 2 / 3, m);
+			if (e.beacon) { beaconMark(e, m, alpha, clickable); }
+			badge(e, e.c + Vector2i(0, -e.r), m, alpha, clickable);
+			break;
+		case K_ASSAULT:
+			drawStroke(e.pts, M_OFFENSE, alpha, m, nullptr, e.side, 1.25f);
+			badge(e, e.pts.front(), m, alpha, clickable);
+			break;
+		default:
+			break;
+		}
+	}
+	drawVectors(m, alpha, clickable);
+}
+
+/// Klicks auf die Schilder: Links = Prioritaet / Sollstaerke weiterschalten, Rechts = Baustein (bzw. Leuchtfeuer) entfernen
+bool click(bool overUi)
+{
+	if (overUi || s_hits.empty() || !modrosette::planOpen()) { return false; }
+	const bool lmb = mousePressed(MOUSE_LMB), rmb = mousePressed(MOUSE_RMB);
+	if (!lmb && !rmb) { return false; }
+	const int mx = mouseX(), my = mouseY();
+	for (auto it = s_hits.rbegin(); it != s_hits.rend(); ++it)
+	{
+		if (mx < it->x0 || mx > it->x1 || my < it->y0 || my > it->y1) { continue; }
+		Elem *e = elem(it->elem);
+		if (e == nullptr) { return true; }
+		if (rmb)
+		{
+			if (it->what == 2) { e->beacon = false; fixRefs(); }
+			else { removeElem(e->id); }
+			return true;
+		}
+		if (it->what == 0) { e->prio = e->prio % 5 + 1; }
+		else if (it->what == 1)
+		{
+			int k = 0;
+			while (k < NGOALS && kGoals[k] != e->goal) { ++k; }
+			e->goal = kGoals[(k + 1) % NGOALS];
+		}
+		return true;
+	}
+	return false;
+}
+
+void save(std::vector<int64_t> &out)
+{
+	out.clear();
+	if (s_elems.empty()) { return; }
+	out.push_back(1);
+	out.push_back(s_nextId);
+	out.push_back(static_cast<int64_t>(s_elems.size()));
+	for (const Elem &e : s_elems)
+	{
+		out.insert(out.end(), { static_cast<int64_t>(e.id), e.kind, e.prio, e.c.x, e.c.y, e.r, e.beacon ? 1 : 0, e.beaconPos.x, e.beaconPos.y, e.goal, e.side, e.waves,
+		                        static_cast<int64_t>(e.pts.size()) });
+		for (const Vector2i &p : e.pts) { out.push_back(p.x); out.push_back(p.y); }
+	}
+	out.push_back(static_cast<int64_t>(s_units.size()));
+	for (const auto &kv : s_units)
+	{
+		const URec &u = kv.second;
+		out.insert(out.end(), { static_cast<int64_t>(kv.first), u.stage, u.target, u.phase, u.since, u.sent, u.slot });
+	}
+	out.push_back(static_cast<int64_t>(s_trans.size()));
+	for (const auto &kv : s_trans)
+	{
+		const TRec &t = kv.second;
+		out.insert(out.end(), { static_cast<int64_t>(kv.first), t.phase, t.stage, t.target, t.since, t.sent });
+	}
+}
+
+void load(const std::vector<int64_t> &in)
+{
+	clearAll();
+	size_t i = 0;
+	auto next = [&in, &i](int64_t &v) { if (i >= in.size()) { return false; } v = in[i++]; return true; };
+	int64_t ver = 0, v = 0, n = 0;
+	if (!next(ver) || ver != 1 || !next(v)) { return; }
+	s_nextId = static_cast<uint32_t>(std::max<int64_t>(1, v));
+	if (!next(n)) { return; }
+	for (int64_t k = 0; k < n; ++k)
+	{
+		int64_t f[13];
+		for (int64_t &x : f) { if (!next(x)) { clearAll(); return; } }
+		Elem e;
+		e.id = static_cast<uint32_t>(f[0]); e.kind = static_cast<int>(f[1]); e.prio = std::clamp(static_cast<int>(f[2]), 1, 5);
+		e.c = Vector2i(static_cast<int>(f[3]), static_cast<int>(f[4])); e.r = static_cast<int>(f[5]);
+		e.beacon = f[6] != 0; e.beaconPos = Vector2i(static_cast<int>(f[7]), static_cast<int>(f[8]));
+		e.goal = static_cast<int>(f[9]); e.side = static_cast<int>(f[10]); e.waves = static_cast<unsigned>(f[11]);
+		for (int64_t q = 0; q < f[12]; ++q)
+		{
+			int64_t x = 0, y = 0;
+			if (!next(x) || !next(y)) { clearAll(); return; }
+			e.pts.emplace_back(static_cast<int>(x), static_cast<int>(y));
+		}
+		s_elems.push_back(e);
+	}
+	if (!next(n)) { return; }
+	for (int64_t k = 0; k < n; ++k)
+	{
+		int64_t f[7];
+		for (int64_t &x : f) { if (!next(x)) { return; } }
+		URec u;
+		u.stage = static_cast<uint32_t>(f[1]); u.target = static_cast<uint32_t>(f[2]); u.phase = static_cast<int>(f[3]);
+		u.since = static_cast<unsigned>(f[4]); u.sent = static_cast<unsigned>(f[5]); u.slot = static_cast<int>(f[6]);
+		s_units[static_cast<uint32_t>(f[0])] = u;
+	}
+	if (!next(n)) { return; }
+	for (int64_t k = 0; k < n; ++k)
+	{
+		int64_t f[6];
+		for (int64_t &x : f) { if (!next(x)) { return; } }
+		TRec t;
+		t.phase = static_cast<int>(f[1]); t.stage = static_cast<uint32_t>(f[2]); t.target = static_cast<uint32_t>(f[3]);
+		t.since = static_cast<unsigned>(f[4]); t.sent = static_cast<unsigned>(f[5]);
+		s_trans[static_cast<uint32_t>(f[0])] = t;
+	}
+	initKnown();
+}
+} // namespace plan
+
 } // namespace
 
 void tick()
@@ -1936,7 +3259,7 @@ void tick()
 	// (17.11. 14:14) Mod-Rosette: der Schlachtplan-Knopf blendet die Leiste ein/aus; "Infantry: build" liegt jetzt in der Rosette
 	const bool want = !moddesigner::isOpen() && selectedPlayer < MAX_PLAYERS && modrosette::planOpen() && intMode != INT_DESIGN;
 	infButtonTick(false);
-	if (!want && !s_screen) { opTick(); planTick(); faceTick(); sweepTick(); return; }
+	if (!want && !s_screen) { opTick(); planTick(); faceTick(); sweepTick(); plan::step(); return; }
 	ensureScreen();
 	if (!s_root) { return; }
 	s_root->show(want);
@@ -1947,6 +3270,7 @@ void tick()
 	planTick(); // Oberbefehle wieder aufnehmen
 	faceTick(); // Verteidigungslinie: am Platz zur Feindseite drehen
 	sweepTick(); // Minen raeumen im Gebiet
+	plan::step(); // (22.11.) Angriffsplaner
 	// alte Zeichnungen entfernen
 	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [](const Stroke &st) { return realTime - st.born > SHOW_MS; }), s_done.end());
 }
@@ -2001,6 +3325,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	{
 		modbuild::setExternalPreview(nullptr);
 	}
+	if (plan::click(overUi)) { return true; }   // (22.11.) Schilder des Angriffsplans: Prioritaet / Sollstaerke / entfernen
 	if (s_mode < 0) { return false; }
 	if (mouseReleased(MOUSE_RMB))
 	{
@@ -2032,7 +3357,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	// (Wunsch 18.11. 13:06 "wenn man sich verklickt, ist immer noch der Befehl ausgewaehlt, den man geben will"): ein blosses Antippen
 	// (Strich kuerzer als eine halbe Kachel) gilt als Verklicken - nichts wird befohlen, der gewaehlte Befehl bleibt aktiv.
 	// Ausnahme: Artilleriebasis und Sammelpunkt duerfen mit einem Klick gesetzt werden.
-	if (m != M_ARTYBASE && m != M_RALLY)
+	if (m != M_ARTYBASE && m != M_RALLY && m != M_FERRY && m != M_STAGING && m != M_BRIDGEHEAD)
 	{
 		int64_t len = 0;
 		for (size_t i = 1; i < s_cur.size(); ++i) { len += static_cast<int64_t>(std::sqrt(static_cast<double>(dist2(s_cur[i], s_cur[i - 1])))); }
@@ -2047,6 +3372,13 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	s_append = shift;
 	applyStroke(m, s_cur);
 	s_append = false;
+	if (s_lastPlanned)
+	{
+		// Teil des Angriffsplans: bleibt als eigener Baustein stehen (kein verblassender Strich)
+		s_cur.clear();
+		if (!shift) { s_mode = -1; }
+		return true;
+	}
 	Stroke st;
 	st.mode = m;
 	st.pts = s_cur;
@@ -2065,6 +3397,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 
 void drawOverlay(const glm::mat4 &m)
 {
+	plan::draw(m);   // (22.11.) Angriffsplaner (bleibt stehen)
 	for (const Stroke &st : s_done)
 	{
 		const unsigned age = realTime - st.born;
@@ -2142,5 +3475,17 @@ void shutdown()
 	s_plan.clear();
 	s_sweep.clear();
 	s_nextPlanCheck = 0;
+	plan::clearAll();
+	s_planClearArmed = 0;
+}
+
+void savePlan(std::vector<int64_t> &out)
+{
+	plan::save(out);
+}
+
+void loadPlan(const std::vector<int64_t> &in)
+{
+	plan::load(in);
 }
 }

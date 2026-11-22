@@ -20,6 +20,8 @@ namespace modferry
 void tick(GameWorld &world);
 /// Anzeige: Transportschleife (Pfeil im Bildschirm)
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
+/// (22.11.) Anzeige: SupCom-Transportpfeil zwischen zwei Weltpunkten (Angriffsplaner: Fahrschleife Leuchtfeuer -> Brueckenkopf)
+void drawRoute(const Vector2i &from, const Vector2i &to, const glm::mat4 &perspectiveViewMatrix, bool hot);
 /// Anzeige im 3D-Bild: Landezonen-Lichter der Leuchtfeuer, rot / blau / gruen nach Sicherheit (17.11. 18:18)
 void draw3D(const glm::mat4 &viewMatrix);
 /// Spielende / Laden

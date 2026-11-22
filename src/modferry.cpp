@@ -324,6 +324,12 @@ void tick(GameWorld &world)
 	}
 }
 
+void drawRoute(const Vector2i &from, const Vector2i &to, const glm::mat4 &m, bool hot)
+{
+	if (modlayer::current() != modlayer::SURFACE) { return; }
+	drawFerryRoute(from, to, m, hot);
+}
+
 void drawOverlay(const glm::mat4 &m)
 {
 	if (selectedPlayer >= MAX_PLAYERS || modlayer::current() != modlayer::SURFACE) { return; }

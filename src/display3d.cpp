@@ -105,6 +105,7 @@
 #include "range_rings.h"
 #include "modgrid.h"
 #include "modpaint.h"
+#include "modtunnel.h"
 #include "modferry.h"
 #include "modrail.h"   // MOD (21.11.): Gleise
 #include "modheadlights.h"
@@ -6256,6 +6257,7 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 	modoilui::drawWorldIcons(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD (20.11.): PowerDown- und Oel-Warnsymbole
 	modpaint::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: Schlachtplan-Zeichnungen
 	modferry::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD: blinkende Transport-Leuchtfeuer
+	modtunnel::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix); // MOD (22.11.): eigene Tunnel / Grabungen
 	modtactical::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD (17.11. 18:48): taktische Symbole statt Modelle
 	modmines::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD (17.11. 18:48): Shift = gelbe Minen-Zeichen
 	drawDroidAndStructureSelections();

@@ -51,6 +51,7 @@
 #include "modupgrade.h"
 #include "modrecover.h"
 #include "modbuild.h"
+#include "modtunnel.h"
 #include "modlayerdig.h"
 #include "modinvade.h"
 #include "modoutpost.h"
@@ -1484,6 +1485,8 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 
 	objTrace(psDroid->id, "base set order to %s (was %s)", getDroidOrderName(psOrder->type), getDroidOrderName(psDroid->order.type));
 
+	// MOD (22.11.): Tunnel (Nydus) - Bohrer graebt / Einheit im Gang (Befehl wird nach dem Austritt ausgefuehrt) / Tunnel-Bauauftrag
+	if (modtunnel::onOrder(psDroid, psOrder)) { return; }
 	// MOD: Bohrfahrzeug im Untergrund bohrt sich zum Ziel (uebernimmt Bewegungsbefehle; jeder andere Befehl verwirft das Bohrziel)
 	if (modlayerdig::onOrder(psDroid, psOrder)) { return; }
 	// MOD (19.11.): Transport-Lkw nehmen keine Bau-, Hilfs-, Reparatur- oder Abrissbefehle an
@@ -2960,6 +2963,11 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 
 	// MOD (18.11. MF-Besatzung): Besatzung + Rechtsklick auf einen Combot ohne Besatzung = hinlaufen und einsteigen (auch fremde Combots)
 	if (modcrew::canBoard(psDroid, psObj))
+	{
+		return DroidOrder(DORDER_MOVE, psObj->pos.xy());
+	}
+	// MOD (22.11.): Rechtsklick auf einen eigenen Tunnelmund = hinfahren und durch den Tunnel (Bauer reparieren ihn weiterhin)
+	if (!psDroid->isConstructionDroid() && modtunnel::canUse(psDroid) && modtunnel::usableMouth(psObj, psDroid->player))
 	{
 		return DroidOrder(DORDER_MOVE, psObj->pos.xy());
 	}

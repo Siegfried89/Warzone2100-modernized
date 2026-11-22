@@ -80,11 +80,9 @@ void BuildController::updateBuildOptionsList()
 	// MOD: Kampf-Infanterie darf nur Graeben, Gruben, Sandsack-Mauern und MG-Nester bauen
 	if (const DROID *hb = getHighlightedObject())
 	{
-		if (modbuild::isInfantryBuilder(hb))
-		{
-			newBuildOptions.erase(std::remove_if(newBuildOptions.begin(), newBuildOptions.end(),
-				[hb](const STRUCTURE_STATS *st) { return !modbuild::mayBuild(hb, st); }), newBuildOptions.end());
-		}
+		// (22.11.) fuer alle Bauer: den Tunnelmund nur fuer das Bohrfahrzeug
+		newBuildOptions.erase(std::remove_if(newBuildOptions.begin(), newBuildOptions.end(),
+			[hb](const STRUCTURE_STATS *st) { return !modbuild::mayBuild(hb, st); }), newBuildOptions.end());
 	}
 
 	// MOD (16.11. 19:54): nur die gewaehlte Gruppe (Abriss steht immer dabei)

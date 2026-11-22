@@ -18,7 +18,9 @@
 
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
+#include <cstdint>
 #include <functional>
+#include <vector>
 
 namespace modpaint
 {
@@ -38,4 +40,7 @@ void selectMode(const char *label);
 int stackTop();
 /// beim Beenden der Oberflaeche
 void shutdown();
+/// (22.11.) Angriffsplaner im Spielstand (Zonen, Leuchtfeuer, Brueckenkoepfe, Vektoren, Einheiten, Transporter)
+void savePlan(std::vector<int64_t> &out);
+void loadPlan(const std::vector<int64_t> &in);
 }
