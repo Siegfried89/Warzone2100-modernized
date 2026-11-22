@@ -170,7 +170,13 @@ void tick()
 			{
 				DROID *d = findDroid(crew[k]);
 				if (d == nullptr) { s_seat.erase(crew[k]); crew.erase(crew.begin() + static_cast<std::ptrdiff_t>(k)); continue; }
-				if (d->order.type != DORDER_NONE && d->order.type != DORDER_STOP && d->order.type != DORDER_HOLD)
+				if (d->order.type != DORDER_NONE && d->order.type != DORDER_STOP && d->order.type != DORDER_HOLD && !isHumanPlayer(static_cast<int>(p)))
+				{
+					// (22.11.) Computer-Spieler: ihre Skript-KI gibt "untaetigen" Einheiten laufend Befehle - deren Insassen steigen nur auf den
+					// Absitz-Befehl aus (modai: Zug am Ziel), der fremde Befehl wird verworfen
+					orderDroid(d, DORDER_STOP, ModeImmediate);
+				}
+				else if (d->order.type != DORDER_NONE && d->order.type != DORDER_STOP && d->order.type != DORDER_HOLD)
 				{
 					// neuer Befehl: absitzen (der Befehl selbst bleibt und wird danach ausgefuehrt)
 					DroidOrder keep = d->order;

@@ -6,6 +6,8 @@
 //  - Befestigungsbau um die Basis (alle paar Minuten ein untaetiger Lkw, Groesse waechst mit der Spielzeit)
 //  - Aussenposten an weit entfernten Oeltuermen
 //  - Flieger in den Orbit schicken, wenn der Gegner dort etwas hat (Solarpaneele, Flieger), und dort angreifen
+// Spaeter dazu: Konzern-Einheiten, Ebenen/Kraftwerke, Angriffsplaner mit Bereitstellungsraum und Tunnel (22.11. 18:27), Eisenbahn
+// (22.11. 20:01: Gleisstrecke zum Gegner, Lokschuppen, Zug mit Truppenwaggons bringt Infanterie vor die feindliche Basis).
 #pragma once
 
 struct GameWorld;

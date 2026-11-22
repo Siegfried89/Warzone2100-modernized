@@ -43,6 +43,19 @@ int bodyFaction(const BODY_STATS *b)
 	}
 	return -1;
 }
+
+/// (Wunsch 22.11. 20:01 "Alle Fraktionsinfanterie NUR fuer ihre jeweiligen Fraktionen verfuegbar machen"): Fraktion eines
+/// Infanterie-Rumpfes, -1 = keine Fraktions-Infanterie
+int infantryFaction(const BODY_STATS *b)
+{
+	const std::string id = b->id.toUtf8();
+	if (id.rfind("B1BaBa", 0) == 0) { return FACTION_NORMAL; }                 // Scavengers: alle Scav-Infanteristen
+	if (id.rfind("B1NPSoldier", 0) == 0) { return FACTION_NEW_PARADIGM; }
+	if (id.rfind("B1NexusTrooper", 0) == 0) { return FACTION_NEXUS; }
+	if (id.rfind("B1CollectiveWarrior", 0) == 0) { return FACTION_COLLECTIVE; }
+	if (id.rfind("B1ProjectTrooper", 0) == 0) { return FACTION_PROJECT; }
+	return -1;
+}
 }
 
 bool bodyAllowed(unsigned player, const BODY_STATS *psBody)
@@ -50,6 +63,17 @@ bool bodyAllowed(unsigned player, const BODY_STATS *psBody)
 	if (psBody == nullptr || player >= MAX_PLAYERS)
 	{
 		return true;
+	}
+	// Fraktions-Infanterie: nur die eigene Fraktion (auch die Scavengers bekommen nur ihre Scav-Infanterie). In der Kampagne ist der
+	// Spieler (0) das Project; die Kampagnen-Gegner bleiben frei, ihre Missionen setzen ihre Einheiten selbst ein.
+	const int inf = infantryFaction(psBody);
+	if (inf >= 0)
+	{
+		if (!bMultiPlayer)
+		{
+			return player != 0 || inf == FACTION_PROJECT;
+		}
+		return static_cast<int>(NetPlay.players[player].faction) == inf;
 	}
 	// Scavengers (und alle Spieler ohne gewaehlte Fraktion, z. B. die Kampagnen-Gegner) bleiben unbeschraenkt
 	if (NetPlay.players[player].faction == FACTION_NORMAL)
