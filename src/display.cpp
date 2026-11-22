@@ -47,6 +47,7 @@
 #include "modpaint.h"
 #include "modfacing.h"
 #include "modbigmap.h"
+#include "modlayerdig.h"
 #include "uiobjectrefs.h"
 #include "ordersource.h"
 #include "droid.h"
@@ -960,6 +961,17 @@ static OrderSource pointerOrderSource()
 	                                               mousePos.x, mousePos.y));
 }
 
+// MOD (22.11.): ist ein Bohrfahrzeug gewaehlt? (Klippen sind dann Bohrziele)
+static bool modDrillSelected()
+{
+	if (selectedPlayer >= MAX_PLAYERS) { return false; }
+	for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d->selected && modlayerdig::isDrill(d)) { return true; }
+	}
+	return false;
+}
+
 //don't want to do any of these whilst in the Intelligence Screen
 void processMouseClickInput()
 {
@@ -1296,7 +1308,8 @@ void processMouseClickInput()
 			}
 
 			if (item == MT_TERRAIN
-			    && terrainType(mapTile(gameWorld.map, mouseTileX, mouseTileY)) == TER_CLIFFFACE)
+			    && terrainType(mapTile(gameWorld.map, mouseTileX, mouseTileY)) == TER_CLIFFFACE
+			    && !modDrillSelected())   // MOD (22.11.): mit Bohrfahrzeug ist die Klippe ein Bohrziel (kein Sperr-Zeiger)
 			{
 				item = MT_BLOCKING;
 			}
