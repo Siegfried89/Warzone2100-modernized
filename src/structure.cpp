@@ -43,6 +43,7 @@
 #include "world_object_state.h"
 #include "visibility.h"
 #include "structure.h"
+#include "modbridge.h"
 #include "modicbm.h"
 #include "modupgrade.h"
 #include "modgroundfire.h"   // MOD
@@ -4884,7 +4885,7 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 					for (int i = 0; i < b.size.x; ++i)
 					{
 						MAPTILE const *psTile = mapTile(world.map, b.map.x + i, b.map.y + j);
-						if ((terrainType(psTile) == TER_WATER) ||
+						if ((terrainType(psTile) == TER_WATER && !modbridge::isBridgeStats(psBuilding)) ||   // MOD (22.11.): Bruecken auf Wasser
 						    (terrainType(psTile) == TER_CLIFFFACE))
 						{
 							return false;

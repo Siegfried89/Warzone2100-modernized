@@ -24,6 +24,13 @@
 #include "geometry.h"
 #include "map.h"
 #include "modapc.h"
+#include "modbridge.h"
+#include "modlayer.h"
+#include "effects.h"
+#include "ai.h"
+#include "fpath.h"
+#include "lib/sound/audio.h"
+#include "lib/sound/audio_id.h"
 #include "move.h"
 #include "objmem.h"
 #include "order.h"
@@ -405,7 +412,7 @@ void place(Train &t, const std::vector<DROID *> &veh, int64_t speedFix)
 		const int oldx = d->pos.x, oldy = d->pos.y;
 		d->pos.x = std::clamp(p.x, TILE_UNITS, world_coord(gameWorld.map.width - 1) - 1);
 		d->pos.y = std::clamp(p.y, TILE_UNITS, world_coord(gameWorld.map.height - 1) - 1);
-		d->pos.z = map_Height(gameWorld.map, d->pos.x, d->pos.y);
+		d->pos.z = std::max(map_Height(gameWorld.map, d->pos.x, d->pos.y), modbridge::deckHeight(d->pos.x, d->pos.y));   // MOD (22.11.): Bruecke
 		if (a != b)
 		{
 			uint16_t dir = calcDirection(a.x, a.y, b.x, b.y);
@@ -673,6 +680,47 @@ void updateTrain(DROID *d)
 			break;
 		}
 	}
+	// MOD (Wunsch 22.11. 18:27 "Zugzusammenstoesse"): Hindernisse auf dem Gleis voraus.
+	//  - andere Zuege (Lok oder Waggon, jeder Spieler): der Zug haelt dahinter; reicht der Bremsweg nicht, kracht es (beide nehmen Schaden)
+	//  - Einheiten am Boden: eigene/verbuendete machen Platz (Ausweichbefehl, solange sie nichts zu tun haben); wer an der Zugspitze steht,
+	//    wird zur Seite geschleudert und nimmt - je nach Tempo - Schaden (Infanterie mehr als Fahrzeuge); langsam schiebt der Zug nur
+	const int leadHalf = halfLen(veh[leadK]);
+	const Vector2i leadPos = pointAt(t, std::clamp<int64_t>(sLead, 0, end));
+	const int64_t scanEnd = std::min(end, sLead + static_cast<int64_t>(6 * RT) * FIX);
+	const modlayer::Layer myLayer = modlayer::layerOf(d);
+	DROID *crashInto = nullptr;
+	struct Hit { DROID *o; int64_t arc; int lat; };
+	std::vector<Hit> hits;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		for (DROID *o : gameWorld.objects.droids[p])
+		{
+			if (o == nullptr || o->died || o->isFlying() || o->isVtol() || o->isTransporter() || modlayer::isFlier(o)) { continue; }
+			if (std::find(veh.begin(), veh.end(), o) != veh.end()) { continue; }
+			if (modlayer::layerOf(o) != myLayer) { continue; }
+			if (iHypot(o->pos.xy() - leadPos) > static_cast<int>((scanEnd - sLead) / FIX) + 2 * HALF_LOCO) { continue; }
+			const bool tr = isTrain(o);
+			const int rad = tr ? 24 : (o->droidType == DROID_PERSON || o->isCyborg() ? 12 : 22);
+			int64_t bestS = -1; int bestD = INT32_MAX;
+			for (int64_t s = std::max<int64_t>(0, sLead - static_cast<int64_t>(leadHalf) * FIX); s <= scanEnd; s += 16 * FIX)
+			{
+				const int dd = iHypot(o->pos.xy() - pointAt(t, s));
+				if (dd < bestD) { bestD = dd; bestS = s; }
+			}
+			if (bestS < 0 || bestD > 22 + rad) { continue; }
+			hits.push_back({o, bestS, bestD});
+		}
+	}
+	for (const Hit &h : hits)
+	{
+		if (!isTrain(h.o)) { continue; }
+		const int64_t stopT = h.arc - static_cast<int64_t>(halfLen(h.o) + leadHalf + 8) * FIX;
+		if (stopT < stop)
+		{
+			stop = std::max(sLead, stopT);
+			crashInto = h.o;
+		}
+	}
 	const bool wantMove = d->sMove.Status != MOVEINACTIVE && d->sMove.Status != MOVEHOVER;
 	const BODY_STATS *body = d->getBodyStats();
 	const int64_t vmax = static_cast<int64_t>(std::max(200, std::min(900, body != nullptr && body->id.startsWith("TrainLocoFire") ? 640 : 540))) * FIX;
@@ -694,6 +742,73 @@ void updateTrain(DROID *d)
 	}
 	int64_t ds = v * dt / GAME_TICKS_PER_SEC;
 	if (ds > remain) { ds = remain; }
+	// Zusammenstoss mit einem Zug: der Bremsweg reichte nicht - beide nehmen Schaden je nach Tempo, der Zug steht
+	if (crashInto != nullptr && remain <= ds + 2 * FIX && v > 90 * FIX)
+	{
+		const unsigned dmg = static_cast<unsigned>(std::min<int64_t>(600, v / FIX / 2));
+		const unsigned it = gameTime;
+		Vector3i c((leadPos.x + crashInto->pos.x) / 2, (leadPos.y + crashInto->pos.y) / 2, 0);
+		c.z = map_Height(gameWorld.map, c.x, c.y) + 30;
+		addEffect(&c, EFFECT_EXPLOSION, EXPLOSION_TYPE_MEDIUM, false, nullptr, 0, it);
+		audio_PlayStaticTrack(c.x, c.y, ID_SOUND_EXPLOSION);
+		droidDamage(gameWorld, veh[leadK], nullptr, dmg, WC_KINETIC, WSC_BOMB, it, false, 0, false);
+		if (!crashInto->died) { droidDamage(gameWorld, crashInto, nullptr, dmg, WC_KINETIC, WSC_BOMB, it, false, 0, false); }
+		v = 0;
+		if (d->player == selectedPlayer) { addConsoleMessage(_("Train collision!"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); }
+	}
+	// Einheiten am Boden: Platz machen bzw. erfasst werden
+	if (v > 0 || wantMove)
+	{
+		const unsigned it = gameTime;
+		for (const Hit &h : hits)
+		{
+			DROID *o = h.o;
+			if (isTrain(o) || o->died) { continue; }
+			const int64_t front = sLead + static_cast<int64_t>(leadHalf) * FIX;
+			const Vector2i a = pointAt(t, std::max<int64_t>(0, h.arc - 16 * FIX)), b = pointAt(t, std::min(end, h.arc + 16 * FIX));
+			Vector2i dir = b - a;
+			const int len = std::max(1, iHypot(dir));
+			Vector2i side(-dir.y, dir.x);
+			const Vector2i onLine = pointAt(t, h.arc);
+			if (static_cast<int64_t>(side.x) * (o->pos.x - onLine.x) + static_cast<int64_t>(side.y) * (o->pos.y - onLine.y) < 0) { side = Vector2i(-side.x, -side.y); }
+			const bool friendly = o->player == d->player || aiCheckAlliancesInRange(static_cast<int>(o->player), static_cast<int>(d->player));
+			if (h.arc > front + 24 * FIX)
+			{
+				// noch voraus: Verbuendete ohne Auftrag gehen von selbst aus dem Weg
+				if (friendly && o->order.type == DORDER_NONE && v > 0)
+				{
+					const int gx = onLine.x + side.x * 90 / len, gy = onLine.y + side.y * 90 / len;
+					if (worldOnMap(gameWorld.map, gx, gy)) { orderDroidLoc(o, DORDER_MOVE, static_cast<UDWORD>(gx), static_cast<UDWORD>(gy), ModeImmediate); }
+				}
+				continue;
+			}
+			// an der Zugspitze: zur Seite stossen
+			const int rad = (o->droidType == DROID_PERSON || o->isCyborg()) ? 12 : 22;
+			const int push = 26 + rad - h.lat + 6;
+			for (int sgn : {1, -1})
+			{
+				const int nx = o->pos.x + sgn * side.x * push / len, ny = o->pos.y + sgn * side.y * push / len;
+				if (!worldOnMap(gameWorld.map, nx, ny)) { continue; }
+				const PROPULSION_STATS *ps = o->getPropulsionStats();
+				if (ps != nullptr && fpathBlockingTile(gameWorld.map, map_coord(nx), map_coord(ny), ps->propulsionType)) { continue; }
+				droidSetPosition(o, gameWorld.map, nx, ny);
+				break;
+			}
+			const int64_t vw = v / FIX;
+			if (vw >= 80)
+			{
+				const bool soft = o->droidType == DROID_PERSON || o->isCyborg();
+				unsigned dmg = static_cast<unsigned>(vw * (soft ? 12 : 5) / 10);
+				if (friendly) { dmg /= 2; }
+				droidDamage(gameWorld, o, nullptr, dmg, WC_KINETIC, WSC_BOMB, it, false, 0, false);
+				audio_PlayStaticTrack(o->pos.x, o->pos.y, ID_SOUND_RICOCHET_1);
+				v = v * (soft ? 97 : 85) / 100;   // der Zug verliert etwas Fahrt
+			}
+		}
+		ds = std::min(ds, v * dt / GAME_TICKS_PER_SEC + 1);
+		if (ds > remain) { ds = remain; }
+	}
+
 	t.sLoco += ds;
 	t.speed = v;
 	sLead += ds;
@@ -913,14 +1028,19 @@ bool drawRail(const STRUCTURE *s, PIELIGHT brightness, const glm::mat4 &viewMatr
 	const int flags = built ? 0 : pie_TRANSLUCENT;
 	const int flagData = built ? 0 : 110;
 	const int cx = rw(tx) + RT / 2, cy = rw(ty) + RT / 2;
-	const float h0 = static_cast<float>(map_Height(gameWorld.map, cx, cy));
+	// MOD (22.11.): Eisenbahnbruecke - erst Platte/Pfeiler/Gelaender, die Schienen liegen auf der Fahrbahn, kein Erddamm
+	const bool onBridge = modbridge::isBridge(s);
+	if (onBridge) { modbridge::drawBridge(s, brightness, viewMatrix); }
+	const auto surf = [&](int x, int y) { return onBridge ? modbridge::structureDeckHeight(s) : map_Height(gameWorld.map, x, y); };
+	const float h0 = static_cast<float>(surf(cx, cy));
 	const glm::vec3 c(static_cast<float>(cx), h0, static_cast<float>(-cy));
 	const auto piece = [&](int k, const iIMDShape *model, float len, int fl, int fd)
 	{
 		if (model == nullptr) { return; }
 		const int dx = KNEE[k][0], dy = KNEE[k][1];
 		const float ex = static_cast<float>(cx) + static_cast<float>(dx) * 64.f, ey = static_cast<float>(cy) + static_cast<float>(dy) * 64.f;
-		const float h1 = static_cast<float>(map_Height(gameWorld.map, static_cast<int>(ex), static_cast<int>(ey)));
+		const float h1 = static_cast<float>(surf(static_cast<int>(ex), static_cast<int>(ey)));
+		if (onBridge && (model == sh[E_HALF] || model == sh[E_DIAG] || model == sh[E_END])) { return; }   // kein Erddamm auf der Bruecke
 		const float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(-dy));   // Modell +z -> Richtung (dx, -dy) im Bild (Bild-z = -Welt-y)
 		const float pitch = -std::atan2(h1 - h0, len);
 		glm::mat4 M = glm::translate(glm::mat4(1.f), c);
@@ -959,7 +1079,7 @@ bool drawRail(const STRUCTURE *s, PIELIGHT brightness, const glm::mat4 &viewMatr
 	{
 		// Kurve oder Weiche: Mittelstueck fuellt die Ecke
 		if (sh[HUB] != nullptr) { pie_Draw3DShape(sh[HUB], 0, 0, brightness, flags, flagData, glm::translate(glm::mat4(1.f), c), viewMatrix); }
-		if (sh[E_HUB] != nullptr) { pie_Draw3DShape(sh[E_HUB], 0, 0, brightness, eFlags, eData, glm::translate(glm::mat4(1.f), c), viewMatrix); }
+		if (sh[E_HUB] != nullptr && !onBridge) { pie_Draw3DShape(sh[E_HUB], 0, 0, brightness, eFlags, eData, glm::translate(glm::mat4(1.f), c), viewMatrix); }
 	}
 	return true;
 }

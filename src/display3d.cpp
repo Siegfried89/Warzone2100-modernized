@@ -108,6 +108,7 @@
 #include "modtunnel.h"
 #include "modferry.h"
 #include "modrail.h"   // MOD (21.11.): Gleise
+#include "modbridge.h"   // MOD (22.11.): Bruecken
 #include "modheadlights.h"
 #include "modnightlights.h"
 #include "modrocket.h"
@@ -3424,6 +3425,12 @@ void renderStructure(STRUCTURE *psStructure, const glm::mat4 &viewMatrix, const 
 
 	buildingBrightness = structureBrightness(psStructure);
 
+	// MOD (22.11.): Strassenbruecke - Platte, Pfeiler, Gelaender (Eisenbahnbruecken zeichnet modrail mit Schienen)
+	if (modbridge::isBridge(psStructure) && !modrail::isRail(psStructure) && modbridge::drawBridge(psStructure, buildingBrightness, viewMatrix))
+	{
+		setScreenDispWithPerspective(&psStructure->sDisplay, perspectiveViewMatrix * modelMatrix);
+		return;
+	}
 	// MOD (21.11.): Gleise - die Engine zeichnet die Gleisstuecke entlang der Verbindungen zu den Nachbarfeldern (modrail)
 	if (modrail::isRail(psStructure) && modrail::drawRail(psStructure, buildingBrightness, viewMatrix))
 	{

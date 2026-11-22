@@ -49,6 +49,7 @@
 #include "modrocket.h"
 #include "modapc.h"
 #include "modrail.h"
+#include "modbridge.h"
 #include "modfacing.h"
 #include "modnuke.h"
 #include "modicbm.h"
@@ -641,6 +642,7 @@ static void gameStateUpdate()
 	modai::tick(gameWorld);      // MOD: Computer-Spieler benutzen die Mod-Systeme (Tankstelle, Befestigung, Aussenposten, Orbit)
 	modoutpost::tick(gameWorld); // MOD: Aussenposten-Teleport (MF)
 	modrocket::tick();           // MOD (17.11. 20:56): Raketensilo -> Pioniere in den Orbit
+	modbridge::tick();           // MOD (22.11.): Bruecken (befahrbare Wasserfelder) - vor den Zuegen
 	modrail::tick();             // MOD (21.11.): Zuege (Gleisnetz, Ankuppeln, Absitz-Knopf der Lok) - vor modapc
 	modfacing::tick();           // MOD (21.11. 20:22): Ausrichten (Ziehen/Taste L), Fahren in der Verfolgerkamera
 	modapc::tick();              // MOD (17.11. 21:01): Halbketten-Schuetzenpanzer (8 Mann)

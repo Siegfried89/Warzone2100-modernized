@@ -1224,7 +1224,15 @@ std::vector<Placement> planRailLine(unsigned player, const std::vector<Vector2i>
 		const STRUCTURE *os = ownStructAt(player, t);
 		return os != nullptr && os->pStructureType != nullptr && os->pStructureType->id.startsWith("A0RailTrack");
 	};
-	auto passable = [&](const Vector2i &t) { return used.count(keyOf(t)) == 0 && (freeFor(player, rail, t, 0, used) || ownRail(t)); };
+	// MOD (22.11.): ueber Wasser setzt die Gleis-Zeichenhilfe von selbst Eisenbahnbruecken
+	STRUCTURE_STATS *railBridge = availStat(player, "A0RailTrackBridge");
+	auto isWater = [](const Vector2i &t) { return tileOnMap(gameWorld.map, t.x, t.y) && terrainType(mapTile(gameWorld.map, t.x, t.y)) == TER_WATER; };
+	auto passable = [&](const Vector2i &t) {
+		if (used.count(keyOf(t)) != 0) { return false; }
+		if (ownRail(t)) { return true; }
+		if (railBridge != nullptr && isWater(t)) { return freeFor(player, railBridge, t, 0, used); }
+		return freeFor(player, rail, t, 0, used);
+	};
 	std::vector<std::vector<Vector2i>> pieces(1);
 	for (size_t i = 0; i < path.size();)
 	{
@@ -1252,13 +1260,15 @@ std::vector<Placement> planRailLine(unsigned player, const std::vector<Vector2i>
 		{
 			if (ownRail(cells[i])) { ++i; continue; }
 			size_t j = i;
-			if (j + 1 < cells.size() && !ownRail(cells[j + 1]) && cheb(cells[j], cells[j + 1]) == 1)
+			const bool wet = railBridge != nullptr && isWater(cells[i]);   // Bruecken- und Landstuecke getrennt
+			if (j + 1 < cells.size() && !ownRail(cells[j + 1]) && cheb(cells[j], cells[j + 1]) == 1 && (railBridge != nullptr && isWater(cells[j + 1])) == wet)
 			{
 				const int dx = cells[j + 1].x - cells[j].x, dy = cells[j + 1].y - cells[j].y;
-				while (j + 1 < cells.size() && !ownRail(cells[j + 1]) && cells[j + 1].x - cells[j].x == dx && cells[j + 1].y - cells[j].y == dy) { ++j; }
+				while (j + 1 < cells.size() && !ownRail(cells[j + 1]) && cells[j + 1].x - cells[j].x == dx && cells[j + 1].y - cells[j].y == dy
+				       && (railBridge != nullptr && isWater(cells[j + 1])) == wet) { ++j; }
 			}
 			Placement pl;
-			pl.stats = rail; pl.tile = cells[i]; pl.tile2 = cells[j]; pl.line = true; pl.direction = 0;
+			pl.stats = wet ? railBridge : rail; pl.tile = cells[i]; pl.tile2 = cells[j]; pl.line = true; pl.direction = 0;
 			out.push_back(pl);
 			i = j + 1;
 		}

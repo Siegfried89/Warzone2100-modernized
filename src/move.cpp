@@ -50,6 +50,7 @@
 #include "modinertia.h"
 #include "modmines.h"      // MOD: Minenraeumer    // MOD (17.11. 19:45): Anlassen + Traegheit
 #include "move.h"
+#include "modbridge.h"
 
 #include "objects.h"
 #include "visibility.h"
@@ -2332,6 +2333,7 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 
 	//set the droid height here so other routines can use it
 	psDroid->pos.z = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);//jps 21july96
+	psDroid->pos.z = std::max(psDroid->pos.z, modbridge::deckHeight(psDroid->pos.x, psDroid->pos.y));   // MOD (22.11.): auf der Bruecke
 	updateDroidOrientation(psDroid, gameWorld.map);
 }
 
@@ -2389,6 +2391,7 @@ static void moveUpdatePersonModel(DROID *psDroid, SDWORD speed, uint16_t directi
 
 	//set the droid height here so other routines can use it
 	psDroid->pos.z = map_Height(gameWorld.map, psDroid->pos.x, psDroid->pos.y);//jps 21july96
+	psDroid->pos.z = std::max(psDroid->pos.z, modbridge::deckHeight(psDroid->pos.x, psDroid->pos.y));   // MOD (22.11.): auf der Bruecke
 	psDroid->pos.z += modoil::roofHeight(psDroid);   // MOD (17.11.): Infanterie auf dem Containerdach
 
 	/* update anim if moving */

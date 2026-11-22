@@ -411,13 +411,22 @@ void update()
 		std::vector<char> anyGen(total, 0);
 		for (int k = 0; k < g; k++) { anyGen[find(par, G0 + k)] = 1; }
 		for (int k = 0; k < m; k++) { hasSub[find(par, S0 + k)] = 1; }
+		// (Wunsch 22.11. 18:27 "Notstrom fuers Hauptquartier"): seit das Umspannwerk Pflicht ist (20.11.), floss der Notstrom der Kommandozentrale
+		// nur, wenn sie ueber Masten an einem Umspannwerk hing - in einer neuen Basis ohne Umspannwerk lief darum keine Fabrik. Jetzt wirkt die
+		// Kommandozentrale selbst als kleiner Knoten: Gebaeude in ihrem Umkreis bekommen ihren Notstrom (6 Einheiten = Fabrik + Forschung),
+		// auch ganz ohne Umspannwerk. Kraftwerksstrom braucht weiterhin ein Umspannwerk.
+		std::vector<char> hasHQ(total, 0);
+		for (int k = 0; k < q; k++)
+		{
+			if (panelNuke[static_cast<size_t>(k)] == 2) { hasHQ[find(par, P0 + k)] = 1; }
+		}
 
 		// Netze, die Strom haben koennten (ohne Umspannwerk: ein laufendes Kraftwerk; mit: Umspannwerk + Quelle)
 		std::vector<char> live(total, 0);
 		for (int r = 0; r < total; r++)
 		{
 			if (find(par, r) != r) { continue; }
-			live[r] = subMode ? (hasSub[r] && (solarCap[r] > 0 || genCapC[r] > 0)) : hasGenC[r];
+			live[r] = subMode ? ((hasSub[r] && (solarCap[r] > 0 || genCapC[r] > 0)) || (hasHQ[r] && emergCap[r] > 0)) : hasGenC[r];
 		}
 		// Verbraucher einem Netz zuordnen: Versorgungsbereich eines Mastes oder Umspannwerks (ohne Umspannwerk wie bisher auch eines Kraftwerks);
 		// liegen mehrere in Reichweite, gewinnt ein Netz mit Strom, dann das naechste
@@ -442,6 +451,15 @@ void update()
 			{
 				const int64_t d = dist2(c, subs[k]);
 				if (d <= static_cast<int64_t>(SUB_SUPPLY_RANGE) * SUB_SUPPLY_RANGE) { consider(find(par, S0 + k), d); }
+			}
+			if (subMode)
+			{
+				for (int k = 0; k < q; k++)   // Kommandozentrale versorgt ihren Umkreis mit Notstrom (siehe hasHQ)
+				{
+					if (panelNuke[static_cast<size_t>(k)] != 2) { continue; }
+					const int64_t d = dist2(c, panels[k]);
+					if (d <= static_cast<int64_t>(SUB_SUPPLY_RANGE) * SUB_SUPPLY_RANGE) { consider(find(par, P0 + k), d); }
+				}
 			}
 			if (!subMode)
 			{
@@ -470,7 +488,12 @@ void update()
 			if (find(par, r) != r) { continue; }
 			if (subMode)
 			{
-				if (!hasSub[r]) { continue; }
+				if (!hasSub[r])
+				{
+					// ohne Umspannwerk nur der Notstrom der Kommandozentrale (22.11. 18:27)
+					if (hasHQ[r] && emergCap[r] > 0) { capacity[r] = emergCap[r]; fed[r] = 1; }
+					continue;
+				}
 				// (20.11. 19:06) keine Bereitschaft mehr: Oel- und Solar-Kreislauf sind unabhaengig, ihre Leistung zaehlt zusammen
 				capacity[r] = solarCap[r] + genCapC[r];
 				fed[r] = capacity[r] > 0;
