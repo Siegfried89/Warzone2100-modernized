@@ -199,6 +199,7 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 		const Lamp l = v.derricks == 0 ? L_BAD : (v.derricksFull > 0 ? L_WARN : L_OK);
 		std::string tip = "\xC3\x96lt\xC3\xBCrme: " + (v.derricks == 0 ? std::string("keiner") : std::to_string(v.derricks) + " | F\xC3\xA4sser " + of(v.derrickBarrels, v.derrickCap));
 		if (v.derricksFull > 0) { tip += " | " + std::to_string(v.derricksFull) + " voll - es wird nichts abgeholt"; }
+		if (v.pipedDerricks > 0) { tip += " | per Pipeline am Kraftwerk: " + std::to_string(v.pipedDerricks) + " (flie\xC3\x9F" "en st\xC3\xA4ndig, keine F\xC3\xA4sser)"; }
 		const std::string prob = v.derricks == 0 ? "Keine \xC3\x96lt\xC3\xBCrme" : std::to_string(v.derricksFull) + " \xC3\x96lturm voll - mehr Pickups";
 		t.push_back({l, OI_DERRICK, std::to_string(v.derricks) + (v.derricksFull > 0 ? "!" : ""), tip, prob, v.derricks == 0 ? 3 : 20});
 	}
@@ -232,6 +233,7 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 		const Lamp l = v.gens == 0 ? L_BAD : (v.minFuel == 0 ? L_BAD : (v.gensHungry > 0 ? L_WARN : L_OK));
 		std::string tip = "Kraftwerke: " + (v.gens == 0 ? std::string("keins") : std::to_string(v.gens));
 		if (v.gens > 0 && v.minFuel >= 0) { tip += " | \xC3\x96l reicht noch mindestens " + mmss(v.minFuel); }
+		if (v.gens > 0) { tip += " | per Pipeline " + of(v.pipedDerricks, v.pipeSlots) + " \xC3\x96lt\xC3\xBCrme (+" + std::to_string(v.pipeRatePerMin) + "/min st\xC3\xA4ndig)"; }
 		const std::string prob = v.gens == 0 ? "Kein Kraftwerk" : (v.minFuel == 0 ? "Kraftwerk ohne \xC3\x96l" : "Kraftwerk braucht bald \xC3\x96l");
 		t.push_back({l, OI_POWERGEN, v.gens == 0 ? std::string("0") : (v.minFuel >= 0 ? mmss(v.minFuel) : std::to_string(v.gens)), tip, prob, v.gens == 0 ? 1 : (v.minFuel == 0 ? 2 : 22)});
 	}

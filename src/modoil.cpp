@@ -143,6 +143,9 @@ int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwer
 bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
 int s_bank[MAX_PLAYERS] = {};               // (Wunsch 21.11. 20:22) Energie verbrannter Faesser, die noch stetig ins Konto laeuft
 int s_payRate[MAX_PLAYERS] = {};            // (Wunsch 23.11. 19:29 "gleichmaessig statt schubweise") feste Auszahlung je Sekunde bis zur naechsten Lieferung
+std::map<uint32_t, uint32_t> s_pipeAssign;  // (23.11. 19:57) Oelturm -> Kraftwerk (per Pipeline, stetige Einnahmen)
+std::map<uint32_t, int> s_genPiped;         // Kraftwerk -> Zahl der per Pipeline zugeteilten Oeltuerme
+int64_t s_oilFP[MAX_PLAYERS] = {};          // Pipeline-Einnahmen aus power.cpp (Festkomma 32.32) fuer das Einnahmen-Buch
 std::vector<std::pair<int, bool>> s_tankRespawn;   // (20.11.) (Spieler, Tanker?) - letzter Oeltanker bzw. letzter Pickup zerstoert
 int s_beepTrack = -2;                       // (20.11. 19:06) Rueckfahr-Piepen beim Abliefern (-2 = noch nicht gesucht)
 bool s_have = false;
@@ -368,13 +371,113 @@ void processReplacements()
 	}
 }
 
+
+// (23.11. 19:57) Rohr-Raster: ein Rohrstueck belegt PS x PS Felder (Viertel-Version: 2 x 2 Feinfelder), sein Schluesselfeld ist das Feld
+// unter seiner Mitte. Zwei Rohre gehoeren zusammen, wenn sie sich mit einer Kante beruehren (Abstand genau PS in einer Achse, weniger in
+// der anderen). Ein Gebaeude haengt an einem Netz, wenn ein Rohr um hoechstens PS Felder neben seiner Grundflaeche liegt.
+constexpr int PS = (DIST_TILE / TILE_UNITS) > 0 ? (DIST_TILE / TILE_UNITS) : 1;
+
+struct PipeGrid
+{
+	std::map<std::pair<int, int>, int> idx;
+	std::vector<int> par;
+
+	void build(const std::vector<STRUCTURE *> &pipes)
+	{
+		idx.clear(); par.clear();
+		for (const STRUCTURE *s : pipes)
+		{
+			const std::pair<int, int> t(map_coord(s->pos.x), map_coord(s->pos.y));
+			if (idx.find(t) == idx.end()) { idx[t] = static_cast<int>(par.size()); par.push_back(static_cast<int>(par.size())); }
+		}
+		for (const auto &kv : idx)
+		{
+			for (int ddx = -PS; ddx <= PS; ddx++)
+			{
+				for (int ddy = -PS; ddy <= PS; ddy++)
+				{
+					if (std::max(std::abs(ddx), std::abs(ddy)) != PS || std::min(std::abs(ddx), std::abs(ddy)) >= PS) { continue; }
+					const auto r = idx.find(std::make_pair(kv.first.first + ddx, kv.first.second + ddy));
+					if (r != idx.end()) { uunite(par, kv.second, r->second); }
+				}
+			}
+		}
+	}
+	std::set<int> touching(const STRUCTURE *s)
+	{
+		std::set<int> roots;
+		if (idx.empty() || s == nullptr) { return roots; }
+		const StructureBounds b = getStructureBounds(s);
+		for (int x = b.map.x - PS; x <= b.map.x + b.size.x - 1 + PS; x++)
+		{
+			for (int y = b.map.y - PS; y <= b.map.y + b.size.y - 1 + PS; y++)
+			{
+				const auto it = idx.find(std::make_pair(x, y));
+				if (it != idx.end()) { roots.insert(ufind(par, it->second)); }
+			}
+		}
+		return roots;
+	}
+};
+
+bool sharesRoot(const std::set<int> &a, const std::set<int> &b)
+{
+	for (int v : a) { if (b.count(v) != 0) { return true; } }
+	return false;
+}
 } // namespace
 
 // ---------------------------------------------------------------- oeffentliche Funktionen
 
+int pipedDerricks(const STRUCTURE *g)
+{
+	if (g == nullptr) { return 0; }
+	const auto it = s_genPiped.find(g->id);
+	return it == s_genPiped.end() ? 0 : it->second;
+}
+
+bool derrickPiped(const STRUCTURE *d)
+{
+	return d != nullptr && s_pipeAssign.count(d->id) != 0;
+}
+
+void noteOilIncomeFP(int player, int64_t amountFP)
+{
+	if (player >= 0 && player < MAX_PLAYERS && amountFP > 0) { s_oilFP[player] += amountFP; }
+}
+
+bool isPipeStructure(const STRUCTURE *s)
+{
+	return s != nullptr && !s->died && s->status == SS_BUILT && isPipe(s->pStructureType) && !isBroken(s->pStructureType);
+}
+
+Vector2i pipeKey(const STRUCTURE *s)
+{
+	return Vector2i(map_coord(s->pos.x), map_coord(s->pos.y));
+}
+
+int pipeStep()
+{
+	return PS;
+}
+
+int pipeKeyToWorld(int key)
+{
+	// Mitte eines PS x PS grossen Rohrstuecks, dessen Mitte ueber dem Schluesselfeld liegt (PS = 1: Feldmitte, PS = 2: Feldecke)
+	return world_coord(key) + ((PS % 2) != 0 ? TILE_UNITS / 2 : 0);
+}
+
+bool pipeTouches(const STRUCTURE *s, Vector2i k)
+{
+	if (s == nullptr) { return false; }
+	const StructureBounds b = getStructureBounds(s);
+	return k.x >= b.map.x - PS && k.x <= b.map.x + b.size.x - 1 + PS && k.y >= b.map.y - PS && k.y <= b.map.y + b.size.y - 1 + PS;
+}
+
 bool generatorHungry(const STRUCTURE *g)
 {
-	return g != nullptr && manages(static_cast<int>(g->player)) && g->status == SS_BUILT && !modgrid::generatorStandby(g) && generatorFuel(g) <= HUNGRY_BELOW;
+	return g != nullptr && manages(static_cast<int>(g->player)) && g->status == SS_BUILT && !modgrid::generatorStandby(g) && pipedDerricks(g) == 0
+	       && generatorFuel(g) <= HUNGRY_BELOW;
 }
 
 EconomyView economyView(int p)
@@ -383,6 +486,7 @@ EconomyView economyView(int p)
 	if (p < 0 || p >= MAX_PLAYERS || !manages(p)) { return v; }
 	v.active = true;
 	std::vector<const STRUCTURE *> pipes;
+	int64_t pipeRateNum = 0;
 	for (const STRUCTURE *s : gameWorld.objects.structures[p])
 	{
 		if (s->died || s->status != SS_BUILT || s->pStructureType == nullptr) { continue; }
@@ -412,10 +516,15 @@ EconomyView economyView(int p)
 		else if (st->type == REF_POWER_GEN)
 		{
 			v.gens++;
+			// (23.11. 19:57) Oeltuerme per Pipeline und ihr stetiger Ertrag: je Oelturm 1/s x Energie-Einstellung x Kraftwerk-Punkte / 100
+			const int pip = pipedDerricks(s);
+			v.pipedDerricks += pip;
+			v.pipeSlots += PIPE_PER_GEN;
+			pipeRateNum += static_cast<int64_t>(60) * getPowerModifier(p) * std::max(1, getBuildingPowerPoints(s)) * pip;
 			const int f = generatorFuel(s);
 			if (generatorRunning(s)) { v.gensRunning++; }
 			if (modgrid::generatorStandby(s)) { v.gensStandby++; }
-			else
+			else if (pip == 0)   // (23.11.) per Pipeline versorgt: braucht keine Faesser
 			{
 				if (f <= HUNGRY_BELOW) { v.gensHungry++; }
 				v.minFuel = v.minFuel < 0 ? f : std::min(v.minFuel, f);
@@ -447,6 +556,7 @@ EconomyView economyView(int p)
 		if (isTank(d)) { v.tankers++; v.tankerBarrels += n; v.tankerCap += cap; }
 		else { v.pickups++; v.pickupBarrels += n; v.pickupCap += cap; }
 	}
+	v.pipeRatePerMin = static_cast<int>(pipeRateNum / 10000);
 	v.power = getPower(static_cast<unsigned>(p));
 	v.powerMax = getPowerMaxStorage(static_cast<unsigned>(p));
 	v.incomeLastMinute = static_cast<int>(s_lastIncome[p]);
@@ -518,6 +628,8 @@ void reset()
 	s_barrels.clear();
 	s_progress.clear();
 	s_fuel.clear();
+	s_pipeAssign.clear();
+	s_genPiped.clear();
 	s_store.clear();
 	s_storeCapById.clear();
 	s_storeR.clear();
@@ -529,7 +641,7 @@ void reset()
 	s_station.clear();
 	s_booms.clear();
 	s_repl.clear();
-	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_bank[p] = 0; s_payRate[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_bank[p] = 0; s_payRate[p] = 0; s_oilFP[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
 	s_tankRespawn.clear();
 	s_have = false;
 }
@@ -804,6 +916,7 @@ void drawCargo(const DROID *d, const iIMDShape *bed, const glm::mat4 &m, const g
 bool generatorRunning(const STRUCTURE *psGen)
 {
 	if (!manages(psGen->player)) { return true; }
+	if (pipedDerricks(psGen) > 0) { return true; }   // (23.11.) Oelturm per Pipeline: laeuft stetig
 	const auto it = s_fuel.find(psGen->id);
 	return it == s_fuel.end() ? START_FUEL > 0 : it->second > 0;   // (20.11.) neues Kraftwerk ist leer
 }
@@ -976,6 +1089,8 @@ void autoTrain(int p, const Snap &sn)
 
 void logistics()
 {
+	s_pipeAssign.clear();   // (23.11. 19:57) Pipeline-Zuteilung wird jede Sekunde neu bestimmt
+	s_genPiped.clear();
 	std::vector<BASE_OBJECT *> featureTowers;
 	for (FEATURE *f : gameWorld.objects.features[0])
 	{
@@ -1020,10 +1135,45 @@ void logistics()
 		}
 		if (!manages(p)) { continue; }
 
+		// (Wunsch 23.11. 19:57 "Ein Oilrig muss per Pipeline angeschlossen sein, damit er staendig fliesst ... Falls das naechste Kraftwerk
+		// voll waere, wuerde ein bestehender Oilrig zu einem passenderen wechseln, damit die Pipelines kurz bleiben"): Rohrnetz einmal je
+		// Sekunde. Jeder Oelturm, der an einem Netz mit Kraftwerk haengt, wird dem naechsten Kraftwerk dieses Netzes mit freiem Platz
+		// zugeteilt (je Kraftwerk PIPE_PER_GEN; kuerzeste Wege zuerst - kommt ein naeherer Oelturm dazu, rueckt ein weiter entfernter zum
+		// naechstbesten Kraftwerk im Netz). Zugeteilte Oeltuerme liefern stetig (power.cpp) und stellen keine Faesser mehr ab.
+		PipeGrid grid;
+		grid.build(sn.pipes);
+		std::map<uint32_t, std::set<int>> derRoots;
+		{
+			struct Pair { int64_t dd; uint32_t der, gen; };
+			std::vector<Pair> pairs;
+			std::vector<std::set<int>> genRoots;
+			for (STRUCTURE *g : sn.gens) { genRoots.push_back(grid.touching(g)); }
+			for (STRUCTURE *der : sn.derricks)
+			{
+				std::set<int> rd = grid.touching(der);
+				if (rd.empty()) { continue; }
+				for (size_t k = 0; k < sn.gens.size(); k++)
+				{
+					if (sharesRoot(rd, genRoots[k])) { pairs.push_back({d2(der->pos.x, der->pos.y, sn.gens[k]->pos.x, sn.gens[k]->pos.y), der->id, sn.gens[k]->id}); }
+				}
+				derRoots[der->id] = std::move(rd);
+			}
+			std::sort(pairs.begin(), pairs.end(), [](const Pair &a, const Pair &b) { return a.dd != b.dd ? a.dd < b.dd : (a.der != b.der ? a.der < b.der : a.gen < b.gen); });
+			for (const Pair &pr : pairs)
+			{
+				if (s_pipeAssign.count(pr.der) != 0) { continue; }
+				int &n = s_genPiped[pr.gen];
+				if (n >= PIPE_PER_GEN) { continue; }
+				n++;
+				s_pipeAssign[pr.der] = pr.gen;
+			}
+		}
+
 		// (Wunsch 20.11. 17:46 "Der Oelturm soll sofort anfangen zu foerdern ... ein Bohrturm soll immer gleich foerdern"): jeder fertige
 		// Oelturm foerdert 1 Fass alle DERRICK_SECS Sekunden - ohne Kraftwerk, ohne Unterschiede - bis DERRICK_CAP Faesser daliegen
 		for (STRUCTURE *der : sn.derricks)
 		{
+			if (s_pipeAssign.count(der->id) != 0) { continue; }   // (23.11. 19:57) per Pipeline am Kraftwerk: Oel fliesst direkt, keine Faesser
 			int &b = s_barrels[der->id];
 			// (Wunsch 23.11. 19:29 "anfangs schneller in Fahrt") ein neuer Oelturm stellt sein erstes Fass schon nach 30 Sekunden ab
 			const auto fresh = s_progress.try_emplace(der->id, static_cast<int64_t>(DERRICK_SECS - 30));
@@ -1078,70 +1228,25 @@ void logistics()
 			}
 		}
 
-		// Pipeline-Netz: Oeltuerme -> Raffinerie (20.11.: nur noch dorthin), ein Fass je Sekunde und Turm. Angeschlossen ist ein Gebaeude, wenn
-		// ein Rohrstueck auf einem der 8 Felder rundherum liegt (auch die Raffinerie - vorher 5x5, 20.11. Punkt 9)
+		// Pipeline-Netz: Oeltuerme -> Raffinerie (20.11.), ein Fass je Sekunde und Turm - fuer Oeltuerme, die nicht per Pipeline an einem
+		// Kraftwerk haengen (deren Oel fliesst direkt ins Kraftwerk)
 		if (!sn.pipes.empty() && !sn.refs.empty())
 		{
-			constexpr int PS = (DIST_TILE / TILE_UNITS) > 0 ? (DIST_TILE / TILE_UNITS) : 1;   // Feinfelder je Feld (Viertel-Version: 2)
-			std::map<std::pair<int, int>, int> pidx;
-			std::vector<int> par;
-			for (STRUCTURE *s : sn.pipes)
-			{
-				const std::pair<int, int> tile(map_coord(s->pos.x), map_coord(s->pos.y));
-				if (pidx.find(tile) == pidx.end())
-				{
-					pidx[tile] = static_cast<int>(par.size());
-					par.push_back(static_cast<int>(par.size()));
-				}
-			}
-			// MOD (20.11. Oel-Pruefung): Rohrstuecke, die sich mit einer Kante beruehren, gehoeren zusammen (nicht ueber Eck). Bei der
-			// Kachel-Viertelung belegt ein Rohr 2x2 Feinfelder - der Nachbar liegt dann 2 Feinfelder weiter.
-			for (const auto &kv : pidx)
-			{
-				for (int ddx = -PS; ddx <= PS; ddx++)
-				{
-					for (int ddy = -PS; ddy <= PS; ddy++)
-					{
-						if (std::max(std::abs(ddx), std::abs(ddy)) != PS || std::min(std::abs(ddx), std::abs(ddy)) >= PS) { continue; }
-						const auto r = pidx.find(std::make_pair(kv.first.first + ddx, kv.first.second + ddy));
-						if (r != pidx.end()) { uunite(par, kv.second, r->second); }
-					}
-				}
-			}
-			auto touching = [&](int wx, int wy)
-			{
-				std::set<int> roots;
-				const int tx = map_coord(wx), ty = map_coord(wy);
-				for (int dx = -PS; dx <= PS; dx++)
-				{
-					for (int dy = -PS; dy <= PS; dy++)
-					{
-						const auto it = pidx.find(std::make_pair(tx + dx, ty + dy));
-						if (it != pidx.end()) { roots.insert(ufind(par, it->second)); }
-					}
-				}
-				return roots;
-			};
-			auto shares = [](const std::set<int> &a, const std::set<int> &b)
-			{
-				for (int v : a) { if (b.count(v) != 0) { return true; } }
-				return false;
-			};
 			std::vector<std::set<int>> refRoots;
-			for (STRUCTURE *r : sn.refs) { refRoots.push_back(touching(r->pos.x, r->pos.y)); }
+			for (STRUCTURE *r : sn.refs) { refRoots.push_back(grid.touching(r)); }
 			for (STRUCTURE *der : sn.derricks)
 			{
 				int &barrels = s_barrels[der->id];
 				if (barrels <= 0) { continue; }
-				const std::set<int> rd = touching(der->pos.x, der->pos.y);
-				if (rd.empty()) { continue; }
+				const auto ri = derRoots.find(der->id);
+				if (ri == derRoots.end()) { continue; }
 				STRUCTURE *br = nullptr;
 				int64_t bd = INT64_MAX;
 				for (size_t k = 0; k < sn.refs.size(); k++)
 				{
 					STRUCTURE *r = sn.refs[k];
 					if (s_refIn[r->id] >= REF_CAP) { continue; }
-					if (!shares(rd, refRoots[k])) { continue; }
+					if (!sharesRoot(ri->second, refRoots[k])) { continue; }
 					const int64_t dd = d2(r->pos.x, r->pos.y, der->pos.x, der->pos.y);
 					if (dd < bd) { bd = dd; br = r; }
 				}
@@ -1172,7 +1277,7 @@ void logistics()
 			int64_t hd = INT64_MAX;
 			for (STRUCTURE *g : activeGens)
 			{
-				if (s_fuel[g->id] > HUNGRY_BELOW) { continue; }
+				if (s_fuel[g->id] > HUNGRY_BELOW || s_genPiped[g->id] > 0) { continue; }   // (23.11.) per Pipeline versorgt: nicht hungrig
 				bool stocked = false;
 				for (BASE_OBJECT *t : towers)
 				{
@@ -1527,7 +1632,8 @@ void ledgerReport()
 			continue;
 		}
 		const int64_t delta = now - s_ledgerPower[p];
-		const int64_t known = s_ledger[p][INC_BARRELS] + s_ledger[p][INC_SOLAR] + s_ledger[p][INC_LAVA] + s_ledger[p][INC_SALVAGE] + s_ledger[p][INC_NUCLEAR];
+		const int64_t known = s_ledger[p][INC_BARRELS] + s_ledger[p][INC_PIPE] + s_ledger[p][INC_SOLAR] + s_ledger[p][INC_LAVA] + s_ledger[p][INC_SALVAGE] + s_ledger[p][INC_NUCLEAR];
+		int piped = 0;   // (23.11.) Oeltuerme per Pipeline am Kraftwerk
 		int derricks = 0, linked = 0, barrels = 0, gens = 0, fuelled = 0, standby = 0, refs = 0, trucks = 0, tankers = 0, nukes = 0, nukesOn = 0;
 		int refIn = 0, refOut = 0, refsDown = 0;   // (19.11.) genauere Angaben zur Fehlersuche
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
@@ -1540,6 +1646,7 @@ void ledgerReport()
 				const auto it = s_barrels.find(s->id);
 				if (it != s_barrels.end()) { barrels += it->second; }
 				if (s->pFunctionality != nullptr && s->pFunctionality->resourceExtractor.psPowerGen != nullptr) { linked++; }
+				if (derrickPiped(s)) { piped++; }
 			}
 			else if (st->type == REF_POWER_GEN)
 			{
@@ -1564,10 +1671,10 @@ void ledgerReport()
 			if (kv.second.mode != 0) { driving++; }
 			else if (kv.second.manualWait) { waiting++; }
 		}
-		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Faesser %lld, Solar %lld, Lava %lld, Bergung %lld, Atom %lld, sonstige %lld) | Fass-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (mit Brennstoff %d, Bereitschaft %d) | Raffinerien %d (ohne Strom %d, Eingang %d, Ausgang %d) | Lkw %d, Tanker %d (unterwegs %d, wartend %d, geladen %d) | Atomkraftwerke %d (laufend %d), Uran %d",
-		      p, static_cast<long long>(now), static_cast<long long>(delta), static_cast<long long>(s_ledger[p][INC_BARRELS]), static_cast<long long>(s_ledger[p][INC_SOLAR]),
+		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Faesser %lld, Pipeline %lld, Solar %lld, Lava %lld, Bergung %lld, Atom %lld, sonstige %lld) | Fass-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (laufend %d, Bereitschaft %d, Pipeline-Oeltuerme %d) | Raffinerien %d (ohne Strom %d, Eingang %d, Ausgang %d) | Lkw %d, Tanker %d (unterwegs %d, wartend %d, geladen %d) | Atomkraftwerke %d (laufend %d), Uran %d",
+		      p, static_cast<long long>(now), static_cast<long long>(delta), static_cast<long long>(s_ledger[p][INC_BARRELS]), static_cast<long long>(s_ledger[p][INC_PIPE]), static_cast<long long>(s_ledger[p][INC_SOLAR]),
 		      static_cast<long long>(s_ledger[p][INC_LAVA]), static_cast<long long>(s_ledger[p][INC_SALVAGE]), static_cast<long long>(s_ledger[p][INC_NUCLEAR]), static_cast<long long>(delta - known),
-		      manages(p) ? "ja" : "NEIN", derricks, linked, barrels, gens, fuelled, standby, refs, refsDown, refIn, refOut, trucks, tankers, driving, waiting, loaded,
+		      manages(p) ? "ja" : "NEIN", derricks, linked, barrels, gens, fuelled, standby, piped, refs, refsDown, refIn, refOut, trucks, tankers, driving, waiting, loaded,
 		      nukes, nukesOn, modnuke::uranium(p));
 		s_lastIncome[p] = known;
 		const int64_t waste = getWastedPower(static_cast<unsigned>(p));
@@ -1677,6 +1784,16 @@ void tick()
 		if (b <= 0) { s_payRate[p] = 0; }
 		addPower(p, pay);
 		noteIncome(p, INC_BARRELS, pay);
+	}
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		// (23.11. 19:57) stetige Pipeline-Einnahmen (power.cpp, Festkomma) ins Einnahmen-Buch
+		const int64_t whole = s_oilFP[p] >> 32;
+		if (whole > 0)
+		{
+			s_oilFP[p] -= whole << 32;
+			noteIncome(p, INC_PIPE, static_cast<int>(std::min<int64_t>(whole, INT_MAX)));
+		}
 	}
 	ledgerReport();
 }

@@ -345,7 +345,7 @@ static void updateCurrentPower(STRUCTURE *psStruct, UDWORD player, int ticks)
 		{
 			if (oilEconomy)
 			{
-				// MOD (20.11.): Oel-Wirtschaft - die Oeltuerme foerdern unabhaengig vom Kraftwerk Faesser (modoil::logistics), hier nichts
+				// MOD (20.11.): Oel-Wirtschaft - die WZ-Verknuepfung zaehlt nicht; Faesser (modoil::logistics) bzw. Pipeline (unten)
 			}
 			else
 			{
@@ -354,10 +354,19 @@ static void updateCurrentPower(STRUCTURE *psStruct, UDWORD player, int ticks)
 		}
 	}
 
+	if (oilEconomy)
+	{
+		// MOD (Wunsch 23.11. 19:57 "Ein Oilrig muss per Pipeline angeschlossen sein, damit er staendig fliesst"): je Oelturm, der per
+		// Pipeline an diesem Kraftwerk haengt (modoil, hoechstens 4), fliesst stetig so viel wie bei einem verknuepften WZ-Oelturm
+		const int piped = modoil::pipedDerricks(psStruct);
+		extractedPower = static_cast<int64_t>(piped) * asPower[player].powerModifier * EXTRACT_POINTS * FP_ONE / (100 * GAME_UPDATES_PER_SEC);
+	}
+
 	syncDebug("updateCurrentPower%d = %" PRId64",%u", player, extractedPower, multiplier);
 
 	asPower[player].currentPower += (extractedPower * multiplier) / 100 * ticks;
 	asPower[player].extractedPower += (extractedPower * multiplier) / 100 * ticks;
+	if (oilEconomy && extractedPower > 0) { modoil::noteOilIncomeFP(static_cast<int>(player), (extractedPower * multiplier) / 100 * ticks); }   // MOD: Einnahmen-Buch
 	ASSERT(asPower[player].currentPower >= 0, "negative power");
 	if (asPower[player].currentPower > asPower[player].maxStorage)
 	{
