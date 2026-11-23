@@ -32,7 +32,7 @@ bool isOilTarget(const DROID *psDroid, const STRUCTURE *psStruct);
 /// order.cpp DORDER_FORTIFY: true = Oel-Befehl (uebernommen oder verworfen)
 bool startOrder(DROID *psDroid, int x, int y, uint16_t code);
 /// (17.11. 20:35) Einnahmen-Buch: jede Spielminute steht im Log, woher die Energie kam ("MOD-Wirtschaft ...")
-enum IncomeKind { INC_BARRELS = 0, INC_SOLAR, INC_LAVA, INC_SALVAGE, INC_NUCLEAR, INC_COUNT };
+enum IncomeKind { INC_BARRELS = 0, INC_SOLAR, INC_LAVA, INC_SALVAGE, INC_NUCLEAR, INC_PIPE, INC_COUNT };
 void noteIncome(int player, int kind, int amount);
 /// (17.11. 20:35) Gebaeude fertig gebaut: Kraftwerk -> ein Oeltanker und ein Fracht-Lkw stehen sofort daneben, Raffinerie -> ein Fracht-Lkw
 void onBuilt(STRUCTURE *psStruct);
@@ -40,8 +40,25 @@ void onBuilt(STRUCTURE *psStruct);
 void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne);
 /// jeden Spielschritt aus der Spielschleife (Explosionen sofort, Logistik einmal je Spielsekunde)
 void tick();
-/// laeuft das Kraftwerk (hat es Brennstoff)? Immer wahr fuer Spieler ohne Fass-Wirtschaft.
+/// laeuft das Kraftwerk (hat es Brennstoff oder einen Oelturm per Pipeline)? Immer wahr fuer Spieler ohne Fass-Wirtschaft.
 bool generatorRunning(const STRUCTURE *psGen);
+/// (Wunsch 23.11. 19:57 "Ein Oilrig muss per Pipeline angeschlossen sein, damit er staendig fliesst. Ansonsten gilt der Fass-Abholprozess"):
+/// Oeltuerme, die ueber ein Rohrnetz an einem Kraftwerk haengen, liefern wie in WZ stetig (4 je Kraftwerk, power.cpp) und stellen keine
+/// Faesser mehr ab. Im Netz werden sie jedes Mal den naechsten Kraftwerken mit freiem Platz zugeteilt (kurze Wege).
+constexpr int PIPE_PER_GEN = 4;
+/// per Pipeline angeschlossene Oeltuerme eines Kraftwerks (0..PIPE_PER_GEN)
+int pipedDerricks(const STRUCTURE *psGen);
+/// haengt dieser Oelturm per Pipeline an einem Kraftwerk?
+bool derrickPiped(const STRUCTURE *psDerrick);
+/// stetige Pipeline-Einnahmen (Festkomma 32.32) fuer das Einnahmen-Buch melden - power.cpp
+void noteOilIncomeFP(int player, int64_t amountFP);
+/// Rohr-Raster (fuer die Planung "mit naechstem Kraftwerk verbinden"): Schluesselfeld eines Rohrstuecks, Schrittweite zwischen
+/// Nachbar-Rohren in Feldern, Weltmitte eines Rohrstuecks zu einem Schluesselfeld (je Achse), beruehrt ein Rohr dort das Gebaeude?
+bool isPipeStructure(const STRUCTURE *psStruct);
+Vector2i pipeKey(const STRUCTURE *psPipe);
+int pipeStep();
+int pipeKeyToWorld(int key);
+bool pipeTouches(const STRUCTURE *psStruct, Vector2i keyTile);
 /// Echte Infanterie (Beine UND Personen-/Cyborg-Typ). Kampfroboter (Combots) haben auch Beine, zaehlen aber nicht.
 bool isInfantry(const DROID *psDroid);
 /// nur echte Infanterie (Personen) darf besetzbare Haeuser betreten; Cyborgs nicht (Graeben/Gruben duerfen beide)
@@ -102,6 +119,7 @@ struct EconomyView
 	int tankers = 0, tankerBarrels = 0, tankerCap = 0;
 	int stores = 0, storeBarrels = 0, storeCap = 0;
 	int gens = 0, gensRunning = 0, gensStandby = 0, gensHungry = 0, minFuel = -1;
+	int pipedDerricks = 0, pipeSlots = 0, pipeRatePerMin = 0;   // (23.11. 19:57) Oeltuerme per Pipeline am Kraftwerk, stetiger Ertrag
 	int stations = 0, stationBarrels = 0, stationCap = 0;
 	int power = 0, powerMax = 0, incomeLastMinute = 0, wastedLastMinute = 0;
 	int buildingsDown = 0;

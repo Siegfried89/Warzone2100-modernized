@@ -83,6 +83,7 @@
 #include "modbuild.h"
 #include "modpick.h"
 #include "modoilui.h"
+#include "modpipelink.h"
 #include "modhelp.h"
 #include "modammo.h"
 #include "modauto.h"
@@ -782,6 +783,7 @@ void interfaceShutDown()
 	modrosette::shutdown();  // MOD (17.11.)
 	modunitstats::shutdown(); // MOD (17.11. 22:42)
 	modoilui::shutdown();     // MOD (20.11.): Oel-Fenster
+	modpipelink::shutdown();  // MOD (23.11. 19:57)
 	modtutorial::shutdown();  // MOD (22.11.): Tutorial
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
@@ -1296,6 +1298,7 @@ INT_RETVAL intRunWidgets()
 	modrosette::tick();    // MOD (17.11.): Mod-Rosette im WZ-Stil
 	modunitstats::tick();  // MOD (17.11. 22:42): Werteleiste der gewaehlten Einheit
 	modoilui::tick();      // MOD (20.11.): Oel-Fenster (Oelkreislauf)
+	modpipelink::tick();   // MOD (23.11. 19:57): Knopf "Mit naechstem Kraftwerk verbinden" am gewaehlten Oelturm
 	modtutorial::tick();   // MOD (22.11.): Tutorial (nur Herausforderung auf Wuestenland)
 	moddesigner::tick();   // MOD: Combot-Designer
 	modhullforge::tick();  // MOD (23.11.): Rumpf-Baukasten + Verfuegbarkeit der Verbundrumpfe
