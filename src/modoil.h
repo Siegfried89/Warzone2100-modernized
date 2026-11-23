@@ -15,6 +15,7 @@
 
 struct BASE_OBJECT;
 struct STRUCTURE;
+struct STRUCTURE_STATS;
 struct FEATURE;
 struct DROID;
 struct WorldMapState;
@@ -59,6 +60,10 @@ Vector2i pipeKey(const STRUCTURE *psPipe);
 int pipeStep();
 int pipeKeyToWorld(int key);
 bool pipeTouches(const STRUCTURE *psStruct, Vector2i keyTile);
+/// (Wunsch 23.11. 20:22 "beim Pipeline-Bauauftrag soll der Auftrag fuer ein paar blockierte Segmente nicht erloeschen, selbst wenn
+/// zwischenzeitlich eine feindliche Einheit darauf steht"): aus cancelBuild - ein abgebrochenes Rohrstueck wird gemerkt und spaeter
+/// wieder beauftragt (sobald der Platz frei und ein Bautrupp frei ist; bis zu 10 Minuten)
+void notePipeBuildCancelled(const DROID *psDroid, const STRUCTURE_STATS *psStats, Vector2i pos, uint16_t direction);
 /// Echte Infanterie (Beine UND Personen-/Cyborg-Typ). Kampfroboter (Combots) haben auch Beine, zaehlen aber nicht.
 bool isInfantry(const DROID *psDroid);
 /// nur echte Infanterie (Personen) darf besetzbare Haeuser betreten; Cyborgs nicht (Graeben/Gruben duerfen beide)

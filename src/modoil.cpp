@@ -143,6 +143,18 @@ int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwer
 bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
 int s_bank[MAX_PLAYERS] = {};               // (Wunsch 21.11. 20:22) Energie verbrannter Faesser, die noch stetig ins Konto laeuft
 int s_payRate[MAX_PLAYERS] = {};            // (Wunsch 23.11. 19:29 "gleichmaessig statt schubweise") feste Auszahlung je Sekunde bis zur naechsten Lieferung
+// (23.11. 20:22) abgebrochene Rohrstuecke, die spaeter wieder beauftragt werden
+struct PipeRetry
+{
+	int player = 0;
+	uint32_t droid = 0;
+	Vector2i pos{0, 0};
+	uint16_t dir = 0;
+	UDWORD until = 0;
+	const STRUCTURE_STATS *stats = nullptr;
+};
+std::vector<PipeRetry> s_pipeRetry;
+constexpr UDWORD PIPE_RETRY_MS = 10 * 60 * 1000;
 std::map<uint32_t, uint32_t> s_pipeAssign;  // (23.11. 19:57) Oelturm -> Kraftwerk (per Pipeline, stetige Einnahmen)
 std::map<uint32_t, int> s_genPiped;         // Kraftwerk -> Zahl der per Pipeline zugeteilten Oeltuerme
 int64_t s_oilFP[MAX_PLAYERS] = {};          // Pipeline-Einnahmen aus power.cpp (Festkomma 32.32) fuer das Einnahmen-Buch
@@ -425,6 +437,61 @@ bool sharesRoot(const std::set<int> &a, const std::set<int> &b)
 	for (int v : a) { if (b.count(v) != 0) { return true; } }
 	return false;
 }
+
+/// (23.11. 20:22) Bautrupp fuer Rohre: echter Bau-Lkw / Bau-Cyborg, kein Fracht-Lkw, kein Bohr-/Abrissfahrzeug
+bool pipeBuilder(const DROID *d)
+{
+	if (d == nullptr || d->died || (d->droidType != DROID_CONSTRUCT && d->droidType != DROID_CYBORG_CONSTRUCT) || cargoCapacity(d) > 0) { return false; }
+	const CONSTRUCT_STATS *cs = d->getConstructStats();
+	if (cs == nullptr) { return false; }
+	const std::string id = cs->id.toUtf8();
+	return id != "DrillRig" && id != "WreckBall" && id.find("Bucket") == std::string::npos && id.find("ScavBed") == std::string::npos && id != "ScavTank";
+}
+
+bool droidIdle(const DROID *d)
+{
+	return d->order.type == DORDER_NONE || d->order.type == DORDER_HOLD || d->order.type == DORDER_STOP
+	       || (d->order.type == DORDER_GUARD && d->order.psObj == nullptr);
+}
+
+/// (Wunsch 23.11. 20:22) blockierte Rohrstuecke erneut beauftragen: steht dort inzwischen ein Rohr (fertig oder im Bau) -> erledigt;
+/// ist der Platz wieder frei, bekommt der urspruengliche Bautrupp (oder der naechste freie) den Auftrag, sobald er frei ist
+void processPipeRetries()
+{
+	for (size_t i = 0; i < s_pipeRetry.size();)
+	{
+		PipeRetry &r = s_pipeRetry[i];
+		bool drop = gameTime > r.until || r.stats == nullptr || r.player < 0 || r.player >= MAX_PLAYERS || !manages(r.player);
+		if (!drop && apStructTypeLists[r.player][r.stats->index] != AVAILABLE) { drop = true; }   // nicht (mehr) baubar
+		if (!drop)
+		{
+			const MAPTILE *t = mapTile(gameWorld.map, map_coord(r.pos.x), map_coord(r.pos.y));
+			if (t != nullptr && TileHasStructure(t) && t->psObject != nullptr && isPipe(static_cast<const STRUCTURE *>(t->psObject)->pStructureType)) { drop = true; }
+		}
+		if (!drop && validLocation(gameWorld, const_cast<STRUCTURE_STATS *>(r.stats), r.pos, r.dir, static_cast<unsigned>(r.player), false))
+		{
+			DROID *d = nullptr;
+			for (DROID *c : gameWorld.objects.droids[r.player]) { if (c != nullptr && c->id == r.droid && pipeBuilder(c)) { d = c; break; } }
+			if (d == nullptr)
+			{
+				int64_t bd = INT64_MAX;
+				for (DROID *c : gameWorld.objects.droids[r.player])
+				{
+					if (!pipeBuilder(c) || !droidIdle(c)) { continue; }
+					const int64_t dd = d2(c->pos.x, c->pos.y, r.pos.x, r.pos.y);
+					if (dd < bd) { bd = dd; d = c; }
+				}
+			}
+			if (d != nullptr && droidIdle(d))
+			{
+				orderDroidStatsLocDir(d, DORDER_BUILD, const_cast<STRUCTURE_STATS *>(r.stats), static_cast<UDWORD>(r.pos.x), static_cast<UDWORD>(r.pos.y), r.dir, ModeImmediate);
+				r.droid = d->id;
+			}
+		}
+		if (drop) { s_pipeRetry.erase(s_pipeRetry.begin() + static_cast<long>(i)); }
+		else { ++i; }
+	}
+}
 } // namespace
 
 // ---------------------------------------------------------------- oeffentliche Funktionen
@@ -472,6 +539,19 @@ bool pipeTouches(const STRUCTURE *s, Vector2i k)
 	if (s == nullptr) { return false; }
 	const StructureBounds b = getStructureBounds(s);
 	return k.x >= b.map.x - PS && k.x <= b.map.x + b.size.x - 1 + PS && k.y >= b.map.y - PS && k.y <= b.map.y + b.size.y - 1 + PS;
+}
+
+void notePipeBuildCancelled(const DROID *d, const STRUCTURE_STATS *st, Vector2i pos, uint16_t dir)
+{
+	if (d == nullptr || st == nullptr || !isPipe(st) || isBroken(st) || !manages(static_cast<int>(d->player))) { return; }
+	for (PipeRetry &r : s_pipeRetry)
+	{
+		if (r.player == static_cast<int>(d->player) && r.pos == pos) { r.droid = d->id; return; }   // schon gemerkt: Frist bleibt
+	}
+	PipeRetry r;
+	r.player = static_cast<int>(d->player); r.droid = d->id; r.pos = pos; r.dir = dir; r.until = gameTime + PIPE_RETRY_MS; r.stats = st;
+	s_pipeRetry.push_back(r);
+	objTrace(d->id, "MOD: Rohrstueck blockiert - wird spaeter wieder beauftragt");
 }
 
 bool generatorHungry(const STRUCTURE *g)
@@ -630,6 +710,7 @@ void reset()
 	s_fuel.clear();
 	s_pipeAssign.clear();
 	s_genPiped.clear();
+	s_pipeRetry.clear();
 	s_store.clear();
 	s_storeCapById.clear();
 	s_storeR.clear();
@@ -1559,6 +1640,8 @@ void logistics()
 		removeStruct(s, true, gameWorld);
 		s_repl.push_back(r);
 	}
+
+	processPipeRetries();   // (23.11. 20:22) blockierte Rohrstuecke erneut beauftragen
 
 	updateTerrain();
 
