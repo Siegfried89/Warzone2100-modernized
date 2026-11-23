@@ -142,6 +142,7 @@ std::vector<Replace> s_repl;
 int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwerk-Geschenk, Bit 2 = Raffinerie-Geschenk schon vergeben
 bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
 int s_bank[MAX_PLAYERS] = {};               // (Wunsch 21.11. 20:22) Energie verbrannter Faesser, die noch stetig ins Konto laeuft
+int s_payRate[MAX_PLAYERS] = {};            // (Wunsch 23.11. 19:29 "gleichmaessig statt schubweise") feste Auszahlung je Sekunde bis zur naechsten Lieferung
 std::vector<std::pair<int, bool>> s_tankRespawn;   // (20.11.) (Spieler, Tanker?) - letzter Oeltanker bzw. letzter Pickup zerstoert
 int s_beepTrack = -2;                       // (20.11. 19:06) Rueckfahr-Piepen beim Abliefern (-2 = noch nicht gesucht)
 bool s_have = false;
@@ -528,7 +529,7 @@ void reset()
 	s_station.clear();
 	s_booms.clear();
 	s_repl.clear();
-	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_bank[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_bank[p] = 0; s_payRate[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
 	s_tankRespawn.clear();
 	s_have = false;
 }
@@ -921,7 +922,11 @@ void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool fromStore)
 		if (player >= 0 && player < MAX_PLAYERS) { s_bank[player] += e; }
 		s_fuel[gen->id] += GEN_SECS;
 	}
-	if (barrels > 0 && player >= 0 && player < MAX_PLAYERS) { s_duty[player] = true; }
+	if (barrels > 0 && player >= 0 && player < MAX_PLAYERS)
+	{
+		s_duty[player] = true;
+		s_payRate[player] = std::max(1, (s_bank[player] + GEN_SECS - 1) / GEN_SECS);
+	}
 }
 
 int storeRoom(uint32_t id)
@@ -1020,7 +1025,9 @@ void logistics()
 		for (STRUCTURE *der : sn.derricks)
 		{
 			int &b = s_barrels[der->id];
-			int64_t &prog = s_progress[der->id];
+			// (Wunsch 23.11. 19:29 "anfangs schneller in Fahrt") ein neuer Oelturm stellt sein erstes Fass schon nach 30 Sekunden ab
+			const auto fresh = s_progress.try_emplace(der->id, static_cast<int64_t>(DERRICK_SECS - 30));
+			int64_t &prog = fresh.first->second;
 			if (prog < 0 || prog > DERRICK_SECS) { prog = DERRICK_SECS; }   // aeltere Spielstaende (Festkomma-Fortschritt)
 			if (b >= DERRICK_CAP) { continue; }   // voll: es wird nichts mehr abgestellt, bis jemand abholt
 			if (++prog >= DERRICK_SECS) { prog = 0; b++; }
@@ -1657,14 +1664,17 @@ void tick()
 	s_lastSec = gameTime / 1000;
 	if (!modPresent()) { return; }
 	logistics();
-	// Energie der verbrannten Faesser stetig auszahlen: je Sekunde 1/90 des Rests, mindestens 1 (ein Fass = 100 laeuft in ~1,5 Minuten
-	// ein; mit mehreren Oeltuermen steigt das Konto wie in Vanilla laufend)
+	// Energie der verbrannten Faesser stetig auszahlen (mit mehreren Oeltuermen steigt das Konto wie in Vanilla laufend)
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		int &b = s_bank[p];
 		if (b <= 0) { continue; }
-		const int pay = std::min(b, std::max(1, (b + 89) / 90));
+		// (Wunsch 23.11. 19:29 "gleichmaessig statt schubweise"): gleichbleibender Betrag je Sekunde - das Guthaben laeuft in GEN_SECS
+		// (so lange brennt ein Fass) gleichmaessig ein; jede Lieferung legt den Satz neu fest (deliverToGenerator)
+		if (s_payRate[p] <= 0) { s_payRate[p] = std::max(1, (b + GEN_SECS - 1) / GEN_SECS); }
+		const int pay = std::min(b, s_payRate[p]);
 		b -= pay;
+		if (b <= 0) { s_payRate[p] = 0; }
 		addPower(p, pay);
 		noteIncome(p, INC_BARRELS, pay);
 	}
