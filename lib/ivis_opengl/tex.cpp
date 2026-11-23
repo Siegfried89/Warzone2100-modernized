@@ -240,6 +240,13 @@ optional<size_t> loadTexturePageSync(const char *filename, gfx_api::texture_type
 
 } // namespace
 
+optional<size_t> iV_FindLoadedTexture(const std::string &filename)
+{
+	const auto it = _NAME_TO_TEX_PAGE_MAP.find(filename);
+	if (it == _NAME_TO_TEX_PAGE_MAP.end()) { return nullopt; }
+	return optional<size_t>(it->second);
+}
+
 optional<size_t> iV_GetTexture(const char *filename, gfx_api::texture_type textureType, int maxWidth /*= -1*/, int maxHeight /*= -1*/)
 {
 	return loadTexturePageSync(filename, textureType, maxWidth, maxHeight);

@@ -84,59 +84,61 @@ struct ModeInfo
 	bool area;   // Gebiet (geschlossene Form) statt Linie
 };
 
-// MOD (Wunsch 21.11. 18:31): klarere/coolere Namen (Attack -> Attack Vector, Defend -> Defensive Line ...), Tooltips erklaeren genau,
-// was der Befehl tut (Reihenfolge = enum Mode)
+// MOD (Wunsch 21.11. 18:31): klarere/coolere Namen (Attack -> Attack Vector, Defend -> Defensive Line ...) (Reihenfolge = enum Mode);
+// (Wunsch 23.11. 17:59 "Diese ellenlangen Tooltips sind nicht zielfuehrend - kurz, knapp, praegnant"): ein kurzer Satz je Befehl
 const ModeInfo kModes[M_COUNT] = {
-	{ "Move", "Move: draw a path - the selected units drive exactly along it", "Move: drag a path (right click cancels)", 60, 220, 90, false },
-	{ "Rally Point", "Rally Point: units gather at this spot (for example before an attack) and wait there", "Rally Point: drag around the rally point (right click cancels)", 255, 150, 40, false },
-	{ "Attack Vector", "Attack Vector: draw the direction of attack. With selected units they advance along it right away and fight everything on the way. Without a selection it becomes part of the attack plan: the waves from the nearest bridgehead or assault line storm along it (vectors that start close together merge into one thick arrow that splits). Badge = priority (1 gets the most units), right click on it removes the vector", "Attack Vector: drag the direction of attack (right click cancels)", 235, 50, 40, false },
+	{ "Move", "Drive along a drawn path", "Draw the path (right click cancels)", 60, 220, 90, false },
+	{ "Rally Point", "Units gather here and wait", "Mark the rally point (right click cancels)", 255, 150, 40, false },
+	{ "Attack Vector", "Direction of attack", "Draw the attack direction (right click cancels)", 235, 50, 40, false },
 	// MOD (Wunsch 21.11. 00:21): "Die Defensive Line ist weiterhin nur zur Formation fuer Fahrzeuge, um sie an eine Frontlinie zu schicken
 	// wie bisher, ohne Bauwerke" - gebaut wird nur noch ueber den eigenen Knopf (M_DEFNET)
-	{ "Defensive Line", "Defensive Line: combat units take up positions along the line, facing the enemy side, and hold it. Nothing is built - use \"Trench Network\" for trenches", "Defensive Line: drag the line to hold (right click cancels)", 60, 130, 255, false },
-	{ "Firebase", "Firebase: builders set up an artillery base here - sensor tower, artillery emplacements, wall ring, hedgehogs in front. Small circle = 4 emplacements, medium = 8, large = 12", "Firebase: drag a circle around the place - its size sets the base size (right click cancels)", 170, 120, 60, true },
-	{ "Barrage", "Barrage: all artillery in range bombards this area", "Barrage: drag the target area (right click cancels)", 240, 200, 90, true },
-	{ "Air Cover", "Air Cover: aircraft patrol over this area and attack every enemy that shows up there", "Air Cover: drag the patrol area (right click cancels)", 255, 235, 50, true },
-	{ "Combot Hunt", "Combot Hunt: combots roam this area on their own and hunt down every enemy in it", "Combot Hunt: drag the hunting area (right click cancels)", 190, 90, 255, true },
-	{ "Spread Out", "Spread Out: the selected units spread out evenly (against artillery and bombs)", "", 150, 200, 200, false },
-	{ "Salvage Op", "Salvage Op: drag a circle around parts, artefacts and wrecks - an armed, escorted salvage team gathers at the base first, then recovers everything in it (wrecks are towed to the repair facility by flatbed trucks)", "Salvage Op: drag a circle around the salvage (right click cancels)", 120, 220, 255, true },
-	{ "Take Cover", "Take Cover: the selected infantry (or all infantry, if none is selected) mans the nearest trenches, pits, sandbag positions and buildings", "", 200, 170, 110, false },
+	{ "Defensive Line", "Units hold this line", "Draw the line to hold (right click cancels)", 60, 130, 255, false },
+	{ "Firebase", "Builders set up an artillery base", "Circle size = base size (right click cancels)", 170, 120, 60, true },
+	{ "Barrage", "Artillery bombards this area", "Mark the target area (right click cancels)", 240, 200, 90, true },
+	{ "Air Cover", "Aircraft patrol this area", "Mark the patrol area (right click cancels)", 255, 235, 50, true },
+	{ "Combot Hunt", "Combots hunt in this area", "Mark the hunting area (right click cancels)", 190, 90, 255, true },
+	{ "Spread Out", "Selected units spread out", "", 150, 200, 200, false },
+	{ "Salvage Op", "Escorted team recovers wrecks and parts", "Circle the salvage (right click cancels)", 120, 220, 255, true },
+	{ "Take Cover", "Infantry mans trenches and buildings", "", 200, 170, 110, false },
 	// MOD (Wunsch 17.11. 18:12/18:13): Panzersperrenfeld (gruene Pyramiden) und Minenfeld
-	{ "Tank Traps", "Tank Traps: drag an area - builders put a staggered field of tank traps into it (vehicles cannot pass)", "Tank Traps: drag the area (right click cancels)", 40, 200, 80, true },
-	{ "Minefield", "Minefield: drag an area - builders lay hidden mines in it; they blow up enemy ground units that drive over them", "Minefield: drag the area (right click cancels)", 255, 90, 40, true },
+	{ "Tank Traps", "Builders place tank traps", "Mark the area (right click cancels)", 40, 200, 80, true },
+	{ "Minefield", "Builders lay mines", "Mark the area (right click cancels)", 255, 90, 40, true },
 	// MOD (Wunsch 17.11. 18:37): Offensivlinie (rot) - wie die Verteidigungslinie, aber auf Angriff ausgerichtet
-	{ "Assault Line", "Assault Line: with selected units they mass on the line in two ranks, ready to storm forward (builders add a few short trenches and MG posts). Without a selection it becomes part of the attack plan: units are brought here, wait in a double row until the target strength is reached (badge, click to change) or you press Attack!, then storm along the attack vectors", "Assault Line: drag the line to mass on (right click cancels)", 240, 45, 45, false },
+	{ "Assault Line", "Units mass here, then storm", "Draw the line (right click cancels)", 240, 45, 45, false },
 	// MOD (Wunsch 17.11. 19:36 / 19.11. 17:34): Raeumpanzer (Walze an) und Infanterie durchkaemmen das Gebiet in Bahnen
-	{ "Mine Sweep", "Mine Sweep: drag a circle - mine flails (drum on) and infantry sweep the whole area lane by lane, also where no mines are known. Infantry spots mines within 2.5 tiles, disarms them (3 s each) and does not set off anti-tank mines; flails beat them off ahead", "Mine Sweep: drag a circle around the area to sweep (right click cancels)", 230, 200, 60, true },
+	{ "Mine Sweep", "Flails and infantry clear mines", "Circle the area (right click cancels)", 230, 200, 60, true },
 	// MOD (Wunsch 19.11. 17:34 "Neue kreis ziehen = demolish alles in diesem Gebiet")
-	{ "Demolish", "Demolish: drag a circle - builders tear down all your own structures in it (nearest first, spread over all builders)", "Demolish: drag a circle around what should be torn down (right click cancels)", 200, 90, 60, true },
+	{ "Demolish", "Builders tear down own buildings here", "Circle what goes (right click cancels)", 200, 90, 60, true },
 	// MOD (Wunsch 21.11. 00:21 "Lieber einen neuen circle machen mit etwas wie baue Verteidigungsnetz"): das Grabennetz hat einen eigenen Befehl
-	{ "Trench Network", "Trench Network: drag a line - builders dig a trench network along it (main trench, pits, MG posts, connecting trenches to the rear), front towards the enemy side. Combat units are not moved", "Trench Network: drag the line of the trenches (right click cancels)", 120, 190, 230, false },
+	{ "Trench Network", "Builders dig trenches along the line", "Draw the trench line (right click cancels)", 120, 190, 230, false },
 	// MOD (Wunsch 21.11. 00:21, Zugsystem): Gleisstrecke frei zeichnen (gerade Stuecke gehen auch wie Mauern ueber das Baumenue)
-	{ "Railway", "Railway: drag a route - builders lay a railway track along it (straight and diagonal, around obstacles, joining your existing tracks). Locomotives and wagons come from the train depot and run on the tracks", "Railway: drag the route of the track (right click cancels)", 175, 140, 95, false },
+	{ "Railway", "Builders lay a railway", "Draw the route (right click cancels)", 175, 140, 95, false },
 	// MOD (Wunsch 22.11. 01:11): Angriffsplaner - "Kein Micromanager. Indirekte Steuerung. Eher lenken, als alles selbst zu machen."
-	{ "Staging Zone", "Staging Zone: drag a circle (or click) where your units gather - new units from the factories and idle units in the zone join the attack plan and are brought on to the bridgeheads (by ferry, by tunnel or on their own). Badge = priority 1-5 (click), right click on it removes the zone", "Staging Zone: drag a circle around the gathering area (right click cancels)", 70, 205, 215, true },
-	{ "Ferry Beacon", "Ferry Beacon: click into a staging zone - your transports pick up the units waiting there and fly them to the bridgeheads in a loop. Clicked into a bridgehead it marks the landing spot. Placed by button, nothing is built. Right click on the beacon removes it", "Ferry Beacon: click into a staging zone (right click cancels)", 125, 100, 235, false },
-	{ "Bridgehead", "Bridgehead: drag a circle near the enemy base - units are brought here and wait until the target strength is reached (second badge, click: 4 / 8 / 12 / 16 / 24 / 32 / Hold) or you press Attack!, then they storm along the attack vectors that start here. Priority badge: who gets units and transports first", "Bridgehead: drag a circle around the jump-off area (right click cancels)", 245, 115, 45, true },
-	{ "Attack!", "Attack!: every bridgehead and assault line attacks now with the units that have arrived - the next wave keeps gathering", "", 255, 70, 55, false },
-	{ "Clear Plan", "Clear Plan: click twice - removes all staging zones, beacons, bridgeheads, assault lines and vectors of the attack plan (units keep their last orders)", "", 160, 165, 175, false },
-	{ "Dig Tunnel", "Dig Tunnel: drag a line from the entrance to the exit - a drill rig (selected, or the nearest one) digs a tunnel underground; send units onto a tunnel mouth (right click) and they come out at the other end. Easy to destroy: if a mouth falls, the tunnel caves in and everyone inside is lost", "Dig Tunnel: drag from the entrance to the exit (right click cancels)", 185, 140, 80, false },
+	{ "Staging Zone", "Units gather for the attack plan", "Circle the gathering area (right click cancels)", 70, 205, 215, true },
+	{ "Ferry Beacon", "Transports ferry units to the front", "Click into a staging zone (right click cancels)", 125, 100, 235, false },
+	{ "Bridgehead", "Units wait here, then attack", "Circle the jump-off area (right click cancels)", 245, 115, 45, true },
+	{ "Attack!", "Attack now", "", 255, 70, 55, false },
+	{ "Clear Plan", "Delete the attack plan (click twice)", "", 160, 165, 175, false },
+	{ "Dig Tunnel", "Drill rig digs a tunnel", "Draw entrance to exit (right click cancels)", 185, 140, 80, false },
 	// MOD (Wunsch 22.11. 21:19 "ein neuer Generals Baubefehl 'restore' - Kreis zeichnen, in dem alle Krater wiederhergestellt werden und das
 	// Terrain wieder auf Missionsbeginn ... (mit Ausnahme von Tunneln und Durchbruechen)")
-	{ "Restore", "Restore: drag a circle - builders fill in every crater and hole in it, so the ground is back to how it was at mission start (tunnels, drilled breakthroughs and your trenches stay)", "Restore: drag a circle around the craters (right click cancels)", 150, 205, 110, true },
+	{ "Restore", "Builders fill craters", "Circle the craters (right click cancels)", 150, 205, 110, true },
 };
 
 // MOD (Wunsch 21.11. 17:59 "Die Befehlsbuttons besser nach Kategorie sortieren (aehnliches zu aehnlichem), ausserdem Icons zu jedem dazu"):
 // vier Gruppen mit Ueberschrift, jeder Knopf mit eigenem Symbol in seiner Farbe; die Knoepfe sind dafuer breiter
-// (Wunsch 22.11. 16:19 "Das Battle-Plan-Menue in der Groesse halbieren und generell alles unter Icon-Symbolen wie ein, zwei und drei
-// Generalssternen verstecken"): oben fuenf Reiter mit Generalssternen (1 bis 5 Sterne = die fuenf Gruppen), darunter nur die Befehle der
-// gewaehlten Gruppe als reine Symbol-Knoepfe (Name und Erklaerung im Tooltip). Etwa halb so breit wie vorher.
-constexpr int BTN_W = 25;      // Symbol-Knopf (quadratisch)
-constexpr int BTN_H = 25;
+// (Wunsch 23.11. 18:00 "Dieses Menue war deutlich besser - nur mit den neuen Farbaenderungen. Ich meinte einfach, dass man es hinter einem
+// Extra-Knopf verstecken kann" + "ein goldener Generalsstern, leuchtend an den Raendern"): wieder die Liste mit Gruppen-Ueberschriften,
+// Symbol und Namen (statt der Sternen-Reiter vom 22.11.), Farben wie modui::wzButton; ein- und ausgeblendet ueber den goldenen
+// Generalsstern in der Mod-Rosette (modrosette H_PLAN).
+constexpr int BTN_W = 104;
+constexpr int BTN_H = 22;
 constexpr int GAP = 3;
 constexpr int PAD = 4;
-constexpr int COLS = 4;
-constexpr int TITLE_H = 13;    // Titelzeile mit dem Namen der Gruppe
-constexpr int TAB_H = 20;      // Reiter mit den Sternen
+constexpr int COLS = 2;
+constexpr int TITLE_H = 13;    // Titelzeile "Battle plan"
+constexpr int GROUP_H = 12;    // Gruppen-Ueberschrift
+constexpr int GROUP_GAP = 3;   // Abstand nach einer Gruppe
 struct Group { const char *title; int n; int modes[8]; };
 constexpr Group kGroups[] = {
 	{ "Units",   4, { M_MOVE, M_RALLY, M_SPREAD, M_COVER, 0, 0, 0, 0 } },
@@ -148,15 +150,14 @@ constexpr Group kGroups[] = {
 };
 constexpr int NGROUPS = static_cast<int>(sizeof(kGroups) / sizeof(kGroups[0]));
 constexpr int groupRows(int n) { return (n + COLS - 1) / COLS; }
-constexpr int maxRows()
+constexpr int groupsHeight()
 {
-	int r = 1;
-	for (int g = 0; g < NGROUPS; ++g) { r = std::max(r, groupRows(kGroups[g].n)); }
-	return r;
+	int h = 0;
+	for (int g = 0; g < NGROUPS; ++g) { h += GROUP_H + groupRows(kGroups[g].n) * (BTN_H + GAP) - GAP + GROUP_GAP; }
+	return h;
 }
 constexpr int TOTAL_W = COLS * BTN_W + (COLS - 1) * GAP + 2 * PAD;
-constexpr int TAB_W = (TOTAL_W - 2 * PAD - (NGROUPS - 1) * 2) / NGROUPS;
-constexpr int TOTAL_H = PAD + TITLE_H + TAB_H + GAP + maxRows() * (BTN_H + GAP) - GAP + PAD;
+constexpr int TOTAL_H = PAD + TITLE_H + groupsHeight() + PAD;
 constexpr unsigned SHOW_MS = 25000;   // so lange bleibt eine Zeichnung sichtbar
 constexpr int NEAR_TILES = 16;        // ohne Auswahl: passende Einheiten in diesem Umkreis
 constexpr size_t MAX_UNITS = 40;
@@ -173,8 +174,6 @@ struct Stroke
 std::shared_ptr<W_SCREEN> s_screen;
 std::shared_ptr<W_CLICKFORM> s_root;
 std::vector<std::shared_ptr<W_BUTTON>> s_buttons;
-std::vector<std::shared_ptr<W_BUTTON>> s_tabs;   // (22.11.) Reiter mit Generalssternen
-int s_group = 1;                 // gewaehlte Gruppe (Start: Angriffsplan)
 int s_mode = -1;                 // aktiver Zeichenmodus (-1 = keiner)
 bool s_drawing = false;
 std::vector<Vector2i> s_cur;     // Linie, die gerade gezeichnet wird
@@ -201,66 +200,25 @@ bool s_lastPlanned = false;   // die letzte Zeichnung wurde Teil des Angriffspla
 
 // ------------------------------------------------------------------------------------------------- Anzeige der Knoepfe
 
-int groupOf(int m)
-{
-	for (int g = 0; g < NGROUPS; ++g) { for (int i = 0; i < kGroups[g].n; ++i) { if (kGroups[g].modes[i] == m) { return g; } } }
-	return -1;
-}
-
-// Lage eines Knopfes im Formular (unskaliert): nur die Befehle der gewaehlten Gruppe, vier nebeneinander
+// Lage eines Knopfes im Formular (unskaliert): Gruppe fuer Gruppe, je zwei Knoepfe nebeneinander
 bool buttonPos(int m, int &x, int &y)
 {
-	if (s_group < 0 || s_group >= NGROUPS) { return false; }
-	const int top = PAD + TITLE_H + TAB_H + GAP;
-	for (int i = 0; i < kGroups[s_group].n; ++i)
+	int gy = PAD + TITLE_H;
+	for (int g = 0; g < NGROUPS; ++g)
 	{
-		if (kGroups[s_group].modes[i] == m)
+		const int top = gy + GROUP_H;
+		for (int i = 0; i < kGroups[g].n; ++i)
 		{
-			x = PAD + (i % COLS) * (BTN_W + GAP);
-			y = top + (i / COLS) * (BTN_H + GAP);
-			return true;
+			if (kGroups[g].modes[i] == m)
+			{
+				x = PAD + (i % COLS) * (BTN_W + GAP);
+				y = top + (i / COLS) * (BTN_H + GAP);
+				return true;
+			}
 		}
+		gy = top + groupRows(kGroups[g].n) * (BTN_H + GAP) - GAP + GROUP_GAP;
 	}
 	return false;
-}
-
-/// Generalssterne (1..5) in einem Feld: 1 einzeln, 2 nebeneinander, 3 im Dreieck, 4 im Quadrat, 5 im Fuenfeck
-void drawStars(float cx, float cy, float box, int n, bool bright)
-{
-	n = std::clamp(n, 1, 5);
-	static const float P[6][5][2] = {
-		{ { 0, 0 } }, { { 0, 0 } }, { { -0.5f, 0 }, { 0.5f, 0 } }, { { 0, -0.45f }, { -0.5f, 0.4f }, { 0.5f, 0.4f } },
-		{ { -0.5f, -0.45f }, { 0.5f, -0.45f }, { -0.5f, 0.45f }, { 0.5f, 0.45f } },
-		{ { 0, -0.55f }, { -0.58f, -0.12f }, { 0.58f, -0.12f }, { -0.36f, 0.55f }, { 0.36f, 0.55f } } };
-	const float spread = box * 0.42f;
-	const float rOut = n == 1 ? box * 0.36f : (n == 2 ? box * 0.24f : (n == 3 ? box * 0.21f : box * 0.18f));
-	const modglow::Colour gold{ static_cast<unsigned char>(bright ? 255 : 225), static_cast<unsigned char>(bright ? 214 : 182), static_cast<unsigned char>(bright ? 90 : 70) };
-	for (int k = 0; k < n; ++k)
-	{
-		const glm::vec2 c(cx + P[n][k][0] * spread, cy + P[n][k][1] * spread);
-		std::vector<glm::vec2> ring;
-		for (int j = 0; j < 10; ++j)
-		{
-			const float a = -1.5707963f + j * 0.6283185f;
-			const float r = (j % 2 == 0) ? rOut : rOut * 0.42f;
-			ring.emplace_back(c.x + r * std::cos(a), c.y + r * std::sin(a));
-		}
-		modglow::fan(c, ring, gold, bright ? 255.f : 220.f, bright ? 0.45f : 0.2f);
-	}
-}
-
-void drawTab(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
-{
-	const int g = static_cast<int>(psWidget->UserData);
-	const W_BUTTON *b = static_cast<const W_BUTTON *>(psWidget);
-	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
-	const int w = psWidget->width(), h = psWidget->height();
-	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0, down = (b->getState() & WBUT_DOWN) != 0;
-	const bool on = g == s_group;
-	modui::wzButton(x0, y0, w, h, "", on, hl, down, modui::sizeClassFor(modui::uiScale()), nullptr);
-	drawStars(static_cast<float>(x0) + w * 0.5f, static_cast<float>(y0) + h * 0.5f, static_cast<float>(std::min(w, h)) - 2.f, g + 1, on || hl);
-	// kleiner Punkt: in dieser Gruppe ist gerade ein Befehl aktiv
-	if (s_mode >= 0 && groupOf(s_mode) == g && !on) { pie_UniTransBoxFill(x0 + w - 5, y0 + 2, x0 + w - 2, y0 + 5, pal_RGBA(120, 255, 140, 255)); }
 }
 
 void drawRoot(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -269,10 +227,19 @@ void drawRoot(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int x0 = static_cast<int>(xOffset) + psWidget->x();
 	const int y0 = static_cast<int>(yOffset) + psWidget->y();
 	const int sc = modui::sizeClassFor(s);
-	// Titel: Name der gewaehlten Gruppe (bzw. des Befehls, der gerade aktiv ist)
-	std::string title = (s_group >= 0 && s_group < NGROUPS) ? kGroups[s_group].title : "Battle plan";
-	if (s_mode >= 0 && groupOf(s_mode) == s_group) { title = kModes[s_mode].label; }
-	modui::wzPanel(x0, y0, x0 + static_cast<int>(TOTAL_W * s), y0 + static_cast<int>(TOTAL_H * s), title.c_str(), sc);   // MOD: WZ-Stil
+	modui::wzPanel(x0, y0, x0 + static_cast<int>(TOTAL_W * s), y0 + static_cast<int>(TOTAL_H * s), "Battle plan", sc);   // MOD: WZ-Stil
+	// Gruppen-Ueberschriften (gold) mit duenner Linie
+	int gy = PAD + TITLE_H;
+	for (int g = 0; g < NGROUPS; ++g)
+	{
+		const int ty = y0 + static_cast<int>(gy * s);
+		const int tx = x0 + static_cast<int>((PAD + 2) * s);
+		modui::text(kGroups[g].title, tx, ty, pal_RGBA(255, 214, 110, 255), sc);
+		const int lx = tx + modui::textWidth(kGroups[g].title, sc) + static_cast<int>(4 * s);
+		const int ly = ty + static_cast<int>(GROUP_H * s * 0.5f);
+		pie_UniTransBoxFill(static_cast<float>(lx), static_cast<float>(ly), static_cast<float>(x0 + static_cast<int>((TOTAL_W - PAD - 2) * s)), static_cast<float>(ly + 1), pal_RGBA(90, 130, 210, 170));
+		gy += GROUP_H + groupRows(kGroups[g].n) * (BTN_H + GAP) - GAP + GROUP_GAP;
+	}
 }
 
 // Symbole der Befehle: Strichzeichnungen in der Farbe des Befehls (Einheitsquadrat -1..1, Mitte cx/cy, halbe Groesse r)
@@ -430,14 +397,17 @@ void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
 	const bool down = (b->getState() & WBUT_DOWN) != 0;
 	const int sc = modui::sizeClassFor(s);
-	// (22.11.) reiner Symbol-Knopf: Flaeche/Rahmen wie modui::wzButton, das Symbol in der Farbe des Befehls mittig (Name im Tooltip)
+	// Knopf im WZ-Stil (Flaeche/Rahmen wie modui::wzButton), links das Symbol in der Farbe des Befehls, daneben die Beschriftung
 	modui::wzButton(x0, y0, w, h, "", active, hl, down, sc, nullptr);
-	const float ir = (std::min(w, h) - 8.f * s) * 0.5f;
+	const float ir = (h - 6.f * s) * 0.5f;
 	const PIELIGHT col = (active || hl) ? pal_RGBA(static_cast<UBYTE>(std::min(255, mi.r + 50)), static_cast<UBYTE>(std::min(255, mi.g + 50)), static_cast<UBYTE>(std::min(255, mi.b + 50)), 255)
 	                                    : pal_RGBA(mi.r, mi.g, mi.b, 245);
-	const Pen pen{ x0 + w * 0.5f, y0 + h * 0.5f, ir, col, ir >= 6.f };
+	const Pen pen{ x0 + 4.f * s + ir, y0 + h * 0.5f, ir, col, ir >= 7.f };
 	drawIcon(m, pen);
+	const int fh = (sc <= 0) ? 9 : (sc == 1 ? 12 : 16);
+	const int tx = x0 + static_cast<int>(8.f * s + 2.f * ir) + static_cast<int>(3 * s);
 	const bool armed = m == M_CLEARPLAN && s_planClearArmed != 0 && realTime - s_planClearArmed < 4000;
+	modui::text(armed ? _("Click again!") : mi.label, tx, y0 + (h - fh) / 2 - 1, modui::buttonText(active || hl || armed), sc);
 	if (armed)
 	{
 		// "Clear Plan" scharf: rot blinkender Rahmen - zweiter Klick loescht
@@ -512,19 +482,6 @@ void ensureScreen()
 		}); });
 		s_buttons.push_back(b);
 	}
-	s_tabs.clear();
-	for (int g = 0; g < NGROUPS; ++g)
-	{
-		auto t = std::make_shared<W_BUTTON>();
-		root->attach(t);
-		t->displayFunction = drawTab;
-		t->UserData = static_cast<UDWORD>(g);
-		std::string tip = std::string(kGroups[g].title) + ":";
-		for (int i = 0; i < kGroups[g].n; ++i) { tip += std::string(i == 0 ? " " : ", ") + kModes[kGroups[g].modes[i]].label; }
-		t->setTip(tip);
-		t->addOnClickHandler([g](W_BUTTON &) { widgScheduleTask([g]() { s_group = g; }); });
-		s_tabs.push_back(t);
-	}
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
 	s_screen = screen;
 	s_root = root;
@@ -562,7 +519,7 @@ void ensureInfButton()
 	auto b = std::make_shared<W_BUTTON>();
 	root->attach(b);
 	b->displayFunction = drawInfButton;
-	b->setTip(_("Open the build menu for the selected infantry (trenches, sandbags, MG nests, ammo crates)"));
+	b->setTip(_("Infantry: build"));
 	b->addOnClickHandler([](W_BUTTON &) { widgScheduleTask([]() {
 		if (!infantryBuilderSelected()) { return; }
 		intResetScreen(true);
@@ -611,10 +568,6 @@ void layout()
 	int x, y, w, h;
 	calcRect(x, y, w, h);
 	s_root->setGeometry(x, y, w, h);
-	for (size_t g = 0; g < s_tabs.size(); ++g)
-	{
-		s_tabs[g]->setGeometry(static_cast<int>((PAD + static_cast<int>(g) * (TAB_W + 2)) * s), static_cast<int>((PAD + TITLE_H) * s), static_cast<int>(TAB_W * s), static_cast<int>(TAB_H * s));
-	}
 	for (size_t i = 0; i < s_buttons.size(); ++i)
 	{
 		int bx = 0, by = 0;
@@ -3689,7 +3642,7 @@ void selectMode(const char *label)
 {
 	for (int m = 0; m < M_COUNT; ++m)
 	{
-		if (label != nullptr && strcmp(kModes[m].label, label) == 0) { s_mode = m; s_drawing = false; s_cur.clear(); if (groupOf(m) >= 0) { s_group = groupOf(m); } return; }
+		if (label != nullptr && strcmp(kModes[m].label, label) == 0) { s_mode = m; s_drawing = false; s_cur.clear(); return; }
 	}
 }
 
@@ -3721,7 +3674,6 @@ void shutdown()
 	s_screen = nullptr;
 	s_root = nullptr;
 	s_buttons.clear();
-	s_tabs.clear();
 	s_mode = -1;
 	s_drawing = false;
 	s_cur.clear();

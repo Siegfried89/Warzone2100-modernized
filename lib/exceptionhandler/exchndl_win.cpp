@@ -651,6 +651,13 @@ LONG WINAPI TopLevelExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo)
 			{
 				wsprintfW(szBuffer, L"Warzone has crashed.\r\nSee %s for more details\r\n", szLogFileName);
 			}
+			// MOD (23.11.): welches Programm (Pfad, Prozess) und wo das Ablauf-Protokoll liegt
+			{
+				wchar_t exe[MAX_PATH] = {0};
+				GetModuleFileNameW(NULL, exe, MAX_PATH);
+				const size_t used = wcslen(szBuffer);
+				if (used < 3800) { _snwprintf_s(szBuffer + used, 4196 - used, _TRUNCATE, L"\r\nProgram: %s (process %lu)\r\nLog: %s", exe, (unsigned long)GetCurrentProcessId(), s_crumbPath); }
+			}
 			err = MessageBoxW(NULL, szBuffer, L"Warzone Crashed!", MB_OK | MB_ICONERROR);
 			if (err == 0)
 			{
@@ -782,12 +789,21 @@ void ResetRPTDirectory(wchar_t *newPath)
 	if (wcsncat_s_wrapper(miniDumpPath, L"\\logs\\Warzone2100.latest.mdmp", _TRUNCATE) != 0) { MessageBox(NULL, _T("Buffer exceeds maximum path length (I).  Exiting."), _T("Error"), MB_OK | MB_ICONEXCLAMATION); exit(1); }
 	if (wcsncpy_s(szMinidumpFileName, miniDumpPath, _TRUNCATE) != 0) { MessageBox(NULL, _T("Buffer exceeds maximum path length (J).  Exiting."), _T("Error"), MB_OK | MB_ICONEXCLAMATION); exit(1); }
 }
+// MOD (Wunsch 23.11. 17:56 "beim Startup IMMER Crashs, aber das Spiel startet trotzdem"): Abstuerze NACH dem Ende des Spiels (beim Abbau
+// statischer Objekte, z.B. Texte, deren Grafik schon abgebaut war) zeigten keinen Bericht, aber ein Windows-Absturzfenster, das oft erst
+// beim naechsten Start zu sehen war. Nach dem Abbau des Absturz-Melders faengt dieser kleine Filter solche Abstuerze ab: eine Zeile mit
+// Ausnahme, Ort und Aufrufkette ins Ablauf-Protokoll, dann endet der Prozess still (er war ohnehin am Beenden).
+static LONG WINAPI LateExitExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo)
+{
+	crumbWrite("Absturz NACH dem Beenden (still beendet):");
+	crumbCrash(pExceptionInfo);
+	return EXCEPTION_EXECUTE_HANDLER;
+}
+
 void ExchndlShutdown(void)
 {
-	if (prevExceptionFilter)
-	{
-		SetUnhandledExceptionFilter(prevExceptionFilter);
-	}
+	SetUnhandledExceptionFilter(LateExitExceptionFilter);
+	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
 
 	prevExceptionFilter = NULL;
 	free(formattedVersionString);

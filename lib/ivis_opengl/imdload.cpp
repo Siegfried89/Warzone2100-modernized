@@ -52,6 +52,7 @@
 #include "tex.h" // texture page loading
 
 #include <glm/vec4.hpp>
+#include <chrono>
 using Vector4f = glm::vec4;
 
 // The maximum polygons for a model is influenced by several factors:
@@ -1457,9 +1458,29 @@ LoadingTask<> imdLoadLevelTexturesTask(
 	co_return load_ok();
 }
 
+/// MOD (23.11., Wunsch 17:56 "keine signifikante positive Aenderung bei den Ladezeiten"): Modell-Ebene, deren Texturseiten alle schon
+/// geladen sind, sofort zuweisen - ohne die Lade-Koroutinen (je Ebene bis zu fuenf Koroutinen mit Verwaltung im Lade-Steuerwerk; bei
+/// Tausenden Modell-Ebenen kostete das Sekunden, waehrend die eigentliche Texturarbeit nur ~0,25 s brauchte)
+static bool imdTryAssignLoadedTexturesSync(const iIMDShape& s, size_t tilesetIdx, iIMDShapeTextures& output, bool &nothingToLoad)
+{
+	nothingToLoad = false;
+	ImdResolvedLevelTextureFiles resolved;
+	if (!imdResolveLevelTextureFiles(s, tilesetIdx, resolved)) { nothingToLoad = true; return true; }
+	const optional<size_t> tex = iV_FindLoadedTexture(resolved.diffuseFile);
+	if (!tex.has_value()) { return false; }
+	optional<size_t> tc, nm, sp;
+	if (resolved.tcmaskFile.has_value()) { tc = iV_FindLoadedTexture(*resolved.tcmaskFile); if (!tc.has_value()) { return false; } }
+	if (resolved.normalFile.has_value()) { nm = iV_FindLoadedTexture(*resolved.normalFile); if (!nm.has_value()) { return false; } }
+	if (resolved.specularFile.has_value()) { sp = iV_FindLoadedTexture(*resolved.specularFile); if (!sp.has_value()) { return false; } }
+	imdAssignLoadedLevelTexturePages(output, tex.value(), tc, nm, sp);
+	return true;
+}
+
 LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 {
 	gfx_api::modTexLoadStatsReset();   // MOD (20.11.): Ladezeit je Texturart messen (Bericht unten)
+	const auto modT0 = std::chrono::steady_clock::now();
+	size_t modModels = 0, modLevelsFast = 0, modLevelsSlow = 0, modYields = 0;
 	{
 		// MOD (22.11.): alle gleich benoetigten Texturseiten in Ladereihenfolge sammeln - Hilfsfaeden entpacken die PNGs im Voraus
 		std::vector<std::pair<std::string, gfx_api::texture_type>> pages;
@@ -1477,10 +1498,13 @@ LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 		}
 		iV_PrefetchTexturePages(pages);
 	}
+	const auto modTPrefetch = std::chrono::steady_clock::now();
 	struct ModPrefetchGuard { ~ModPrefetchGuard() { iV_PrefetchTexturePagesEnd(); } } modPrefetchGuard;   // auch bei Abbruch
+	auto modLastYield = std::chrono::steady_clock::now();
 	for (auto& keyvaluepair : models)
 	{
 		iIMDBaseShape& baseModel = *keyvaluepair.second.get();
+		++modModels;
 		for (iIMDShape *pDisplayShape = baseModel.mutableDisplayModel(); pDisplayShape != nullptr; pDisplayShape = pDisplayShape->next.get())
 		{
 			if (pDisplayShape->m_textures->initialized)
@@ -1488,6 +1512,14 @@ LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 				continue;
 			}
 
+			bool nothing = false;
+			if (imdTryAssignLoadedTexturesSync(*pDisplayShape, currentTilesetIdx, *pDisplayShape->m_textures, nothing))
+			{
+				pDisplayShape->m_textures->initialized = true;
+				++modLevelsFast;
+				continue;
+			}
+			++modLevelsSlow;
 			if (!(co_await imdLoadLevelTexturesTask(controller, *pDisplayShape, currentTilesetIdx, *pDisplayShape->m_textures)))
 			{
 				++modelTextureLoadingFailures;
@@ -1496,7 +1528,19 @@ LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 			pDisplayShape->m_textures->initialized = true;
 		}
 
-		co_await controller.yieldFrame();
+		// (23.11.) nicht nach jedem Modell abgeben, sondern alle 30 ms (der Ladebildschirm bleibt fluessig)
+		const auto now = std::chrono::steady_clock::now();
+		if (now - modLastYield > std::chrono::milliseconds(30))
+		{
+			co_await controller.yieldFrame();
+			++modYields;
+			modLastYield = std::chrono::steady_clock::now();
+		}
+	}
+	{
+		const auto ms = [](std::chrono::steady_clock::duration d) { return static_cast<unsigned>(std::chrono::duration_cast<std::chrono::milliseconds>(d).count()); };
+		debug(LOG_INFO, "MOD-Ladezeit Modell-Texturen Ablauf: Sammeln %u ms, Schleife %u ms | Modelle %zu, Ebenen sofort %zu, Ebenen geladen %zu, Abgaben %zu",
+		      ms(modTPrefetch - modT0), ms(std::chrono::steady_clock::now() - modTPrefetch), modModels, modLevelsFast, modLevelsSlow, modYields);
 	}
 
 	iV_PrefetchTexturePagesEnd();

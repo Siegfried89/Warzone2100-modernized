@@ -66,6 +66,7 @@
 #include "modhullforge.h" // MOD (23.11.): Rumpf-Baukasten
 #include "modcompbody.h" // MOD (23.11.)
 #include "modslots.h" // MOD (23.11. 02:16)
+#include <memory>
 #include "component.h"
 #include "main.h"
 #include "display.h"
@@ -779,7 +780,7 @@ bool intAddDesign(bool bShowCentreScreen)
 		sHullButInit.y = DES_CENTERFORMY + DES_3DVIEWY + 136;
 		sHullButInit.width = 74;
 		sHullButInit.height = 128;
-		sHullButInit.pTip = _("Hull Forge: combine several hulls into one super hull (positions, rotations and weapon slots freely adjustable)");
+		sHullButInit.pTip = _("Hull Forge: build super hulls");
 		sHullButInit.pDisplay = modhullforge::displayEntryButton;
 		auto hullBtn = std::make_shared<W_BUTTON>(&sHullButInit);
 		parent->attach(hullBtn);
@@ -3128,8 +3129,19 @@ static void desCreateDefaultTemplate()
 }
 
 /* Remove the design widgets from the widget screen */
+// MOD (Wunsch 23.11. 17:56 "beim Startup IMMER Crashs, aber das Spiel startet trotzdem"): die Platz-Nummern der Turm-Plaetze-Leiste lagen
+// in statischen Texten ("text::1", "text::2" im Log: Textur nicht freigegeben). Beim Beenden wurden sie erst nach dem Abbau der Grafik
+// zerstoert - Absturz beim Beenden, dessen Meldung erst beim naechsten Start auftauchte. Jetzt beim Schliessen des Designers freigeben.
+static std::unique_ptr<WzText> s_modSlotNum[MAX_WEAPONS];
+
+void intDesignFreeTexts()
+{
+	for (auto &t : s_modSlotNum) { t.reset(); }
+}
+
 void intRemoveDesign()
 {
+	intDesignFreeTexts();
 	widgDelete(psWScreen, IDDES_POWERFORM);
 	widgDelete(psWScreen, IDDES_NAMEBOX);
 	widgDelete(psWScreen, IDDES_TEMPLBASE);
@@ -4336,8 +4348,8 @@ static void modSlotButtonDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffse
 		if (sel) { s_spin = (s_spin + static_cast<int>(realTimeAdjustedAverage(BUTTONOBJ_ROTSPEED / 2))) % 360; }
 		Vector3i rot(-30, sel ? s_spin : 45, 0), pos(0, 0, BUTTON_DEPTH);
 		const int radius = std::max<int>(1, static_cast<int>(getComponentRadius(cs)));
-		const int scale = rescaleButtonObject(radius, 50, COMPONENT_RADIUS);
-		pie_SetGeometricOffset(x0 + w / 2, y0 + h / 2 + 5);
+		const int scale = rescaleButtonObject(radius, 50 * w / MODSLOT_SZ, COMPONENT_RADIUS);   // (17:55) kleinere Knoepfe: kleineres Bild
+		pie_SetGeometricOffset(x0 + w / 2, y0 + h / 2 + 5 * h / MODSLOT_SZ);
 		displayComponentButton(cs, &rot, &pos, scale);
 	}
 	else
@@ -4348,12 +4360,11 @@ static void modSlotButtonDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffse
 		pie_BoxFill(x0 + w / 2, y0 + h / 2 - 4, x0 + w / 2 + 1, y0 + h / 2 + 5, c);
 	}
 
-	static WzText s_num[MAX_WEAPONS];
-	static bool s_numInit[MAX_WEAPONS] = {};
 	if (slot >= 0 && slot < static_cast<int>(MAX_WEAPONS))
 	{
-		if (!s_numInit[slot]) { s_num[slot].setText(WzString::number(slot + 1), font_small); s_numInit[slot] = true; }
-		s_num[slot].render(static_cast<float>(x0 + 3), static_cast<float>(y0 + 10), sel ? WZCOL_YELLOW : WZCOL_TEXT_MEDIUM);
+		std::unique_ptr<WzText> &num = s_modSlotNum[slot];
+		if (!num) { num = std::make_unique<WzText>(WzString::number(slot + 1), font_small); }
+		num->render(static_cast<float>(x0 + 3), static_cast<float>(y0 + 10), sel ? WZCOL_YELLOW : WZCOL_TEXT_MEDIUM);
 	}
 	if (sel) { iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, pal_RGBA(255, 210, 70, 255)); }
 	else if (hl) { iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, pal_RGBA(150, 220, 255, 255)); }
@@ -4367,7 +4378,7 @@ static std::string modSlotTip(int slot)
 	t += ": ";
 	t += cs != nullptr ? getLocalizedStatsName(cs) : _("empty");
 	t += "\n";
-	t += _("Click: choose a weapon or system for this slot - Right-click: empty it");
+	t += _("Click: fill slot - Right-click: empty");
 	return t;
 }
 
@@ -4377,14 +4388,25 @@ static void modSlotBarBuild(unsigned n)
 	modSlotBarCount = 0;
 	if (n < 2) { return; }
 	auto const &parent = psWScreen->psForm;
-	const int rows = static_cast<int>((n + MODSLOT_PERROW - 1) / MODSLOT_PERROW);
-	s_modSlotBarH = MODSLOT_TOP + rows * (MODSLOT_SZ + MODSLOT_GAP) + 4;
+	// (Wunsch 23.11. 17:55, Fehler im Designer: "TURRET SLOTS" lag ueber den Werten unter der 3D-Ansicht): die Leiste sitzt jetzt unter dem
+	// Werte-Feld; reicht der Platz bis zum Bildrand nicht, werden die Knoepfe kleiner und mehr je Reihe
+	const int barY = DES_STATSFORMY + DES_STATSFORMHEIGHT + 4;
+	const int avail = std::max(40, static_cast<int>(pie_GetVideoBufferHeight()) - barY - 4);
+	int sz = MODSLOT_SZ, perRow = MODSLOT_PERROW;
+	for (; sz > 14; --sz)
+	{
+		perRow = std::max(1, (DES_CENTERFORMWIDTH - 8 + MODSLOT_GAP) / (sz + MODSLOT_GAP));
+		const int r = static_cast<int>((n + static_cast<unsigned>(perRow) - 1) / static_cast<unsigned>(perRow));
+		if (MODSLOT_TOP + r * (sz + MODSLOT_GAP) + 4 <= avail) { break; }
+	}
+	const int rows = static_cast<int>((n + static_cast<unsigned>(perRow) - 1) / static_cast<unsigned>(perRow));
+	s_modSlotBarH = MODSLOT_TOP + rows * (sz + MODSLOT_GAP) + 4;
 
 	auto bar = std::make_shared<IntFormAnimated>(false);
 	bar->id = IDDES_SLOTBAR;
 	parent->attach(bar);
 	bar->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
-		psWidget->setGeometry(DES_CENTERFORMX, DES_CENTERFORMY + DES_CENTERFORMHEIGHT + 6, DES_CENTERFORMWIDTH, s_modSlotBarH);
+		psWidget->setGeometry(DES_CENTERFORMX, DES_STATSFORMY + DES_STATSFORMHEIGHT + 4, DES_CENTERFORMWIDTH, s_modSlotBarH);
 	}));
 
 	auto label = std::make_shared<W_LABEL>();
@@ -4394,7 +4416,8 @@ static void modSlotBarBuild(unsigned n)
 	label->setFont(font_small, WZCOL_TEXT_BRIGHT);
 	label->setString(WzString::fromUtf8(astringf(_("TURRET SLOTS (%u) - weapons and systems together"), n)));
 
-	const int rowW = MODSLOT_PERROW * MODSLOT_SZ + (MODSLOT_PERROW - 1) * MODSLOT_GAP;
+	const int cols = std::min<int>(perRow, static_cast<int>(n));
+	const int rowW = cols * sz + (cols - 1) * MODSLOT_GAP;
 	const int left = (DES_CENTERFORMWIDTH - rowW) / 2;
 	for (unsigned k = 0; k < n; ++k)
 	{
@@ -4402,10 +4425,10 @@ static void modSlotBarBuild(unsigned n)
 		sButInit.formID = IDDES_SLOTBAR;
 		sButInit.id = IDDES_SLOTFIRST + k;
 		sButInit.style = WBUT_PLAIN | WBUT_SECONDARY;
-		sButInit.x = static_cast<int16_t>(left + static_cast<int>(k % MODSLOT_PERROW) * (MODSLOT_SZ + MODSLOT_GAP));
-		sButInit.y = static_cast<int16_t>(MODSLOT_TOP + static_cast<int>(k / MODSLOT_PERROW) * (MODSLOT_SZ + MODSLOT_GAP));
-		sButInit.width = MODSLOT_SZ;
-		sButInit.height = MODSLOT_SZ;
+		sButInit.x = static_cast<int16_t>(left + static_cast<int>(k % static_cast<unsigned>(perRow)) * (sz + MODSLOT_GAP));
+		sButInit.y = static_cast<int16_t>(MODSLOT_TOP + static_cast<int>(k / static_cast<unsigned>(perRow)) * (sz + MODSLOT_GAP));
+		sButInit.width = static_cast<uint16_t>(sz);
+		sButInit.height = static_cast<uint16_t>(sz);
 		sButInit.pDisplay = modSlotButtonDisplay;
 		sButInit.UserData = k;
 		const std::string tip = modSlotTip(static_cast<int>(k));

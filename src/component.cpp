@@ -148,6 +148,22 @@ UDWORD getComponentDroidTemplateRadius(const DROID_TEMPLATE *psTemplate)
 				return e;
 			};
 			int ext = extOf(imd);
+			// (Wunsch 23.11. 17:55, Designer-Fehler "Car MG"): Waffen, deren Halterung hoch ueber dem Anschluss sitzt (Scav-Schuetze steht auf
+			// der Ladeflaeche), ragten oben aus der Vorschau - Oberkante von Halterung und Waffe zaehlt mit
+			for (unsigned w = 0; w < psTemplate->numWeaps && w < MAX_WEAPONS; ++w)
+			{
+				const unsigned wi = psTemplate->asWeaps[w];
+				if (wi >= asWeaponStats.size()) { continue; }
+				const WEAPON_STATS &ws = asWeaponStats[wi];
+				const iIMDShape *mount = ws.pMountGraphic != nullptr ? ws.pMountGraphic->displayModel() : nullptr;
+				const iIMDShape *gun = ws.pIMD != nullptr ? ws.pIMD->displayModel() : nullptr;
+				const size_t ci = imd->connectors.size() > w ? w : 0;
+				const int cy = imd->connectors.empty() ? 0 : imd->connectors[ci].z;   // Anschluss: x, Tiefe, Hoehe
+				int top = cy;
+				if (mount != nullptr) { top = std::max(top, cy + mount->max.y); }
+				if (gun != nullptr) { top = std::max(top, cy + (mount != nullptr && !mount->connectors.empty() ? mount->connectors[0].z : 0) + gun->max.y); }
+				ext = std::max(ext, (top - imd->min.y) * 2 / 3);
+			}
 			const size_t prop = psTemplate->asParts[COMP_PROPULSION];
 			for (int side = 0; side < NUM_PROP_SIDES; ++side)
 			{
@@ -183,7 +199,16 @@ UDWORD getComponentRadius(const BASE_STATS *psComponent) // DISPLAY ONLY
 		StatGetComponentIMD(psComponent, compID, &ComponentIMD, &MountIMD);
 		if (ComponentIMD)
 		{
-			return GetRadius(ComponentIMD);
+			// MOD (Wunsch 23.11. 17:55, "Car MG"): ist die Halterung viel groesser als die Waffe (Scav-Schuetze mit kleiner Muendung),
+			// zaehlt die Halterung - sonst wird das Knopf-Bild riesig und ragt ueber den Knopf hinaus
+			const int r = GetRadius(ComponentIMD);
+			if (MountIMD != nullptr)
+			{
+				const int m = std::max({std::abs(MountIMD->min.x), std::abs(MountIMD->max.x), std::abs(MountIMD->min.z), std::abs(MountIMD->max.z),
+				                        std::abs(MountIMD->min.y), std::abs(MountIMD->max.y)});
+				if (m > 2 * r) { return static_cast<UDWORD>(m); }
+			}
+			return r;
 		}
 	}
 
@@ -406,6 +431,11 @@ void displayComponentButton(const BASE_STATS *Stat, const Vector3i *Rotation, co
 		if (!ComponentIMD) { modWarnNoComponentImd(Stat, "Knopf"); }   // MOD (20.11.): einmal je Bauteil mit Namen statt Assert in jedem Bild
 	}
 
+	// MOD (23.11. 17:55, "Car MG"): schwebt die Halterung weit ueber dem Ursprung (Scav-Schuetze), mittig ins Knopf-Bild ruecken
+	if (MountIMD && MountIMD->min.y > 0 && MountIMD->min.y > (MountIMD->max.y - MountIMD->min.y) / 2)
+	{
+		matrix *= glm::translate(glm::vec3(0.f, -static_cast<float>(MountIMD->min.y + MountIMD->max.y) * 0.5f, 0.f));
+	}
 	if (MountIMD)
 	{
 		draw_player_3d_shape(selectedPlayer, MountIMD, matrix);

@@ -10,6 +10,7 @@
 #include "lib/framework/vector.h"
 #include "lib/framework/wzstring.h"
 #include <glm/mat4x4.hpp>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -18,6 +19,7 @@ struct COMPONENT_STATS;
 struct BODY_STATS;
 struct BASE_OBJECT;
 struct iIMDShape;
+struct iIMDBaseShape;
 
 namespace modcompbody
 {
@@ -81,6 +83,36 @@ bool weaponArc(const BASE_OBJECT *psObj, int weaponSlot, uint16_t &yaw);
 /// Verfuegbarkeit fuer einen Spieler: baubar, wenn alle Teil-Rumpfe erforscht sind (nicht in Netzwerkspielen)
 void refreshAvailability(unsigned player);
 
+// ---------------------------------------------------------------- Rumpf-Katalog (Wunsch 23.11. 17:55)
+/// "Das soll ein reines Menue-UI-Feature sein ... in der Hull Forge SAEMTLICHE Rumpfe verfuegbar machen. Und schoen nach Fraktionen und
+/// auch Mods trennen": alle Rumpfe, die als Teil taugen - im Spiel aus den geladenen Stats, im Hauptmenue aus stats/body.json.
+struct BodyInfo
+{
+	std::string id, name;
+	const iIMDBaseShape *model = nullptr;   ///< Modell (nullptr = keins)
+	unsigned hp = 0, armour = 0, thermal = 0, weight = 0, power = 0, cost = 0, buildPoints = 0, weaponSlots = 1;
+	int size = 0;                           ///< BODY_SIZE
+	bool designable = false;
+	std::string source;                     ///< Herkunft: "Warzone 2100", "Scavengers", "WZ2120", "Metal Fatigue", ...
+	std::string group;                      ///< Fraktion/Gruppe innerhalb der Herkunft
+	int sourceRank = 0, groupRank = 0;
+	size_t statIdx = SIZE_MAX;              ///< im Spiel: Platz in asBodyStats
+	bool listed = true;                     ///< in der Liste (Rumpfe mit demselben Modell nur einmal)
+};
+/// alle Teil-Rumpfe, sortiert nach Herkunft, Gruppe, Groesse, Name
+const std::vector<BodyInfo> &catalog();
+/// Rumpf zu einer ID (auch nicht gelistete Dubletten); nullptr = unbekannt
+const BodyInfo *bodyInfo(const std::string &id);
+/// laufendes Spiel (Stats geladen) - sonst Hauptmenue
+bool inGame();
+/// Bauplaene neu von Platte lesen (im Hauptmenue vollstaendig; im Spiel nur neu hinzugekommene - Wunsch 17:55: "wenn ich eine Hull in
+/// einer Mission speichere, soll sie auch im Fleet-Designer - Hull Forge sein. Und umgekehrt")
+void refreshDefs();
+/// Modell eines Verbundrumpfes fuer die Vorschau im Hauptmenue (Einheiten-Designer) anlegen; Rueckgabe: Modellname ("" = keins)
+std::string previewModel(const Def &d);
+/// Groesse als Stats-Text ("LIGHT", "MEDIUM", "HEAVY", "SUPER HEAVY")
+const char *sizeText(int size);
+
 // ---------------------------------------------------------------- Rumpf-Baukasten
 const std::vector<Def> &defs();
 const Def *find(const std::string &id);
@@ -90,7 +122,7 @@ const iIMDShape *flippedShape(const std::string &bodyId, int flipMask);
 Totals totals(const Def &d);
 /// Rumpf zu einer ID (nullptr = unbekannt)
 const BODY_STATS *bodyById(const std::string &id);
-/// speichern (Datei im Benutzerordner) und sofort als Rumpf anmelden bzw. aktualisieren; d.id wird bei neuen Entwuerfen vergeben
+/// speichern (Datei im Benutzerordner) und - im Spiel - sofort als Rumpf anmelden bzw. aktualisieren; d.id wird bei neuen Entwuerfen vergeben
 bool save(Def &d, std::string &err);
 /// loeschen (Datei weg, Rumpf nicht mehr baubar)
 bool remove(const std::string &id, std::string &err);

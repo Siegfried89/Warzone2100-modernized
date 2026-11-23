@@ -774,6 +774,7 @@ void interfaceShutDown()
 {
 	moddesigner::shutdown(); // MOD
 	modhullforge::shutdown(); // MOD (23.11.)
+	intDesignFreeTexts();     // MOD (23.11. 17:56): sonst Absturz beim Beenden (Texturen nach dem Abbau der Grafik)
 	modpanel::shutdown();    // MOD
 	modpaint::shutdown();    // MOD
 	modbigmap::shutdown();   // MOD (17.11.): strategische Karte

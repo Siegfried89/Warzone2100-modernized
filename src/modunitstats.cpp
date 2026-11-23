@@ -195,7 +195,7 @@ void ensureScreen()
 	auto t = std::make_shared<W_BUTTON>();
 	screen->psForm->attach(t);
 	t->displayFunction = drawToggle;
-	t->setTip(_("Unit values on/off - shows the values of the selected unit (point at a symbol to see what it means)"));
+	t->setTip(_("Unit values on/off"));
 	t->addOnClickHandler([](W_BUTTON &) { s_on = !s_on; });
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
 	s_screen = screen;
