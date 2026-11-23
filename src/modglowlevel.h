@@ -6,4 +6,6 @@ namespace modglowlevel
 {
 /// Rueckruf fuer Leucht-Ebenen eintragen (beim Spielstart)
 void init();
+/// Blink-Wert fuer die naechsten Leucht-Ebenen "glowlvl-blink" (0..255; -1 = ruhiges Leuchten) - modcmdantenna.cpp
+void setBlinkAlpha(int alpha);
 }

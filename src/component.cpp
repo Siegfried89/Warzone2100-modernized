@@ -70,6 +70,7 @@
 #include "modpick.h"
 #include "modfort.h"      // MOD (21.11.): Schuss-Animation in Stellungen
 #include "modterrain.h"   // MOD (21.11.): Krater als Deckung
+#include "modcmdantenna.h"   // MOD (23.11.): Antennen der Kommandeurs-Gruppen
 #include "featuredef.h"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
@@ -1285,6 +1286,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		if (!bButton && modicbm::drawTelJacks(psDroid, bodyMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, psDroid->heightAboveMap))
 		{
 			didDrawSomething = true;   // MOD (18.11. 20:46): Stuetzen des Atomraketen-Werfers
+		}
+		// MOD (Wunsch 23.11. 04:23): Fahrzeuge einer Kommandeurs-Gruppe tragen hinten eine Antenne mit blinkender roter Lampe
+		if (!bButton && psShapeBody != nullptr && modcmdantenna::draw(psDroid, psShapeBody, bodyMatrix, viewMatrix, colour, brightness, pieFlag, iPieData, psDroid->heightAboveMap))
+		{
+			didDrawSomething = true;
 		}
 		// MOD (17.11., Wunsch 25 "Bergen"): Abschlepp-Lkw mit geladenem Wrack - das Wrack liegt verkleinert auf der Ladeflaeche (nur Anzeige)
 		if (!bButton)
