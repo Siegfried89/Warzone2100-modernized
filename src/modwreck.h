@@ -12,6 +12,7 @@
 
 struct DROID;
 struct FEATURE;
+struct PROJECTILE;
 struct FEATURE_STATS;
 struct GameWorld;
 
@@ -24,6 +25,12 @@ struct Placement { int x, y, z, pitch, roll; };   // Winkel als 16-Bit-Werte
 bool pose(const FEATURE *f, unsigned renderTime, Placement &out);
 /// aus destroyDroid() vor dem Entfernen aufrufen. Gibt true zurueck, wenn ein Wrack entstanden ist (dann entfallen die Truemmer-Effekte).
 bool onDroidDestroyed(const DROID *psDel, GameWorld &world);
+/// (Wunsch 23.11. 03:05) droidDamage(): der toedliche Treffer, kurz vor destroyDroid(). Eine starke Explosion (Artillerie, Bomben,
+/// Lenkflugkoerper, Munitions-/Oelexplosion, grosser Wirkradius - mindestens ein Viertel der Lebenspunkte auf einmal) zerlegt das
+/// Fahrzeug: Turm und Laufwerk fliegen weg, der Rumpf wird hochgeschleudert, dreht sich, faellt herab und bleibt als bergbares Wrack liegen.
+void noteKill(const DROID *psDroid, unsigned damage, const PROJECTILE *psProjectile, int weaponSubClass, bool isDamagePerSecond);
+/// Anzeige: Rumpf-Wrack (zeigt den echten Rumpf, verkohlt dunkler)
+bool charred(const FEATURE *f);
 /// jeden Spielschritt aus der Spielschleife (Qualm und Ablauf einmal je Spielsekunde)
 void tick(GameWorld &world);
 /// beim Spielende / Ladevorgang
@@ -52,6 +59,7 @@ struct SavedWreck
 	unsigned age = 0;
 	int xe = 0, ye = 0, halfH = 12, halfW = 12, rollTotal = 90;
 	bool hasInfo = false;
+	bool hull = false;           // (23.11.) hochgeschleuderter Rumpf: zeigt das Rumpf-Modell (aus info.parts)
 	WreckInfo info;
 };
 std::vector<SavedWreck> saveState();

@@ -588,6 +588,11 @@ bool loadWeaponStats(WzConfig &ini)
 
 		//set the light world value
 		psStats->lightWorld = ini.value("lightWorld", false).toBool();
+		// MOD (23.11. 03:05): Raketenabwehr (modpointdef)
+		psStats->modAms = ini.value("ams", 0).toInt() != 0;
+		psStats->modAmsReload = static_cast<unsigned>(std::clamp(ini.value("amsReload", 800).toInt(), 50, 60000));
+		psStats->modAmsChance = static_cast<unsigned>(std::clamp(ini.value("amsChance", 60).toInt(), 1, 100));
+		psStats->modAmsTracer = ini.value("amsTracer", "").toWzString();
 
 		// interpret flags
 		psStats->surfaceToAir = SHOOT_ON_GROUND; // default
