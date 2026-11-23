@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp> // Must come before WZ includes
 
 #include "modsave.h"
+#include "modslots_json.h"
 #include "modshield.h"
 
 #include "lib/framework/frame.h"
@@ -66,6 +67,7 @@ nlohmann::json infoToJson(const modwreck::WreckInfo &in)
 		weaps.push_back(s != nullptr ? s->id.toUtf8() : std::string());
 	}
 	j["weapons"] = weaps;
+	if (!in.slots.isDefault()) { j["modSlots"] = modslots::toJson(in.slots); }   // (23.11. 02:16)
 	j["model"] = in.stats != nullptr ? in.stats->id.toUtf8() : std::string();
 	return j;
 }
@@ -98,6 +100,8 @@ bool infoFromJson(const nlohmann::json &j, modwreck::WreckInfo &out)
 			if (idx > 0) { out.weaps[out.numWeaps++] = static_cast<uint32_t>(idx); }
 		}
 	}
+	const auto ms = j.find("modSlots");
+	if (ms != j.end()) { modslots::fromJson(*ms, out.slots); }
 	const std::string model = j.value("model", std::string());
 	for (const FEATURE_STATS &fs : asFeatureStats) { if (fs.id.toUtf8() == model) { out.stats = &fs; break; } }
 	return true;

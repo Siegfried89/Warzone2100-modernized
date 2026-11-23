@@ -110,6 +110,7 @@ bool s_autoRot = false;
 std::vector<size_t> s_bodies;   // Rumpfe fuer die Liste (Index in asBodyStats)
 int s_bodyScroll = 0;
 int s_partScroll = 0;
+int s_mountScroll = 0;          // (23.11. 02:16) bis 30 Waffenplaetze: Liste blaettern
 int s_loadIdx = -1;
 std::string s_status;
 bool s_statusBad = false;
@@ -274,7 +275,7 @@ void duplicatePart(bool mirror)
 {
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
-		if (s_def.mounts.size() >= modcompbody::MAX_SLOTS) { setStatus("At most " + std::to_string(modcompbody::MAX_SLOTS) + " weapon slots (the designer offers three weapons).", true); return; }
+		if (s_def.mounts.size() >= modcompbody::MAX_SLOTS) { setStatus("At most " + std::to_string(modcompbody::MAX_SLOTS) + " weapon slots.", true); return; }
 		Mount m = s_def.mounts[static_cast<size_t>(s_selMount)];
 		if (mirror) { m.pos.x = -m.pos.x; } else { m.pos.x += STEPS[s_step]; }
 		s_def.mounts.push_back(m);
@@ -284,7 +285,7 @@ void duplicatePart(bool mirror)
 	}
 	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size())) { return; }
 	Part p = s_def.parts[static_cast<size_t>(s_sel)];
-	if (mirror) { p.pos.x = -p.pos.x; p.rot.x = -p.rot.x; p.rot.z = -p.rot.z; }
+	if (mirror) { p.pos.x = -p.pos.x; p.rot.x = -p.rot.x; p.rot.z = -p.rot.z; p.flip ^= 1; }   // echte Spiegelung an der Mittelebene
 	else { p.pos.x += 8.f; }
 	s_def.parts.push_back(p);
 	selectPart(static_cast<int>(s_def.parts.size()) - 1);
@@ -309,19 +310,28 @@ void deleteSelected()
 	play("mfui_rattle.ogg");
 }
 
+void flipSelected(int axisBit)
+{
+	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size()) || s_selMount >= 0) { return; }
+	s_def.parts[static_cast<size_t>(s_sel)].flip ^= axisBit;
+	s_dirty = true;
+	play("mfui_clank.ogg");
+}
+
 void resetSelected()
 {
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size())) { s_def.mounts[static_cast<size_t>(s_selMount)].pos = glm::vec3(0.f, 20.f, 0.f); s_dirty = true; return; }
 	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size())) { return; }
 	Part &p = s_def.parts[static_cast<size_t>(s_sel)];
 	p.rot = glm::vec3(0.f);
+	p.flip = 0;
 	if (s_sel == 0) { p.pos = glm::vec3(0.f); }
 	s_dirty = true;
 }
 
 void addMount()
 {
-	if (s_def.mounts.size() >= modcompbody::MAX_SLOTS) { setStatus("At most " + std::to_string(modcompbody::MAX_SLOTS) + " weapon slots (the designer offers three weapons).", true); return; }
+	if (s_def.mounts.size() >= modcompbody::MAX_SLOTS) { setStatus("At most " + std::to_string(modcompbody::MAX_SLOTS) + " weapon slots.", true); return; }
 	Mount m;
 	m.pos = glm::vec3(0.f, std::round(topOfComposite()), 0.f);
 	s_def.mounts.push_back(m);
@@ -430,7 +440,9 @@ void drawBay(const Ctx &c)
 		const Part &p = s_def.parts[i];
 		const BODY_STATS *b = modcompbody::bodyById(p.body);
 		if (b == nullptr || b->pIMD == nullptr || b->pIMD->displayModel() == nullptr) { continue; }
-		pie_Draw3DShape(b->pIMD->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p), view);
+		const iIMDShape *flipped = modcompbody::flippedShape(p.body, p.flip);
+		if (flipped != nullptr) { pie_Draw3DShape(flipped, 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p, false), view); }
+		else { pie_Draw3DShape(b->pIMD->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p), view); }
 	}
 	// gewaehltes Teil: Rahmen
 	if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0)
@@ -502,11 +514,22 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		modui::text(modui::fit(t, c.L(146), sc), c.X(484), ry + c.L(1), sel ? pal_RGBA(255, 255, 255, 255) : modui::cyan(230), sc);
 	}
 	// Waffenplaetze
-	modui::text("WEAPON SLOTS", c.X(482), c.Y(170), pal_RGBA(235, 250, 255, 255), sc);
-	drawFrame(c.X(480), c.Y(183), c.L(154), c.L(MOUNT_ROWS * LIST_ROW_H + 2));
-	for (int i = 0; i < MOUNT_ROWS && i < static_cast<int>(s_def.mounts.size()); ++i)
+	// neu gewaehlter Platz (z.B. gerade hinzugefuegt) wird sichtbar; Blaettern laesst die Auswahl stehen
+	static int s_lastSelMount = -1;
+	if (s_selMount >= 0 && s_selMount != s_lastSelMount)
 	{
-		const int ry = c.Y(184.f + i * LIST_ROW_H);
+		if (s_selMount < s_mountScroll) { s_mountScroll = s_selMount; }
+		if (s_selMount >= s_mountScroll + MOUNT_ROWS) { s_mountScroll = s_selMount - MOUNT_ROWS + 1; }
+	}
+	s_lastSelMount = s_selMount;
+	s_mountScroll = std::max(0, std::min(s_mountScroll, static_cast<int>(s_def.mounts.size()) - MOUNT_ROWS));
+	modui::text("WEAPON SLOTS " + std::to_string(s_def.mounts.size()) + "/" + std::to_string(modcompbody::MAX_SLOTS), c.X(482), c.Y(170), pal_RGBA(235, 250, 255, 255), sc);
+	drawFrame(c.X(480), c.Y(183), c.L(154), c.L(MOUNT_ROWS * LIST_ROW_H + 2));
+	for (int r = 0; r < MOUNT_ROWS; ++r)
+	{
+		const int i = s_mountScroll + r;
+		if (i >= static_cast<int>(s_def.mounts.size())) { break; }
+		const int ry = c.Y(184.f + r * LIST_ROW_H);
 		const bool sel = i == s_selMount;
 		if (sel) { pie_UniTransBoxFill(c.X(481), ry, c.X(633), ry + c.L(LIST_ROW_H) - 1, pal_RGBA(190, 80, 40, 140)); }
 		const glm::vec3 &p = s_def.mounts[static_cast<size_t>(i)].pos;
@@ -530,7 +553,8 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		else if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()))
 		{
 			const Part &p = s_def.parts[static_cast<size_t>(s_sel)];
-			snprintf(buf, sizeof(buf), "%s   x %.1f  y %.1f  z %.1f   yaw %.0f  pitch %.0f  roll %.0f", bodyName(p.body).c_str(), p.pos.x, p.pos.y, p.pos.z, p.rot.x, p.rot.y, p.rot.z);
+			snprintf(buf, sizeof(buf), "%s   x %.1f  y %.1f  z %.1f   yaw %.0f  pitch %.0f  roll %.0f%s%s%s", bodyName(p.body).c_str(), p.pos.x, p.pos.y, p.pos.z, p.rot.x, p.rot.y, p.rot.z,
+			         (p.flip & 1) ? "  flipX" : "", (p.flip & 2) ? "  flipY" : "", (p.flip & 4) ? "  flipZ" : "");
 			t = buf;
 		}
 		modui::text(modui::fit(t, c.L(468), sc), c.X(166), c.Y(338), pal_RGBA(255, 230, 140, 255), sc);
@@ -630,9 +654,12 @@ void buildScreen()
 	for (int i = 0; i < MOUNT_ROWS; ++i)
 	{
 		addBtn(parent, 481, 184.f + i * LIST_ROW_H, 152, LIST_ROW_H, "", "Select this weapon slot (the move buttons then move the slot)", [i]() {
-			if (i < static_cast<int>(s_def.mounts.size())) { s_selMount = i; }
+			const int idx = s_mountScroll + i;
+			if (idx < static_cast<int>(s_def.mounts.size())) { s_selMount = idx; }
 		}, nullptr, true);
 	}
+	addBtn(parent, 598, 168, 17, 13, "^", "Scroll the weapon slots up", []() { s_mountScroll = std::max(0, s_mountScroll - MOUNT_ROWS); });
+	addBtn(parent, 617, 168, 17, 13, "v", "Scroll the weapon slots down", []() { s_mountScroll += MOUNT_ROWS; });
 	addBtn(parent, 480, 226, 75, 16, "+ Slot", "Add a weapon slot", []() { addMount(); });
 	addBtn(parent, 559, 226, 75, 16, "- Slot", "Remove the selected weapon slot", []() {
 		if (s_selMount >= 0) { deleteSelected(); } else if (!s_def.mounts.empty()) { s_def.mounts.pop_back(); s_dirty = true; }
@@ -665,10 +692,13 @@ void buildScreen()
 		addBtn(parent, 6.f + k * 52.5f, 374, 50, 18, m.l, m.tip, [m]() { if (m.rot) { rotate(m.axis, m.sign); } else { move(m.axis, m.sign); } });
 	}
 	// Teil-Befehle
-	addBtn(parent, 6, 396, 76, 18, "Duplicate", "Copy the selected part (or weapon slot)", []() { duplicatePart(false); });
-	addBtn(parent, 86, 396, 76, 18, "Mirror", "Copy the selected part (or slot) mirrored to the other side", []() { duplicatePart(true); });
-	addBtn(parent, 166, 396, 76, 18, "Remove", "Remove the selected part (or weapon slot) (Del)", []() { deleteSelected(); });
-	addBtn(parent, 246, 396, 76, 18, "Reset", "Reset the rotation of the selected part", []() { resetSelected(); });
+	addBtn(parent, 6, 396, 44, 18, "Copy", "Copy the selected part (or weapon slot)", []() { duplicatePart(false); });
+	addBtn(parent, 52, 396, 44, 18, "Mirror", "Copy the selected part (or slot) mirrored to the other side", []() { duplicatePart(true); });
+	addBtn(parent, 98, 396, 44, 18, "Remove", "Remove the selected part (or weapon slot) (Del)", []() { deleteSelected(); });
+	addBtn(parent, 144, 396, 44, 18, "Reset", "Reset rotation and flips of the selected part", []() { resetSelected(); });
+	addBtn(parent, 190, 396, 44, 18, "Flip X", "Mirror the part's shape left/right", []() { flipSelected(1); }, []() { return s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0 && (s_def.parts[static_cast<size_t>(s_sel)].flip & 1); });
+	addBtn(parent, 236, 396, 44, 18, "Flip Y", "Mirror the part's shape upside down", []() { flipSelected(2); }, []() { return s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0 && (s_def.parts[static_cast<size_t>(s_sel)].flip & 2); });
+	addBtn(parent, 282, 396, 44, 18, "Flip Z", "Mirror the part's shape front/back", []() { flipSelected(4); }, []() { return s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0 && (s_def.parts[static_cast<size_t>(s_sel)].flip & 4); });
 	// Rumpf-Befehle
 	addBtn(parent, 172, 432, 50, 18, "New", "Start a new super hull", []() { newHull(); });
 	addBtn(parent, 226, 432, 46, 18, "< Load", "Load the previous saved super hull", []() { loadCycle(-1); });

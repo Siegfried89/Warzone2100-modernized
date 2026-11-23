@@ -311,11 +311,12 @@ bool onDroidDestroyed(const DROID *psDel, GameWorld &world)
 	const int lift = std::abs(iCosR(static_cast<uint16_t>(finalRoll), w.halfH)) + std::abs(iSinR(static_cast<uint16_t>(finalRoll), w.halfW)) + 1;
 	featureSetWreckPose(f, psDel->rot.direction, finalRoll, ground + lift);
 	// Bauplan merken (Bergen: Abschlepp-Lkw bringt das Wrack zur Reparaturstation)
-	static_assert(DROID_MAXCOMP <= 16 && MAX_WEAPONS <= 8, "WreckInfo zu klein");
+	static_assert(DROID_MAXCOMP <= 16, "WreckInfo zu klein");
 	w.info.droidType = static_cast<uint8_t>(psDel->droidType);
 	w.info.numWeaps = static_cast<uint8_t>(std::min<unsigned>(psDel->numWeaps, MAX_WEAPONS));
 	for (int c = 0; c < DROID_MAXCOMP; ++c) { w.info.parts[c] = psDel->asBits[c]; }
 	for (unsigned i = 0; i < w.info.numWeaps; ++i) { w.info.weaps[i] = psDel->asWeaps[i].nStat; }
+	w.info.slots = psDel->modSlots;
 	w.info.stats = stat;
 	w.hasInfo = true;
 	s_wrecks.push_back(w);

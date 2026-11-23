@@ -35,6 +35,7 @@
 #include "weapondef.h"
 #include "orderdef.h"
 #include "actiondef.h"
+#include "modslots.h"
 
 /*!
  * The number of components in the asParts / asBits arrays.
@@ -78,6 +79,7 @@ struct DROID_TEMPLATE : public BASE_STATS
 	/* The weapon systems */
 	int8_t          numWeaps;                   ///< Number of weapons
 	uint32_t        asWeaps[MAX_WEAPONS];       ///< weapon indices
+	ModSlots        modSlots;                   ///< MOD (23.11. 02:16): Anschluss je Waffe und Systemtuerme neben Waffen (modslots.h)
 	DROID_TYPE      droidType;                  ///< The type of droid
 	UDWORD          multiPlayerID;              ///< multiplayer unique descriptor(cant use id's for templates). Used for save games as well now - AB 29/10/98
 	bool            prefab;                     ///< Not player designed, not saved, never delete or change
@@ -146,6 +148,7 @@ struct DROID : public BASE_OBJECT
 	 *  Weapons need to be dealt with separately.
 	 */
 	uint16_t        asBits[DROID_MAXCOMP];    // MOD (22.11.): 16 Bit wie DROID_TEMPLATE::asParts
+	ModSlots        modSlots;                 ///< MOD (23.11. 02:16): Turm-Belegung wie in der Vorlage (modslots.h)
 	/* The other droid data.  These are all derived from the components
 	 * but stored here for easy access
 	 */

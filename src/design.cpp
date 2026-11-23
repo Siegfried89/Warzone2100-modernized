@@ -56,6 +56,7 @@
 #include "stats.h"
 #include "power.h"
 #include "lib/widget/button.h"
+#include "lib/widget/label.h"
 #include "order.h"
 #include "projectile.h"
 #include "intimage.h"
@@ -64,6 +65,7 @@
 #include "moddesigner.h" // MOD
 #include "modhullforge.h" // MOD (23.11.): Rumpf-Baukasten
 #include "modcompbody.h" // MOD (23.11.)
+#include "modslots.h" // MOD (23.11. 02:16)
 #include "component.h"
 #include "main.h"
 #include "display.h"
@@ -125,6 +127,18 @@ enum DES_COMPMODE
 	IDES_TURRET_B,		// The 3rd turret
 };
 static DES_COMPMODE desCompMode;
+
+// MOD (Wunsch 23.11. 02:16): Turm-Plaetze-Leiste (bis 30 Plaetze, Waffen und Systemtuerme zugleich - modslots.h)
+#define IDDES_SLOTBAR    5960
+#define IDDES_SLOTFIRST  5961
+#define IDDES_SLOTLAST   (IDDES_SLOTFIRST + MAX_WEAPONS - 1)
+#define IDDES_SLOTLABEL  5995
+static int modSlotSel = -1;            ///< gewaehlter Platz (0-basiert), -1 = keiner
+static unsigned modSlotBarCount = 0;   ///< Knoepfe in der Leiste
+static int modCurSlot();
+static void modSlotBarRefresh();
+static void modSlotOpenFor(int slot);
+static void modSlotClicked(int slot, bool secondary);
 
 /* Which type of propulsion is being selected */
 enum DES_PROPMODE
@@ -1262,6 +1276,17 @@ static void intSetDesignMode(DES_COMPMODE newCompMode, bool forceRefresh)
 		break;
 	case IDES_SYSTEM:
 		compList = intAddComponentForm();
+		if (modslots::usable(sCurrDesign))   // MOD (23.11. 02:16): Teil des gewaehlten Platzes hervorheben
+		{
+			const modslots::Occupant o = modslots::occupant(sCurrDesign, modCurSlot());
+			intAddExtraSystemButtons(compList,
+			                         o.comp == COMP_SENSOR ? o.stat : 0,
+			                         o.comp == COMP_ECM ? o.stat : 0,
+			                         o.comp == COMP_CONSTRUCT ? o.stat : 0,
+			                         o.comp == COMP_REPAIRUNIT ? o.stat : 0,
+			                         o.comp == COMP_BRAIN ? o.stat : 0);
+		}
+		else
 		intAddExtraSystemButtons(compList,
 		                         sCurrDesign.asParts[COMP_SENSOR],
 		                         sCurrDesign.asParts[COMP_ECM],
@@ -1276,12 +1301,17 @@ static void intSetDesignMode(DES_COMPMODE newCompMode, bool forceRefresh)
 	case IDES_TURRET:
 		compList = intAddComponentForm();
 		weaponIndex = (sCurrDesign.numWeaps > 0) ? sCurrDesign.asWeaps[0] : 0;
+		if (modslots::usable(sCurrDesign))   // MOD (23.11. 02:16): Waffe des gewaehlten Platzes
+		{
+			const modslots::Occupant o = modslots::occupant(sCurrDesign, modCurSlot());
+			weaponIndex = o.kind == modslots::SLOT_WEAPON ? o.stat : 0;
+		}
 		intAddComponentButtons(compList, weaponIterator(), weaponIndex, true);
 		intAddSystemButtons(IDES_TURRET);
 		widgSetButtonState(psWScreen, IDDES_SYSTEMFORM, WBUT_LOCK);
 		widgSetButtonState(psWScreen, IDDES_SYSTEMBUTTON, WBUT_CLICKLOCK);
 		widgReveal(psWScreen, IDDES_SYSTEMFORM);
-		intSetSystemForm(sCurrDesign.getWeaponStats(0)); // in case previous was a different slot
+		intSetSystemForm(weaponIndex < asWeaponStats.size() ? &asWeaponStats[weaponIndex] : sCurrDesign.getWeaponStats(0)); // in case previous was a different slot
 		break;
 	case IDES_BODY:
 		compList = intAddComponentForm();
@@ -1329,6 +1359,7 @@ static void intSetDesignMode(DES_COMPMODE newCompMode, bool forceRefresh)
 void intDesignRefreshComponents()
 {
 	if (desCompMode != IDES_NOCOMPONENT) { intSetDesignMode(desCompMode, true); }
+	modSlotBarRefresh();
 }
 
 static COMPONENT_STATS *
@@ -2616,7 +2647,10 @@ static void setTemplateStat(DROID_TEMPLATE *psTemplate, COMPONENT_STATS *psStats
 	auto clearTurret = [&] {
 		clearNonWeapons();
 		clearWeapons(0);
+		psTemplate->modSlots.reset();   // MOD (23.11. 02:16)
 	};
+	// MOD (23.11. 02:16): Rumpf mit mehreren Plaetzen - Waffen, Sensoren und Stoersender kommen auf den gewaehlten Platz
+	const bool useSlots = modslots::usable(*psTemplate) && (desCompMode == IDES_TURRET || desCompMode == IDES_SYSTEM);
 
 	switch (psStats->compType)
 	{
@@ -2626,6 +2660,10 @@ static void setTemplateStat(DROID_TEMPLATE *psTemplate, COMPONENT_STATS *psStats
 		if (!intCheckValidWeaponForProp(psTemplate))
 		{
 			clearTurret();
+		}
+		else if (!psTemplate->modSlots.isDefault())
+		{
+			modslots::fitToBody(*psTemplate, selectedPlayer);   // MOD (23.11. 02:16): Belegung an den neuen Rumpf anpassen
 		}
 		else
 		{
@@ -2656,10 +2694,20 @@ static void setTemplateStat(DROID_TEMPLATE *psTemplate, COMPONENT_STATS *psStats
 		psTemplate->asParts[COMP_REPAIRUNIT] = (REPAIR_STATS *)psStats - asRepairStats.data();
 		break;
 	case COMP_ECM:
+		if (useSlots)
+		{
+			modslots::assign(*psTemplate, modCurSlot(), COMP_ECM, static_cast<unsigned>((ECM_STATS *)psStats - asECMStats.data()), selectedPlayer);
+			break;
+		}
 		clearTurret();
 		psTemplate->asParts[COMP_ECM] = (ECM_STATS *)psStats - asECMStats.data();
 		break;
 	case COMP_SENSOR:
+		if (useSlots)
+		{
+			modslots::assign(*psTemplate, modCurSlot(), COMP_SENSOR, static_cast<unsigned>((SENSOR_STATS *)psStats - asSensorStats.data()), selectedPlayer);
+			break;
+		}
 		clearTurret();
 		psTemplate->asParts[COMP_SENSOR] = (SENSOR_STATS *)psStats - asSensorStats.data();
 		break;
@@ -2668,6 +2716,11 @@ static void setTemplateStat(DROID_TEMPLATE *psTemplate, COMPONENT_STATS *psStats
 		psTemplate->asParts[COMP_CONSTRUCT] = (CONSTRUCT_STATS *)psStats - asConstructStats.data();
 		break;
 	case COMP_WEAPON: {
+		if (useSlots)
+		{
+			modslots::assign(*psTemplate, modCurSlot(), COMP_WEAPON, static_cast<unsigned>((WEAPON_STATS *)psStats - asWeaponStats.data()), selectedPlayer);
+			break;
+		}
 		clearNonWeapons();
 		int i = desCompMode == IDES_TURRET_A? 1 : desCompMode == IDES_TURRET_B? 2 : 0;
 		psTemplate->asWeaps[i] = (WEAPON_STATS *)psStats - asWeaponStats.data();
@@ -2919,8 +2972,20 @@ bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complai
 
 	const bool isTransportTempl = isTransporter(psTempl);
 
+	// MOD (Wunsch 23.11. 02:16): frei belegte Turm-Plaetze (Anschluss je Waffe, Systemtuerme neben Waffen)
+	if (!psTempl->modSlots.isDefault())
+	{
+		modslots::normalize(*psTempl, static_cast<unsigned>(player));
+		std::string why;
+		if (!modslots::valid(*psTempl, &why))
+		{
+			debug(level, "Turret slots: %s", why.c_str());
+			return false;
+		}
+	}
+
 	// Check a turret has been installed
-	if (psTempl->numWeaps == 0 &&
+	if (psTempl->numWeaps == 0 && psTempl->modSlots.numSys == 0 &&
 	    psTempl->asParts[COMP_SENSOR] == 0 &&
 	    psTempl->asParts[COMP_ECM] == 0 &&
 	    psTempl->asParts[COMP_BRAIN] == 0 &&
@@ -2977,7 +3042,7 @@ bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complai
 	}
 
 	// Check number of weapon slots
-	if ((unsigned)psTempl->numWeaps > psTempl->getBodyStats()->weaponSlots)
+	if ((unsigned)psTempl->numWeaps + psTempl->modSlots.numSys > psTempl->getBodyStats()->weaponSlots)
 	{
 		debug(level, "Too many weapon turrets");
 		return false;
@@ -2989,7 +3054,7 @@ bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complai
 	const bool infantrySpade = psTempl->asParts[COMP_CONSTRUCT] != 0
 		&& (psTempl->droidType == DROID_PERSON || psTempl->droidType == DROID_CYBORG || psTempl->droidType == DROID_CYBORG_SUPER)
 		&& psTempl->getPropulsionStats()->propulsionType == PROPULSION_TYPE_LEGGED;
-	if (psTempl->numWeaps != 0 &&
+	if (psTempl->numWeaps != 0 && psTempl->modSlots.numSys == 0 &&   // MOD (23.11. 02:16): Systemtuerme neben Waffen (modslots) sind erlaubt
 	    ((psTempl->asParts[COMP_SENSOR] && psTempl->asParts[COMP_SENSOR] != aDefaultSensor[player]) ||
 	     (psTempl->asParts[COMP_ECM] && psTempl->asParts[COMP_ECM] != aDefaultECM[player]) ||
 	     (psTempl->asParts[COMP_REPAIRUNIT] && psTempl->asParts[COMP_REPAIRUNIT] != aDefaultRepair[player]) ||
@@ -3076,6 +3141,9 @@ void intRemoveDesign()
 
 	widgDelete(psWScreen, IDDES_COMBOT); // MOD
 	widgDelete(psWScreen, IDDES_HULLFORGE); // MOD (23.11.)
+	widgDelete(psWScreen, IDDES_SLOTBAR); // MOD (23.11. 02:16)
+	modSlotBarCount = 0;
+	modSlotSel = -1;
 	widgDelete(psWScreen, IDDES_FORM);
 	widgDelete(psWScreen, IDDES_STATSFORM);
 
@@ -3121,9 +3189,17 @@ static DROID_TEMPLATE *templateFromButtonId(unsigned buttonId, bool allowBlankTe
 /* Process return codes from the design screen */
 void intProcessDesign(UDWORD id)
 {
+	// MOD (23.11. 02:16): Knopf der Turm-Plaetze-Leiste (Klick: Platz waehlen, Rechtsklick: leeren)
+	if (id >= IDDES_SLOTFIRST && id <= IDDES_SLOTLAST)
+	{
+		modSlotClicked(static_cast<int>(id - IDDES_SLOTFIRST), widgGetButtonKey_DEPRECATED(psWScreen) == WKEY_SECONDARY);
+		modSlotBarRefresh();
+		return;
+	}
 	/* check template button pressed */
 	if (id >= IDDES_TEMPLSTART && id <= IDDES_TEMPLEND)
 	{
+		modSlotSel = -1;   // MOD (23.11. 02:16): neue Vorlage - kein Platz gewaehlt
 		/* if first template create blank design */
 		if (id == IDDES_TEMPLSTART)
 		{
@@ -3548,6 +3624,11 @@ void intProcessDesign(UDWORD id)
 			updateStoreButton(sCurrDesign.stored);
 			break;
 		case IDDES_SYSTEMBUTTON:
+			if (modslots::usable(sCurrDesign))   // MOD (23.11. 02:16): Turm-Knopf = Platz 1 der Leiste
+			{
+				modSlotOpenFor(0);
+				break;
+			}
 			// Add the correct component form
 			switch (droidTemplateType(&sCurrDesign))
 			{
@@ -3721,7 +3802,7 @@ void intProcessDesign(UDWORD id)
 
 			case IDES_SYSTEM:
 			case IDES_TURRET:
-				if (sCurrDesign.getBodyStats()->weaponSlots > 1 &&
+				if (sCurrDesign.getBodyStats()->weaponSlots > 1 && !modslots::usable(sCurrDesign) &&   // MOD (23.11. 02:16): mit der Leiste waehlt man die Plaetze selbst
 				    sCurrDesign.numWeaps == 1 && sCurrDesign.asParts[COMP_BRAIN] == 0)
 				{
 					debug(LOG_GUI, "intProcessDesign: First weapon selected, doing next.");
@@ -3758,6 +3839,7 @@ void intProcessDesign(UDWORD id)
 	{
 		saveTemplate();
 	}
+	modSlotBarRefresh();   // MOD (23.11. 02:16): Turm-Plaetze-Leiste an Rumpf und Belegung anpassen
 }
 
 
@@ -4188,4 +4270,221 @@ bool desStoreCombotTemplate(const DROID_TEMPLATE &design, std::string &error)
 		intAddTemplateForm(nullptr);
 	}
 	return true;
+}
+
+
+// ---------------------------------------------------------------- MOD (Wunsch 23.11. 02:16): Turm-Plaetze-Leiste
+// Unter dem Design-Fenster: ein Knopf je Turm-Platz des Rumpfes (bis 30, zehn je Reihe) - nur bei Rumpfen mit mindestens zwei Plaetzen.
+// Klick waehlt den Platz: rechts erscheinen Waffen und Systeme; Sensoren, Schild-Tuerme und Stoersender lassen sich neben Waffen setzen.
+// Rechtsklick leert den Platz. Jeder Knopf zeigt das eingesetzte Teil als kleines 3D-Modell (wie die Teile-Liste), oben links die Nummer.
+// Bei einem Verbundrumpf ist jeder Platz einer der im Rumpf-Baukasten gesetzten Waffenplaetze.
+
+#define MODSLOT_SZ      28
+#define MODSLOT_GAP     3
+#define MODSLOT_TOP     17
+#define MODSLOT_PERROW  10
+
+static int s_modSlotBarH = 0;
+
+static int modCurSlot()
+{
+	const int n = static_cast<int>(modslots::slotCount(sCurrDesign));
+	if (modSlotSel >= 0 && modSlotSel < n) { return modSlotSel; }
+	return desCompMode == IDES_TURRET_A ? 1 : desCompMode == IDES_TURRET_B ? 2 : 0;
+}
+
+static const COMPONENT_STATS *modSlotStats(const modslots::Occupant &o)
+{
+	switch (o.comp)
+	{
+	case COMP_WEAPON: return o.stat < asWeaponStats.size() ? &asWeaponStats[o.stat] : nullptr;
+	case COMP_SENSOR: return o.stat < asSensorStats.size() ? &asSensorStats[o.stat] : nullptr;
+	case COMP_ECM: return o.stat < asECMStats.size() ? &asECMStats[o.stat] : nullptr;
+	case COMP_CONSTRUCT: return o.stat < asConstructStats.size() ? &asConstructStats[o.stat] : nullptr;
+	case COMP_REPAIRUNIT: return o.stat < asRepairStats.size() ? &asRepairStats[o.stat] : nullptr;
+	case COMP_BRAIN: return o.stat < asBrainStats.size() ? &asBrainStats[o.stat] : nullptr;
+	default: return nullptr;
+	}
+}
+
+static void modSlotButtonDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
+	const int slot = static_cast<int>(psWidget->UserData);
+	const int x0 = static_cast<int>(xOffset) + b->x(), y0 = static_cast<int>(yOffset) + b->y(), w = b->width(), h = b->height();
+	const bool sel = slot == modSlotSel;
+	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
+	const modslots::Occupant o = modslots::occupant(sCurrDesign, slot);
+
+	RenderWindowFrame(FRAME_NORMAL, x0, y0, w, h);
+	if (sel) { pie_UniTransBoxFill(x0 + 1, y0 + 1, x0 + w - 1, y0 + h - 1, pal_RGBA(255, 200, 60, 46)); }
+
+	// Art des Teils als schmaler Streifen unten: Waffe rot, Sensor/Schild gruen, Stoersender violett, anderer Systemturm gelb
+	if (o.kind != modslots::SLOT_EMPTY)
+	{
+		PIELIGHT c = pal_RGBA(230, 70, 50, 220);
+		if (o.comp == COMP_SENSOR) { c = pal_RGBA(70, 220, 110, 220); }
+		else if (o.comp == COMP_ECM) { c = pal_RGBA(190, 100, 240, 220); }
+		else if (o.comp != COMP_WEAPON) { c = pal_RGBA(240, 210, 60, 220); }
+		pie_BoxFill(x0 + 3, y0 + h - 4, x0 + w - 3, y0 + h - 2, c);
+	}
+
+	const COMPONENT_STATS *cs = modSlotStats(o);
+	if (cs != nullptr)
+	{
+		static int s_spin = 45;
+		if (sel) { s_spin = (s_spin + static_cast<int>(realTimeAdjustedAverage(BUTTONOBJ_ROTSPEED / 2))) % 360; }
+		Vector3i rot(-30, sel ? s_spin : 45, 0), pos(0, 0, BUTTON_DEPTH);
+		const int radius = std::max<int>(1, static_cast<int>(getComponentRadius(cs)));
+		const int scale = rescaleButtonObject(radius, 50, COMPONENT_RADIUS);
+		pie_SetGeometricOffset(x0 + w / 2, y0 + h / 2 + 5);
+		displayComponentButton(cs, &rot, &pos, scale);
+	}
+	else
+	{
+		// leerer Platz: kleines Kreuz
+		const PIELIGHT c = hl ? pal_RGBA(170, 220, 255, 200) : pal_RGBA(90, 130, 170, 150);
+		pie_BoxFill(x0 + w / 2 - 4, y0 + h / 2, x0 + w / 2 + 5, y0 + h / 2 + 1, c);
+		pie_BoxFill(x0 + w / 2, y0 + h / 2 - 4, x0 + w / 2 + 1, y0 + h / 2 + 5, c);
+	}
+
+	static WzText s_num[MAX_WEAPONS];
+	static bool s_numInit[MAX_WEAPONS] = {};
+	if (slot >= 0 && slot < static_cast<int>(MAX_WEAPONS))
+	{
+		if (!s_numInit[slot]) { s_num[slot].setText(WzString::number(slot + 1), font_small); s_numInit[slot] = true; }
+		s_num[slot].render(static_cast<float>(x0 + 3), static_cast<float>(y0 + 10), sel ? WZCOL_YELLOW : WZCOL_TEXT_MEDIUM);
+	}
+	if (sel) { iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, pal_RGBA(255, 210, 70, 255)); }
+	else if (hl) { iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, pal_RGBA(150, 220, 255, 255)); }
+}
+
+static std::string modSlotTip(int slot)
+{
+	const modslots::Occupant o = modslots::occupant(sCurrDesign, slot);
+	const COMPONENT_STATS *cs = modSlotStats(o);
+	std::string t = astringf(_("Turret slot %d"), slot + 1);
+	t += ": ";
+	t += cs != nullptr ? getLocalizedStatsName(cs) : _("empty");
+	t += "\n";
+	t += _("Click: choose a weapon or system for this slot - Right-click: empty it");
+	return t;
+}
+
+static void modSlotBarBuild(unsigned n)
+{
+	widgDelete(psWScreen, IDDES_SLOTBAR);
+	modSlotBarCount = 0;
+	if (n < 2) { return; }
+	auto const &parent = psWScreen->psForm;
+	const int rows = static_cast<int>((n + MODSLOT_PERROW - 1) / MODSLOT_PERROW);
+	s_modSlotBarH = MODSLOT_TOP + rows * (MODSLOT_SZ + MODSLOT_GAP) + 4;
+
+	auto bar = std::make_shared<IntFormAnimated>(false);
+	bar->id = IDDES_SLOTBAR;
+	parent->attach(bar);
+	bar->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
+		psWidget->setGeometry(DES_CENTERFORMX, DES_CENTERFORMY + DES_CENTERFORMHEIGHT + 6, DES_CENTERFORMWIDTH, s_modSlotBarH);
+	}));
+
+	auto label = std::make_shared<W_LABEL>();
+	label->id = IDDES_SLOTLABEL;
+	bar->attach(label);
+	label->setGeometry(8, 3, DES_CENTERFORMWIDTH - 16, 12);
+	label->setFont(font_small, WZCOL_TEXT_BRIGHT);
+	label->setString(WzString::fromUtf8(astringf(_("TURRET SLOTS (%u) - weapons and systems together"), n)));
+
+	const int rowW = MODSLOT_PERROW * MODSLOT_SZ + (MODSLOT_PERROW - 1) * MODSLOT_GAP;
+	const int left = (DES_CENTERFORMWIDTH - rowW) / 2;
+	for (unsigned k = 0; k < n; ++k)
+	{
+		W_BUTINIT sButInit;
+		sButInit.formID = IDDES_SLOTBAR;
+		sButInit.id = IDDES_SLOTFIRST + k;
+		sButInit.style = WBUT_PLAIN | WBUT_SECONDARY;
+		sButInit.x = static_cast<int16_t>(left + static_cast<int>(k % MODSLOT_PERROW) * (MODSLOT_SZ + MODSLOT_GAP));
+		sButInit.y = static_cast<int16_t>(MODSLOT_TOP + static_cast<int>(k / MODSLOT_PERROW) * (MODSLOT_SZ + MODSLOT_GAP));
+		sButInit.width = MODSLOT_SZ;
+		sButInit.height = MODSLOT_SZ;
+		sButInit.pDisplay = modSlotButtonDisplay;
+		sButInit.UserData = k;
+		const std::string tip = modSlotTip(static_cast<int>(k));
+		sButInit.pTip = tip;
+		widgAddButton(psWScreen, &sButInit);
+	}
+	modSlotBarCount = n;
+}
+
+static void modSlotBarRefresh()
+{
+	WIDGET *form = widgGetFromID(psWScreen, IDDES_FORM);
+	if (form == nullptr) { return; }   // Design-Bildschirm nicht offen
+	const bool usable = modslots::usable(sCurrDesign);
+	const unsigned n = usable ? modslots::slotCount(sCurrDesign) : 0;
+	if (n != modSlotBarCount || (n >= 2 && widgGetFromID(psWScreen, IDDES_SLOTBAR) == nullptr)) { modSlotBarBuild(n); }
+	if (!usable)
+	{
+		modSlotSel = -1;
+		return;
+	}
+	if (modSlotSel >= static_cast<int>(n)) { modSlotSel = -1; }
+	// die Leiste ersetzt die Knoepfe fuer Turm 2 und 3
+	widgHide(psWScreen, IDDES_WPABUTTON);
+	widgHide(psWScreen, IDDES_WPBBUTTON);
+	if (WIDGET *bar = widgGetFromID(psWScreen, IDDES_SLOTBAR))
+	{
+		bar->show(form->visible());
+	}
+	for (unsigned k = 0; k < n; ++k)
+	{
+		widgSetTip(psWScreen, IDDES_SLOTFIRST + k, modSlotTip(static_cast<int>(k)));
+	}
+	if (modSlotSel < 0 && (desCompMode == IDES_TURRET || desCompMode == IDES_SYSTEM)) { modSlotSel = 0; }
+}
+
+static void modSlotOpenFor(int slot)
+{
+	modSlotSel = slot;
+	const modslots::Occupant o = modslots::occupant(sCurrDesign, slot);
+	const bool system = o.kind == modslots::SLOT_SYSTEM || o.kind == modslots::SLOT_SOLE;
+	desCompID = 0;
+	intSetDesignMode(system ? IDES_SYSTEM : IDES_TURRET, true);
+	widgReveal(psWScreen, IDDES_STATSFORM);
+	widgReveal(psWScreen, IDDES_RIGHTBASE);
+	widgReveal(psWScreen, IDDES_SYSTEMFORM);
+	widgHide(psWScreen, IDDES_BODYFORM);
+	widgHide(psWScreen, IDDES_PROPFORM);
+	if (const COMPONENT_STATS *cs = modSlotStats(o))
+	{
+		intSetSystemForm(const_cast<COMPONENT_STATS *>(cs));
+	}
+}
+
+static void modSlotClicked(int slot, bool secondary)
+{
+	if (!modslots::usable(sCurrDesign) || slot < 0 || slot >= static_cast<int>(modslots::slotCount(sCurrDesign))) { return; }
+	if (!secondary)
+	{
+		modSlotOpenFor(slot);
+		return;
+	}
+	// Rechtsklick: Platz leeren
+	const bool bTemplateNameCustomised = desTemplateNameCustomised(&sCurrDesign);
+	modslots::clearSlot(sCurrDesign, slot, selectedPlayer);
+	intSetPropulsionStats(sCurrDesign.getPropulsionStats());
+	intSetDesignPower(&sCurrDesign);
+	intSetBodyPoints(&sCurrDesign);
+	if (!bTemplateNameCustomised)
+	{
+		sCurrDesign.name = WzString::fromUtf8(GetDefaultTemplateName(&sCurrDesign));
+	}
+	intSetEditBoxTextFromTemplate(&sCurrDesign);
+	if (saveTemplate())
+	{
+		triggerEventDesignCreated(&sCurrDesign);
+	}
+	if (desCompMode == IDES_TURRET || desCompMode == IDES_SYSTEM)
+	{
+		modSlotOpenFor(modSlotSel >= 0 ? modSlotSel : slot);
+	}
 }

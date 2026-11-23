@@ -16,12 +16,13 @@
 
 struct COMPONENT_STATS;
 struct BODY_STATS;
+struct iIMDShape;
 
 namespace modcompbody
 {
 
-/// Waffenplaetze je Verbundrumpf: der Design-Bildschirm kennt drei Waffen (Turm A/B/C)
-constexpr unsigned MAX_SLOTS = 3;
+/// Waffenplaetze je Verbundrumpf (Wunsch 23.11. 02:16: bis 30 - Turm-Plaetze-Leiste im Design-Bildschirm, MAX_WEAPONS)
+constexpr unsigned MAX_SLOTS = 30;
 
 struct Part
 {
@@ -29,6 +30,7 @@ struct Part
 	glm::vec3 pos = glm::vec3(0.f);    ///< Lage (x, y = oben, z = hinten; vorn ist -z)
 	glm::vec3 rot = glm::vec3(0.f);    ///< Drehung in Grad: Gieren (um y), Nicken (um x), Rollen (um z)
 	float scale = 1.f;
+	int flip = 0;                      ///< Spiegelung der Teil-Geometrie: Bit 0 = x, Bit 1 = y, Bit 2 = z (Wunsch 23.11. 02:16 "Flip")
 };
 
 struct Mount
@@ -41,7 +43,7 @@ struct Def
 	std::string id;                   ///< Rumpf-ID ("CompBody_...")
 	std::string name;                 ///< Anzeigename
 	std::vector<Part> parts;          ///< Teil 0 = Fahrgestell (Laufwerke, Klasse)
-	std::vector<Mount> mounts;        ///< Waffenplaetze (bis MAX_SLOTS)
+	std::vector<Mount> mounts;        ///< Waffenplaetze (bis MAX_SLOTS) - jeder ein Turm-Platz fuer eine Waffe oder einen Systemturm
 	bool preset = false;              ///< Vorlage aus dem Mod-Paket (noch nicht im Benutzerordner)
 	bool deleted = false;             ///< geloescht: bleibt fuer alte Spielstaende angemeldet, aber nicht mehr baubar
 };
@@ -72,7 +74,9 @@ void refreshAvailability(unsigned player);
 // ---------------------------------------------------------------- Rumpf-Baukasten
 const std::vector<Def> &defs();
 const Def *find(const std::string &id);
-glm::mat4 partMatrix(const Part &p);
+glm::mat4 partMatrix(const Part &p, bool withFlip = true);
+/// gespiegelte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
+const iIMDShape *flippedShape(const std::string &bodyId, int flipMask);
 Totals totals(const Def &d);
 /// Rumpf zu einer ID (nullptr = unbekannt)
 const BODY_STATS *bodyById(const std::string &id);

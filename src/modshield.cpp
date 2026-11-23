@@ -116,6 +116,9 @@ bool shieldParams(const BASE_OBJECT *o, Params &P)
 		// fahrender Schildgenerator (Sensor-Turm mit Schild) oder ein eingebauter Schild-Sensor (Fatboy: Kampffahrzeug mit Schildkuppel)
 		if (d->isVtol() || d->isTransporter() || d->died) { return false; }
 		const SENSOR_STATS *ss = d->getSensorStats();
+		// MOD (23.11. 02:16): Schild-Turm neben Waffen/anderen Sensoren (modslots) - der staerkste Schild zaehlt
+		const SENSOR_STATS *extra = modslots::extraShieldSensor(d);
+		if (extra != nullptr && (ss == nullptr || ss->shieldRadius <= 0 || ss->shieldHP <= 0 || extra->shieldHP > ss->shieldHP)) { ss = extra; }
 		if (ss == nullptr || ss->shieldRadius <= 0 || ss->shieldHP <= 0) { return false; }
 		P.radius = ss->shieldRadius; P.hp = ss->shieldHP; P.regen = ss->shieldRegen; P.recharge = ss->shieldRecharge;
 		P.regenDelay = ss->shieldRegenDelay; P.drop = ss->shieldDrop; P.needsPower = false;

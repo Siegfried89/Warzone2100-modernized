@@ -8,6 +8,7 @@
 #include <cstdint>
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <vector>
+#include "modslots.h"
 
 struct DROID;
 struct FEATURE;
@@ -35,7 +36,8 @@ struct WreckInfo
 	uint8_t droidType = 0;
 	uint8_t numWeaps = 0;
 	uint32_t parts[16] = {};     // Bauteile je COMP_* (wie DROID::asBits, DROID_MAXCOMP Eintraege)
-	uint32_t weaps[8] = {};      // Waffen (MAX_WEAPONS)
+	uint32_t weaps[MAX_WEAPONS] = {};   // Waffen
+	ModSlots slots;              // (23.11. 02:16) Turm-Belegung (Anschluesse, Systemtuerme neben Waffen)
 	const FEATURE_STATS *stats = nullptr;   // Wrack-Modell (Anzeige auf dem Abschlepp-Lkw)
 };
 /// gelandetes Wrack mit bekanntem Bauplan? (Wracks aus alten Spielstaenden haben keinen)
