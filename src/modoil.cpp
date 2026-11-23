@@ -64,14 +64,16 @@ namespace
 // kleiner Bonus) -> Kraftwerk und Tankstelle. Rohoel geht nur noch in die Raffinerie; Kraftwerk, Lager und Tankstelle bekommen nur
 // veredelte Faesser vom Tanker. Alle Speicher starten leer.
 constexpr int DERRICK_CAP = 20;             // Fass-Plaetze am Oelturm ("deutlich mehr als 5")
-constexpr int DERRICK_SECS = 180;           // jeder Oelturm foerdert gleich: 1 Fass alle 3 Minuten, ohne Kraftwerk-Verknuepfung
-constexpr int GEN_ENERGY = 100;             // Energie je Fass im Kraftwerk ohne Modul (Modul +50 %, Forschung wie WZ) = WZ-Foerderung
-constexpr int GEN_REF_POINTS = 55;          // Bezug: Kraftwerk ohne Modul hat 55 Leistungspunkte (WZ-Wert)
-constexpr int STORE_BONUS = 10;             // Fass ueber das Lager: +10 % Energie
-constexpr int GEN_SECS = 180;               // ein Fass haelt das Kraftwerk / Stromnetz 3 Minuten am Laufen
-constexpr int START_FUEL = 0;               // (20.11.) neues Kraftwerk startet leer
-constexpr int PULL_BELOW = 60;              // das Kraftwerk holt ein Fass aus dem Lager, wenn der Vorrat darunter faellt
-constexpr int HUNGRY_BELOW = 180;           // (20.11. Punkt 7 "etwas frueher") Tanker beliefern ein Kraftwerk mit hoechstens 3 Minuten zuerst
+constexpr int DERRICK_SECS = 180;           // jeder Oelturm stellt 1 Fass alle 3 Minuten ab (Fracht fuer Pickups, Tanker und Tankstellen)
+// (Wunsch 23.11. 19:29 "Die Economy laeuft viel zu langsam ... sie sollte kontinuierlich im WZ-Stil konstant laufen, anstatt schubweise.
+// Sobald alle wichtigen Eco-Gebaeude verbunden sind = Boom, staendiges Plus, ohne erst lange warten zu muessen, dass Faesser verarbeitet
+// werden"): die Einnahmen laufen wie in Warzone stetig ueber die Verbindung Oelturm -> Kraftwerk (4 Oeltuerme je Kraftwerk, Kraftwerk-Modul
+// und Forschung wie WZ, power.cpp). Die Faesser fahren weiter sichtbar im Kreislauf, das Einkommen haengt aber nicht mehr an ihrer Ankunft.
+// Abgestuft, damit es sanft anlaeuft: schon Oelturm + Kraftwerk bringen etwas, die Raffinerie den vollen Ertrag, das Lager etwas obendrauf.
+// (WZ: 1 Energie je Sekunde und Oelturm x Kraftwerk-Punkte / 100 - ohne Modul 55 = 33 je Minute; Modul und Forschung erhoehen die Punkte)
+constexpr int OIL_PCT_CRUDE = 75;           // Oelturm am Kraftwerk, aber keine Raffinerie angeschlossen: Rohoel brennt schlechter
+constexpr int OIL_PCT_REFINED = 120;        // Raffinerie angeschlossen (Rohr zum Oelturm oder Pickups) und Raffinat am Kraftwerk (Tanker oder Naehe)
+constexpr int OIL_PCT_STORE = 10;           // Oellager mit Vorrat in Reichweite des Kraftwerks: +10 % (Punkte)
 constexpr int STORAGE_CAP = 8;              // Fass-Plaetze im Lager (Oellager / Wasserturm)
 // (Wunsch 22.11. 18:27 "grosses Oellager"): Grosses Oellager "A0BaBaOilStoreBig" (schwarze Lagerhallen, 3x2) fasst 48 Faesser
 constexpr int STORAGE_CAP_BIG = 48;
@@ -130,8 +132,8 @@ struct Replace
 
 std::map<uint32_t, int> s_barrels;          // Oelturm -> Faesser
 std::map<uint32_t, int64_t> s_progress;     // Oelturm -> Fortschritt zum naechsten Fass (Festkomma)
-std::map<uint32_t, int> s_fuel;             // Kraftwerk -> Sekunden
-std::map<uint32_t, int> s_store;            // Wasserturm (Feature) -> rohe Faesser
+std::map<uint32_t, int> s_oilPct;           // (23.11. 19:29) Oelturm -> Ertrag in Prozent (Raffinerie-/Lager-Anschluss), power.cpp liest ihn
+std::map<uint32_t, int> s_store;           // Wasserturm (Feature) -> rohe Faesser
 std::map<uint32_t, int> s_storeR;           // Wasserturm (Feature) -> veredelte Faesser
 std::map<uint32_t, int> s_refIn, s_refOut, s_refT;   // Raffinerie: Eingang, Ausgang, Sekunden im laufenden Fass
 std::map<uint32_t, CargoState> s_cargo;     // Lkw -> Zustand
@@ -140,8 +142,9 @@ std::map<std::pair<int, int>, int> s_lowered;   // tiefe Graeben: abgesenkte Kac
 std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
 int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwerk-Geschenk, Bit 2 = Raffinerie-Geschenk schon vergeben
-bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
-int s_bank[MAX_PLAYERS] = {};               // (Wunsch 21.11. 20:22) Energie verbrannter Faesser, die noch stetig ins Konto laeuft
+bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab der ersten echten Stromquelle (modgrid::noteDuty)
+int s_bank[MAX_PLAYERS] = {};               // Restguthaben aus Spielstaenden der Fass-Wirtschaft (vor 23.11.): wird einmal ausgezahlt
+int64_t s_oilFP[MAX_PLAYERS] = {};          // (23.11.) Oel-Einnahmen aus power.cpp (Festkomma 32.32) fuer das Einnahmen-Buch
 std::vector<std::pair<int, bool>> s_tankRespawn;   // (20.11.) (Spieler, Tanker?) - letzter Oeltanker bzw. letzter Pickup zerstoert
 int s_beepTrack = -2;                       // (20.11. 19:06) Rueckfahr-Piepen beim Abliefern (-2 = noch nicht gesucht)
 bool s_have = false;
@@ -371,9 +374,34 @@ void processReplacements()
 
 // ---------------------------------------------------------------- oeffentliche Funktionen
 
+int generatorDerricks(const STRUCTURE *g)
+{
+	if (g == nullptr || g->pStructureType == nullptr || g->pStructureType->type != REF_POWER_GEN || g->pFunctionality == nullptr) { return 0; }
+	int n = 0;
+	for (int i = 0; i < NUM_POWER_MODULES; ++i)
+	{
+		const STRUCTURE *e = g->pFunctionality->powerGenerator.apResExtractors[i];
+		if (e != nullptr && !e->died) { n++; }
+	}
+	return n;
+}
+
+int oilPercent(const STRUCTURE *derrick)
+{
+	if (derrick == nullptr) { return OIL_PCT_CRUDE; }
+	const auto it = s_oilPct.find(derrick->id);
+	return it == s_oilPct.end() ? OIL_PCT_CRUDE : it->second;
+}
+
+void noteOilIncomeFP(int player, int64_t amountFP)
+{
+	if (player >= 0 && player < MAX_PLAYERS && amountFP > 0) { s_oilFP[player] += amountFP; }
+}
+
 bool generatorHungry(const STRUCTURE *g)
 {
-	return g != nullptr && manages(static_cast<int>(g->player)) && g->status == SS_BUILT && !modgrid::generatorStandby(g) && generatorFuel(g) <= HUNGRY_BELOW;
+	// (23.11.) "hungrig" = Kraftwerk ohne angeschlossenen Oelturm (liefert nichts)
+	return g != nullptr && manages(static_cast<int>(g->player)) && g->status == SS_BUILT && !modgrid::generatorStandby(g) && generatorDerricks(g) == 0;
 }
 
 EconomyView economyView(int p)
@@ -382,6 +410,7 @@ EconomyView economyView(int p)
 	if (p < 0 || p >= MAX_PLAYERS || !manages(p)) { return v; }
 	v.active = true;
 	std::vector<const STRUCTURE *> pipes;
+	int64_t rateNum = 0;   // (23.11.) stetiger Oel-Ertrag je Minute x 10^6
 	for (const STRUCTURE *s : gameWorld.objects.structures[p])
 	{
 		if (s->died || s->status != SS_BUILT || s->pStructureType == nullptr) { continue; }
@@ -411,14 +440,22 @@ EconomyView economyView(int p)
 		else if (st->type == REF_POWER_GEN)
 		{
 			v.gens++;
-			const int f = generatorFuel(s);
 			if (generatorRunning(s)) { v.gensRunning++; }
 			if (modgrid::generatorStandby(s)) { v.gensStandby++; }
-			else
+			v.derrickSlots += NUM_POWER_MODULES;
+			// (23.11.) stetiger Ertrag wie in WZ: je angeschlossenem Oelturm 1 je Sekunde x Energie-Einstellung x Kraftwerk (Punkte / 100) x Anschluss
+			const int pts = std::max(1, getBuildingPowerPoints(s));
+			const int mod = getPowerModifier(p);
+			for (int i = 0; i < NUM_POWER_MODULES; ++i)
 			{
-				if (f <= HUNGRY_BELOW) { v.gensHungry++; }
-				v.minFuel = v.minFuel < 0 ? f : std::min(v.minFuel, f);
+				const STRUCTURE *e = s->pFunctionality != nullptr ? s->pFunctionality->powerGenerator.apResExtractors[i] : nullptr;
+				if (e == nullptr || e->died) { continue; }
+				v.linkedDerricks++;
+				const int pct = oilPercent(e);
+				if (pct < OIL_PCT_REFINED) { v.crudeDerricks++; }
+				rateNum += static_cast<int64_t>(60) * mod * pts * pct;
 			}
+			if (generatorDerricks(s) == 0 && !modgrid::generatorStandby(s)) { v.gensIdle++; }
 		}
 		else if (modfuel::isStation(s))
 		{
@@ -446,6 +483,7 @@ EconomyView economyView(int p)
 		if (isTank(d)) { v.tankers++; v.tankerBarrels += n; v.tankerCap += cap; }
 		else { v.pickups++; v.pickupBarrels += n; v.pickupCap += cap; }
 	}
+	v.ratePerMin = static_cast<int>(rateNum / 1000000);
 	v.power = getPower(static_cast<unsigned>(p));
 	v.powerMax = getPowerMaxStorage(static_cast<unsigned>(p));
 	v.incomeLastMinute = static_cast<int>(s_lastIncome[p]);
@@ -516,7 +554,7 @@ void reset()
 	s_ledgerMinute = 0;
 	s_barrels.clear();
 	s_progress.clear();
-	s_fuel.clear();
+	s_oilPct.clear();
 	s_store.clear();
 	s_storeCapById.clear();
 	s_storeR.clear();
@@ -528,7 +566,7 @@ void reset()
 	s_station.clear();
 	s_booms.clear();
 	s_repl.clear();
-	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_bank[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_bank[p] = 0; s_oilFP[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
 	s_tankRespawn.clear();
 	s_have = false;
 }
@@ -546,18 +584,18 @@ void saveState(std::vector<int64_t> &out)
 	out.clear();
 	saveMap(out, 1, s_barrels);
 	saveMap(out, 2, s_progress);
-	saveMap(out, 3, s_fuel);
 	saveMap(out, 4, s_store);
 	saveMap(out, 5, s_storeR);
 	saveMap(out, 6, s_refIn);
 	saveMap(out, 7, s_refOut);
 	saveMap(out, 8, s_refT);
 	saveMap(out, 9, s_station);
+	saveMap(out, 13, s_oilPct);   // (23.11.) Ertrag je Oelturm - gleich nach dem Laden wie vorher
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		if (s_gift[p] != 0) { out.push_back(10); out.push_back(p); out.push_back(s_gift[p]); }
 		if (s_duty[p]) { out.push_back(11); out.push_back(p); out.push_back(1); }
-		if (s_bank[p] > 0) { out.push_back(12); out.push_back(p); out.push_back(s_bank[p]); }
+		if (s_bank[p] > 0) { out.push_back(12); out.push_back(p); out.push_back(s_bank[p]); }   // Restguthaben (noch nicht ausgezahlt)
 	}
 }
 
@@ -572,7 +610,7 @@ void loadState(const std::vector<int64_t> &in)
 		{
 		case 1: s_barrels[id] = iv; break;
 		case 2: s_progress[id] = std::max<int64_t>(0, v); break;
-		case 3: s_fuel[id] = iv; break;
+		case 3: break;   // (23.11.) Brennstoff der Kraftwerke gibt es nicht mehr (stetige Einnahmen)
 		case 4: s_storeR[id] += iv; break;   // (20.11.) Lager hat nur noch veredelte Faesser
 		case 10: if (id < MAX_PLAYERS) { s_gift[id] = iv; } break;
 		case 11: if (id < MAX_PLAYERS) { s_duty[id] = iv != 0; } break;
@@ -582,6 +620,7 @@ void loadState(const std::vector<int64_t> &in)
 		case 7: s_refOut[id] = iv; break;
 		case 8: s_refT[id] = iv; break;
 		case 9: s_station[id] = iv; break;
+		case 13: s_oilPct[id] = iv; break;
 		default: break;
 		}
 	}
@@ -625,11 +664,6 @@ int cargoBarrels(const DROID *d, int &cap)
 	return it == s_cargo.end() ? 0 : it->second.n;
 }
 
-int generatorFuel(const STRUCTURE *g)
-{
-	const auto it = s_fuel.find(g->id);
-	return it == s_fuel.end() ? START_FUEL : it->second;
-}
 
 bool isInfantry(const DROID *d)
 {
@@ -803,8 +837,8 @@ void drawCargo(const DROID *d, const iIMDShape *bed, const glm::mat4 &m, const g
 bool generatorRunning(const STRUCTURE *psGen)
 {
 	if (!manages(psGen->player)) { return true; }
-	const auto it = s_fuel.find(psGen->id);
-	return it == s_fuel.end() ? START_FUEL > 0 : it->second > 0;   // (20.11.) neues Kraftwerk ist leer
+	// (23.11.) ein Kraftwerk laeuft, solange mindestens ein Oelturm angeschlossen ist (wie in WZ, kein Brennstoff-Vorrat mehr)
+	return generatorDerricks(psGen) > 0;
 }
 
 void onStructureDestroyed(const STRUCTURE *psDel)
@@ -901,28 +935,6 @@ struct Snap
 {
 	std::vector<STRUCTURE *> derricks, gens, pipes, refs, stations;
 };
-
-/// (20.11.) Energie je Fass: 100 beim Kraftwerk ohne Modul; Modul und Kraftwerk-Forschung wie in WZ (Leistungspunkte / 55),
-/// Energie-Einstellung der Partie (niedrig/normal/hoch), +10 % wenn das Fass aus dem Lager kommt
-int barrelEnergy(const STRUCTURE *gen, bool fromStore)
-{
-	int64_t e = static_cast<int64_t>(GEN_ENERGY) * std::max(1, getBuildingPowerPoints(gen)) / GEN_REF_POINTS;
-	e = e * getPowerModifier(static_cast<int>(gen->player)) / 100;
-	if (fromStore) { e = e * (100 + STORE_BONUS) / 100; }
-	return static_cast<int>(std::max<int64_t>(1, e));
-}
-
-void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool fromStore)
-{
-	const int e = barrelEnergy(gen, fromStore);
-	for (int i = 0; i < barrels; i++)
-	{
-		// (Wunsch 21.11. 20:22 "mein Power supply erhoeht sich nicht (wie im WZ vanilla)"): nicht auf einen Schlag, sondern stetig (payout)
-		if (player >= 0 && player < MAX_PLAYERS) { s_bank[player] += e; }
-		s_fuel[gen->id] += GEN_SECS;
-	}
-	if (barrels > 0 && player >= 0 && player < MAX_PLAYERS) { s_duty[player] = true; }
-}
 
 int storeRoom(uint32_t id)
 {
@@ -1026,14 +1038,7 @@ void logistics()
 			if (++prog >= DERRICK_SECS) { prog = 0; b++; }
 		}
 
-		// Kraftwerke: Brennstoff (in Bereitschaft - der Solarstrom reicht - verbraucht ein Kraftwerk nichts)
-		for (STRUCTURE *g : sn.gens)
-		{
-			auto it = s_fuel.find(g->id);
-			if (it == s_fuel.end()) { s_fuel[g->id] = START_FUEL; }
-			else if (it->second > 0 && !modgrid::generatorStandby(g)) { it->second--; }
-		}
-		// (20:35) nur Kraftwerke, die Oel brauchen, bekommen welches; die anderen Faesser gehen an die Tankstellen
+		// (20:35) Kraftwerke in Bereitschaft (der Solarstrom reicht) bekommen keine Faesser; die gehen an Lager und Tankstellen
 		std::vector<STRUCTURE *> activeGens;
 		for (STRUCTURE *g : sn.gens) { if (!modgrid::generatorStandby(g)) { activeGens.push_back(g); } }
 
@@ -1051,26 +1056,7 @@ void logistics()
 			else { t = 0; }
 		}
 
-		// Kraftwerk holt ein Fass aus dem naechsten Lager (bis 12 Felder), wenn sein Vorrat unter 1 Minute faellt (+10 % Energie)
-		for (STRUCTURE *g : activeGens)
-		{
-			if (s_fuel[g->id] > PULL_BELOW) { continue; }
-			BASE_OBJECT *best = nullptr;
-			int64_t bd = INT64_MAX;
-			for (BASE_OBJECT *t : towers)
-			{
-				if (s_store[t->id] + s_storeR[t->id] <= 0) { continue; }
-				const int64_t dd = d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y);
-				if (dd > SR2) { continue; }
-				if (dd < bd) { bd = dd; best = t; }
-			}
-			if (best != nullptr)
-			{
-				if (s_storeR[best->id] > 0) { s_storeR[best->id]--; } else { s_store[best->id]--; }
-				deliverToGenerator(p, g, 1, true);
-			}
-		}
-
+		std::set<uint32_t> pipeLinked;      // (23.11.) Oeltuerme mit Rohr-Verbindung zu einer Raffinerie
 		// Pipeline-Netz: Oeltuerme -> Raffinerie (20.11.: nur noch dorthin), ein Fass je Sekunde und Turm. Angeschlossen ist ein Gebaeude, wenn
 		// ein Rohrstueck auf einem der 8 Felder rundherum liegt (auch die Raffinerie - vorher 5x5, 20.11. Punkt 9)
 		if (!sn.pipes.empty() && !sn.refs.empty())
@@ -1124,10 +1110,14 @@ void logistics()
 			for (STRUCTURE *r : sn.refs) { refRoots.push_back(touching(r->pos.x, r->pos.y)); }
 			for (STRUCTURE *der : sn.derricks)
 			{
-				int &barrels = s_barrels[der->id];
-				if (barrels <= 0) { continue; }
 				const std::set<int> rd = touching(der->pos.x, der->pos.y);
 				if (rd.empty()) { continue; }
+				for (size_t k = 0; k < sn.refs.size(); k++)
+				{
+					if (shares(rd, refRoots[k])) { pipeLinked.insert(der->id); break; }   // (23.11.) Rohr zur Raffinerie = angeschlossen
+				}
+				int &barrels = s_barrels[der->id];
+				if (barrels <= 0) { continue; }
 				STRUCTURE *br = nullptr;
 				int64_t bd = INT64_MAX;
 				for (size_t k = 0; k < sn.refs.size(); k++)
@@ -1146,6 +1136,45 @@ void logistics()
 			}
 		}
 
+		// (Wunsch 23.11. 19:29) Ertrag je Oelturm fuer die stetigen Einnahmen (power.cpp): angeschlossen an ein Kraftwerk (WZ-Verbindung,
+		// 4 je Kraftwerk) bringt er Rohoel-Ertrag; ist eine Raffinerie angeschlossen (Rohr zum Oelturm oder ein Pickup faehrt) und kommt das
+		// Raffinat zum Kraftwerk (ein Oeltanker faehrt oder die Raffinerie steht in Reichweite des Kraftwerks), den vollen; ein Oellager
+		// mit Vorrat in Reichweite des Kraftwerks gibt etwas obendrauf. Haengt nur am Aufbau, nicht an der Ankunft einzelner Faesser.
+		{
+			bool havePickup = false, haveTanker = false;
+			for (const DROID *d : gameWorld.objects.droids[p])
+			{
+				if (d == nullptr || d->died || cargoCapacity(d) <= 0) { continue; }
+				if (isTank(d)) { haveTanker = true; } else { havePickup = true; }
+			}
+			for (STRUCTURE *der : sn.derricks)
+			{
+				const STRUCTURE *gen = der->pFunctionality != nullptr ? der->pFunctionality->resourceExtractor.psPowerGen : nullptr;
+				int pct = OIL_PCT_CRUDE;
+				const bool toRefinery = !sn.refs.empty() && (havePickup || pipeLinked.count(der->id) != 0);
+				if (toRefinery)
+				{
+					bool toGen = haveTanker;
+					if (!toGen && gen != nullptr)
+					{
+						for (STRUCTURE *r : sn.refs)
+						{
+							if (d2(r->pos.x, r->pos.y, gen->pos.x, gen->pos.y) <= SR2) { toGen = true; break; }
+						}
+					}
+					if (toGen) { pct = OIL_PCT_REFINED; }
+				}
+				if (gen != nullptr)
+				{
+					for (BASE_OBJECT *t : towers)
+					{
+						if (s_store[t->id] + s_storeR[t->id] > 0 && d2(t->pos.x, t->pos.y, gen->pos.x, gen->pos.y) <= SR2) { pct += OIL_PCT_STORE; break; }
+					}
+				}
+				s_oilPct[der->id] = pct;
+			}
+		}
+
 		// Lkw- und Tanker-Autopilot
 		std::map<uint32_t, int> avail;      // abholbare Faesser: Oelturm (roh) bzw. Raffinerie (veredelt)
 		for (STRUCTURE *d : sn.derricks) { avail[d->id] = s_barrels[d->id]; }
@@ -1158,26 +1187,6 @@ void logistics()
 				if (it != avail.end()) { it->second -= std::max(0, kv.second.cap - kv.second.n); }
 			}
 		}
-		// "hungriges" Kraftwerk: hoechstens HUNGRY_BELOW Sekunden Vorrat und kein Lager mit Faessern in seiner Reichweite
-		auto hungryFor = [&](const DROID *d) -> STRUCTURE *
-		{
-			STRUCTURE *hungry = nullptr;
-			int64_t hd = INT64_MAX;
-			for (STRUCTURE *g : activeGens)
-			{
-				if (s_fuel[g->id] > HUNGRY_BELOW) { continue; }
-				bool stocked = false;
-				for (BASE_OBJECT *t : towers)
-				{
-					if (s_store[t->id] + s_storeR[t->id] > 0 && d2(t->pos.x, t->pos.y, g->pos.x, g->pos.y) <= SR2) { stocked = true; break; }
-				}
-				if (stocked) { continue; }
-				const int64_t dd = d2(d->pos.x, d->pos.y, g->pos.x, g->pos.y);
-				if (dd < hd) { hd = dd; hungry = g; }
-			}
-			return hungry;
-		};
-
 		for (DROID *d : gameWorld.objects.droids[p])
 		{
 			if (d == nullptr || d->died) { continue; }
@@ -1274,7 +1283,8 @@ void logistics()
 					}
 					else
 					{
-						deliverToGenerator(p, ts, c.n, false);
+						// (23.11.) das Kraftwerk verbrennt das Raffinat (sichtbarer Kreislauf); die Energie kommt stetig ueber die Oeltuerme
+						(void)ts;
 						c.n = 0;
 					}
 					// (Wunsch 20.11. 19:06) beim Abliefern haelt der Oeltanker kurz, dazu leises Rueckfahr-Piepen wie in der Stadt
@@ -1335,12 +1345,7 @@ void logistics()
 				continue;
 			}
 
-			// Oeltanker (veredelt): Raffinerie -> Kraftwerk / Tankstelle, wahlweise ueber das Lager.
-			// (20.11. Punkt 7) Ein hungriges Kraftwerk wird beliefert, bevor der Tanker nachlaedt.
-			if (c.n > 0)
-			{
-				if (STRUCTURE *hungry = hungryFor(d)) { go(2, 0, hungry->id, hungry->pos.x, hungry->pos.y); continue; }
-			}
+			// Oeltanker (veredelt): Raffinerie -> Tankstelle / Lager / Kraftwerk
 			if (cap - c.n > 0)
 			{
 				STRUCTURE *best = nullptr;
@@ -1418,7 +1423,7 @@ void logistics()
 	}
 
 	// Aufraeumen: Eintraege nicht mehr vorhandener Objekte
-	for (auto it = s_fuel.begin(); it != s_fuel.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_fuel.erase(it); }
+	for (auto it = s_oilPct.begin(); it != s_oilPct.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_oilPct.erase(it); }
 	for (auto it = s_barrels.begin(); it != s_barrels.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_barrels.erase(it); }
 	for (auto it = s_progress.begin(); it != s_progress.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_progress.erase(it); }
 	for (auto it = s_refIn.begin(); it != s_refIn.end();) { it = liveStruct.count(it->first) ? std::next(it) : s_refIn.erase(it); }
@@ -1448,7 +1453,7 @@ void logistics()
 
 	updateTerrain();
 
-	syncDebug("modoil b%zu f%zu c%zu", s_barrels.size(), s_fuel.size(), s_cargo.size());
+	syncDebug("modoil b%zu o%zu c%zu", s_barrels.size(), s_oilPct.size(), s_cargo.size());
 }
 
 // ---------------------------------------------------------------- tiefe Graeben: Gelaende absenken
@@ -1557,7 +1562,7 @@ void ledgerReport()
 			if (kv.second.mode != 0) { driving++; }
 			else if (kv.second.manualWait) { waiting++; }
 		}
-		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Faesser %lld, Solar %lld, Lava %lld, Bergung %lld, Atom %lld, sonstige %lld) | Fass-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (mit Brennstoff %d, Bereitschaft %d) | Raffinerien %d (ohne Strom %d, Eingang %d, Ausgang %d) | Lkw %d, Tanker %d (unterwegs %d, wartend %d, geladen %d) | Atomkraftwerke %d (laufend %d), Uran %d",
+		debug(LOG_INFO, "MOD-Wirtschaft Spieler %d: Energie %lld (%+lld/min: Oel %lld, Solar %lld, Lava %lld, Bergung %lld, Atom %lld, sonstige %lld) | Oel-Wirtschaft=%s | Oeltuerme %d (am Kraftwerk %d, Faesser %d) | Kraftwerke %d (mit Oelturm %d, Bereitschaft %d) | Raffinerien %d (ohne Strom %d, Eingang %d, Ausgang %d) | Lkw %d, Tanker %d (unterwegs %d, wartend %d, geladen %d) | Atomkraftwerke %d (laufend %d), Uran %d",
 		      p, static_cast<long long>(now), static_cast<long long>(delta), static_cast<long long>(s_ledger[p][INC_BARRELS]), static_cast<long long>(s_ledger[p][INC_SOLAR]),
 		      static_cast<long long>(s_ledger[p][INC_LAVA]), static_cast<long long>(s_ledger[p][INC_SALVAGE]), static_cast<long long>(s_ledger[p][INC_NUCLEAR]), static_cast<long long>(delta - known),
 		      manages(p) ? "ja" : "NEIN", derricks, linked, barrels, gens, fuelled, standby, refs, refsDown, refIn, refOut, trucks, tankers, driving, waiting, loaded,
@@ -1657,16 +1662,22 @@ void tick()
 	s_lastSec = gameTime / 1000;
 	if (!modPresent()) { return; }
 	logistics();
-	// Energie der verbrannten Faesser stetig auszahlen: je Sekunde 1/90 des Rests, mindestens 1 (ein Fass = 100 laeuft in ~1,5 Minuten
-	// ein; mit mehreren Oeltuermen steigt das Konto wie in Vanilla laufend)
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
-		int &b = s_bank[p];
-		if (b <= 0) { continue; }
-		const int pay = std::min(b, std::max(1, (b + 89) / 90));
-		b -= pay;
-		addPower(p, pay);
-		noteIncome(p, INC_BARRELS, pay);
+		// (23.11.) Restguthaben aus einem Spielstand der alten Fass-Wirtschaft auf einmal gutschreiben
+		if (s_bank[p] > 0)
+		{
+			addPower(p, s_bank[p]);
+			noteIncome(p, INC_BARRELS, s_bank[p]);
+			s_bank[p] = 0;
+		}
+		// stetige Oel-Einnahmen aus power.cpp (Festkomma) ins Einnahmen-Buch
+		const int64_t whole = s_oilFP[p] >> 32;
+		if (whole > 0)
+		{
+			s_oilFP[p] -= whole << 32;
+			noteIncome(p, INC_BARRELS, static_cast<int>(std::min<int64_t>(whole, INT_MAX)));
+		}
 	}
 	ledgerReport();
 }
@@ -1794,9 +1805,9 @@ void drawOverlay(const glm::mat4 &m)
 		else if (s->pStructureType->type == REF_POWER_GEN)
 		{
 			gens.push_back(s);
-			const auto it = s_fuel.find(s->id);
-			const int fuel = it == s_fuel.end() ? START_FUEL : it->second;
-			bar(m, s->pos.x, s->pos.y, s->pos.z + 230, fuel, 2 * GEN_SECS, fuel > HUNGRY_BELOW ? okOn : lowOn, barOff);
+			// (23.11.) angeschlossene Oeltuerme (je Kraftwerk 4, wie in WZ) statt Brennstoff-Vorrat
+			const int n = generatorDerricks(s);
+			squares(m, s->pos.x, s->pos.y, s->pos.z + 230, n, NUM_POWER_MODULES, n > 0 ? okOn : lowOn, barOff);
 		}
 	}
 	for (const FEATURE *f : gameWorld.objects.features[0])

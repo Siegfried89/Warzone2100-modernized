@@ -345,7 +345,9 @@ static void updateCurrentPower(STRUCTURE *psStruct, UDWORD player, int ticks)
 		{
 			if (oilEconomy)
 			{
-				// MOD (20.11.): Oel-Wirtschaft - die Oeltuerme foerdern unabhaengig vom Kraftwerk Faesser (modoil::logistics), hier nichts
+				// MOD (Wunsch 23.11. 19:29 "kontinuierlich im WZ-Stil, sobald die Eco-Gebaeude verbunden sind"): stetig wie in WZ, mit dem
+				// Anschluss-Ertrag des Oelturms (Raffinerie / Lager, modoil::oilPercent)
+				extractedPower += updateExtractedPower(extractor) * modoil::oilPercent(extractor) / 100;
 			}
 			else
 			{
@@ -358,6 +360,7 @@ static void updateCurrentPower(STRUCTURE *psStruct, UDWORD player, int ticks)
 
 	asPower[player].currentPower += (extractedPower * multiplier) / 100 * ticks;
 	asPower[player].extractedPower += (extractedPower * multiplier) / 100 * ticks;
+	if (oilEconomy) { modoil::noteOilIncomeFP(static_cast<int>(player), (extractedPower * multiplier) / 100 * ticks); }   // MOD: Einnahmen-Buch
 	ASSERT(asPower[player].currentPower >= 0, "negative power");
 	if (asPower[player].currentPower > asPower[player].maxStorage)
 	{
