@@ -74,7 +74,7 @@ struct SIMPLE_OBJECT
 	uint32_t        time;                           ///< Game time of given space-time position.
 };
 
-#define MAX_WEAPONS 8 // MOD: Combots brauchen mehr Waffenplaetze; (18.11.) Fatboy: 4 Geschuetze + 4 Flak
+#define MAX_WEAPONS 30 // MOD: Combots brauchen mehr Waffenplaetze; (18.11.) Fatboy: 4 Geschuetze + 4 Flak; (Wunsch 23.11. 02:16) 30 Plaetze
 
 enum OBJECT_FLAG
 {

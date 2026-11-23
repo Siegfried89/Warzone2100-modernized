@@ -116,6 +116,7 @@
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "modsave.h"
+#include "modslots_json.h"
 #include <wzmaplib/map_package.h>
 
 #if defined(__clang__)
@@ -6012,6 +6013,10 @@ static bool loadSaveDroid(const char *pFileName, GameWorld& world, PerPlayerDroi
 				templ.asWeaps[w] = getCompFromName_NullCompOnFail<uint32_t>(COMP_WEAPON, ini.value("weapon/" + WzString::number(w + 1), "ZNULLWEAPON").toWzString());
 			}
 			ini.endGroup();
+			if (ini.contains("modSlots"))   // MOD (23.11. 02:16): Turm-Belegung (modslots)
+			{
+				modslots::fromJson(ini.json("modSlots"), templ.modSlots);
+			}
 			psTemplate = &templ;
 		}
 
@@ -6373,6 +6378,10 @@ static nlohmann::json writeDroid(const DROID *psCurr, bool onMission, int &count
 		partsObj["weapon/" + WzString::number(j + 1).toStdString()] = psCurr->getWeaponStats(j)->id;
 	}
 	droidObj["parts"] = partsObj;
+	if (!psCurr->modSlots.isDefault())
+	{
+		droidObj["modSlots"] = modslots::toJson(psCurr->modSlots);   // MOD (23.11. 02:16): Turm-Belegung (modslots)
+	}
 	droidObj["moveStatus"] = psCurr->sMove.Status;
 	droidObj["pathIndex"] = psCurr->sMove.pathIndex;
 	droidObj["pathLength"] = psCurr->sMove.asPath.size();

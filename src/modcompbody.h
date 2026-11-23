@@ -16,12 +16,14 @@
 
 struct COMPONENT_STATS;
 struct BODY_STATS;
+struct BASE_OBJECT;
+struct iIMDShape;
 
 namespace modcompbody
 {
 
-/// Waffenplaetze je Verbundrumpf: der Design-Bildschirm kennt drei Waffen (Turm A/B/C)
-constexpr unsigned MAX_SLOTS = 3;
+/// Waffenplaetze je Verbundrumpf (Wunsch 23.11. 02:16: bis 30 - Turm-Plaetze-Leiste im Design-Bildschirm, MAX_WEAPONS)
+constexpr unsigned MAX_SLOTS = 30;
 
 struct Part
 {
@@ -29,19 +31,24 @@ struct Part
 	glm::vec3 pos = glm::vec3(0.f);    ///< Lage (x, y = oben, z = hinten; vorn ist -z)
 	glm::vec3 rot = glm::vec3(0.f);    ///< Drehung in Grad: Gieren (um y), Nicken (um x), Rollen (um z)
 	float scale = 1.f;
+	int flip = 0;                      ///< Spiegelung der Teil-Geometrie: Bit 0 = x, Bit 1 = y, Bit 2 = z (Wunsch 23.11. 02:16 "Flip")
 };
 
 struct Mount
 {
 	glm::vec3 pos = glm::vec3(0.f);    ///< Waffenplatz (Modellkoordinaten)
+	float yaw = 0.f;                   ///< Blickrichtung in Grad (0 = vorn, 90 = rechts; Wunsch 23.11. 03:05: Waffen schwenken nur 180 Grad um sie)
 };
+
+/// Schwenkbereich der Waffen auf Verbundrumpfen: halber Winkel um die Blickrichtung des Platzes (Wunsch 23.11. 03:05: "maximal 180 Grad")
+constexpr float ARC_HALF_DEG = 90.f;
 
 struct Def
 {
 	std::string id;                   ///< Rumpf-ID ("CompBody_...")
 	std::string name;                 ///< Anzeigename
 	std::vector<Part> parts;          ///< Teil 0 = Fahrgestell (Laufwerke, Klasse)
-	std::vector<Mount> mounts;        ///< Waffenplaetze (bis MAX_SLOTS)
+	std::vector<Mount> mounts;        ///< Waffenplaetze (bis MAX_SLOTS) - jeder ein Turm-Platz fuer eine Waffe oder einen Systemturm
 	bool preset = false;              ///< Vorlage aus dem Mod-Paket (noch nicht im Benutzerordner)
 	bool deleted = false;             ///< geloescht: bleibt fuer alte Spielstaende angemeldet, aber nicht mehr baubar
 };
@@ -66,13 +73,20 @@ void shutdown();
 bool isComposite(size_t bodyIdx);
 /// Lage des Fahrgestells (Teil 0) fuer die Laufwerk-Modelle; nullptr = keine Verschiebung
 const glm::mat4 *propOffset(size_t bodyIdx);
+/// Blickrichtung des Platzes (Anschluss) eines Verbundrumpfes in Grad; false = kein Verbundrumpf (Waffe dreht frei)
+bool mountYaw(size_t bodyIdx, int connector, float &yawDeg);
+/// Waffe weaponSlot eines Fahrzeugs auf einem Verbundrumpf (kein VTOL): Blickrichtung ihres Platzes als 16-Bit-Winkel (relativ zum Rumpf).
+/// false = Waffe dreht frei wie bisher
+bool weaponArc(const BASE_OBJECT *psObj, int weaponSlot, uint16_t &yaw);
 /// Verfuegbarkeit fuer einen Spieler: baubar, wenn alle Teil-Rumpfe erforscht sind (nicht in Netzwerkspielen)
 void refreshAvailability(unsigned player);
 
 // ---------------------------------------------------------------- Rumpf-Baukasten
 const std::vector<Def> &defs();
 const Def *find(const std::string &id);
-glm::mat4 partMatrix(const Part &p);
+glm::mat4 partMatrix(const Part &p, bool withFlip = true);
+/// gespiegelte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
+const iIMDShape *flippedShape(const std::string &bodyId, int flipMask);
 Totals totals(const Def &d);
 /// Rumpf zu einer ID (nullptr = unbekannt)
 const BODY_STATS *bodyById(const std::string &id);

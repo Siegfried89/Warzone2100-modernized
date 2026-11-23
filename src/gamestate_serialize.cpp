@@ -22,6 +22,7 @@
 #include <nlohmann/json.hpp> // Must come before WZ includes
 
 #include "gamestate_serialize.h"
+#include "modslots_json.h"
 #include "corridor_gate.h"
 
 #include "lib/framework/frame.h"
@@ -2447,6 +2448,10 @@ static nlohmann::ordered_json writeDroid(const DROID *d, bool onMission)
 	}
 	parts["weapons"] = std::move(partWeapons);
 	j["parts"] = std::move(parts);
+	if (!d->modSlots.isDefault())
+	{
+		j["modSlots"] = nlohmann::ordered_json(modslots::toJson(d->modSlots));   // MOD (23.11. 02:16): Turm-Belegung (modslots)
+	}
 
 	nlohmann::ordered_json weapons = nlohmann::ordered_json::array();
 	for (unsigned w = 0; w < d->numWeaps; ++w)
@@ -2649,6 +2654,10 @@ static void readDroidPass1(GameWorld &world, const nlohmann::ordered_json &j, st
 	{
 		const std::string wid = (static_cast<size_t>(w) < partWeapons.size()) ? partWeapons[w].get<std::string>() : "ZNULLWEAPON";
 		templ.asWeaps[w] = compIndexFromId<uint32_t>(COMP_WEAPON, WzString::fromUtf8(wid));
+	}
+	if (j.contains("modSlots"))   // MOD (23.11. 02:16): Turm-Belegung (modslots)
+	{
+		modslots::fromJson(nlohmann::json(j.at("modSlots")), templ.modSlots);
 	}
 
 	const uint32_t id = j.at("id").get<uint32_t>();

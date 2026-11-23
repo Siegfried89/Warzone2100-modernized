@@ -13,6 +13,7 @@
 
 #include "game.h"
 #include "stats.h"
+#include "droid.h"
 #include "statsdef.h"
 #include "basedef.h"
 
@@ -24,6 +25,8 @@
 #include <map>
 #include <set>
 #include <sstream>
+
+static_assert(modcompbody::MAX_SLOTS <= MAX_WEAPONS, "Waffenplaetze eines Verbundrumpfes > MAX_WEAPONS");
 
 namespace modcompbody
 {
@@ -44,6 +47,7 @@ struct Slot
 	glm::mat4 prop = glm::mat4(1.f);
 	bool propShift = false;
 	std::vector<size_t> partIdx;                     // Teil-Rumpfe (fuer die Verfuegbarkeit)
+	std::vector<float> yaw;                          // Blickrichtung je Anschluss (Grad)
 };
 std::vector<Slot> s_slots;
 size_t s_first = 0;
@@ -84,11 +88,17 @@ nlohmann::json toJson(const Def &d)
 		nlohmann::json e = nlohmann::json::object();
 		e["body"] = p.body; e["pos"] = vec3(p.pos); e["rot"] = vec3(p.rot);
 		if (std::fabs(p.scale - 1.f) > 1e-4f) { e["scale"] = p.scale; }
+		if (p.flip != 0) { e["flip"] = p.flip; }
 		parts.push_back(e);
 	}
 	j["parts"] = parts;
 	nlohmann::json mounts = nlohmann::json::array();
-	for (const Mount &m : d.mounts) { mounts.push_back(vec3(m.pos)); }
+	for (const Mount &m : d.mounts)
+	{
+		nlohmann::json e = vec3(m.pos);
+		if (std::fabs(m.yaw) > 1e-3f) { e.push_back(m.yaw); }   // [x, y, z, Blickrichtung]
+		mounts.push_back(e);
+	}
 	j["mounts"] = mounts;
 	if (d.deleted) { j["deleted"] = true; }
 	return j;
@@ -109,11 +119,17 @@ bool fromJson(const nlohmann::json &j, Def &d)
 		if (e.contains("pos")) { p.pos = vec3(e["pos"]); }
 		if (e.contains("rot")) { p.rot = vec3(e["rot"]); }
 		p.scale = std::clamp(e.value("scale", 1.f), 0.1f, 4.f);
+		p.flip = std::clamp(e.value("flip", 0), 0, 7);
 		d.parts.push_back(p);
 	}
 	if (j.contains("mounts") && j["mounts"].is_array())
 	{
-		for (const auto &m : j["mounts"]) { Mount mm; mm.pos = vec3(m); d.mounts.push_back(mm); }
+		for (const auto &m : j["mounts"])
+		{
+			Mount mm; mm.pos = vec3(m);
+			if (m.is_array() && m.size() >= 4 && m[3].is_number()) { mm.yaw = std::remainder(m[3].get<float>(), 360.f); }
+			d.mounts.push_back(mm);
+		}
 	}
 	return !d.id.empty() && !d.parts.empty();
 }
@@ -186,18 +202,19 @@ void texLines(std::ostringstream &o, const iIMDShape &lvl)
 
 std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 {
-	struct Lv { const iIMDShape *s; glm::mat4 m; };
+	struct Lv { const iIMDShape *s; glm::mat4 m; bool mirrored; };
 	std::vector<Lv> levels;
 	for (const Part &p : d.parts)
 	{
 		const BODY_STATS *b = bodyByIdMutable(p.body);
 		if (!isUsableChassisPart(b)) { continue; }
 		const glm::mat4 m = partMatrix(p);
+		const bool mirrored = glm::determinant(glm::mat3(m)) < 0.f;
 		for (const iIMDShape *lvl = b->pIMD->displayModel(); lvl != nullptr; lvl = lvl->next.get())
 		{
 			if (lvl->points.empty() || lvl->polys.empty()) { continue; }
 			if (lvl->tilesetTextureFiles[0].texfile.empty()) { continue; }
-			levels.push_back({ lvl, m });
+			levels.push_back({ lvl, m, mirrored });
 		}
 	}
 	std::ostringstream o;
@@ -222,10 +239,13 @@ std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 		}
 		o << "POLYGONS " << s.polys.size() << "\n";
 		o.precision(6);
+		const bool mir = levels[li].mirrored;
 		for (const iIMDPoly &poly : s.polys)
 		{
-			o << "\t200 3 " << poly.pindex[0] << " " << poly.pindex[1] << " " << poly.pindex[2];
-			for (int k = 0; k < 3; ++k) { o << " " << poly.texCoord[static_cast<size_t>(k)].x << " " << poly.texCoord[static_cast<size_t>(k)].y; }
+			static const size_t ordN[3] = { 0, 1, 2 }, ordM[3] = { 0, 2, 1 };   // gespiegelt: Umlaufsinn tauschen
+			const size_t *ord = mir ? ordM : ordN;
+			o << "\t200 3 " << poly.pindex[ord[0]] << " " << poly.pindex[ord[1]] << " " << poly.pindex[ord[2]];
+			for (int k = 0; k < 3; ++k) { o << " " << poly.texCoord[ord[k]].x << " " << poly.texCoord[ord[k]].y; }
 			o << "\n";
 		}
 		o.precision(3);
@@ -312,6 +332,12 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 	sl.defId = d.id;
 	sl.prop = partMatrix(d.parts[0]);
 	sl.propShift = (glm::length(d.parts[0].pos) > 1e-3f || glm::length(d.parts[0].rot) > 1e-3f || std::fabs(d.parts[0].scale - 1.f) > 1e-3f);
+	sl.yaw.clear();
+	{
+		std::vector<Mount> mounts = d.mounts;
+		if (mounts.empty() && !d.parts.empty()) { mounts = defaultMounts(d.parts[0]); }
+		for (const Mount &m : mounts) { sl.yaw.push_back(m.yaw); }
+	}
 	sl.partIdx.clear();
 	for (const Part &p : d.parts)
 	{
@@ -403,6 +429,25 @@ const glm::mat4 *propOffset(size_t bodyIdx)
 	return sl.propShift ? &sl.prop : nullptr;
 }
 
+bool mountYaw(size_t bodyIdx, int connector, float &yawDeg)
+{
+	if (!isComposite(bodyIdx)) { return false; }
+	const Slot &sl = s_slots[bodyIdx - s_first];
+	yawDeg = (connector >= 0 && static_cast<size_t>(connector) < sl.yaw.size()) ? sl.yaw[static_cast<size_t>(connector)] : 0.f;
+	return true;
+}
+
+bool weaponArc(const BASE_OBJECT *psObj, int weaponSlot, uint16_t &yaw)
+{
+	if (psObj == nullptr || psObj->type != OBJ_DROID) { return false; }
+	const DROID *d = static_cast<const DROID *>(psObj);
+	if (weaponSlot < 0 || weaponSlot >= static_cast<int>(MAX_WEAPONS) || d->isVtol()) { return false; }
+	float deg = 0.f;
+	if (!mountYaw(d->asBits[COMP_BODY], d->modSlots.conn(weaponSlot), deg)) { return false; }
+	yaw = static_cast<uint16_t>(static_cast<int>(std::lround(deg * 65536.f / 360.f)) & 0xFFFF);
+	return true;
+}
+
 void refreshAvailability(unsigned player)
 {
 	if (player >= MAX_PLAYERS || apCompLists[player][COMP_BODY] == nullptr) { return; }
@@ -430,13 +475,46 @@ const Def *find(const std::string &id)
 	return nullptr;
 }
 
-glm::mat4 partMatrix(const Part &p)
+glm::mat4 partMatrix(const Part &p, bool withFlip)
 {
 	glm::mat4 m = glm::translate(glm::mat4(1.f), p.pos);
 	m = glm::rotate(m, glm::radians(p.rot.x), glm::vec3(0.f, 1.f, 0.f));
 	m = glm::rotate(m, glm::radians(p.rot.y), glm::vec3(1.f, 0.f, 0.f));
 	m = glm::rotate(m, glm::radians(p.rot.z), glm::vec3(0.f, 0.f, 1.f));
-	return glm::scale(m, glm::vec3(p.scale));
+	glm::vec3 sc(p.scale);
+	if (withFlip)
+	{
+		if (p.flip & 1) { sc.x = -sc.x; }
+		if (p.flip & 2) { sc.y = -sc.y; }
+		if (p.flip & 4) { sc.z = -sc.z; }
+	}
+	return glm::scale(m, sc);
+}
+
+const iIMDShape *flippedShape(const std::string &bodyId, int flipMask)
+{
+	if ((flipMask & 7) == 0) { return nullptr; }
+	static std::map<std::string, iIMDBaseShape *> cache;
+	static unsigned gen = 0;
+	if (modelCacheStale(gen)) { cache.clear(); }
+	const std::string name = "compflip_" + slug(bodyId) + "_" + std::to_string(flipMask & 7) + ".pie";
+	auto it = cache.find(name);
+	if (it != cache.end()) { return it->second != nullptr ? it->second->displayModel() : nullptr; }
+	cache[name] = nullptr;
+	Def d;
+	d.id = "flip";
+	Part p;
+	p.body = bodyId;
+	p.flip = flipMask & 7;
+	d.parts.push_back(p);
+	Mount none;
+	d.mounts.push_back(none);
+	std::vector<Vector3i> conns;
+	const std::string pie = buildPie(d, conns);
+	if (pie.empty()) { return nullptr; }
+	iIMDBaseShape *shape = modelRegisterFromText(WzString::fromUtf8(name), pie);
+	cache[name] = shape;
+	return shape != nullptr ? shape->displayModel() : nullptr;
 }
 
 Totals totals(const Def &d)

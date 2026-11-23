@@ -44,6 +44,7 @@
 #include "map.h"
 #include "modduel.h"
 #include "modcombot.h"
+#include "modcompbody.h"
 #include "droid.h"
 #include "modsettle.h"
 #include "modruin.h"
@@ -1695,6 +1696,10 @@ DROID_TYPE droidTemplateType(const DROID_TEMPLATE *psTemplate)
 	{
 		type = DROID_COMMAND;
 	}
+	else if (psTemplate->modSlots.numSys > 0 && psTemplate->numWeaps > 0)
+	{
+		type = DROID_WEAPON;   // MOD (23.11. 02:16): Waffen und Systemtuerme zugleich - ein Kampffahrzeug (modslots)
+	}
 	else if (psTemplate->getSensorStats()->location == LOC_TURRET)
 	{
 		type = DROID_SENSOR;
@@ -1725,7 +1730,7 @@ DROID_TYPE droidTemplateType(const DROID_TEMPLATE *psTemplate)
 }
 
 template <typename F, typename G>
-static unsigned calcSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], F func, G propulsionFunc)
+static unsigned calcSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], const ModSlots &modSlots, F func, G propulsionFunc)
 {
 	unsigned sum =
 		func(asBrainStats    [asParts[COMP_BRAIN]]) +
@@ -1738,6 +1743,11 @@ static unsigned calcSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, 
 	{
 		sum += func(asWeaponStats[asWeaps[i]]);
 	}
+	// MOD (23.11. 02:16): weitere Systemtuerme neben Waffen (modslots)
+	modslots::forEachExtra(modSlots, asParts, COMP_SENSOR, COMP_ECM, [&](int comp, unsigned stat) {
+		if (comp == COMP_SENSOR && stat < asSensorStats.size()) { sum += func(asSensorStats[stat]); }
+		else if (comp == COMP_ECM && stat < asECMStats.size()) { sum += func(asECMStats[stat]); }
+	});
 	return sum;
 }
 
@@ -1745,7 +1755,7 @@ static unsigned calcSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, 
 	ASSERT_OR_RETURN(retVal, player >= 0 && player < MAX_PLAYERS, "Invalid player: %" PRIu32 "", player);
 
 template <typename F, typename G>
-static unsigned calcUpgradeSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], int player, F func, G propulsionFunc)
+static unsigned calcUpgradeSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], const ModSlots &modSlots, int player, F func, G propulsionFunc)
 {
 	ASSERT_PLAYER_OR_RETURN(0, player);
 	unsigned sum =
@@ -1764,6 +1774,11 @@ static unsigned calcUpgradeSum(const uint16_t (&asParts)[DROID_MAXCOMP], int num
 			sum += func(asWeaponStats[asWeaps[i]].upgrade[player]);
 		}
 	}
+	// MOD (23.11. 02:16): weitere Systemtuerme neben Waffen (modslots)
+	modslots::forEachExtra(modSlots, asParts, COMP_SENSOR, COMP_ECM, [&](int comp, unsigned stat) {
+		if (comp == COMP_SENSOR && stat < asSensorStats.size()) { sum += func(asSensorStats[stat].upgrade[player]); }
+		else if (comp == COMP_ECM && stat < asECMStats.size()) { sum += func(asECMStats[stat].upgrade[player]); }
+	});
 	return sum;
 }
 
@@ -1786,27 +1801,27 @@ struct FilterDroidWeaps
 template <typename F, typename G>
 static unsigned calcSum(const DROID_TEMPLATE *psTemplate, F func, G propulsionFunc)
 {
-	return calcSum(psTemplate->asParts, psTemplate->numWeaps, psTemplate->asWeaps, func, propulsionFunc);
+	return calcSum(psTemplate->asParts, psTemplate->numWeaps, psTemplate->asWeaps, psTemplate->modSlots, func, propulsionFunc);
 }
 
 template <typename F, typename G>
 static unsigned calcSum(const DROID *psDroid, F func, G propulsionFunc)
 {
 	FilterDroidWeaps f = {psDroid->numWeaps, psDroid->asWeaps};
-	return calcSum(psDroid->asBits, f.numWeaps, f.asWeaps, func, propulsionFunc);
+	return calcSum(psDroid->asBits, f.numWeaps, f.asWeaps, psDroid->modSlots, func, propulsionFunc);
 }
 
 template <typename F, typename G>
 static unsigned calcUpgradeSum(const DROID_TEMPLATE *psTemplate, int player, F func, G propulsionFunc)
 {
-	return calcUpgradeSum(psTemplate->asParts, psTemplate->numWeaps, psTemplate->asWeaps, player, func, propulsionFunc);
+	return calcUpgradeSum(psTemplate->asParts, psTemplate->numWeaps, psTemplate->asWeaps, psTemplate->modSlots, player, func, propulsionFunc);
 }
 
 template <typename F, typename G>
 static unsigned calcUpgradeSum(const DROID *psDroid, int player, F func, G propulsionFunc)
 {
 	FilterDroidWeaps f = {psDroid->numWeaps, psDroid->asWeaps};
-	return calcUpgradeSum(psDroid->asBits, f.numWeaps, f.asWeaps, player, func, propulsionFunc);
+	return calcUpgradeSum(psDroid->asBits, f.numWeaps, f.asWeaps, psDroid->modSlots, player, func, propulsionFunc);
 }
 
 /* Calculate the weight of a droid from it's template */
@@ -2125,6 +2140,12 @@ void droidSetBits(const DROID_TEMPLATE *pTemplate, DROID *psDroid)
 		psDroid->asWeaps[inc].usedAmmo = 0;
 	}
 	memcpy(psDroid->asBits, pTemplate->asParts, sizeof(psDroid->asBits));
+	psDroid->modSlots = pTemplate->modSlots;   // MOD (23.11. 02:16): Turm-Belegung (modslots)
+	for (int inc = 0; inc < psDroid->numWeaps && inc < static_cast<int>(MAX_WEAPONS); ++inc)
+	{
+		uint16_t yaw = 0;   // MOD (23.11. 03:05): Waffen auf Verbundrumpfen schauen anfangs in die Blickrichtung ihres Platzes
+		if (modcompbody::weaponArc(psDroid, inc, yaw)) { psDroid->asWeaps[inc].rot.direction = yaw; psDroid->asWeaps[inc].prevRot = psDroid->asWeaps[inc].rot; }
+	}
 
 	switch (psDroid->getPropulsionStats()->propulsionType)  // getPropulsionStats(psDroid) only defined after psDroid->asBits[COMP_PROPULSION] is set.
 	{
@@ -2160,6 +2181,7 @@ void templateSetParts(const DROID *psDroid, DROID_TEMPLATE *psTemplate)
 		}
 	}
 	memcpy(psTemplate->asParts, psDroid->asBits, sizeof(psDroid->asBits));
+	psTemplate->modSlots = psDroid->modSlots;   // MOD (23.11. 02:16): Turm-Belegung (modslots)
 }
 
 /* Make all the droids for a certain player a member of a specific group */
@@ -2473,7 +2495,8 @@ bool calcDroidMuzzleBaseLocation(const DROID *psDroid, Vector3i *muzzle, int wea
 
 	// MOD (20.11. 23:03): modulare Combots - der Anker haengt am Teil (rechter/linker Arm, eingebaute Waffe von Torso/Beinen),
 	// nicht an der Reihenfolge der Waffen
-	const int modConn = modcombot::muzzleConnector(psDroid, weapon_slot);
+	int modConn = modcombot::muzzleConnector(psDroid, weapon_slot);
+	if (modConn < 0 && psDroid->getPropulsionStats()->propulsionType != PROPULSION_TYPE_LIFT) { modConn = psDroid->modSlots.conn(weapon_slot); }   // MOD (23.11. 02:16): frei belegte Plaetze
 	const size_t conn = (modConn >= 0 && psBodyImd && static_cast<size_t>(modConn) < psBodyImd->connectors.size()) ? static_cast<size_t>(modConn) : static_cast<size_t>(weapon_slot);
 
 	if (psBodyImd && conn < psBodyImd->connectors.size())
@@ -2515,7 +2538,8 @@ bool calcDroidMuzzleLocation(const DROID *psDroid, Vector3i *muzzle, int weapon_
 	CHECK_DROID(psDroid);
 
 	// MOD (20.11. 23:03): modulare Combots - Anker nach Teil (siehe calcDroidMuzzleBaseLocation)
-	const int modConn = modcombot::muzzleConnector(psDroid, weapon_slot);
+	int modConn = modcombot::muzzleConnector(psDroid, weapon_slot);
+	if (modConn < 0 && psDroid->getPropulsionStats()->propulsionType != PROPULSION_TYPE_LIFT) { modConn = psDroid->modSlots.conn(weapon_slot); }   // MOD (23.11. 02:16): frei belegte Plaetze
 	const size_t conn = (modConn >= 0 && psBodyImd && static_cast<size_t>(modConn) < psBodyImd->connectors.size()) ? static_cast<size_t>(modConn) : static_cast<size_t>(weapon_slot);
 
 	if (psBodyImd && conn < psBodyImd->connectors.size())

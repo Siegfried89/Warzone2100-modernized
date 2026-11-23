@@ -25,6 +25,7 @@
  */
 #include "lib/framework/frame.h"
 #include "modfactech.h"
+#include "modslots_json.h"
 #include "lib/framework/file.h"
 #include "lib/framework/wzconfig.h"
 #include "lib/framework/math_ext.h"
@@ -129,6 +130,12 @@ bool researchedTemplate(const DROID_TEMPLATE *psCurr, int player, bool allowRedu
 		{
 			debug(LOG_ERROR, "%s : not researched weapon %u", getStatsName(psCurr), weapIndex);
 		}
+	}
+	// MOD (23.11. 02:16): weitere Systemtuerme neben Waffen (modslots)
+	if (researchedEverything && !modslots::researched(*psCurr, static_cast<unsigned>(player), allowRedundant))
+	{
+		researchedEverything = false;
+		if (verbose) { debug(LOG_ERROR, "%s : not researched extra system turret", getStatsName(psCurr)); }
 	}
 	return researchedEverything;
 }
@@ -286,6 +293,13 @@ bool loadTemplateCommon(const nlohmann::json& obj, DROID_TEMPLATE &outputTemplat
 	{
 		if (!droidTemplate_LoadWeapByName(w, (weapons.size() > w) ? weapons[w] : "ZNULLWEAPON", design)) return false;
 	}
+	// MOD (23.11. 02:16): Turm-Belegung (Anschluss je Waffe, Systemtuerme neben Waffen)
+	design.modSlots.reset();
+	auto ms = obj.find("modSlots");
+	if (ms != obj.end())
+	{
+		modslots::fromJson(ms.value(), design.modSlots);
+	}
 
 	return true;
 }
@@ -378,11 +392,13 @@ bool designableTemplate(const DROID_TEMPLATE *psTempl, int player, bool quiet)
 
 bool templatesHaveSameComponents(const DROID_TEMPLATE &a, const DROID_TEMPLATE &b)
 {
+	// MOD (23.11. 02:16): alle Waffen (bis 30) und die Turm-Belegung vergleichen, nicht nur die ersten drei
+	if (a.numWeaps != b.numWeaps || a.modSlots != b.modSlots) { return false; }
+	for (int i = 0; i < a.numWeaps && i < static_cast<int>(MAX_WEAPONS); ++i)
+	{
+		if (a.asWeaps[i] != b.asWeaps[i]) { return false; }
+	}
 	return a.droidType == b.droidType
-	       && a.numWeaps == b.numWeaps
-	       && a.asWeaps[0] == b.asWeaps[0]
-	       && a.asWeaps[1] == b.asWeaps[1]
-	       && a.asWeaps[2] == b.asWeaps[2]
 	       && a.asParts[COMP_BODY] == b.asParts[COMP_BODY]
 	       && a.asParts[COMP_PROPULSION] == b.asParts[COMP_PROPULSION]
 	       && a.asParts[COMP_REPAIRUNIT] == b.asParts[COMP_REPAIRUNIT]
@@ -414,7 +430,7 @@ void rebuildLocalTemplates(unsigned player)
 // The optional ones are normalized to null so that entries written by different WZ versions compare equal
 static nlohmann::json templateStoreIdentity(const nlohmann::json &entry)
 {
-	static const char *keys[] = {"name", "type", "body", "propulsion", "brain", "repair", "ecm", "sensor", "construct", "weapons"};
+	static const char *keys[] = {"name", "type", "body", "propulsion", "brain", "repair", "ecm", "sensor", "construct", "weapons", "modSlots"};
 	nlohmann::json identity = nlohmann::json::object();
 	for (const char *key : keys)
 	{
@@ -677,6 +693,10 @@ nlohmann::json saveTemplateCommon(const DROID_TEMPLATE *psCurr)
 	if (!weapons.empty())
 	{
 		templateObj["weapons"] = std::move(weapons);
+	}
+	if (!psCurr->modSlots.isDefault())
+	{
+		templateObj["modSlots"] = modslots::toJson(psCurr->modSlots);   // MOD (23.11. 02:16): Turm-Belegung
 	}
 	return templateObj;
 }

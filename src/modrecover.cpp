@@ -176,6 +176,7 @@ bool restoreWreck(const Tow &t, const DROID *truck)
 	templ.numWeaps = static_cast<int8_t>(std::min<unsigned>(t.info.numWeaps, MAX_WEAPONS));
 	for (int i = 0; i < templ.numWeaps; ++i) { templ.asWeaps[i] = t.info.weaps[i]; }
 	templ.droidType = static_cast<DROID_TYPE>(t.info.droidType);
+	templ.modSlots = t.info.slots;   // (23.11. 02:16) Turm-Belegung wie vorher
 	if (templ.asParts[COMP_BODY] >= asBodyStats.size() || templ.asParts[COMP_PROPULSION] >= asPropulsionStats.size()) { return false; }
 	Vector2i p;
 	if (!spotNear(fac, truck->id, p)) { p = Vector2i(fac->pos.x + DIST_TILE * 2, fac->pos.y + DIST_TILE * 2); }

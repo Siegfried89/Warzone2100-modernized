@@ -1004,6 +1004,51 @@ static int modTrackFrame(const DROID *psDroid, const iIMDShape *shape, bool bBut
 	return ((f % n) + n) % n;
 }
 
+// MOD (Wunsch 23.11. 02:16): Systemtuerme neben Waffen (Sensoren, Schild-Tuerme, Stoersender) an ihren Anschluessen (modslots)
+static bool modDrawSysTurrets(const DROID *psDroid, const iIMDShape *connBody, const glm::mat4 &bodyMatrix, const glm::mat4 &viewMatrix, float heightAboveMap,
+                              UDWORD colour, PIELIGHT brightness, int pieFlag, int iPieData, int shieldPieFlag, int iShieldPieData, bool bButton)
+{
+	bool drew = false;
+	const ModSlots &ms = psDroid->modSlots;
+	for (unsigned k = 0; k < ms.numSys && k < MOD_MAX_SYS; ++k)
+	{
+		const iIMDBaseShape *mount = nullptr, *turret = nullptr;
+		const bool sensor = ms.sysComp[k] == COMP_SENSOR;
+		if (sensor && ms.sysStat[k] < asSensorStats.size()) { mount = asSensorStats[ms.sysStat[k]].pMountGraphic; turret = asSensorStats[ms.sysStat[k]].pIMD; }
+		else if (!sensor && ms.sysStat[k] < asECMStats.size()) { mount = asECMStats[ms.sysStat[k]].pMountGraphic; turret = asECMStats[ms.sysStat[k]].pIMD; }
+		glm::mat4 m = bodyMatrix;
+		float h = heightAboveMap;
+		const int c = ms.sysConn[k];
+		if (connBody != nullptr && c >= 0 && static_cast<size_t>(c) < connBody->connectors.size())
+		{
+			m *= glm::translate(glm::vec3(connBody->connectors[c].xzy()));
+			h += connBody->connectors[c].z;
+		}
+		// Sensoren schwenken langsam (wie ein Radar), jeder Platz versetzt; im Designer und auf Knoepfen ruhig nach vorn
+		if (sensor && !bButton)
+		{
+			const float phase = static_cast<float>((graphicsTime + k * 1700u) % 9000u) / 9000.f;
+			m *= glm::rotate(phase * 6.2831853f, glm::vec3(0.f, 1.f, 0.f));
+		}
+		for (const iIMDBaseShape *part : {mount, turret})
+		{
+			const iIMDShape *shape = part ? part->displayModel() : nullptr;
+			if (shape == nullptr) { continue; }
+			if (pie_Draw3DShape(shape, 0, colour, brightness, pieFlag, iPieData, m, viewMatrix, -h)) { drew = true; }
+			if (!bButton && psDroid->shieldPoints > 0)
+			{
+				if (pie_Draw3DShape(shape, 0, colour, brightness, shieldPieFlag, iShieldPieData, m, viewMatrix, -h)) { drew = true; }
+			}
+			if (part == mount && !shape->connectors.empty())
+			{
+				m *= glm::translate(glm::vec3(shape->connectors[0].xzy()));
+				h += shape->connectors[0].z;
+			}
+		}
+	}
+	return drew;
+}
+
 static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& modelMatrix2, const glm::mat4 &viewMatrix)
 {
 	iIMDBaseShape *psMoveAnim, *psStillAnim;
@@ -1344,7 +1389,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					float localHeightAboveTerrain = psDroid->heightAboveMap;
 
 					//to skip number of VTOL_CONNECTOR_START ground unit connectors
-					size_t bodyConnectorIndex = (iConnector < VTOL_CONNECTOR_START) ? i : iConnector + i;
+					size_t bodyConnectorIndex = (iConnector < VTOL_CONNECTOR_START) ? static_cast<size_t>(psDroid->modSlots.conn(i)) : iConnector + i;   // MOD (23.11. 02:16): frei belegte Plaetze
 					if (bodyConnectorIndex < connBody->connectors.size())
 					{
 						localModelMatrix *= glm::translate(glm::vec3(connBody->connectors[bodyConnectorIndex].xzy()));
@@ -1452,6 +1497,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					}
 				}
 			}
+			if (psDroid->modSlots.numSys > 0 && modDrawSysTurrets(psDroid, connBody, modifiedModelMatrix, viewMatrix, psDroid->heightAboveMap, colour, brightness,
+			                                                      pieFlag, iPieData, shieldPieFlag, iShieldPieData, bButton))
+			{
+				didDrawSomething = true;
+			}
 			break;
 
 		case DROID_SENSOR:
@@ -1460,6 +1510,15 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		case DROID_ECM:
 		case DROID_REPAIR:
 		case DROID_CYBORG_REPAIR:
+			if (psDroid->modSlots.numSys > 0)   // MOD (23.11. 02:16): mehrere Systemtuerme ohne Waffen (modslots)
+			{
+				if (modDrawSysTurrets(psDroid, connBody, modifiedModelMatrix, viewMatrix, psDroid->heightAboveMap, colour, brightness,
+				                      pieFlag, iPieData, shieldPieFlag, iShieldPieData, bButton))
+				{
+					didDrawSomething = true;
+				}
+				break;
+			}
 			{
 				Rotation rot = getInterpolatedWeaponRotation(psDroid, 0, graphicsTime);
 				iIMDBaseShape *psBaseShape = nullptr;

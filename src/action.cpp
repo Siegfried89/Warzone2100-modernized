@@ -32,6 +32,7 @@
 #include "lib/netplay/netplay.h"
 
 #include "action.h"
+#include "modcompbody.h"
 #include "modicbm.h"
 #include "modupgrade.h"
 #include "modarty.h"
@@ -273,6 +274,27 @@ static bool actionInsideMinRange(DROID *psDroid, BASE_OBJECT *psObj, WEAPON_STAT
 
 
 // Realign turret
+// MOD (Wunsch 23.11. 03:05): Waffen auf Verbundrumpfen schwenken nur 180 Grad um die Blickrichtung ihres Platzes.
+// Liegt das Ziel ausserhalb, dreht sich das Fahrzeug so, dass der Platz der ersten Waffe zum Ziel schaut.
+static int modArcHalf()
+{
+	return static_cast<int>(modcompbody::ARC_HALF_DEG * 65536.f / 360.f);
+}
+
+static void modTurnForWeapon(DROID *psDroid, int weaponSlot, const BASE_OBJECT *psTarget)
+{
+	uint16_t yaw = 0;
+	if (psTarget == nullptr) { return; }
+	if (!modcompbody::weaponArc(psDroid, weaponSlot, yaw) || yaw == 0)
+	{
+		moveTurnDroid(psDroid, psTarget->pos.x, psTarget->pos.y);
+		return;
+	}
+	const uint16_t targetDir = calcDirection(psDroid->pos.x, psDroid->pos.y, psTarget->pos.x, psTarget->pos.y);
+	const uint16_t face = static_cast<uint16_t>(targetDir - yaw);
+	moveTurnDroid(psDroid, psDroid->pos.x + iSinR(face, 1024), psDroid->pos.y + iCosR(face, 1024));
+}
+
 void actionAlignTurret(BASE_OBJECT *psObj, int weapon_slot)
 {
 	uint16_t        nearest = 0;
@@ -300,6 +322,10 @@ void actionAlignTurret(BASE_OBJECT *psObj, int weapon_slot)
 		return;
 	}
 
+	{
+		uint16_t arcYaw = 0;
+		if (modcompbody::weaponArc(psObj, weapon_slot, arcYaw)) { nearest = arcYaw; }   // MOD (23.11. 03:05): Ruhestellung = Blickrichtung des Platzes
+	}
 	tRot += clip(angleDelta(nearest - tRot), -rotation, rotation);  // Addition wrapping intended.
 
 	// align the turret pitch
@@ -399,6 +425,14 @@ bool actionTargetTurret(BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, WEAPON *
 	int rotationError = angleDelta(targetRotation - (tRotation + psAttacker->rot.direction));
 
 	tRotation += clip(rotationError, -rotRate, rotRate);  // Addition wrapping intentional.
+	if (psAttacker->type == OBJ_DROID)   // MOD (23.11. 03:05): Verbundrumpf - nur 180 Grad um die Blickrichtung des Platzes
+	{
+		uint16_t arcYaw = 0;
+		if (modcompbody::weaponArc(psAttacker, static_cast<int>(psWeapon - ((DROID *)psAttacker)->asWeaps), arcYaw))
+		{
+			tRotation = static_cast<uint16_t>(arcYaw + clip(angleDelta(static_cast<uint16_t>(tRotation - arcYaw)), -modArcHalf(), modArcHalf()));
+		}
+	}
 	if (psAttacker->type == OBJ_DROID && ((DROID*)psAttacker)->isVtol())
 	{
 		// limit the rotation for vtols
@@ -1168,7 +1202,7 @@ void actionUpdateDroid(DROID *psDroid)
 		{
 			if (psDroid->sMove.Status == MOVETURNTOTARGET)
 			{
-				moveTurnDroid(psDroid, psDroid->psActionTarget[0]->pos.x, psDroid->psActionTarget[0]->pos.y);
+				modTurnForWeapon(psDroid, 0, psDroid->psActionTarget[0]);   // MOD (23.11. 03:05)
 				break;  // Still turning.
 			}
 			psDroid->action = DACTION_ATTACK;
@@ -1264,12 +1298,20 @@ void actionUpdateDroid(DROID *psDroid)
 				if (validTarget(psDroid, psActionTarget, i) && !wallBlocked)
 				{
 					int dirDiff = 0;
+					uint16_t arcYaw = 0;
 
 					if (!psWeapStats->rotate)
 					{
 						// no rotating turret - need to check aligned with target
 						const uint16_t targetDir = calcDirection(psDroid->pos.x, psDroid->pos.y, psActionTarget->pos.x, psActionTarget->pos.y);
 						dirDiff = abs(angleDelta(targetDir - psDroid->rot.direction));
+					}
+					else if (modcompbody::weaponArc(psDroid, i, arcYaw))
+					{
+						// MOD (23.11. 03:05): Verbundrumpf - Ziel ausserhalb der 180 Grad des Platzes: wie ein fester Turm behandeln
+						const uint16_t targetDir = calcDirection(psDroid->pos.x, psDroid->pos.y, psActionTarget->pos.x, psActionTarget->pos.y);
+						const int off = abs(angleDelta(static_cast<uint16_t>(targetDir - psDroid->rot.direction - arcYaw)));
+						dirDiff = off > modArcHalf() ? off : 0;
 					}
 
 					if (dirDiff > FIXED_TURRET_DIR)
@@ -1285,7 +1327,7 @@ void actionUpdateDroid(DROID *psDroid)
 						else if (psDroid->sMove.Status != MOVESHUFFLE && !modJetDogfighter(psDroid))   // MOD: Hoverjets drehen im Flug (Ueberflug)
 						{
 							psDroid->action = DACTION_ROTATETOATTACK;
-							moveTurnDroid(psDroid, psActionTarget->pos.x, psActionTarget->pos.y);
+							modTurnForWeapon(psDroid, 0, psActionTarget);   // MOD (23.11. 03:05): Platz der ersten Waffe zum Ziel drehen
 						}
 					}
 					else if (!psWeapStats->rotate ||
