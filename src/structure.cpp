@@ -8010,7 +8010,8 @@ LineBuild calcLineBuild(STRUCTURE_STATS const *stats, uint16_t direction, Vector
 	const int pitch = modgrid::isPole(stats) ? 4 * (DIST_TILE / TILE_UNITS) : 0;
 	// MOD (Wunsch 20.11. "Es gibt noch 1 Einheit Ziehabstand bei den Solarpaneelen. Es soll eine durchgehende Reihe sein"): Solarpaneele
 	// (incomeProvide > 0) werden wie Mauern dicht an dicht gezogen - ohne freies Feld dazwischen (normale Gebaeude behalten 1 Feld Abstand)
-	const STRUCTURE_TYPE packType = (stats->incomeProvide > 0) ? REF_DEFENSE : stats->type;
+	// (23.11. 18:38) Schienen ebenfalls lueckenlos (ein durchgehendes Gleis)
+	const STRUCTURE_TYPE packType = (stats->incomeProvide > 0 || stats->id.startsWith("A0RailTrack")) ? REF_DEFENSE : stats->type;
 	return calcLineBuild(stats->size(direction), packType, pos, pos2, pitch);
 }
 

@@ -64,14 +64,18 @@ bool bodyAllowed(unsigned player, const BODY_STATS *psBody)
 	{
 		return true;
 	}
-	// Fraktions-Infanterie: nur die eigene Fraktion (auch die Scavengers bekommen nur ihre Scav-Infanterie). In der Kampagne ist der
-	// Spieler (0) das Project; die Kampagnen-Gegner bleiben frei, ihre Missionen setzen ihre Einheiten selbst ein.
+	// Fraktions-Infanterie: nur die eigene Fraktion (auch die Scavengers bekommen nur ihre Scav-Infanterie). Die Kampagnen-Gegner bleiben
+	// frei, ihre Missionen setzen ihre Einheiten selbst ein.
+	// (Wunsch 23.11. 18:38 "Die Infanteristen sind teilweise den falschen Fraktionen zugeordnet - ich hatte Project-Soldaten anstatt Scav"):
+	// in der Kampagne bildet der Spieler die Infanterie seiner Fraktion aus der Einstellung aus (Standard: Scavengers) - vorher fest Project
 	const int inf = infantryFaction(psBody);
 	if (inf >= 0)
 	{
 		if (!bMultiPlayer)
 		{
-			return player != 0 || inf == FACTION_PROJECT;
+			if (player != 0) { return true; }
+			const int f = static_cast<int>(NetPlay.players[0].faction);
+			return inf == ((f >= 0 && f <= static_cast<int>(MAX_FACTION_ID)) ? f : static_cast<int>(FACTION_NORMAL));
 		}
 		return static_cast<int>(NetPlay.players[player].faction) == inf;
 	}

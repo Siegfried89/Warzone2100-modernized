@@ -17,12 +17,14 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "lib/framework/vector.h"
 
 struct DROID;
 struct STRUCTURE;
+struct STRUCTURE_STATS;
 struct iIMDShape;
 
 namespace modfort
@@ -44,6 +46,10 @@ Vector2i pathPoint(const std::vector<uint8_t> &sides, int width, int tileX, int 
 bool isFort(const STRUCTURE *psStructure);
 /// Modell mit den offenen Seiten fuer die Anzeige (ohne Drehung zu zeichnen); nullptr = normales Modell
 const iIMDShape *displayModel(const STRUCTURE *psStructure);
+/// (Wunsch 23.11. 18:38 "bei einigen Sandsackstellungen passen immer noch nicht die Richtungen der Vorschauen und manchmal das Modell"):
+/// vor dem Zeichnen der Bauplaene deren Lagen (Weltkoordinaten) und Bauwerksarten melden - die Vorschau verbindet sich dann auch mit den
+/// Nachbar-Bauplaenen einer gezogenen Reihe/eines Feldes (wie das fertige Netz). Nur Anzeige.
+void setBlueprintNeighbours(const std::vector<std::pair<Vector2i, const STRUCTURE_STATS *>> &bps, unsigned player);
 
 /// (17.11. 14:14) tiefe Stellung (Graben/Grube "tief")?
 bool isDeep(const STRUCTURE *psStructure);
