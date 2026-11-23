@@ -2456,6 +2456,15 @@ void	groupConsoleInformOfCentering(UDWORD groupNumber)
 /**
  * calculate muzzle base location in 3d world
  */
+// MOD (23.11. 01:35): Verbundrumpfe auf Lauf-Beinen - Rumpf (und damit die Waffen) sitzen auf der Huefte = Anschluss 1 der Beine
+static void modWalkerHipTrans(const DROID *psDroid, Affine3F &af)
+{
+	const PROPULSION_STATS *prop = psDroid->getPropulsionStats();
+	if (prop == nullptr || prop->walkerIMD == nullptr || prop->walkerIMD->connectors.empty()) { return; }
+	const Vector3i &hip = prop->walkerIMD->connectors[0];
+	af.Trans(hip.x, -hip.z, -hip.y);
+}
+
 bool calcDroidMuzzleBaseLocation(const DROID *psDroid, Vector3i *muzzle, int weapon_slot)
 {
 	const iIMDBaseShape *psBodyImd = BODY_IMD(psDroid, psDroid->player);
@@ -2479,6 +2488,7 @@ bool calcDroidMuzzleBaseLocation(const DROID *psDroid, Vector3i *muzzle, int wea
 		af.RotY(psDroid->rot.direction);
 		af.RotX(psDroid->rot.pitch);
 		af.RotZ(-psDroid->rot.roll);
+		modWalkerHipTrans(psDroid, af);   // MOD (23.11.): Rumpf sitzt auf Lauf-Beinen
 		af.Trans(psBodyImd->connectors[conn].x, -psBodyImd->connectors[conn].z,
 				 -psBodyImd->connectors[conn].y);//note y and z flipped
 
@@ -2530,6 +2540,7 @@ bool calcDroidMuzzleLocation(const DROID *psDroid, Vector3i *muzzle, int weapon_
 		af.RotY(psDroid->rot.direction);
 		af.RotX(psDroid->rot.pitch);
 		af.RotZ(-psDroid->rot.roll);
+		modWalkerHipTrans(psDroid, af);   // MOD (23.11.): Rumpf sitzt auf Lauf-Beinen
 		af.Trans(psBodyImd->connectors[conn].x, -psBodyImd->connectors[conn].z,
 				 -psBodyImd->connectors[conn].y);//note y and z flipped
 		debugLen += sprintf(debugStr + debugLen, "connect:body[%d]=(%d,%d,%d)", weapon_slot, psBodyImd->connectors[conn].x, -psBodyImd->connectors[conn].z, -psBodyImd->connectors[conn].y);

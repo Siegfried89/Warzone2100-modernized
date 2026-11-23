@@ -49,6 +49,7 @@
 
 #define IDDES_STOREBUTTON	5905		// Stored template button
 #define IDDES_COMBOT		5906		// MOD: Combot-Designer (hohe blaue Taste)
+#define IDDES_HULLFORGE		5907		// MOD (23.11.): Rumpf-Baukasten (Verbundrumpfe)
 
 /* Design screen bar graph IDs */
 #define IDDES_BODYARMOUR_K	5100		// The body armour bar graph for kinetic weapons
@@ -124,5 +125,8 @@ bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complai
 
 /// MOD: Vorlage aus dem Combot-Designer uebernehmen (Einzelspieler und Mehrspieler). false + Meldung, wenn sie nicht zulaessig ist.
 bool desStoreCombotTemplate(const DROID_TEMPLATE &design, std::string &error);
+
+/// MOD (23.11.): offene Teileliste des Design-Bildschirms neu aufbauen
+void intDesignRefreshComponents();
 
 #endif // __INCLUDED_SRC_DESIGN_H__

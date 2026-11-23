@@ -147,6 +147,7 @@ struct iIMDBaseShape
 	inline const iIMDShape* displayModel() const { return m_displayModel.get(); }
 protected:
 	friend bool tryLoad(const WzString &path, const WzString &filename);
+	friend iIMDBaseShape *modelRegisterFromText(const WzString &filename, const std::string &pieText);   // MOD (23.11.)
 	friend void modelUpdateTilesetIdx(size_t tilesetIdx);
 	friend void modelReloadAllModelTextures();
 	friend bool debugReloadDisplayModelsForBaseModel(iIMDBaseShape& baseModel);

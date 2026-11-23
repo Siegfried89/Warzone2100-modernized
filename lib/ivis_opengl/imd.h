@@ -78,6 +78,9 @@ LoadingTask<> preloadAllModelTexturesTask(ResourceLoadingController& controller)
 const WzString &modelName(const iIMDShape *model);
 
 iIMDBaseShape *modelGet(const WzString &filename);
+/// MOD (23.11. 01:35, Verbundrumpfe): Modell aus PIE-Text im Speicher anlegen oder - falls es den Namen schon gibt - ersetzen
+/// (die Basisform bleibt dasselbe Objekt, damit gemerkte Zeiger gueltig bleiben; Masse und Anschluesse werden neu gesetzt)
+iIMDBaseShape *modelRegisterFromText(const WzString &filename, const std::string &pieText);
 /// MOD (18.11., Absturz 13:25 nach neuem Spiel: zwischengespeicherte Modellzeiger zeigten auf freigegebene Modelle): zaehlt bei jedem
 /// modelShutdown() hoch. modelCacheStale(gen) ist true, wenn ein gemerkter Modellzeiger (neu) geholt werden muss.
 unsigned modelGeneration();
