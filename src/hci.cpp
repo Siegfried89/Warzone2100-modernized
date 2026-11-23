@@ -142,6 +142,7 @@
 #include "moddrama.h"
 #include "modvoice.h"
 #include "moddesigner.h"
+#include "modhullforge.h" // MOD (23.11.): Rumpf-Baukasten
 #include "modfleetdesigner.h"
 #include "modunitstats.h"
 #include "qtscript.h"
@@ -772,6 +773,7 @@ bool intInitialise()
 void interfaceShutDown()
 {
 	moddesigner::shutdown(); // MOD
+	modhullforge::shutdown(); // MOD (23.11.)
 	modpanel::shutdown();    // MOD
 	modpaint::shutdown();    // MOD
 	modbigmap::shutdown();   // MOD (17.11.): strategische Karte
@@ -1295,6 +1297,7 @@ INT_RETVAL intRunWidgets()
 	modoilui::tick();      // MOD (20.11.): Oel-Fenster (Oelkreislauf)
 	modtutorial::tick();   // MOD (22.11.): Tutorial (nur Herausforderung auf Wuestenland)
 	moddesigner::tick();   // MOD: Combot-Designer
+	modhullforge::tick();  // MOD (23.11.): Rumpf-Baukasten + Verfuegbarkeit der Verbundrumpfe
 	modfleetdesigner::tick();   // MOD (17.11. 21:48): Einheiteneditor aus dem Flotten-Menue
 
 	if (quitToMainMenuRequested)

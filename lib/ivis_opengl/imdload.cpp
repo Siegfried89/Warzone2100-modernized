@@ -424,6 +424,36 @@ bool tryLoad(const WzString &path, const WzString &filename)
 	return true;
 }
 
+// MOD (23.11. 01:35, Verbundrumpfe aus dem Rumpf-Baukasten): Modell aus PIE-Text anlegen bzw. ersetzen
+iIMDBaseShape *modelRegisterFromText(const WzString &filename, const std::string &pieText)
+{
+	const WzString name(filename.toLower());
+	const char *pData = pieText.c_str();
+	const char *pEnd = pData + pieText.size();
+	auto it = models.find(name.toStdString());
+	const bool exists = (it != models.end());
+	auto shape = iV_ProcessIMD(name, &pData, pEnd, false, exists);
+	if (!shape)
+	{
+		debug(LOG_ERROR, "Verbundrumpf-Modell %s konnte nicht erzeugt werden", name.toUtf8().c_str());
+		return exists ? it->second.get() : nullptr;
+	}
+	if (!exists)
+	{
+		auto res = models.insert(ModelMap::value_type(name.toStdString(), std::make_unique<iIMDBaseShape>(std::move(shape), WzString::fromUtf8("components/bodies/"), name)));
+		return res.first->second.get();
+	}
+	iIMDBaseShape *base = it->second.get();
+	base->min = shape->min;
+	base->max = shape->max;
+	base->sradius = shape->sradius;
+	base->radius = shape->radius;
+	base->ocen = shape->ocen;
+	base->connectors = shape->connectors;
+	base->m_displayModel = std::move(shape);
+	return base;
+}
+
 const WzString &modelName(const iIMDShape *model)
 {
 	if (model != nullptr)

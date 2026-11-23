@@ -34,6 +34,7 @@
 #include "lib/gamelib/gtime.h"
 #include "objects.h"
 #include "stats.h"
+#include "modcompbody.h" // MOD (23.11.): Verbundrumpfe
 #include "map.h"
 #include "main.h"
 #include "lib/sound/audio_id.h"
@@ -122,6 +123,7 @@ void statsGenerationBump()
 bool statsShutDown()
 {
 	statsGenerationBump();
+	modcompbody::shutdown();   // MOD (23.11.)
 	lookupStatPtr.clear();
 	lookupCompStatPtr.clear();
 
@@ -698,7 +700,8 @@ bool loadBodyStats(WzConfig &ini)
 {
 	ASSERT(ini.isAtDocumentRoot(), "WzConfig instance is in the middle of traversal");
 	std::vector<WzString> list = ini.childGroups();
-	statsAllocBody(list.size());
+	const size_t modCompExtra = modcompbody::prepare();   // MOD (23.11.): Plaetze fuer Verbundrumpfe (gespeicherte + freie)
+	statsAllocBody(list.size() + modCompExtra);
 	// Hack to make sure ZNULLBODY is always first in list
 	auto nullbody = std::find(list.begin(), list.end(), WzString::fromUtf8("ZNULLBODY"));
 	ASSERT_OR_RETURN(false, nullbody != list.end(), "ZNULLBODY is mandatory");
@@ -833,6 +836,17 @@ bool loadBodyStats(WzConfig &ini)
 		ini.endGroup();
 		ini.endGroup();
 	}
+
+	// MOD (23.11. 01:35): Verbundrumpfe aus dem Rumpf-Baukasten hinter den normalen Rumpfen anmelden
+	modcompbody::registerAll(list.size(), modCompExtra, [](COMPONENT_STATS *ps, const WzString &oldId) {
+		if (!oldId.isEmpty())
+		{
+			auto a = lookupStatPtr.find(oldId); if (a != lookupStatPtr.end() && a->second == ps) { lookupStatPtr.erase(a); }
+			auto b = lookupCompStatPtr.find(oldId); if (b != lookupCompStatPtr.end() && b->second == ps) { lookupCompStatPtr.erase(b); }
+		}
+		lookupStatPtr[ps->id] = ps;
+		lookupCompStatPtr[ps->id] = ps;
+	});
 
 	return true;
 }
@@ -999,6 +1013,13 @@ bool loadPropulsionStats(WzConfig &ini)
 		psStats->shieldEnergy = std::clamp(ini.value("shieldEnergy", 0).toInt(), 0, 90);   // MOD
 		psStats->alwaysFlying = ini.value("alwaysFlying", false).toBool();   // MOD: Balldrohne
 		psStats->hoverHeight = std::clamp(ini.value("hoverHeight", 0).toInt(), 0, 300);   // MOD: Balldrohne
+		if (ini.contains("walkerModel"))   // MOD (23.11. 01:35): Lauf-Beine als Laufwerk (Verbundrumpfe auf Mech-Beinen)
+		{
+			psStats->walkerIMD = modelGet(ini.value("walkerModel").toWzString());
+			psStats->gaitStride = std::clamp(ini.value("gaitStride", 40).toInt(), 1, 4096);
+			psStats->gaitRunStride = std::clamp(ini.value("gaitRunStride", 0).toInt(), 0, 4096);
+			psStats->gaitBlends = std::clamp(ini.value("gaitBlends", 1).toInt(), 1, 16);
+		}
 		psStats->ref = STAT_PROPULSION + i;
 		psStats->turnSpeed = ini.value("turnSpeed", DEG(1) / 3).toInt();
 		ASSERT(psStats->turnSpeed != 0, "\"%s\".\"turnSpeed\" is 0", psStats->id.toUtf8().c_str());

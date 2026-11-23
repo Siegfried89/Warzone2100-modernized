@@ -62,6 +62,8 @@
 #include "intdisplay.h"
 #include "design.h"
 #include "moddesigner.h" // MOD
+#include "modhullforge.h" // MOD (23.11.): Rumpf-Baukasten
+#include "modcompbody.h" // MOD (23.11.)
 #include "component.h"
 #include "main.h"
 #include "display.h"
@@ -516,6 +518,7 @@ static ComponentIterator propulsionIterator()
 static ComponentIterator bodyIterator()
 {
 	ASSERT(selectedPlayer < MAX_PLAYERS, "selectedPlayer: %" PRIu32 "", selectedPlayer);
+	modcompbody::refreshAvailability(selectedPlayer);   // MOD (23.11.): Verbundrumpfe sind baubar, wenn alle Teil-Rumpfe erforscht sind
 	ComponentIterator all = componentIterator(asBodyStats.data(), sizeof(BODY_STATS), apCompLists[selectedPlayer][COMP_BODY], asBodyStats.size());
 	// MOD: Koerper mit demselben Modell (z.B. Jeep/Raider) nur einmal anbieten
 	return uniqueIterator(all, [](const COMPONENT_STATS &a, const COMPONENT_STATS &b)
@@ -751,6 +754,23 @@ bool intAddDesign(bool bShowCentreScreen)
 		parent->attach(comBtn);
 		comBtn->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
 			psWidget->setGeometry(DES_CENTERFORMX + DES_CENTERFORMWIDTH + 8, DES_CENTERFORMY + DES_3DVIEWY, 74, 128);
+		}));
+	}
+	/* MOD (23.11. 01:35): Rumpf-Baukasten-Knopf unter dem Combot-Knopf */
+	{
+		W_BUTINIT sHullButInit;
+		sHullButInit.id = IDDES_HULLFORGE;
+		sHullButInit.style = WBUT_PLAIN;
+		sHullButInit.x = DES_CENTERFORMX + DES_CENTERFORMWIDTH + 8;
+		sHullButInit.y = DES_CENTERFORMY + DES_3DVIEWY + 136;
+		sHullButInit.width = 74;
+		sHullButInit.height = 128;
+		sHullButInit.pTip = _("Hull Forge: combine several hulls into one super hull (positions, rotations and weapon slots freely adjustable)");
+		sHullButInit.pDisplay = modhullforge::displayEntryButton;
+		auto hullBtn = std::make_shared<W_BUTTON>(&sHullButInit);
+		parent->attach(hullBtn);
+		hullBtn->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
+			psWidget->setGeometry(DES_CENTERFORMX + DES_CENTERFORMWIDTH + 8, DES_CENTERFORMY + DES_3DVIEWY + 136, 74, 128);
 		}));
 	}
 
@@ -1303,6 +1323,12 @@ static void intSetDesignMode(DES_COMPMODE newCompMode, bool forceRefresh)
 		intSetButtonFlash(IDDES_WPBBUTTON,   false);
 		break;
 	}
+}
+
+// MOD (23.11.): nach dem Speichern im Rumpf-Baukasten die offene Teileliste neu aufbauen (neuer Verbundrumpf erscheint sofort)
+void intDesignRefreshComponents()
+{
+	if (desCompMode != IDES_NOCOMPONENT) { intSetDesignMode(desCompMode, true); }
 }
 
 static COMPONENT_STATS *
@@ -3049,6 +3075,7 @@ void intRemoveDesign()
 	widgDelete(psWScreen, IDDES_SYSTEMFORM);
 
 	widgDelete(psWScreen, IDDES_COMBOT); // MOD
+	widgDelete(psWScreen, IDDES_HULLFORGE); // MOD (23.11.)
 	widgDelete(psWScreen, IDDES_FORM);
 	widgDelete(psWScreen, IDDES_STATSFORM);
 
@@ -3508,6 +3535,9 @@ void intProcessDesign(UDWORD id)
 			}
 		case IDDES_COMBOT:
 			moddesigner::open(); // MOD
+			break;
+		case IDDES_HULLFORGE:
+			modhullforge::open(); // MOD (23.11.)
 			break;
 		case IDDES_STOREBUTTON:
 			sCurrDesign.stored = !sCurrDesign.stored;	// Invert the current status
