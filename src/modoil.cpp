@@ -1173,10 +1173,12 @@ void logistics()
 		// Oelturm foerdert 1 Fass alle DERRICK_SECS Sekunden - ohne Kraftwerk, ohne Unterschiede - bis DERRICK_CAP Faesser daliegen
 		for (STRUCTURE *der : sn.derricks)
 		{
-			if (s_pipeAssign.count(der->id) != 0) { continue; }   // (23.11. 19:57) per Pipeline am Kraftwerk: Oel fliesst direkt, keine Faesser
 			int &b = s_barrels[der->id];
-			// (Wunsch 23.11. 19:29 "anfangs schneller in Fahrt") ein neuer Oelturm stellt sein erstes Fass schon nach 30 Sekunden ab
-			const auto fresh = s_progress.try_emplace(der->id, static_cast<int64_t>(DERRICK_SECS - 30));
+			// (Wunsch 23.11. 20:20 "es soll sofort das erste Fass da stehen und dann sofort mit dem Countdown fuer das naechste beginnen"):
+			// ein neuer Oelturm stellt beim ersten Durchlauf sofort ein Fass ab, der Fortschritt zum naechsten beginnt bei 0
+			const auto fresh = s_progress.try_emplace(der->id, static_cast<int64_t>(0));
+			if (fresh.second && b < DERRICK_CAP) { b++; }
+			if (s_pipeAssign.count(der->id) != 0) { continue; }   // (23.11. 19:57) per Pipeline am Kraftwerk: Oel fliesst direkt, keine Faesser
 			int64_t &prog = fresh.first->second;
 			if (prog < 0 || prog > DERRICK_SECS) { prog = DERRICK_SECS; }   // aeltere Spielstaende (Festkomma-Fortschritt)
 			if (b >= DERRICK_CAP) { continue; }   // voll: es wird nichts mehr abgestellt, bis jemand abholt
