@@ -120,6 +120,8 @@ enum EFFECT_TYPE
 	DROID_ANIMEVENT_DYING_NORMAL_ST,
 
 	GRAVITON_TYPE_DIRT,     // MOD (18.11.): Erdbrocken beim Krater-Einschlag - fliegt senkrecht hoch, faellt zurueck und ist weg (am Ende: alte Spielstaende)
+	GRAVITON_TYPE_SPARK,    // MOD (23.11. 03:05): Funke beim Treffer auf Panzerung - leuchtet, fliegt mit Schwerkraft, nach kurzer Zeit (effectGiveAuxVar ms) weg
+	GRAVITON_TYPE_TRACER,   // MOD (23.11. 03:05): Leuchtspur-Geschoss der Raketenabwehr - fliegt gerade (ohne Schwerkraft) in Flugrichtung, leuchtet, nach effectGiveAuxVar ms weg
 };
 
 

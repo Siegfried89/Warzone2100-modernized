@@ -49,6 +49,7 @@
 #include "modpointdef.h"
 #include "modshield.h"
 #include "projectile.h"
+#include "modarmorhit.h"
 #include "modicbm.h"
 #include "lib/ivis_opengl/imd.h"   // MOD: modelGet (MG-Einschlag je Ziel)
 #include "visibility.h"
@@ -1401,6 +1402,7 @@ static void proj_ImpactFunc(PROJECTILE *psObj)
 			}
 
 			addMultiEffect(&position, &scatter, EFFECT_EXPLOSION, facing, true, (imd) ? imd->displayModel() : nullptr, psStats->numExplosions, psStats->lightWorld, psStats->effectSize, psObj->time);
+			modarmorhit::onHit(psObj, psStats, position);   // MOD (23.11. 03:05): Funken und klapperndes Metall bei Treffern auf Panzerung
 		}
 
 		// Check for electronic warfare damage where we know the subclass and source

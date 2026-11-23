@@ -444,6 +444,7 @@ int32_t droidDamage(GameWorld& world, DROID *psDroid, PROJECTILE *psProjectile, 
 		}
 		// Destroy the droid
 		debug(LOG_DEATH, "%s droid %d (%p) is toast", objInfo(psDroid), (int)psDroid->id, static_cast<void *>(psDroid));
+		modwreck::noteKill(psDroid, damage, psProjectile, weaponSubClass, isDamagePerSecond);   // MOD (23.11. 03:05): starke Explosion schleudert den Rumpf
 		// This should be sent even if multi messages are turned off, as the group message that was
 		// sent won't contain the destroyed droid
 		if (bMultiPlayer && !bMultiMessages)

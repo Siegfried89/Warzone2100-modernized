@@ -471,6 +471,11 @@ struct WEAPON_STATS : public COMPONENT_STATS
 	UBYTE surfaceToAir = 0;				///< indicates how good in the air - SHOOT_ON_GROUND, SHOOT_IN_AIR or both
 	int crossLayer = -1;				///< MOD: Ebenen-Sonderwaffe (Orbitalbombe, Tektonik-Torpedo): Geschoss wirkt in dieser Ebene (0 Untergrund, 1 Oberflaeche, 2 Orbit), -1 = Ebene des Schuetzen
 	bool lightWorld = false;			///< flag to indicate whether the effect lights up the world
+	// MOD (Wunsch 23.11. 03:05): Raketenabwehr (AMS) - schiesst feindliche Artillerie-Raketen im Flug ab (modpointdef)
+	bool modAms = false;                ///< "ams": 1
+	unsigned modAmsReload = 800;        ///< "amsReload": ms zwischen zwei Abwehrschuessen
+	unsigned modAmsChance = 60;         ///< "amsChance": Trefferchance in Prozent
+	WzString modAmsTracer;              ///< "amsTracer": Modell der Leuchtspur (leer = Flug-Grafik der Waffe)
 	bool penetrate = false;				///< flag to indicate whether pentrate droid or not
 	bool fireOnMove = false;			///< indicates whether the droid has to stop before firing
 

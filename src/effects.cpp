@@ -1000,7 +1000,20 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 		return graphicsTime < psEffect->birthTime + 180000;   // (Wunsch 22.11. 16:15) ein paar Minuten liegen lassen (vorher 30 s)
 	}
 
-	if (psEffect->type != GRAVITON_TYPE_GIBLET && psEffect->type != GRAVITON_TYPE_CASING && psEffect->type != GRAVITON_TYPE_DIRT)
+	// MOD (23.11. 03:05): Funken und Leuchtspuren leben nur kurz
+	if ((psEffect->type == GRAVITON_TYPE_SPARK || psEffect->type == GRAVITON_TYPE_TRACER) && graphicsTime > psEffect->birthTime + psEffect->lifeSpan)
+	{
+		return false;
+	}
+	if (psEffect->type == GRAVITON_TYPE_TRACER)
+	{
+		// leuchtet in der Nacht (orange)
+		light.position = psEffect->position;
+		light.range = 150;
+		light.colour = pal_Colour(255, 170, 60);
+		lightData.lights.push_back(light);
+	}
+	else if (psEffect->type != GRAVITON_TYPE_GIBLET && psEffect->type != GRAVITON_TYPE_CASING && psEffect->type != GRAVITON_TYPE_DIRT && psEffect->type != GRAVITON_TYPE_SPARK)
 	{
 		light.position = psEffect->position;
 		light.range = 128;
@@ -1076,7 +1089,10 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 
 	/* Update velocity (and retarding of descent) according to present frame rate */
 	accel = graphicsTimeAdjustedIncrement(GRAVITON_GRAVITY);
-	psEffect->velocity.y += accel;
+	if (psEffect->type != GRAVITON_TYPE_TRACER)   // MOD: Leuchtspur fliegt gerade
+	{
+		psEffect->velocity.y += accel;
+	}
 
 	/* If it's bounced/drifted off the map then kill it */
 	if ((int)psEffect->position.x <= TILE_UNITS || (int)psEffect->position.z <= TILE_UNITS)
@@ -1085,7 +1101,8 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 	}
 
 	/* Are we below it? - Hit the ground? */
-	if (psEffect->type == GRAVITON_TYPE_DIRT && (int)psEffect->position.y < (int)groundHeight && psEffect->velocity.y < 0)
+	if ((psEffect->type == GRAVITON_TYPE_DIRT || psEffect->type == GRAVITON_TYPE_SPARK || psEffect->type == GRAVITON_TYPE_TRACER)
+	    && (int)psEffect->position.y < (int)groundHeight && psEffect->velocity.y < 0)
 	{
 		return false;   // MOD: Erdbrocken faellt in den Boden - weg (kein Abprallen, keine Explosion)
 	}
@@ -1710,6 +1727,18 @@ static void renderGravitonEffect(const EFFECT *psEffect, const glm::mat4 &viewMa
 		modelMatrix *= glm::scale(glm::vec3(psEffect->size / 100.f));
 	}
 
+	if (psEffect->type == GRAVITON_TYPE_SPARK || psEffect->type == GRAVITON_TYPE_TRACER)
+	{
+		// MOD (23.11. 03:05): leuchtend (additiv), ohne Schatten; Funken werden zum Ende hin kleiner
+		if (psEffect->type == GRAVITON_TYPE_SPARK && psEffect->lifeSpan > 0)
+		{
+			const float age = static_cast<float>(graphicsTime - psEffect->birthTime) / static_cast<float>(psEffect->lifeSpan);
+			modelMatrix *= glm::scale(glm::vec3(std::max(0.25f, 1.f - 0.75f * age)));
+		}
+		pie_Draw3DShape(psEffect->imd, 0, 0, WZCOL_WHITE, pie_ADDITIVE, 255, modelMatrix, viewMatrix);
+		return;
+	}
+
 	pie_Draw3DShape(psEffect->imd, psEffect->frameNumber, psEffect->player, WZCOL_WHITE, pie_SHADOW, 0, modelMatrix, viewMatrix);
 }
 
@@ -1990,6 +2019,11 @@ void	effectSetupGraviton(EFFECT& effect)
 	case GRAVITON_TYPE_DIRT:
 		// MOD: Geschwindigkeit (seitlich + nach oben) kommt vom Aufrufer
 		break;
+	case GRAVITON_TYPE_SPARK:
+	case GRAVITON_TYPE_TRACER:
+		// MOD (23.11. 03:05): Geschwindigkeit vom Aufrufer, Lebensdauer (ms) per effectGiveAuxVar
+		effect.lifeSpan = static_cast<uint16_t>(std::clamp<UDWORD>(auxVar, 40, 4000));
+		break;
 	default:
 		ASSERT(false, "Weirdy type of graviton");
 		break;
@@ -2018,8 +2052,27 @@ void	effectSetupGraviton(EFFECT& effect)
 		effect.spin.y = rand() % DEG(120) + DEG(40);
 	}
 
+	if (effect.type == GRAVITON_TYPE_TRACER)
+	{
+		// MOD: Leuchtspur zeigt in Flugrichtung (Modell laengs z, Spitze bei -z) - Drehung aus der Geschwindigkeit, kein Drall
+		// (+z des Modells zeigt entgegen der Flugrichtung)
+		const float vx = -effect.velocity.x, vy = -effect.velocity.y, vz = effect.velocity.z;   // Anzeige-Raum: z = -Karten-y, dann umgekehrt
+		const float len = std::sqrt(vx * vx + vy * vy + vz * vz);
+		if (len > 1e-3f)
+		{
+			const float dx = vx / len, dy = vy / len, dz = vz / len;
+			effect.rotation.y = static_cast<int>(std::asin(std::clamp(dx, -1.f, 1.f)) * 65536.f / 6.2831853f);
+			effect.rotation.x = static_cast<int>(std::atan2(-dy, dz) * 65536.f / 6.2831853f);
+			effect.rotation.z = 0;
+		}
+		effect.spin = Vector3i(0, 0, 0);
+	}
+
 	/* Gravitons are essential */
-	SET_ESSENTIAL(effect);
+	if (effect.type != GRAVITON_TYPE_SPARK)   // MOD: viele kleine Funken duerfen bei Ueberlast entfallen
+	{
+		SET_ESSENTIAL(effect);
+	}
 
 	if (effect.type == GRAVITON_TYPE_TURRET)
 	{

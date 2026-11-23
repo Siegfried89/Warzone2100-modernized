@@ -2970,6 +2970,16 @@ void	renderFeature(FEATURE *psFeature, const glm::mat4 &viewMatrix, const glm::m
 	}
 
 	iIMDBaseShape *imd = psFeature->sDisplay.imd;
+	if (imd && isWreck && modwreck::charred(psFeature))
+	{
+		// MOD (23.11. 03:05): hochgeschleuderter Rumpf - verkohlt (dunkler), Drehpunkt in der Modellmitte
+		const iIMDShape *hm = imd->displayModel();
+		modelMatrix *= glm::translate(glm::vec3(-(hm->min.x + hm->max.x) / 2.f, -(hm->min.y + hm->max.y) / 2.f, -(hm->min.z + hm->max.z) / 2.f));
+		brightness.byte.r = static_cast<uint8_t>(brightness.byte.r * 45 / 100);
+		brightness.byte.g = static_cast<uint8_t>(brightness.byte.g * 42 / 100);
+		brightness.byte.b = static_cast<uint8_t>(brightness.byte.b * 40 / 100);
+		pieFlags = pie_SHADOW;
+	}
 	if (imd)
 	{
 		const iIMDShape *strImd = imd->displayModel();

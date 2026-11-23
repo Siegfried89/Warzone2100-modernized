@@ -143,6 +143,7 @@ void write(const std::string &folder)
 			nlohmann::json e = nlohmann::json::object();
 			e["id"] = w.featureId; e["age"] = w.age; e["x"] = w.xe; e["y"] = w.ye;
 			e["hh"] = w.halfH; e["hw"] = w.halfW; e["roll"] = w.rollTotal;
+			if (w.hull) { e["hull"] = true; }
 			if (w.hasInfo) { e["info"] = infoToJson(w.info); }
 			wr.push_back(e);
 		}
@@ -221,6 +222,7 @@ void applyPending()
 				w.age = e.value("age", 0u);
 				w.xe = e.value("x", 0); w.ye = e.value("y", 0);
 				w.halfH = e.value("hh", 12); w.halfW = e.value("hw", 12); w.rollTotal = e.value("roll", 90);
+				w.hull = e.value("hull", false);
 				const auto in = e.find("info");
 				w.hasInfo = in != e.end() && infoFromJson(*in, w.info);
 				wrecks.push_back(w);
