@@ -94,8 +94,8 @@ constexpr float PARTS_Y = 20, SLOTS_HEAD_Y = 134, SLOTS_Y = 148, VALUES_Y = 282;
 constexpr float ROW_A = 350, ROW_B = 418;
 // Rumpf-Liste links
 constexpr float TAB_X = 6, TAB_Y = 16, TAB_W = 37, TAB_H = 30, TAB_STEP_X = 39, TAB_STEP_Y = 32;
-constexpr int TAB_COLS = 4, TAB_MAX = 8;
-constexpr float LIST_X = 6, LIST_Y = 82, LIST_W = 154, LIST_H = 232;
+constexpr int TAB_COLS = 4, TAB_MAX = 12;   // (23.11. 23:24) drei Reihen: WZ-Fraktionen, Transporter, Scavs, Mods ...
+constexpr float LIST_X = 6, LIST_Y = 114, LIST_W = 154, LIST_H = 200;
 constexpr float CELL_W = 76, CELL_H = 50, HEAD_H = 13;
 
 // Sinnbilder (Reihenfolge = forgeicons.py)
@@ -305,14 +305,18 @@ int teamColour()
 /// im Spiel: noch nicht erforscht (erforschbar, aber nicht verfuegbar)
 bool locked(const BodyInfo &b)
 {
-	if (s_menu || !modcompbody::inGame() || b.statIdx == SIZE_MAX || !b.designable) { return false; }
+	// (23.11. 23:24) die WZ-Fraktionsruempfe sind im Paket nicht "designable", haengen im Spiel aber trotzdem an der Forschung
+	if (s_menu || !modcompbody::inGame() || b.statIdx == SIZE_MAX || (!b.designable && !modcompbody::isWzFactionBody(b.id))) { return false; }
 	if (selectedPlayer >= MAX_PLAYERS || apCompLists[selectedPlayer][COMP_BODY] == nullptr) { return false; }
 	return apCompLists[selectedPlayer][COMP_BODY][b.statIdx] != AVAILABLE;
 }
 
 const char *shortSource(const std::string &s)
 {
-	if (s == "Warzone 2100") { return "WZ 2100"; }
+	if (s == "Warzone 2100") { return "WZ Transp."; }
+	if (s == "New Paradigm") { return "NP"; }
+	if (s == "Collective") { return "Kollektiv"; }
+	if (s == "Project") { return "Projekt"; }
 	if (s == "Scavengers") { return "Scavs"; }
 	if (s == "Metal Fatigue") { return "MF"; }
 	if (s == "Supreme Commander") { return "SupCom"; }

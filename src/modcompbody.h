@@ -23,6 +23,9 @@ struct iIMDBaseShape;
 
 namespace modcompbody
 {
+/// (23.11. 23:24) einer der 14 Fraktionsruempfe von Warzone 2100 (Viper ... Dragon)?
+bool isWzFactionBody(const std::string &id);
+
 
 /// Waffenplaetze je Verbundrumpf (Wunsch 23.11. 02:16: bis 30 - Turm-Plaetze-Leiste im Design-Bildschirm, MAX_WEAPONS)
 constexpr unsigned MAX_SLOTS = 30;

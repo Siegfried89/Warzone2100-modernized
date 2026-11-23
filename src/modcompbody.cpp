@@ -207,6 +207,9 @@ bool usableAsPart(const std::string &id, const std::string &cls, const std::stri
 	return true;
 }
 
+const char *const WZ_FACTION_BODIES[] = {"Body1REC", "Body5REC", "Body11ABT", "Body4ABT", "Body8MBT", "Body12SUP", "Body2SUP", "Body6SUPP", "Body9REC",
+                                        "Body3MBT", "Body7ABT", "Body10MBT", "Body13SUP", "Body14SUP"};
+
 /// Herkunft (Spiel/Mod) und Fraktion/Gruppe nach ID und Modell
 void classify(BodyInfo &b, const std::string &cls, const std::string &model)
 {
@@ -217,13 +220,15 @@ void classify(BodyInfo &b, const std::string &cls, const std::string &model)
 		{ "Body2SUP", "Collective", 2 }, { "Body6SUPP", "Collective", 2 }, { "Body9REC", "Collective", 2 },
 		{ "Body3MBT", "Nexus", 3 }, { "Body7ABT", "Nexus", 3 }, { "Body10MBT", "Nexus", 3 }, { "Body13SUP", "Nexus", 3 }, { "Body14SUP", "Nexus", 3 },
 	};
+	// (Wunsch 23.11. 23:24 "da fehlt noch die Einteilung nach Projekt, New Paradigm, Kollektiv, Nexus - oben bei den anderen wie MF, Mods"):
+	// jede WZ-Fraktion ist eine eigene Herkunft (eigener Reiter), die WZ-Transporter bleiben unter "Warzone 2100"
 	for (const auto &w : WZ)
 	{
-		if (id == w.id) { b.source = "Warzone 2100"; b.sourceRank = 0; b.group = w.faction; b.groupRank = w.rank; return; }
+		if (id == w.id) { b.source = w.faction; b.sourceRank = w.rank; b.group = w.faction; b.groupRank = 0; return; }
 	}
 	if (startsWith(id, "B3MF"))
 	{
-		b.source = "Metal Fatigue"; b.sourceRank = 3;
+		b.source = "Metal Fatigue"; b.sourceRank = 7;
 		if (contains(id, "Tank") || contains(id, "Arty"))
 		{
 			if (contains(id, "Rimtech")) { b.group = "Rimtech"; b.groupRank = 0; }
@@ -236,18 +241,18 @@ void classify(BodyInfo &b, const std::string &cls, const std::string &model)
 	}
 	if (startsWith(model, "w2_"))
 	{
-		b.source = "WZ2120"; b.sourceRank = 2;
+		b.source = "WZ2120"; b.sourceRank = 6;
 		b.group = b.size <= SIZE_LIGHT ? "Light" : (b.size == SIZE_MEDIUM ? "Medium" : "Heavy");
 		b.groupRank = b.size;
 		return;
 	}
-	if (id == "RigBody" || id == "PitbullBody" || id == "MammothBody" || id == "HarvesterBody") { b.source = "C&C 3"; b.sourceRank = 4; b.group = "GDI"; return; }
-	if (startsWith(id, "NTWShip")) { b.source = "Naval"; b.sourceRank = 5; b.group = "Ships"; return; }
-	if (startsWith(id, "UEF")) { b.source = "Supreme Commander"; b.sourceRank = 6; b.group = "UEF transports"; return; }
+	if (id == "RigBody" || id == "PitbullBody" || id == "MammothBody" || id == "HarvesterBody") { b.source = "C&C 3"; b.sourceRank = 8; b.group = "GDI"; return; }
+	if (startsWith(id, "NTWShip")) { b.source = "Naval"; b.sourceRank = 9; b.group = "Ships"; return; }
+	if (startsWith(id, "UEF")) { b.source = "Supreme Commander"; b.sourceRank = 10; b.group = "UEF transports"; return; }
 	if (cls == "Babas" || endsWith(id, "-Scav") || endsWith(id, "-Ultimate") || startsWith(id, "Scav") || startsWith(id, "B2") || startsWith(id, "B3body")
 	    || startsWith(id, "B4body") || id == "BusBody" || id == "FireBody" || contains(id, "Chopper") || startsWith(id, "Train"))
 	{
-		b.source = "Scavengers"; b.sourceRank = 1;
+		b.source = "Scavengers"; b.sourceRank = 5;
 		if (endsWith(id, "-Ultimate") || id == "B2crane2") { b.group = "Ultimate Scavengers"; b.groupRank = 1; }
 		else if (startsWith(id, "Train")) { b.group = "Trains"; b.groupRank = 4; }
 		else if (contains(id, "Chopper")) { b.group = "Helicopters"; b.groupRank = 3; }
@@ -255,8 +260,8 @@ void classify(BodyInfo &b, const std::string &cls, const std::string &model)
 		else { b.group = "Scavengers"; b.groupRank = 0; }
 		return;
 	}
-	if (cls == "Transports") { b.source = "Warzone 2100"; b.sourceRank = 0; b.group = "Transports"; b.groupRank = 5; return; }
-	b.source = "Mods"; b.sourceRank = 7; b.group = "Extra hulls"; b.groupRank = 0;
+	if (cls == "Transports") { b.source = "Warzone 2100"; b.sourceRank = 4; b.group = "Transports"; b.groupRank = 0; return; }
+	b.source = "Mods"; b.sourceRank = 11; b.group = "Extra hulls"; b.groupRank = 0;
 }
 
 int sizeFromText(const std::string &s)
@@ -291,7 +296,9 @@ void finishCatalog(Catalog &c)
 		auto it = seen.find(b.model);
 		if (it == seen.end()) { seen[b.model] = i; continue; }
 		BodyInfo &first = c.all[it->second];
-		if (b.designable && !first.designable) { first.listed = false; it->second = i; }
+		// (23.11. 23:24 "im Hull Designer sollten alle Vanilla-Ruempfe vorhanden sein"): die fruehere Herkunft (WZ-Fraktion vor Mod)
+		// gewinnt immer - vorher verdraengte ein baubarer Mod-Rumpf mit demselben Modell den Python ("Superbody")
+		if (b.designable && !first.designable && b.sourceRank == first.sourceRank) { first.listed = false; it->second = i; }
 		else { b.listed = false; }
 	}
 }
@@ -660,13 +667,20 @@ void refreshAvailability(unsigned player)
 			// (17:55 "sofern man die entsprechenden Forschungen dafuer hat"): erforschbare Teile muessen erforscht sein; Rumpfe, die es nie
 			// im Designer gibt (Scavenger-, Mod-Rumpfe), halten nichts auf
 			if (pi >= asBodyStats.size()) { all = false; break; }
-			if (asBodyStats[pi].designable && apCompLists[player][COMP_BODY][pi] != AVAILABLE) { all = false; break; }
+			const bool needsResearch = asBodyStats[pi].designable || isWzFactionBody(asBodyStats[pi].id.toStdString());   // (23.11. 23:24)
+			if (needsResearch && apCompLists[player][COMP_BODY][pi] != AVAILABLE) { all = false; break; }
 		}
 		state = all ? AVAILABLE : UNAVAILABLE;
 	}
 }
 
 // ---------------------------------------------------------------- Katalog
+bool isWzFactionBody(const std::string &id)
+{
+	for (const char *b : WZ_FACTION_BODIES) { if (id == b) { return true; } }
+	return false;
+}
+
 const std::vector<BodyInfo> &catalog() { return cat().all; }
 
 const BodyInfo *bodyInfo(const std::string &id)

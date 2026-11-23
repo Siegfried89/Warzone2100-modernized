@@ -823,7 +823,10 @@ void loadParts()
 			const nlohmann::json &e = it.value();
 			if (!e.is_object()) { continue; }
 			auto des = e.find("designable");
-			if (des == e.end() || !jsonTruthy(*des)) { continue; }
+			// (Wunsch 23.11. 23:24 "Der Fleet-Designer hat nicht alle Vanilla-Fraktionsruempfe"): die WZ-Fraktionsruempfe sind im Paket
+			// nicht "designable" (im Spiel ersetzt durch die Scav-Fassungen) - hier gehoeren sie trotzdem dazu
+			const bool wzFaction = src.kind == PK_BODY && modcompbody::isWzFactionBody(it.key());
+			if (!wzFaction && (des == e.end() || !jsonTruthy(*des))) { continue; }
 			DesignPart p;
 			p.id = it.key();
 			p.kind = src.kind;
@@ -1001,7 +1004,30 @@ std::vector<int> candidates(int tab)
 		else if (tab == 1 && p.kind == PK_PROP && (!flyOnlyBody() || p.ptype == "Lift") && inSub(1, p)) { out.push_back(i); }
 		else if (tab >= 2 && turretValid(tab - 2, p) && inSub(tab, p)) { out.push_back(i); }
 	}
+	if (tab == 0)
+	{
+		// (Wunsch 23.11. 23:24) Ruempfe nach Herkunft: Projekt, New Paradigm, Kollektiv, Nexus, Transporter, Scavengers, WZ2120, MF, ...
+		auto rank = [](const DesignPart &p) { const modcompbody::BodyInfo *b = modcompbody::bodyInfo(p.id); return b != nullptr ? b->sourceRank : 99; };
+		std::stable_sort(out.begin(), out.end(), [&](int a, int b) { return rank(s_parts[static_cast<size_t>(a)]) < rank(s_parts[static_cast<size_t>(b)]); });
+	}
 	return out;
+}
+
+/// kurze Herkunft eines Rumpfes fuer die Liste (WZ-Fraktion bzw. Mod-Quelle)
+std::string bodyTag(const DesignPart &p)
+{
+	const modcompbody::BodyInfo *b = modcompbody::bodyInfo(p.id);
+	if (b == nullptr) { return std::string(); }
+	const std::string &s = b->source;
+	if (s == "Project") { return "Projekt"; }
+	if (s == "New Paradigm") { return "NP"; }
+	if (s == "Collective") { return "Kollektiv"; }
+	if (s == "Nexus") { return "Nexus"; }
+	if (s == "Warzone 2100") { return "WZ"; }
+	if (s == "Scavengers") { return "Scav"; }
+	if (s == "Metal Fatigue") { return "MF"; }
+	if (s == "Supreme Commander") { return "SupCom"; }
+	return s;
 }
 
 void fixTurrets()
@@ -1330,6 +1356,7 @@ void WzUnitDesignTitleUI::build()
 		const DesignPart *p = partAt(idx);
 		std::string t = p ? p->name : std::string(_("(none)"));
 		if (p && p->power > 0) { t += astringf("  (%d)", p->power); }
+		if (p && p->kind == PK_BODY) { const std::string tag = bodyTag(*p); if (!tag.empty()) { t += "  - " + tag; } }   // (23.11. 23:24) Herkunft
 		const unsigned id = ID_D_ITEM + static_cast<unsigned>(k - s_ds.page * D_ROWS);
 		lineButton(form, id, 24, y, 210, t);
 		if (idx == current) { s_selectedButton = id; }
