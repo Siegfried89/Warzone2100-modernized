@@ -626,6 +626,21 @@ static void readResearch(const nlohmann::ordered_json &j, uint32_t version, bool
 		}
 	};
 	readDefaults("sensor", aDefaultSensor, asSensorStats.size());
+	// MOD (Wunsch 23.11. 19:29 "Der Pitbull hat einen Schildgenerator?"): der eingebaute Fatboy-Schild ist kein Standard-Sensor
+	// (aeltere Spielstaende fuehren ihn so) - dann wieder den normalen Standard-Sensor nehmen
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		const UDWORD idx = aDefaultSensor[p];
+		if (idx < asSensorStats.size() && asSensorStats[idx].location == LOC_DEFAULT && asSensorStats[idx].shieldRadius > 0 && asSensorStats[idx].shieldHP > 0)
+		{
+			UDWORD fallback = 0;
+			for (size_t i = 0; i < asSensorStats.size(); ++i)
+			{
+				if (asSensorStats[i].id.toUtf8() == "DefaultSensor1Mk1") { fallback = static_cast<UDWORD>(i); break; }
+			}
+			aDefaultSensor[p] = fallback;
+		}
+	}
 	readDefaults("ecm", aDefaultECM, asECMStats.size());
 	readDefaults("repair", aDefaultRepair, asRepairStats.size());
 }

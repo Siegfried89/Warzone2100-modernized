@@ -2295,6 +2295,21 @@ static uint32_t validateSavedDefaultComponent(uint32_t index, size_t numStats, c
 	return index;
 }
 
+/// MOD (Wunsch 23.11. 19:29 "Der Pitbull hat einen Schildgenerator?"): aeltere Spielstaende fuehren den eingebauten Fatboy-Schild als
+/// Standard-Sensor - dann wieder den normalen Standard-Sensor nehmen
+static uint32_t modDefaultSensorWithoutShield(uint32_t index)
+{
+	if (index < asSensorStats.size() && asSensorStats[index].location == LOC_DEFAULT && asSensorStats[index].shieldRadius > 0 && asSensorStats[index].shieldHP > 0)
+	{
+		for (size_t i = 0; i < asSensorStats.size(); ++i)
+		{
+			if (asSensorStats[i].id.toUtf8() == "DefaultSensor1Mk1") { return static_cast<uint32_t>(i); }
+		}
+		return 0;
+	}
+	return index;
+}
+
 /***************************************************************************/
 /*
  *	Local ProtoTypes
@@ -2867,7 +2882,7 @@ LoadingTask<> loadGame(ResourceLoadingController& controller, const GameLoadDeta
 			//mission data
 			for (player = 0; player < MAX_PLAYERS; player++)
 			{
-				aDefaultSensor[player]				= validateSavedDefaultComponent(saveGameData.aDefaultSensor[player], asSensorStats.size(), "sensor", player);
+				aDefaultSensor[player]				= modDefaultSensorWithoutShield(validateSavedDefaultComponent(saveGameData.aDefaultSensor[player], asSensorStats.size(), "sensor", player));
 				aDefaultECM[player]					= validateSavedDefaultComponent(saveGameData.aDefaultECM[player], asECMStats.size(), "ECM", player);
 				aDefaultRepair[player]				= validateSavedDefaultComponent(saveGameData.aDefaultRepair[player], asRepairStats.size(), "repair", player);
 				//check for self repair having been set
@@ -4670,7 +4685,7 @@ LoadingTask<> gameLoadV(ResourceLoadingController& controller, PHYSFS_file *file
 			mission.iTranspEntryTileY[player]	= saveGameData.iTranspEntryTileY[player];
 			mission.iTranspExitTileX[player]	= saveGameData.iTranspExitTileX[player];
 			mission.iTranspExitTileY[player]	= saveGameData.iTranspExitTileY[player];
-			aDefaultSensor[player]				= validateSavedDefaultComponent(saveGameData.aDefaultSensor[player], asSensorStats.size(), "sensor", player);
+			aDefaultSensor[player]				= modDefaultSensorWithoutShield(validateSavedDefaultComponent(saveGameData.aDefaultSensor[player], asSensorStats.size(), "sensor", player));
 			aDefaultECM[player]					= validateSavedDefaultComponent(saveGameData.aDefaultECM[player], asECMStats.size(), "ECM", player);
 			aDefaultRepair[player]				= validateSavedDefaultComponent(saveGameData.aDefaultRepair[player], asRepairStats.size(), "repair", player);
 		}
