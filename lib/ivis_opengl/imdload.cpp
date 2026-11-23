@@ -1782,7 +1782,29 @@ static std::unique_ptr<iIMDShape> _imd_load_level(const WzString &filename, cons
 	s.pShadowPolys = &s.polys;
 
 	LevelSettings levelSettings;
-	if (pieVersion >= PIE_VER_4)
+	// MOD (23.11. 03:40): Ebenen-Einstellungen (TYPE/TEXTURE/... direkt nach LEVEL) auch in PIE 2/3 lesen statt das Modell zu verwerfen
+	// (Leucht-Ebenen in PIE-3-Modellen liessen sonst ganze Partien scheitern: "Unsuccessful loading level")
+	bool modLevelSettingsInOldPie = false;
+	if (pieVersion < PIE_VER_4)
+	{
+		const char *peek = pFileData;
+		IMD_Line peekLine;
+		char peekCmd[64] = {'\0'};
+		if (_imd_get_next_line(peek, FileDataEnd, peekLine) && sscanf(peekLine.lineContents.c_str(), "%63s", peekCmd) == 1)
+		{
+			modLevelSettingsInOldPie = strcmp(peekCmd, "TYPE") == 0 || strcmp(peekCmd, "TEXTURE") == 0 || strcmp(peekCmd, "INTERPOLATE") == 0
+			                        || strcmp(peekCmd, "NORMALMAP") == 0 || strcmp(peekCmd, "SPECULARMAP") == 0 || strcmp(peekCmd, "TCMASK") == 0;
+		}
+	}
+	if (modLevelSettingsInOldPie)
+	{
+		if (!_imd_load_level_settings(filename, &pFileData, FileDataEnd, PIE_VER_4, false, levelSettings))
+		{
+			debug(LOG_ERROR, "%s: Failed to load level settings (level: %" PRIu32 ")", filename.toUtf8().c_str(), level);
+			return nullptr;
+		}
+	}
+	else if (pieVersion >= PIE_VER_4)
 	{
 		// While level settings are supported at the global level, each level can also specify its own settings overrides (as of WZ 4.4+) which take precedence
 		if (!_imd_load_level_settings(filename, &pFileData, FileDataEnd, pieVersion, false, levelSettings))

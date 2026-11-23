@@ -263,8 +263,17 @@ void move(int axis, float sign)
 
 void rotate(int axis, float sign)
 {
-	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size()) || s_selMount >= 0) { return; }
 	const bool fine = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
+	// (Wunsch 23.11. 03:05) Waffenplatz: Gieren dreht seine Blickrichtung - die Waffe schwenkt 180 Grad um sie
+	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
+	{
+		if (axis != 0) { setStatus("Weapon slots only turn left/right (yaw): the weapon covers 180 degrees around the slot's facing."); return; }
+		float &y = s_def.mounts[static_cast<size_t>(s_selMount)].yaw;
+		y = std::remainder(y - (fine ? 1.f : ANGLES[s_angle]) * sign, 360.f);
+		s_dirty = true;
+		return;
+	}
+	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size())) { return; }
 	float &a = s_def.parts[static_cast<size_t>(s_sel)].rot[axis];
 	a = std::fmod(a + (fine ? 1.f : ANGLES[s_angle]) * sign + 720.f, 360.f);
 	if (a > 180.f) { a -= 360.f; }
@@ -277,7 +286,7 @@ void duplicatePart(bool mirror)
 	{
 		if (s_def.mounts.size() >= modcompbody::MAX_SLOTS) { setStatus("At most " + std::to_string(modcompbody::MAX_SLOTS) + " weapon slots.", true); return; }
 		Mount m = s_def.mounts[static_cast<size_t>(s_selMount)];
-		if (mirror) { m.pos.x = -m.pos.x; } else { m.pos.x += STEPS[s_step]; }
+		if (mirror) { m.pos.x = -m.pos.x; m.yaw = -m.yaw; } else { m.pos.x += STEPS[s_step]; }
 		s_def.mounts.push_back(m);
 		s_selMount = static_cast<int>(s_def.mounts.size()) - 1;
 		s_dirty = true;
@@ -320,7 +329,7 @@ void flipSelected(int axisBit)
 
 void resetSelected()
 {
-	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size())) { s_def.mounts[static_cast<size_t>(s_selMount)].pos = glm::vec3(0.f, 20.f, 0.f); s_dirty = true; return; }
+	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size())) { s_def.mounts[static_cast<size_t>(s_selMount)].pos = glm::vec3(0.f, 20.f, 0.f); s_def.mounts[static_cast<size_t>(s_selMount)].yaw = 0.f; s_dirty = true; return; }
 	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size())) { return; }
 	Part &p = s_def.parts[static_cast<size_t>(s_sel)];
 	p.rot = glm::vec3(0.f);
@@ -466,6 +475,19 @@ void drawBay(const Ctx &c)
 		if (!project(base, s_def.mounts[i].pos, sp)) { continue; }
 		const bool sel = static_cast<int>(i) == s_selMount;
 		const int r = sel ? 6 : 4;
+		// Blickrichtung (Pfeil) und die Grenzen des 180-Grad-Schwenkbereichs (Wunsch 23.11. 03:05)
+		{
+			const float yr = glm::radians(s_def.mounts[i].yaw);
+			const glm::vec3 &mp = s_def.mounts[i].pos;
+			const glm::vec3 fwd(std::sin(yr), 0.f, -std::cos(yr)), side(std::cos(yr), 0.f, std::sin(yr));
+			Vector2i a, l, rr;
+			if (project(base, mp + fwd * 16.f, a)) { iV_Line(sp.x, sp.y, a.x, a.y, sel ? pal_RGBA(255, 240, 120, 255) : pal_RGBA(255, 190, 90, 220)); }
+			if (sel && project(base, mp + side * 12.f, rr) && project(base, mp - side * 12.f, l))
+			{
+				iV_Line(sp.x, sp.y, rr.x, rr.y, pal_RGBA(255, 240, 120, 110));
+				iV_Line(sp.x, sp.y, l.x, l.y, pal_RGBA(255, 240, 120, 110));
+			}
+		}
 		pie_BoxFill(sp.x - r, sp.y - r, sp.x + r, sp.y + r, sel ? pal_RGBA(255, 80, 60, 255) : pal_RGBA(255, 150, 60, 230));
 		iV_Box(sp.x - r - 1, sp.y - r - 1, sp.x + r + 1, sp.y + r + 1, pal_RGBA(20, 20, 20, 255));
 		modui::text(std::to_string(i + 1), sp.x + r + 3, sp.y - r - 2, pal_RGBA(255, 230, 200, 255), 0);
@@ -547,7 +569,7 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 		{
 			const glm::vec3 &p = s_def.mounts[static_cast<size_t>(s_selMount)].pos;
-			snprintf(buf, sizeof(buf), "Weapon slot %d   x %.1f  y %.1f  z %.1f", s_selMount + 1, p.x, p.y, p.z);
+			snprintf(buf, sizeof(buf), "Weapon slot %d   x %.1f  y %.1f  z %.1f   facing %.0f deg (turns 180)", s_selMount + 1, p.x, p.y, p.z, s_def.mounts[static_cast<size_t>(s_selMount)].yaw);
 			t = buf;
 		}
 		else if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()))

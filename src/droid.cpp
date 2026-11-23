@@ -44,6 +44,7 @@
 #include "map.h"
 #include "modduel.h"
 #include "modcombot.h"
+#include "modcompbody.h"
 #include "droid.h"
 #include "modsettle.h"
 #include "modruin.h"
@@ -2140,6 +2141,11 @@ void droidSetBits(const DROID_TEMPLATE *pTemplate, DROID *psDroid)
 	}
 	memcpy(psDroid->asBits, pTemplate->asParts, sizeof(psDroid->asBits));
 	psDroid->modSlots = pTemplate->modSlots;   // MOD (23.11. 02:16): Turm-Belegung (modslots)
+	for (int inc = 0; inc < psDroid->numWeaps && inc < static_cast<int>(MAX_WEAPONS); ++inc)
+	{
+		uint16_t yaw = 0;   // MOD (23.11. 03:05): Waffen auf Verbundrumpfen schauen anfangs in die Blickrichtung ihres Platzes
+		if (modcompbody::weaponArc(psDroid, inc, yaw)) { psDroid->asWeaps[inc].rot.direction = yaw; psDroid->asWeaps[inc].prevRot = psDroid->asWeaps[inc].rot; }
+	}
 
 	switch (psDroid->getPropulsionStats()->propulsionType)  // getPropulsionStats(psDroid) only defined after psDroid->asBits[COMP_PROPULSION] is set.
 	{

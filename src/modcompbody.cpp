@@ -13,6 +13,7 @@
 
 #include "game.h"
 #include "stats.h"
+#include "droid.h"
 #include "statsdef.h"
 #include "basedef.h"
 
@@ -46,6 +47,7 @@ struct Slot
 	glm::mat4 prop = glm::mat4(1.f);
 	bool propShift = false;
 	std::vector<size_t> partIdx;                     // Teil-Rumpfe (fuer die Verfuegbarkeit)
+	std::vector<float> yaw;                          // Blickrichtung je Anschluss (Grad)
 };
 std::vector<Slot> s_slots;
 size_t s_first = 0;
@@ -91,7 +93,12 @@ nlohmann::json toJson(const Def &d)
 	}
 	j["parts"] = parts;
 	nlohmann::json mounts = nlohmann::json::array();
-	for (const Mount &m : d.mounts) { mounts.push_back(vec3(m.pos)); }
+	for (const Mount &m : d.mounts)
+	{
+		nlohmann::json e = vec3(m.pos);
+		if (std::fabs(m.yaw) > 1e-3f) { e.push_back(m.yaw); }   // [x, y, z, Blickrichtung]
+		mounts.push_back(e);
+	}
 	j["mounts"] = mounts;
 	if (d.deleted) { j["deleted"] = true; }
 	return j;
@@ -117,7 +124,12 @@ bool fromJson(const nlohmann::json &j, Def &d)
 	}
 	if (j.contains("mounts") && j["mounts"].is_array())
 	{
-		for (const auto &m : j["mounts"]) { Mount mm; mm.pos = vec3(m); d.mounts.push_back(mm); }
+		for (const auto &m : j["mounts"])
+		{
+			Mount mm; mm.pos = vec3(m);
+			if (m.is_array() && m.size() >= 4 && m[3].is_number()) { mm.yaw = std::remainder(m[3].get<float>(), 360.f); }
+			d.mounts.push_back(mm);
+		}
 	}
 	return !d.id.empty() && !d.parts.empty();
 }
@@ -320,6 +332,12 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 	sl.defId = d.id;
 	sl.prop = partMatrix(d.parts[0]);
 	sl.propShift = (glm::length(d.parts[0].pos) > 1e-3f || glm::length(d.parts[0].rot) > 1e-3f || std::fabs(d.parts[0].scale - 1.f) > 1e-3f);
+	sl.yaw.clear();
+	{
+		std::vector<Mount> mounts = d.mounts;
+		if (mounts.empty() && !d.parts.empty()) { mounts = defaultMounts(d.parts[0]); }
+		for (const Mount &m : mounts) { sl.yaw.push_back(m.yaw); }
+	}
 	sl.partIdx.clear();
 	for (const Part &p : d.parts)
 	{
@@ -409,6 +427,25 @@ const glm::mat4 *propOffset(size_t bodyIdx)
 	if (!isComposite(bodyIdx)) { return nullptr; }
 	const Slot &sl = s_slots[bodyIdx - s_first];
 	return sl.propShift ? &sl.prop : nullptr;
+}
+
+bool mountYaw(size_t bodyIdx, int connector, float &yawDeg)
+{
+	if (!isComposite(bodyIdx)) { return false; }
+	const Slot &sl = s_slots[bodyIdx - s_first];
+	yawDeg = (connector >= 0 && static_cast<size_t>(connector) < sl.yaw.size()) ? sl.yaw[static_cast<size_t>(connector)] : 0.f;
+	return true;
+}
+
+bool weaponArc(const BASE_OBJECT *psObj, int weaponSlot, uint16_t &yaw)
+{
+	if (psObj == nullptr || psObj->type != OBJ_DROID) { return false; }
+	const DROID *d = static_cast<const DROID *>(psObj);
+	if (weaponSlot < 0 || weaponSlot >= static_cast<int>(MAX_WEAPONS) || d->isVtol()) { return false; }
+	float deg = 0.f;
+	if (!mountYaw(d->asBits[COMP_BODY], d->modSlots.conn(weaponSlot), deg)) { return false; }
+	yaw = static_cast<uint16_t>(static_cast<int>(std::lround(deg * 65536.f / 360.f)) & 0xFFFF);
+	return true;
 }
 
 void refreshAvailability(unsigned player)

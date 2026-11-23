@@ -16,6 +16,7 @@
 
 struct COMPONENT_STATS;
 struct BODY_STATS;
+struct BASE_OBJECT;
 struct iIMDShape;
 
 namespace modcompbody
@@ -36,7 +37,11 @@ struct Part
 struct Mount
 {
 	glm::vec3 pos = glm::vec3(0.f);    ///< Waffenplatz (Modellkoordinaten)
+	float yaw = 0.f;                   ///< Blickrichtung in Grad (0 = vorn, 90 = rechts; Wunsch 23.11. 03:05: Waffen schwenken nur 180 Grad um sie)
 };
+
+/// Schwenkbereich der Waffen auf Verbundrumpfen: halber Winkel um die Blickrichtung des Platzes (Wunsch 23.11. 03:05: "maximal 180 Grad")
+constexpr float ARC_HALF_DEG = 90.f;
 
 struct Def
 {
@@ -68,6 +73,11 @@ void shutdown();
 bool isComposite(size_t bodyIdx);
 /// Lage des Fahrgestells (Teil 0) fuer die Laufwerk-Modelle; nullptr = keine Verschiebung
 const glm::mat4 *propOffset(size_t bodyIdx);
+/// Blickrichtung des Platzes (Anschluss) eines Verbundrumpfes in Grad; false = kein Verbundrumpf (Waffe dreht frei)
+bool mountYaw(size_t bodyIdx, int connector, float &yawDeg);
+/// Waffe weaponSlot eines Fahrzeugs auf einem Verbundrumpf (kein VTOL): Blickrichtung ihres Platzes als 16-Bit-Winkel (relativ zum Rumpf).
+/// false = Waffe dreht frei wie bisher
+bool weaponArc(const BASE_OBJECT *psObj, int weaponSlot, uint16_t &yaw);
 /// Verfuegbarkeit fuer einen Spieler: baubar, wenn alle Teil-Rumpfe erforscht sind (nicht in Netzwerkspielen)
 void refreshAvailability(unsigned player);
 
