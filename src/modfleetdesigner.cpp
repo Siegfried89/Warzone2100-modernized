@@ -13,6 +13,7 @@
 #include "hci.h"
 #include "input/manager.h"
 #include "levels.h"
+#include "modhullforge.h"
 #include "objmem.h"
 #include "qtscript.h"
 #include "stats.h"
@@ -27,6 +28,7 @@ bool s_active = false;      // Designer-Sitzung laeuft (Spiel wurde dafuer gesta
 bool s_opened = false;      // Design-Bildschirm wurde geoeffnet
 bool s_titleReturn = false; // Hauptmenue soll ins Flotten-Menue wechseln
 bool s_fleetUpdate = false; // Flotten-Menue soll die gespeicherten Entwuerfe uebernehmen
+bool s_forge = false;       // (23.11.) gleich den Rumpf-Baukasten oeffnen
 unsigned s_t0 = 0;
 
 void unlockParts(unsigned player)
@@ -43,8 +45,9 @@ void unlockParts(unsigned player)
 }
 }
 
-void request()
+void request(bool forge)
 {
+	s_forge = forge;
 	s_active = true;
 	s_opened = false;
 	s_titleReturn = false;
@@ -79,6 +82,7 @@ void tick()
 		triggerEvent(TRIGGER_MENU_DESIGN_UP);
 		s_opened = true;
 		addConsoleMessage(_("Unit designer: save designs with the star - close the designer to return to Fleets"), CENTRE_JUSTIFY, SYSTEM_MESSAGE);
+		if (s_forge) { s_forge = false; modhullforge::open(); }   // (23.11.) aus dem Flotten-Menue: Rumpf-Baukasten
 		return;
 	}
 	if (intMode != INT_DESIGN)

@@ -7,8 +7,8 @@
 
 namespace modfleetdesigner
 {
-/// vom Flotten-Menue: Designer-Sitzung starten
-void request();
+/// vom Flotten-Menue: Designer-Sitzung starten (forge = gleich den Rumpf-Baukasten oeffnen, Wunsch 23.11. 04:23)
+void request(bool forge = false);
 /// laeuft gerade eine Designer-Sitzung?
 bool active();
 /// jedes Bild im Spiel (aus intRunWidgets): Designer oeffnen, nach dem Schliessen ins Hauptmenue zurueck

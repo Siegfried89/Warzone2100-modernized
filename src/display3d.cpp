@@ -2627,17 +2627,33 @@ static void displayCraterPiles(const glm::mat4 &viewMatrix)
 				const float h01 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX, d.tileY + 1));
 				const float h11 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX + 1, d.tileY + 1));
 				constexpr int NB = DIST_TILE / TILE_UNITS;
-				// Feinraster: der Fleck liegt flach ueber dem 2 x 2-Kraterblock (Mitte = gemeinsamer Eckpunkt)
-				const float base = NB > 1 ? h11 : (h00 + h10 + h01 + h11) * 0.25f;
-				const float sink = NB > 1 ? 0.f : static_cast<float>(modterrain::centerSink(gameWorld.map, d.tileX, d.tileY));
-				const float gx = ((h10 + h11) - (h00 + h01)) / (2.f * TILE_UNITS);
-				const float gyW = ((h01 + h11) - (h00 + h10)) / (2.f * TILE_UNITS);
+				// (Wunsch 23.11. 04:23 "Man kann oft unter die Krater schauen ... das Terrain wie die Krater geformt nach unten, in derselben
+				// Groesse"): der Fleck hat die Trichterform des Gelaendes (Mitte tief, zu den Kanten des 128er-Feldes hin flach). Er passt nur,
+				// wenn er weder gedreht (ausser in 90-Grad-Schritten) noch skaliert wird - vorher lag er schief/zu gross ueber der Mulde und
+				// schwebte stellenweise. Feinraster: das Gelaende senkt jetzt den gemeinsamen Mittel-Eckpunkt (modterrain::sinkAtCorner) -
+				// dieselbe Trichterform ueber dem 2 x 2-Kraterblock.
+				float base = (h00 + h10 + h01 + h11) * 0.25f;
+				float sink = static_cast<float>(modterrain::centerSink(gameWorld.map, d.tileX, d.tileY));
+				float gx = ((h10 + h11) - (h00 + h01)) / (2.f * TILE_UNITS);
+				float gyW = ((h01 + h11) - (h00 + h10)) / (2.f * TILE_UNITS);
+				if (NB > 1 && tileOnMap(gameWorld.map, d.tileX + NB, d.tileY + NB))
+				{
+					const float c00 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX, d.tileY));
+					const float c20 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX + NB, d.tileY));
+					const float c02 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX, d.tileY + NB));
+					const float c22 = static_cast<float>(map_TileHeight(gameWorld.map, d.tileX + NB, d.tileY + NB));
+					base = h11;   // Mittel-Eckpunkt des Blocks (ohne Absenkung)
+					sink = static_cast<float>(modterrain::sinkAtCorner(gameWorld.map, d.tileX + 1, d.tileY + 1));
+					gx = ((c20 + c22) - (c00 + c02)) / (2.f * DIST_TILE);
+					gyW = ((c02 + c22) - (c00 + c20)) / (2.f * DIST_TILE);
+				}
 				glm::mat4 shear(1.f);
 				shear[0][1] = gx;      // Hoehe nimmt mit x zu
 				shear[2][1] = -gyW;    // Modell-z = -Karten-y
 				const float ys = std::clamp(sink / 26.f, 0.f, 1.5f);
+				const int rot90 = (d.rotDeg / 90) * 90;   // nur Vierteldrehungen: die Trichterform bleibt deckungsgleich
 				const glm::mat4 modelMatrix = glm::translate(glm::vec3(static_cast<float>(d.worldX), base - sink + 1.5f, -static_cast<float>(d.worldY)))
-					* shear * glm::scale(glm::vec3(d.scale, ys, d.scale)) * glm::rotate(UNDEG(DEG(d.rotDeg)), glm::vec3(0.f, 1.f, 0.f));
+					* shear * glm::scale(glm::vec3(1.f, ys, 1.f)) * glm::rotate(UNDEG(DEG(rot90)), glm::vec3(0.f, 1.f, 0.f));
 				const int alpha = std::clamp(static_cast<int>(d.alpha * 255.f), 0, 255);
 				if (alpha > 0)
 				{
@@ -2663,8 +2679,11 @@ static void displayCraterPiles(const glm::mat4 &viewMatrix)
 					const float floorY = base - sink;
 					if (rim != nullptr)
 					{
+						// (23.11.) der Erdwall folgt innen der Trichterflanke (craterrim.py) - ebenfalls nur Vierteldrehungen, nicht skaliert;
+						// Hoehe nach der Trichtertiefe (sonst schwebte der innere Fuss ueber der Mulde)
+						const float rimY = std::max(0.2f, std::clamp(sink / 26.f, 0.f, 1.5f));
 						const glm::mat4 rm = glm::translate(glm::vec3(static_cast<float>(d.worldX), base - 1.f, -static_cast<float>(d.worldY)))
-							* shear * glm::scale(glm::vec3(d.scale, std::max(0.2f, dep), d.scale)) * glm::rotate(UNDEG(DEG(d.rotDeg + 37)), glm::vec3(0.f, 1.f, 0.f));
+							* shear * glm::scale(glm::vec3(1.f, rimY, 1.f)) * glm::rotate(UNDEG(DEG(rot90 + 90)), glm::vec3(0.f, 1.f, 0.f));
 						pie_Draw3DShape(rim, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, rm, viewMatrix);
 					}
 					const iIMDShape *w = wrecks[hh % 6u];
@@ -2684,7 +2703,10 @@ static void displayCraterPiles(const glm::mat4 &viewMatrix)
 							const int px = d.worldX + static_cast<int>(std::cos(a) * rr), py = d.worldY + static_cast<int>(std::sin(a) * rr);
 							if (!worldOnMap(gameWorld.map, px, py)) { continue; }
 							const float ps = (0.42f - 0.1f * static_cast<float>(k)) * std::max(0.3f, dep);
-							const glm::mat4 pm = glm::translate(glm::vec3(static_cast<float>(px), static_cast<float>(map_Height(gameWorld.map, px, py)) - 1.f, -static_cast<float>(py)))
+							// (23.11.) auf der Trichterflanke: sichtbares Gelaende = Grundhoehe (ohne die harte Spiellogik-Absenkung) minus Trichteranteil
+							const float edge = static_cast<float>(DIST_TILE) * 0.5f;
+							const float fr = std::max(0.f, 1.f - std::max(std::fabs(static_cast<float>(px - d.worldX)), std::fabs(static_cast<float>(py - d.worldY))) / edge);
+							const glm::mat4 pm = glm::translate(glm::vec3(static_cast<float>(px), static_cast<float>(map_Height(gameWorld.map, px, py) + modterrain::sinkAt(gameWorld.map, px, py)) - 1.f - sink * fr, -static_cast<float>(py)))
 								* glm::rotate(UNDEG(DEG(static_cast<int>((hh >> (3 + k * 5)) % 360u))), glm::vec3(0.f, 1.f, 0.f)) * glm::scale(glm::vec3(ps, ps * 0.8f, ps));
 							pie_Draw3DShape(pile, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, pm, viewMatrix);
 						}
@@ -2704,7 +2726,10 @@ static void displayCraterPiles(const glm::mat4 &viewMatrix)
 		if (t == nullptr || !TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(t)) { continue; }
 		// Boden etwas weiter draussen (ausserhalb der Mulde) als Fusshoehe
 		const int gx = std::clamp(p.worldX + (p.worldX % 7) - 3, 0, world_coord(gameWorld.map.width) - 1);
-		const int h = std::max(map_Height(gameWorld.map, p.worldX, p.worldY), map_Height(gameWorld.map, gx, p.worldY)) - 2;
+		// (23.11.) sichtbares Gelaende: Grundhoehe (ohne die harte Spiellogik-Absenkung der Kraterfelder) minus Trichteranteil
+		const int raw = std::max(map_Height(gameWorld.map, p.worldX, p.worldY) + modterrain::sinkAt(gameWorld.map, p.worldX, p.worldY),
+		                         map_Height(gameWorld.map, gx, p.worldY) + modterrain::sinkAt(gameWorld.map, gx, p.worldY));
+		const int h = raw - 2 - static_cast<int>(p.funnel);
 		const glm::mat4 modelMatrix = glm::translate(glm::vec3(static_cast<float>(p.worldX), static_cast<float>(h), -static_cast<float>(p.worldY)))
 			* glm::rotate(UNDEG(DEG(p.rotDeg)), glm::vec3(0.f, 1.f, 0.f)) * glm::scale(glm::vec3(p.scale, std::max(0.35f, p.scale), p.scale));
 		pie_Draw3DShape(pile, 0, 0, WZCOL_WHITE, pie_SHADOW, 0, modelMatrix, viewMatrix);
