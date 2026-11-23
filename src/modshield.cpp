@@ -116,6 +116,17 @@ bool shieldParams(const BASE_OBJECT *o, Params &P)
 		// fahrender Schildgenerator (Sensor-Turm mit Schild) oder ein eingebauter Schild-Sensor (Fatboy: Kampffahrzeug mit Schildkuppel)
 		if (d->isVtol() || d->isTransporter() || d->died) { return false; }
 		const SENSOR_STATS *ss = d->getSensorStats();
+		// MOD (Wunsch 23.11. 19:29 "Der Pitbull hat einen Schildgenerator?"): ein eingebauter Schild-Sensor in Standard-Lage
+		// (FatboyShield) gilt nur fuer seinen eigenen Rumpf (FatboyBody). Fahrzeuge, die ihn aus aelteren Spielstaenden als
+		// "Standard-Sensor" tragen (die Fatboy-Forschung machte ihn zum Standard fuer alle), bekommen keine Kuppel.
+		if (ss != nullptr && ss->location == LOC_DEFAULT && ss->shieldRadius > 0 && ss->shieldHP > 0)
+		{
+			std::string stem = ss->id.toUtf8();
+			const std::string suffix = "Shield";
+			if (stem.size() > suffix.size() && stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0) { stem.resize(stem.size() - suffix.size()); }
+			const BODY_STATS *body = d->getBodyStats();
+			if (body == nullptr || stem.empty() || body->id.toUtf8().rfind(stem, 0) != 0) { ss = nullptr; }
+		}
 		// MOD (23.11. 02:16): Schild-Turm neben Waffen/anderen Sensoren (modslots) - der staerkste Schild zaehlt
 		const SENSOR_STATS *extra = modslots::extraShieldSensor(d);
 		if (extra != nullptr && (ss == nullptr || ss->shieldRadius <= 0 || ss->shieldHP <= 0 || extra->shieldHP > ss->shieldHP)) { ss = extra; }

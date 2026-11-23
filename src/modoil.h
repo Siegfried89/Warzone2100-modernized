@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Oelkreislauf. Oeltuerme erzeugen Faesser (bis 5 am Turm) statt direkt Energie, Scav-Lkw mit Ladeflaeche (Autopilot) bringen sie zum
-// Kraftwerk (oder zuerst ins Lager = Wasserturm, +10 %), jedes Fass haelt das Kraftwerk (und damit das Stromnetz) 3 Minuten am Laufen.
+// MOD: Oelkreislauf. (Wunsch 23.11. 19:29) Die Energie kommt wie in Warzone stetig ueber die Verbindung Oelturm -> Kraftwerk (4 je Kraftwerk);
+// ohne angeschlossene Raffinerie 75 %, mit Raffinerie 120 %, Oellager mit Vorrat am Kraftwerk +10 %. Die Oeltuerme stellen weiter
+// Faesser ab, Pickups/Rohre bringen sie zur Raffinerie, Oeltanker das Raffinat zu Tankstellen, Lagern und Kraftwerken (sichtbarer Kreislauf).
 // Oelpipelines verbinden Oelturm und Kraftwerk/Lager ohne Lkw. Zerstoerte Pipeline-Stuecke werden zum Bruchstueck (Feuer, Rauch) und
 // durch Reparatur wieder heil. Fass-Haufen (OilDrum5 / OilDrum10) und beladene Lkw explodieren mit Kettenreaktion.
 // Gilt nur im Mehrspieler/Gefecht fuer menschliche Spieler und nur, wenn die Mod-Daten (A0BaBaPipeline) geladen sind.
@@ -40,8 +41,14 @@ void onBuilt(STRUCTURE *psStruct);
 void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne);
 /// jeden Spielschritt aus der Spielschleife (Explosionen sofort, Logistik einmal je Spielsekunde)
 void tick();
-/// laeuft das Kraftwerk (hat es Brennstoff)? Immer wahr fuer Spieler ohne Fass-Wirtschaft.
+/// laeuft das Kraftwerk (mindestens ein Oelturm angeschlossen)? Immer wahr fuer Spieler ohne Fass-Wirtschaft.
 bool generatorRunning(const STRUCTURE *psGen);
+/// (23.11.) angeschlossene Oeltuerme eines Kraftwerks (0..4)
+int generatorDerricks(const STRUCTURE *psGen);
+/// (23.11.) Ertrag eines Oelturms in Prozent (75 ohne Raffinerie, 120 mit, +10 mit Oellager am Kraftwerk) - power.cpp
+int oilPercent(const STRUCTURE *psDerrick);
+/// (23.11.) stetige Oel-Einnahmen (Festkomma 32.32) fuer das Einnahmen-Buch melden - power.cpp
+void noteOilIncomeFP(int player, int64_t amountFP);
 /// Echte Infanterie (Beine UND Personen-/Cyborg-Typ). Kampfroboter (Combots) haben auch Beine, zaehlen aber nicht.
 bool isInfantry(const DROID *psDroid);
 /// nur echte Infanterie (Personen) darf besetzbare Haeuser betreten; Cyborgs nicht (Graeben/Gruben duerfen beide)
@@ -90,8 +97,6 @@ bool isCargoVehicle(const DROID *psDroid);
 int refineryProgress(const STRUCTURE *psStruct);
 /// (20.11.) geladene Faesser eines Fracht-Lkw / Oeltankers; cap = Plaetze (0 = kein Frachtfahrzeug)
 int cargoBarrels(const DROID *psDroid, int &cap);
-/// (20.11.) Vorrat des Kraftwerks in Sekunden
-int generatorFuel(const STRUCTURE *psGen);
 /// (20.11. Wunsch "UI-Grafik fuer den Oelwirtschaftskreislauf") Zahlen fuer das Oel-Fenster
 struct EconomyView
 {
@@ -101,13 +106,14 @@ struct EconomyView
 	int refineries = 0, refIn = 0, refOut = 0, refCap = 0, refNoPower = 0;
 	int tankers = 0, tankerBarrels = 0, tankerCap = 0;
 	int stores = 0, storeBarrels = 0, storeCap = 0;
-	int gens = 0, gensRunning = 0, gensStandby = 0, gensHungry = 0, minFuel = -1;
+	int gens = 0, gensRunning = 0, gensStandby = 0, gensIdle = 0;
+	int linkedDerricks = 0, derrickSlots = 0, crudeDerricks = 0, ratePerMin = 0;   // (23.11.) stetige Oel-Einnahmen
 	int stations = 0, stationBarrels = 0, stationCap = 0;
 	int power = 0, powerMax = 0, incomeLastMinute = 0, wastedLastMinute = 0;
 	int buildingsDown = 0;
 };
 EconomyView economyView(int player);
-/// (20.11.) Kraftwerk mit wenig Oel (hoechstens 3 Minuten) - fuer die Warnanzeige
+/// (23.11.) Kraftwerk ohne angeschlossenen Oelturm (liefert nichts) - fuer die Warnanzeige
 bool generatorHungry(const STRUCTURE *psGen);
 /// beim Spielende / Ladevorgang
 void reset();

@@ -1355,7 +1355,13 @@ static void applyResearchResult(UDWORD researchIndex, UBYTE player, bool bDispla
 		//check for default sensor
 		if (type == COMP_SENSOR && asSensorStats[compInc].location == LOC_DEFAULT)
 		{
-			aDefaultSensor[player] = compInc;
+			// MOD (Wunsch 23.11. 19:29 "Der Pitbull hat einen Schildgenerator?"): ein eingebauter Schild-Sensor (FatboyShield, Lage
+			// "DEFAULT", damit der Fatboy ihn neben seinen Waffen tragen kann) ist KEIN neuer Standard-Sensor - sonst bekam nach der
+			// Fatboy-Forschung jedes neue Fahrzeug die Schildkuppel des Fatboy
+			if (asSensorStats[compInc].shieldRadius <= 0 || asSensorStats[compInc].shieldHP <= 0)
+			{
+				aDefaultSensor[player] = compInc;
+			}
 		}
 		//check for default ECM
 		else if (type == COMP_ECM && asECMStats[compInc].location == LOC_DEFAULT)
