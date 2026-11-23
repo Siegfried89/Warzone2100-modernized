@@ -124,6 +124,8 @@
 #include "modcrates.h"
 #include "modshield.h"
 #include "modshockwave.h"
+#include "modapc.h"
+#include "transporter.h"
 #include "modtracks.h"
 #include "modrecover.h"
 #include "modnestcrew.h"
@@ -4549,6 +4551,25 @@ static void queueDroidPowerBarsRects(DROID *psDroid, bool drawBox, BatchedMultiR
 			for (int k = 1; k < cargoCap; ++k)
 			{
 				const int sx = x0 + full * k / cargoCap;
+				batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(sx, y0 + 1, sx + 1, y0 + 4, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			}
+		}
+		// MOD (Wunsch 23.11. 00:16 "wie alle Transporter einen Ladebalken mit Sektionen (in weiss)"): Insassen der Schuetzenpanzer, Truppenwaggons
+		// und Transporter - weisser Balken, ein Abschnitt je Platz, darunter
+		int paxCap = 0, paxN = 0;
+		if (modapc::isApc(psDroid)) { paxCap = modapc::capacity(psDroid); paxN = modapc::load(psDroid); }
+		else if (psDroid->isTransporter()) { paxCap = TRANSPORTER_CAPACITY; paxN = TRANSPORTER_CAPACITY - calcRemainingCapacity(psDroid); }
+		if (paxCap > 0)
+		{
+			const int row = (ammoSegs >= 0 ? 2 : 1) + (fuelPm >= 0 ? 1 : 0) + (cargoCap > 0 ? 1 : 0);
+			const int x0 = static_cast<int>(psDroid->sDisplay.screenX) - barHalf, y0 = barY + 2 + 6 * row, full = 2 * barHalf;
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0 - 1, y0, x0 + full + 1, y0 + 5, WZCOL_RELOAD_BACKGROUND), rectGroup);
+			const int fill = full * std::clamp(paxN, 0, paxCap) / paxCap;
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0 + 1, x0 + fill, y0 + 3, pal_RGBA(245, 245, 245, 255)), rectGroup);
+			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0, y0 + 3, x0 + fill, y0 + 4, pal_RGBA(165, 165, 170, 255)), rectGroup);
+			for (int k = 1; k < paxCap; ++k)
+			{
+				const int sx = x0 + full * k / paxCap;
 				batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(sx, y0 + 1, sx + 1, y0 + 4, WZCOL_RELOAD_BACKGROUND), rectGroup);
 			}
 		}
