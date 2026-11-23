@@ -2253,7 +2253,7 @@ static bool tileHasIncompatibleStructure(MAPTILE const *tile, STRUCTURE_STATS co
 	return true;
 }
 
-static void drawLineBuild(uint8_t player, STRUCTURE_STATS const *psStats, Vector2i pos, Vector2i pos2, uint16_t direction, STRUCT_STATES state)
+static void drawLineBuild(uint8_t player, STRUCTURE_STATS const *psStats, Vector2i pos, Vector2i pos2, uint16_t direction, STRUCT_STATES state, bool perTile = false)
 {
 	auto lb = calcLineBuild(psStats, direction, pos, pos2);
 
@@ -2272,7 +2272,10 @@ static void drawLineBuild(uint8_t player, STRUCTURE_STATS const *psStats, Vector
 			{
 				z = std::max(z, map_TileHeight(gameWorld.map, b.map.x + k, b.map.y + j));
 			}
-		Blueprint blueprint(psStats, Vector3i(cur, z), snapDirection(direction), 0, state, player); // snapDirection may be unnecessary here
+		// MOD (23.11. 18:38): beim Platzieren jeden Platz einzeln pruefen - nur blockierte Plaetze rot, die anderen gruen (werden gebaut)
+		STRUCT_STATES st = state;
+		if (perTile && state == SS_BLUEPRINT_VALID && !validLocation(gameWorld, const_cast<STRUCTURE_STATS *>(psStats), cur, direction, player, true)) { st = SS_BLUEPRINT_INVALID; }
+		Blueprint blueprint(psStats, Vector3i(cur, z), snapDirection(direction), 0, st, player); // snapDirection may be unnecessary here
 		blueprints.push_back(blueprint);
 	}
 }
@@ -2355,12 +2358,12 @@ void displayBlueprints(const glm::mat4 &viewMatrix, const glm::mat4 &perspective
 					// MOD (20.11. 19:23): Feldbau-Vorschau - alle Zeilen des Rechtecks
 					for (const auto &row : calcFieldRows(stats, direction, wallDrag.pos, wallDrag.pos2))
 					{
-						drawLineBuild(selectedPlayer, stats, row.first, row.second, direction, state);
+						drawLineBuild(selectedPlayer, stats, row.first, row.second, direction, state, true);
 					}
 				}
 				else
 				{
-					drawLineBuild(selectedPlayer, stats, wallDrag.pos, wallDrag.pos2, direction, state);
+					drawLineBuild(selectedPlayer, stats, wallDrag.pos, wallDrag.pos2, direction, state, true);
 				}
 			}
 			else
@@ -2472,6 +2475,12 @@ void displayBlueprints(const glm::mat4 &viewMatrix, const glm::mat4 &perspective
 	std::sort(blueprints.begin(), blueprints.end());
 	blueprints.erase(std::unique(blueprints.begin(), blueprints.end()), blueprints.end());
 
+	// MOD (23.11. 18:38): Stellungs-Vorschauen verbinden sich mit den Nachbar-Bauplaenen (wie das fertige Netz)
+	{
+		std::vector<std::pair<Vector2i, const STRUCTURE_STATS *>> fortBps;
+		for (const auto &bp : blueprints) { if (bp.player == selectedPlayer && bp.stats != nullptr) { fortBps.emplace_back(bp.pos.xy(), bp.stats); } }
+		modfort::setBlueprintNeighbours(fortBps, selectedPlayer);
+	}
 	// Actually render everything.
 	for (auto &blueprint : blueprints)
 	{
@@ -3922,7 +3931,7 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 			const int scaleData = static_cast<int>(structHeightScale(psStructure) * pie_RAISE_SCALE);
 			if (!modDrawGroundLevels(shape, psStructure, getPlayerColour(psStructure->player), brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, scaleData, viewMatrix))
 			{
-				pie_Draw3DShape(shape, 0, getPlayerColour(psStructure->player), brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, scaleData, modelMatrix, viewMatrix, stretch);
+				pie_Draw3DShape(shape, 0, getPlayerColour(psStructure->player), brightness, pie_HEIGHT_SCALED | pie_SHADOW | ecmFlag, scaleData, modelMatrix, viewMatrix, (shape->flags & iV_IMD_NOSTRETCH) ? 0.f : stretch);
 			}
 		}
 	}
@@ -3949,7 +3958,9 @@ static bool renderWallSection(STRUCTURE *psStructure, const glm::mat4 &viewMatri
 			const iIMDShape *shape = getFactionDisplayIMD(faction, imd->displayModel());
 			if (!modDrawGroundLevels(shape, psStructure, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, viewMatrix))
 			{
-				pie_Draw3DShape(shape, 0, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, modelMatrix, viewMatrix, stretch);
+				// MOD (Wunsch 23.11. 18:38 Container: "das Ziehen an den Boden wegmachen"): Mauer-Modelle mit NOSTRETCH (TYPE 0x1000) werden
+				// nicht mehr bis zum Boden gezogen
+				pie_Draw3DShape(shape, 0, getPlayerColour(psStructure->player), brightness, pieFlag | ecmFlag, pieFlagData, modelMatrix, viewMatrix, (shape->flags & iV_IMD_NOSTRETCH) ? 0.f : stretch);
 			}
 		}
 	}

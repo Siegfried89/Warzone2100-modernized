@@ -224,14 +224,20 @@ bool process3DBuilding()
 			std::vector<std::pair<Vector2i, Vector2i>> rows;
 			if (modFieldBuild()) { rows = calcFieldRows(static_cast<STRUCTURE_STATS *>(sBuildDetails.psStats), getBuildingDirection(), wallDrag.pos, wallDrag.pos2); }
 			else { rows.emplace_back(wallDrag.pos, wallDrag.pos2); }
+			// (Wunsch 23.11. 18:38 "Die Solarfelder und alle Felder sollen nicht durch die Blockierung eines einzelnen ihrer Gebaeude das ganze
+			// Feld blockieren"): baubar, sobald mindestens ein Platz frei ist - blockierte Plaetze zeigt die Vorschau rot, beim Bauen werden sie
+			// uebersprungen (der Bauer geht zum naechsten Platz der Reihe)
+			bool anyValid = false;
 			for (const auto &row : rows)
 			{
 				auto lb = calcLineBuild(static_cast<STRUCTURE_STATS *>(sBuildDetails.psStats), getBuildingDirection(), row.first, row.second);
-				for (int i = 0; i < lb.count && isValid; ++i)
+				for (int i = 0; i < lb.count && !anyValid; ++i)
 				{
-					isValid &= validLocation(gameWorld, sBuildDetails.psStats, lb[i], getBuildingDirection(), selectedPlayer, true);
+					anyValid = validLocation(gameWorld, sBuildDetails.psStats, lb[i], getBuildingDirection(), selectedPlayer, true);
 				}
+				if (anyValid) { break; }
 			}
+			isValid = anyValid;
 		}
 		else
 		{

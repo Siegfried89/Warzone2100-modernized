@@ -144,6 +144,23 @@ void cancelBuild(DROID *psDroid)
 		return;  // Don't cancel orders.
 	}
 
+	// MOD (Wunsch 23.11. 18:38 "Felder ... nicht durch die Blockierung eines einzelnen Gebaeudes das ganze Feld blockieren"): bei einer Reihe
+	// (Linien-/Feldbau) nur diesen Platz ueberspringen und mit dem naechsten freien Platz der Reihe weitermachen
+	if (psDroid->order.type == DORDER_LINEBUILD && psDroid->order.psStats != nullptr)
+	{
+		const LineBuild lb = calcLineBuild(psDroid->order.psStats, psDroid->order.direction, psDroid->order.pos, psDroid->order.pos2);
+		for (int k = 1; k < lb.count; ++k)
+		{
+			if (!validLocation(gameWorld, psDroid->order.psStats, lb[k], psDroid->order.direction, psDroid->player, false)) { continue; }
+			objTrace(psDroid->id, "Droid line build: blocked place skipped");
+			psDroid->order.pos = lb[k];
+			psDroid->order.psObj = nullptr;
+			setDroidActionTarget(psDroid, nullptr, 0);
+			actionDroid(psDroid, DACTION_BUILD, psDroid->order.pos.x, psDroid->order.pos.y);
+			return;
+		}
+	}
+
 	if (orderDroidList(psDroid))
 	{
 		objTrace(psDroid->id, "Droid build order cancelled - changing to next order");

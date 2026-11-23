@@ -108,7 +108,8 @@ static inline bool canLineBuild()
 	// (18.11.) Strommasten und Minen werden wieder in einer Linie gezogen (Masten mit Abstand, Minen dicht als Minenfeld)
 	// (19.11. 17:11 "Solarpanele sollen sich nicht nach drag direction ausrichten sondern wieder in Reihe bauen lassen. Das drehen
 	// soll dann automatisch per animation kommen"): Solarpaneele ebenfalls als Reihe; das Paneel schwenkt per MF-Animation (solarfix.py)
-	if (s->id.startsWith("A0PowerPole") || s->id.startsWith("A0Mine") || s->id.startsWith("A0SolarPanel"))
+	// (Wunsch 23.11. 18:38 "Rail tracks sollen sich ohne Taste Steuerung ziehen lassen, einfach nur ziehen"): Schienen ebenfalls als Reihe
+	if (s->id.startsWith("A0PowerPole") || s->id.startsWith("A0Mine") || s->id.startsWith("A0SolarPanel") || s->id.startsWith("A0RailTrack"))
 	{
 		return true;
 	}

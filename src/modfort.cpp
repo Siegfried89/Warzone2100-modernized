@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -475,6 +476,10 @@ Vector2i pathPoint(const std::vector<uint8_t> &sd, int width, int tileX, int til
 
 /// (Wunsch 18.11. 12:49 "Vorschau und Ergebnis passen nicht - rund wird zu eckig ..."): Bauplan beim Platzieren zeigt dasselbe Modell wie
 /// das fertige Bauwerk - Gaenge zu angrenzenden eigenen Stellungen, sonst die Oeffnung zur gezogenen Seite
+// (23.11. 18:38) Bauplaene der gerade gezeichneten Vorschau (Blockursprung -> vorhanden), nur fuer die Anzeige
+std::set<std::pair<int, int>> s_bpBlocks;
+unsigned s_bpPlayer = 0;
+
 uint8_t predictOpen(const STRUCTURE *bp)
 {
 	const int tx0 = map_coord(bp->pos.x - (S * TILE_UNITS) / 2), ty0 = map_coord(bp->pos.y - (S * TILE_UNITS) / 2);
@@ -482,6 +487,7 @@ uint8_t predictOpen(const STRUCTURE *bp)
 	for (int k = 0; k < 4; ++k)
 	{
 		const int nx = tx0 + S * DX[k], ny = ty0 + S * DY[k];
+		if (bp->player == s_bpPlayer && s_bpBlocks.count({nx, ny}) != 0) { conn |= static_cast<uint8_t>(BIT[k]); continue; }   // Nachbar-Bauplan
 		if (!tileOnMap(gameWorld.map, nx, ny)) { continue; }
 		const MAPTILE *t = mapTile(gameWorld.map, nx, ny);
 		if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_STRUCTURE) { continue; }
@@ -502,9 +508,8 @@ const iIMDShape *displayModel(const STRUCTURE *psStructure)
 	uint8_t open = 0;
 	if (psStructure->isBlueprint())
 	{
-		// Graeben werden als Linie gezogen: deren Bauplan richtet sich wie Mauern nach den Nachbar-Bauplaenen aus (Standardmodelle)
-		const STRUCTURE_TYPE t = psStructure->pStructureType->type;
-		if (t == REF_WALL || t == REF_WALLCORNER || t == REF_GATE) { return nullptr; }
+		// (23.11. 18:38) auch Graeben (als Linie gezogen) zeigen in der Vorschau das Stellungsmodell, verbunden mit den Nachbar-Bauplaenen
+		// (setBlueprintNeighbours) - vorher das Standardmodell, das nach dem Bau ganz anders aussah
 		if (!surfaceResident() || modlayer::layerOf(psStructure) != modlayer::SURFACE) { return nullptr; }
 		open = predictOpen(psStructure);
 	}
@@ -524,6 +529,19 @@ const iIMDShape *displayModel(const STRUCTURE *psStructure)
 	const iIMDShape *m = b != nullptr ? b->displayModel() : nullptr;
 	s_models[name] = m;
 	return m;
+}
+
+void setBlueprintNeighbours(const std::vector<std::pair<Vector2i, const STRUCTURE_STATS *>> &bps, unsigned player)
+{
+	s_bpBlocks.clear();
+	s_bpPlayer = player;
+	loadTable();
+	if (s_family.empty()) { return; }
+	for (const auto &b : bps)
+	{
+		if (b.second == nullptr || s_family.find(b.second->id.toUtf8()) == s_family.end()) { continue; }
+		s_bpBlocks.insert({map_coord(b.first.x - (S * TILE_UNITS) / 2), map_coord(b.first.y - (S * TILE_UNITS) / 2)});
+	}
 }
 
 bool isDeep(const STRUCTURE *psStructure)
