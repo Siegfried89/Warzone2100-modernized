@@ -146,12 +146,22 @@ void cancelBuild(DROID *psDroid)
 
 	// MOD (Wunsch 23.11. 18:38 "Felder ... nicht durch die Blockierung eines einzelnen Gebaeudes das ganze Feld blockieren"): bei einer Reihe
 	// (Linien-/Feldbau) nur diesen Platz ueberspringen und mit dem naechsten freien Platz der Reihe weitermachen
+	// MOD (Wunsch 23.11. 20:22 "beim Pipeline-Bauauftrag soll der Auftrag fuer ein paar blockierte Segmente nicht erloeschen, selbst wenn
+	// zwischenzeitlich eine feindliche Einheit darauf steht"): ein blockiertes Rohrstueck merkt sich modoil und beauftragt es spaeter wieder
+	if ((psDroid->order.type == DORDER_BUILD || psDroid->order.type == DORDER_LINEBUILD) && psDroid->order.psStats != nullptr)
+	{
+		modoil::notePipeBuildCancelled(psDroid, psDroid->order.psStats, psDroid->order.pos, psDroid->order.direction);
+	}
 	if (psDroid->order.type == DORDER_LINEBUILD && psDroid->order.psStats != nullptr)
 	{
 		const LineBuild lb = calcLineBuild(psDroid->order.psStats, psDroid->order.direction, psDroid->order.pos, psDroid->order.pos2);
 		for (int k = 1; k < lb.count; ++k)
 		{
-			if (!validLocation(gameWorld, psDroid->order.psStats, lb[k], psDroid->order.direction, psDroid->player, false)) { continue; }
+			if (!validLocation(gameWorld, psDroid->order.psStats, lb[k], psDroid->order.direction, psDroid->player, false))
+			{
+				modoil::notePipeBuildCancelled(psDroid, psDroid->order.psStats, lb[k], psDroid->order.direction);   // MOD (23.11. 20:22)
+				continue;
+			}
 			objTrace(psDroid->id, "Droid line build: blocked place skipped");
 			psDroid->order.pos = lb[k];
 			psDroid->order.psObj = nullptr;
