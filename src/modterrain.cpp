@@ -16,6 +16,7 @@
 
 #include <physfs.h>
 #include <cstdio>
+#include <cstdint>
 #include <string>
 
 #include <algorithm>
@@ -347,15 +348,44 @@ float sinkStandF(const WorldMapState &mapState, float worldX, float worldY)
 	return sinkWeighted(worldX, worldY, false);
 }
 
+namespace
+{
+/// (Wunsch 23.11. 04:23 "Man kann oft unter die Krater schauen. Kann das Terrain nicht eher wie die Krater geformt nach unten gehen? Und
+/// in derselben Groesse?") Feinraster (Zweig viertel): ein Krater belegt 2 x 2 Feinfelder. Statt vier kleiner Trichter (je Feinfeld der
+/// Mittelpunkt) senkt er den gemeinsamen Mittel-Eckpunkt um die volle Tiefe und die vier Feld-Mittelpunkte um die halbe: genau die
+/// Trichterform des Kraterflecks ueber 128 x 128 (wie ein Krater im Klassik-Netz). Liegt die Ecke zwischen vier Kraterfeldern, ist sie
+/// Mulde - so verbinden sich mehrere Einschlaege zu einer groesseren Mulde.
+int craterCorner(int layer, int x, int y)
+{
+	constexpr int NB = DIST_TILE / TILE_UNITS;
+	if (NB <= 1) { return 0; }
+	int m = INT32_MAX;
+	const int tx[4] = {x - 1, x, x - 1, x}, ty[4] = {y - 1, y - 1, y, y};
+	for (int k = 0; k < 4; ++k)
+	{
+		const int d = cellDyn(layer, tx[k], ty[k]);
+		if (d <= 0) { return 0; }
+		m = std::min(m, d);
+	}
+	return m;
+}
+
+int cornerTotal(int layer, int x, int y)
+{
+	const int fixedPart = visFixed(std::max({cellFixed(layer, x - 1, y - 1), cellFixed(layer, x, y - 1), cellFixed(layer, x - 1, y), cellFixed(layer, x, y)}));
+	return std::max(fixedPart, craterCorner(layer, x, y));
+}
+} // namespace
+
 int sinkAtCorner(const WorldMapState &mapState, int x, int y)
 {
 	if (s_cells.empty() || &mapState != &gameWorld.map)
 	{
 		return 0;
 	}
-	const int layer = layerTag();
-	// (17.11.) nur tiefe Graeben (Bauwerke) senken die Ecken; Krater/Schuetzenloecher nur den Feldmittelpunkt (centerSink)
-	return visFixed(std::max({cellFixed(layer, x - 1, y - 1), cellFixed(layer, x, y - 1), cellFixed(layer, x - 1, y), cellFixed(layer, x, y)}));
+	// (17.11.) tiefe Graeben (Bauwerke) senken die Ecken; Krater/Schuetzenloecher den Feldmittelpunkt (centerSink) - (23.11.) im
+	// Feinraster zusaetzlich den gemeinsamen Mittel-Eckpunkt eines 2 x 2-Kraters
+	return cornerTotal(layerTag(), x, y);
 }
 
 int centerSink(const WorldMapState &mapState, int x, int y)
@@ -366,6 +396,19 @@ int centerSink(const WorldMapState &mapState, int x, int y)
 	}
 	const int layer = layerTag();
 	const int d = cellDyn(layer, x, y), f = visFixed(cellFixed(layer, x, y));
+	constexpr int NB = DIST_TILE / TILE_UNITS;
+	if (NB > 1 && d > 0)
+	{
+		const int c0 = craterCorner(layer, x, y), c1 = craterCorner(layer, x + 1, y), c2 = craterCorner(layer, x, y + 1), c3 = craterCorner(layer, x + 1, y + 1);
+		if (c0 + c1 + c2 + c3 > 0)
+		{
+			// Mittelpunkt = Mittel der (abgesenkten) Ecken minus diese Zusatz-Absenkung: Ziel halbe Tiefe (Trichterflanke) bzw. so tief
+			// wie die Ecken, wenn mehrere Krater ineinander liegen
+			const int avg = (cornerTotal(layer, x, y) + cornerTotal(layer, x + 1, y) + cornerTotal(layer, x, y + 1) + cornerTotal(layer, x + 1, y + 1) + 2) / 4;
+			const int want = std::max(avg, d / 2);
+			return std::max(0, want - avg);
+		}
+	}
 	return d > f ? d - f : 0;   // die Ecken sind um die Grabentiefe schon abgesenkt
 }
 
@@ -628,6 +671,12 @@ void craterPiles(std::vector<CraterPile> &out)
 		}
 		const float depth = static_cast<float>(kv.second.dyn) / static_cast<float>(CRATER_DEPTH);
 		p.scale = std::clamp(depth, 0.f, 1.f) * (0.78f + 0.32f * static_cast<float>((h >> 8) % 100u) / 100.f) * 0.6f;
+		{
+			// sichtbarer Trichter (Mitte des Kraters tief, zu den Kanten des 128er-Feldes hin flach)
+			const float cs = static_cast<float>(N > 1 ? cornerTotal(static_cast<int>(layer), x + 1, y + 1) : centerSink(gameWorld.map, x, y));
+			const float ex = std::fabs(static_cast<float>(p.worldX) - cx), ey = std::fabs(static_cast<float>(p.worldY) - cy);
+			p.funnel = cs * std::max(0.f, 1.f - std::max(ex, ey) / (static_cast<float>(N * TILE_UNITS) * 0.5f));
+		}
 		p.rotDeg = static_cast<int>((h >> 16) % 360u);
 		if (p.scale >= 0.08f) { out.push_back(p); }
 	}

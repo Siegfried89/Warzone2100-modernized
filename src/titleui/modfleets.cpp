@@ -48,6 +48,7 @@ constexpr unsigned ID_FLEET = 4599000;      // + Index (Flottenliste)
 constexpr unsigned ID_DESIGN = 4599100;     // + Zeile (Entwuerfe)
 constexpr unsigned ID_NEW = 4599400, ID_UPDATE = 4599401, ID_RENAME = 4599402, ID_FAV = 4599403, ID_DEL = 4599404, ID_USE = 4599405;
 constexpr unsigned ID_PREV = 4599406, ID_NEXT = 4599407, ID_BACK = 4599408, ID_EDIT = 4599409, ID_INFO = 4599410, ID_DESIGNER = 4599411, ID_HEAD = 4599500;
+constexpr unsigned ID_FORGE = 4599412;   // (23.11. 04:23) Rumpf-Baukasten
 constexpr unsigned ID_DIM = 4599590;
 constexpr int LINE_H = 22;
 constexpr int DESIGN_ROWS = 15;
@@ -490,7 +491,10 @@ void WzFleetTitleUI::build()
 	s_iconSpots.push_back({IC_FLEET, 14, 10, 40});
 	headLabel(form, ID_HEAD + 20, 60, 8, 300, _("FLEETS"), pal_RGBA(200, 240, 255, 255), font_large, 30);
 	headLabel(form, ID_HEAD + 21, 60, 34, 330, _("Your unit designs - for every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
-	headLabel(form, ID_HEAD + 23, W - 250, 22, 160, _("Unit designer"), pal_RGBA(255, 214, 110, 255), font_regular_bold, 22, true);
+	headLabel(form, ID_HEAD + 23, W - 250, 8, 160, _("Unit designer"), pal_RGBA(255, 214, 110, 255), font_regular_bold, 20, true);
+	// (Wunsch 23.11. 04:23 "Der Rumpfeditor laesst sich nicht im Fleet-Editor finden"): Knopf zum Rumpf-Baukasten (startet die
+	// Designer-Sitzung im Hintergrund und oeffnet sofort den Baukasten; danach steht der Design-Bildschirm mit den Ueber-Rumpfen bereit)
+	wzTextButton(form, ID_FORGE, W - 230, 30, 120, 22, _("Hull Forge"), _("Hull Forge: combine several hulls into one super hull. Opens with all parts; afterwards the unit designer shows your super hulls. Closing the designer brings you back here."));
 	wzImgButton(form, ID_DESIGNER, W - 72, 8, 54, 46, IMAGE_DESIGN_UP, IMAGE_DESIGN_DOWN, _("Design units with all parts; save them with the star. Closing the designer brings you back here."), IC_DESIGNER);
 
 	// ---- links: Flotten
@@ -720,6 +724,7 @@ TITLECODE WzFleetTitleUI::run()
 		            : std::string(_("Could not write the design files"));
 	}
 	else if (id == ID_DESIGNER) { changeTitleUI(std::make_shared<WzUnitDesignTitleUI>(selected)); rebuild = false; }   // (18.11.) direkt im Hauptmenue
+	else if (id == ID_FORGE) { modfleetdesigner::request(true); rebuild = false; }   // (23.11.) Rumpf-Baukasten in der Designer-Sitzung
 	else if (id == ID_PREV) { --page; }
 	else if (id == ID_NEXT) { ++page; }
 	else if (id == ID_BACK) { changeTitleMode(TITLE); rebuild = false; }
@@ -775,6 +780,7 @@ struct DesignState
 DesignState s_ds;
 constexpr unsigned ID_D_TAB = 4599600, ID_D_ITEM = 4599620, ID_D_PREV = 4599660, ID_D_NEXT = 4599661, ID_D_SAVE = 4599662, ID_D_BACK = 4599663;
 constexpr unsigned ID_D_NAME = 4599664, ID_D_VIEW = 4599665, ID_D_INFO = 4599666, ID_D_HEAD = 4599700, ID_D_SUB = 4599680;
+constexpr unsigned ID_D_FORGE = 4599667;   // (23.11. 04:23) Rumpf-Baukasten
 constexpr int D_ROWS = 12;
 
 bool jsonTruthy(const nlohmann::json &j)
@@ -1167,6 +1173,7 @@ void WzUnitDesignTitleUI::build()
 	s_iconSpots.push_back({IC_DESIGNER, 14, 10, 40});
 	headLabel(form, ID_D_HEAD, 60, 8, 360, _("UNIT DESIGNER"), pal_RGBA(200, 240, 255, 255), font_large, 30);
 	headLabel(form, ID_D_HEAD + 1, 60, 34, 540, _("All parts unlocked - saved designs go into your fleet and every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
+	wzTextButton(form, ID_D_FORGE, PANEL_W - 146, 8, 128, 24, _("Hull Forge"), _("Hull Forge: combine several hulls into one super hull. Opens with all parts; afterwards the unit designer shows your super hulls."));
 	if (s_parts.empty())
 	{
 		headLabel(form, ID_D_HEAD + 2, 16, 90, PANEL_W - 32, _("No parts found (stats files missing)."), WZCOL_TEXT_BRIGHT, font_regular);
@@ -1407,6 +1414,7 @@ TITLECODE WzUnitDesignTitleUI::run()
 		}
 	}
 	else if (id == ID_D_BACK) { s_fleetReturnSelect = fleet; changeTitleUI(std::make_shared<WzFleetTitleUI>()); rebuild = false; }
+	else if (id == ID_D_FORGE) { s_fleetReturnSelect = fleet; modfleetdesigner::request(true); rebuild = false; }   // (23.11.) Rumpf-Baukasten
 	else { rebuild = false; }
 	if (rebuild) { build(); }
 	return TITLECODE_CONTINUE;

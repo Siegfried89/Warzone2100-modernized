@@ -704,11 +704,31 @@ static int32_t moveDirectPathToWaypoint(DROID *psDroid, unsigned positionIndex)
 	return data.blocking ? -1 - dist : dist;
 }
 
+/// MOD (Wunsch 23.11. 04:23 "Das Pathfinding bei den Sandsackstellungen ist immer noch schlecht - sie bleiben staendig haengen und
+/// stehen, anstatt nach dem Ausgang zu suchen"): beruehrt die gerade Linie zu einem spaeteren Wegpunkt ein Stellungsfeld? Dann wird
+/// dieser Wegpunkt nicht vorgezogen - sonst lief die Einheit schraeg durch die Sandsackwand, statt den Wegpunkten durch die Oeffnung
+/// zu folgen (Stellungen sind fuer die Blockier-Pruefung frei begehbar). Spiellogik: Stellungsraster aus dem Spielzustand.
+static bool modSegmentTouchesFort(Vector2i a, Vector2i b)
+{
+	const int32_t len = iHypot(b - a);
+	const int steps = std::max(1, static_cast<int>(len / 32));
+	for (int i = 0; i <= steps; ++i)
+	{
+		const Vector2i p = a + (b - a) * i / steps;
+		if (modfort::sides(map_coord(p.x), map_coord(p.y)) != 0)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 // Returns true if still able to find the path.
 static bool moveBestTarget(DROID *psDroid)
 {
 	int positionIndex = std::max(psDroid->sMove.pathIndex - 1, 0);
 	int32_t dist = moveDirectPathToWaypoint(psDroid, positionIndex);
+	const bool fortCareful = !modfort::heavyCrosser(psDroid);
 	if (dist >= 0)
 	{
 		// Look ahead in the path.
@@ -719,6 +739,11 @@ static bool moveBestTarget(DROID *psDroid)
 			{
 				dist = -1;
 				break;  // Reached end of path.
+			}
+			if (fortCareful && modSegmentTouchesFort(psDroid->pos.xy(), psDroid->sMove.asPath[positionIndex]))
+			{
+				dist = -1;   // MOD (23.11.): nicht ueber Stellungen hinweg vorgreifen
+				break;
 			}
 			dist = moveDirectPathToWaypoint(psDroid, positionIndex);
 		}

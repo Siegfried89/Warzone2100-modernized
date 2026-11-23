@@ -69,6 +69,7 @@ struct CraterPile
 	int worldX = 0, worldY = 0;
 	float scale = 1.f;
 	int rotDeg = 0;
+	float funnel = 0.f;   ///< (23.11.) Tiefe des sichtbaren Trichters an dieser Stelle (Anzeige: Fusshoehe auf der Flanke)
 };
 void craterPiles(std::vector<CraterPile> &out);
 /// (18.11.) Kraterflecke (weicher Rand, ein Viertel Kachel) in der Kachelmitte: depth 0..1 (Resttiefe), alpha = Einblenden

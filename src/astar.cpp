@@ -731,7 +731,26 @@ static bool bendBlockedTile(const PATHJOB *psJob, int tx, int ty)
 	{
 		return true;
 	}
-	return psJob->blockingMap->map[tx + ty * gameWorld.map.width];
+	// MOD (Wunsch 23.11. 04:23 "Pathfinding bei den Sandsackstellungen ... bleiben staendig haengen"): Stellungen zaehlen fuer das
+	// Seitwaerts-Versetzen des Weges wie Waende - kein Wegpunkt wird in eine Sandsackwand geschoben
+	const size_t idx = static_cast<size_t>(tx + ty * gameWorld.map.width);
+	if (!psJob->blockingMap->fortSides.empty() && psJob->blockingMap->fortSides[idx] != 0)
+	{
+		return true;
+	}
+	return psJob->blockingMap->map[idx];
+}
+
+/// MOD (23.11.): Wegpunkt in oder neben einer Stellung? Dort bleibt er genau in der Feld-/Blockmitte (modfort::pathPoint) - weder
+/// Wand-Abstand noch Rechtsfahr-Versatz verschieben ihn (vorher bis 1,5 Felder seitlich: der Soldat lief zu einem Punkt in der
+/// Sandsackwand und blieb dort haengen)
+static bool fortPathPoint(const PATHJOB *psJob, Vector2i p)
+{
+	const std::vector<uint8_t> &fn = psJob->blockingMap->fortNear;   // (nicht "near" - unter Windows ein Makro)
+	if (fn.empty()) { return false; }
+	const Vector2i t = map_coord(p);
+	if (t.x < 0 || t.y < 0 || t.x >= gameWorld.map.width || t.y >= gameWorld.map.height) { return false; }
+	return fn[static_cast<size_t>(t.x + t.y * gameWorld.map.width)] != 0;
 }
 
 /// The largest outward offset up to want, in 32wu steps, whose landing tile
@@ -840,6 +859,10 @@ static void fpathWallClearance(const PATHJOB *psJob, MOVE_CONTROL *psMove)
 		if (cmap != nullptr && cmap->claimed(t.x, t.y))
 		{
 			continue;
+		}
+		if (fortPathPoint(psJob, path[k]))
+		{
+			continue;   // MOD (23.11.): in/an Stellungen bleibt der Wegpunkt in der Mitte
 		}
 		Vector2i right(-d.y * DIST_TILE / len, d.x * DIST_TILE / len);
 		if (right.x == 0 && right.y == 0)
@@ -959,6 +982,10 @@ static void fpathKeepRightOffset(const PATHJOB *psJob, MOVE_CONTROL *psMove)
 		if (cmap != nullptr && cmap->claimed(t.x, t.y))
 		{
 			continue;
+		}
+		if (fortPathPoint(psJob, path[k]))
+		{
+			continue;   // MOD (23.11.): in/an Stellungen kein Rechtsfahr-Versatz
 		}
 		Vector2i right(-d.y * DIST_TILE / len, d.x * DIST_TILE / len);
 		if (right.x == 0 && right.y == 0)
