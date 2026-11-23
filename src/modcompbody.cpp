@@ -20,6 +20,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cctype>
+#include <climits>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -175,6 +177,201 @@ bool isUsableChassisPart(const BODY_STATS *b)
 	return b != nullptr && b->pIMD != nullptr && b->pIMD->displayModel() != nullptr && !checkIfZNullStat(b);
 }
 
+// ---------------------------------------------------------------- Katalog (Spiel: asBodyStats, Hauptmenue: stats/body.json)
+struct Catalog
+{
+	std::vector<BodyInfo> all;
+	std::map<std::string, size_t> byId;
+	bool game = false;
+	uint32_t statsGen = 0;
+	size_t count = 0;
+	unsigned modelGen = 0;
+	bool built = false;
+};
+Catalog s_cat;
+
+bool startsWith(const std::string &s, const char *p) { return s.rfind(p, 0) == 0; }
+bool endsWith(const std::string &s, const char *p)
+{
+	const size_t n = std::strlen(p);
+	return s.size() >= n && s.compare(s.size() - n, n, p) == 0;
+}
+bool contains(const std::string &s, const char *p) { return s.find(p) != std::string::npos; }
+
+/// taugt der Rumpf als Teil? (keine Infanterie, Cyborgs, Platzhalter, Stellvertreter-Modelle, Verbundrumpfe)
+bool usableAsPart(const std::string &id, const std::string &cls, const std::string &model)
+{
+	if (id.empty() || startsWith(id, "ZNULL") || startsWith(id, "CompBody") || startsWith(id, "B1") || startsWith(id, "MFT_") || id == "MFCrewBody") { return false; }
+	if (cls == "Cyborgs" || cls == "Babas_Person") { return false; }
+	if (model.empty() || model == "mfproxy.pie" || startsWith(model, "exbloke")) { return false; }
+	return true;
+}
+
+/// Herkunft (Spiel/Mod) und Fraktion/Gruppe nach ID und Modell
+void classify(BodyInfo &b, const std::string &cls, const std::string &model)
+{
+	const std::string &id = b.id;
+	static const struct { const char *id; const char *faction; int rank; } WZ[] = {
+		{ "Body1REC", "Project", 0 }, { "Body5REC", "Project", 0 }, { "Body11ABT", "Project", 0 },
+		{ "Body4ABT", "New Paradigm", 1 }, { "Body8MBT", "New Paradigm", 1 }, { "Body12SUP", "New Paradigm", 1 },
+		{ "Body2SUP", "Collective", 2 }, { "Body6SUPP", "Collective", 2 }, { "Body9REC", "Collective", 2 },
+		{ "Body3MBT", "Nexus", 3 }, { "Body7ABT", "Nexus", 3 }, { "Body10MBT", "Nexus", 3 }, { "Body13SUP", "Nexus", 3 }, { "Body14SUP", "Nexus", 3 },
+	};
+	for (const auto &w : WZ)
+	{
+		if (id == w.id) { b.source = "Warzone 2100"; b.sourceRank = 0; b.group = w.faction; b.groupRank = w.rank; return; }
+	}
+	if (startsWith(id, "B3MF"))
+	{
+		b.source = "Metal Fatigue"; b.sourceRank = 3;
+		if (contains(id, "Tank") || contains(id, "Arty"))
+		{
+			if (contains(id, "Rimtech")) { b.group = "Rimtech"; b.groupRank = 0; }
+			else if (contains(id, "MilAgro")) { b.group = "Mil-Agro"; b.groupRank = 1; }
+			else { b.group = "Neuropa"; b.groupRank = 2; }
+		}
+		else if (startsWith(id, "B3MFJet")) { b.group = "Hoverjets"; b.groupRank = 3; }
+		else { b.group = "Vehicles"; b.groupRank = 4; }
+		return;
+	}
+	if (startsWith(model, "w2_"))
+	{
+		b.source = "WZ2120"; b.sourceRank = 2;
+		b.group = b.size <= SIZE_LIGHT ? "Light" : (b.size == SIZE_MEDIUM ? "Medium" : "Heavy");
+		b.groupRank = b.size;
+		return;
+	}
+	if (id == "RigBody" || id == "PitbullBody" || id == "MammothBody" || id == "HarvesterBody") { b.source = "C&C 3"; b.sourceRank = 4; b.group = "GDI"; return; }
+	if (startsWith(id, "NTWShip")) { b.source = "Naval"; b.sourceRank = 5; b.group = "Ships"; return; }
+	if (startsWith(id, "UEF")) { b.source = "Supreme Commander"; b.sourceRank = 6; b.group = "UEF transports"; return; }
+	if (cls == "Babas" || endsWith(id, "-Scav") || endsWith(id, "-Ultimate") || startsWith(id, "Scav") || startsWith(id, "B2") || startsWith(id, "B3body")
+	    || startsWith(id, "B4body") || id == "BusBody" || id == "FireBody" || contains(id, "Chopper") || startsWith(id, "Train"))
+	{
+		b.source = "Scavengers"; b.sourceRank = 1;
+		if (endsWith(id, "-Ultimate") || id == "B2crane2") { b.group = "Ultimate Scavengers"; b.groupRank = 1; }
+		else if (startsWith(id, "Train")) { b.group = "Trains"; b.groupRank = 4; }
+		else if (contains(id, "Chopper")) { b.group = "Helicopters"; b.groupRank = 3; }
+		else if (endsWith(id, "-Scav") || startsWith(id, "B2Scav") || startsWith(id, "ScavAPC")) { b.group = "Scavenger vehicles"; b.groupRank = 2; }
+		else { b.group = "Scavengers"; b.groupRank = 0; }
+		return;
+	}
+	if (cls == "Transports") { b.source = "Warzone 2100"; b.sourceRank = 0; b.group = "Transports"; b.groupRank = 5; return; }
+	b.source = "Mods"; b.sourceRank = 7; b.group = "Extra hulls"; b.groupRank = 0;
+}
+
+int sizeFromText(const std::string &s)
+{
+	if (s == "MEDIUM") { return SIZE_MEDIUM; }
+	if (s == "HEAVY") { return SIZE_HEAVY; }
+	if (s == "SUPER HEAVY") { return SIZE_SUPER_HEAVY; }
+	return SIZE_LIGHT;
+}
+
+unsigned jsonU(const nlohmann::json &e, const char *k)
+{
+	auto it = e.find(k);
+	if (it == e.end() || !it->is_number()) { return 0; }
+	return static_cast<unsigned>(std::max(0.0, it->get<double>()));
+}
+
+void finishCatalog(Catalog &c)
+{
+	std::stable_sort(c.all.begin(), c.all.end(), [](const BodyInfo &a, const BodyInfo &b) {
+		if (a.sourceRank != b.sourceRank) { return a.sourceRank < b.sourceRank; }
+		if (a.group != b.group) { return a.groupRank != b.groupRank ? a.groupRank < b.groupRank : a.group < b.group; }
+		if (a.size != b.size) { return a.size < b.size; }
+		return a.name < b.name;
+	});
+	// dasselbe Modell nur einmal in der Liste (der baubare Eintrag zuerst)
+	std::map<const iIMDBaseShape *, size_t> seen;
+	for (size_t i = 0; i < c.all.size(); ++i)
+	{
+		BodyInfo &b = c.all[i];
+		c.byId[b.id] = i;
+		auto it = seen.find(b.model);
+		if (it == seen.end()) { seen[b.model] = i; continue; }
+		BodyInfo &first = c.all[it->second];
+		if (b.designable && !first.designable) { first.listed = false; it->second = i; }
+		else { b.listed = false; }
+	}
+}
+
+void buildFromStats(Catalog &c)
+{
+	for (size_t i = 0; i < asBodyStats.size(); ++i)
+	{
+		const BODY_STATS &s = asBodyStats[i];
+		if (s.pIMD == nullptr || s.pIMD->displayModel() == nullptr || checkIfZNullStat(&s) || isComposite(i)) { continue; }
+		const std::string id = s.id.toStdString();
+		const std::string model = s.pIMD->filename.toStdString();
+		const std::string cls = s.bodyClass.toStdString();
+		if (!usableAsPart(id, cls, model)) { continue; }
+		BodyInfo b;
+		b.id = id;
+		b.name = getLocalizedStatsName(&s);
+		if (b.name.empty()) { b.name = id; }
+		b.model = s.pIMD;
+		b.hp = s.base.hitpoints; b.armour = s.base.armour; b.thermal = static_cast<unsigned>(std::max(0, s.base.thermal));
+		b.weight = s.weight; b.power = s.base.power; b.cost = s.buildPower; b.buildPoints = s.buildPoints;
+		b.weaponSlots = std::max(1u, s.weaponSlots);
+		b.size = static_cast<int>(s.size);
+		b.designable = s.designable;
+		b.statIdx = i;
+		classify(b, cls, model);
+		c.all.push_back(b);
+	}
+}
+
+void buildFromJson(Catalog &c)
+{
+	if (!PHYSFS_exists("stats/body.json")) { return; }
+	auto j = parseJsonFile("stats/body.json");
+	if (!j.has_value() || !j->is_object()) { return; }
+	for (auto it = j->begin(); it != j->end(); ++it)
+	{
+		const nlohmann::json &e = it.value();
+		if (!e.is_object()) { continue; }
+		const std::string id = it.key();
+		const std::string model = e.value("model", std::string());
+		const std::string cls = e.value("class", std::string());
+		if (!usableAsPart(id, cls, model)) { continue; }
+		iIMDBaseShape *shape = modelGet(WzString::fromUtf8(model));
+		if (shape == nullptr || shape->displayModel() == nullptr) { continue; }
+		BodyInfo b;
+		b.id = id;
+		b.name = e.value("name", id);
+		b.name.erase(std::remove(b.name.begin(), b.name.end(), '*'), b.name.end());
+		if (b.name.empty()) { b.name = id; }
+		b.model = shape;
+		b.hp = jsonU(e, "hitpoints"); b.armour = jsonU(e, "armourKinetic"); b.thermal = jsonU(e, "armourHeat");
+		b.weight = jsonU(e, "weight"); b.power = jsonU(e, "powerOutput"); b.cost = jsonU(e, "buildPower"); b.buildPoints = jsonU(e, "buildPoints");
+		b.weaponSlots = std::max(1u, jsonU(e, "weaponSlots"));
+		b.size = sizeFromText(e.value("size", std::string("LIGHT")));
+		auto des = e.find("designable");
+		b.designable = des != e.end() && ((des->is_number() && des->get<double>() != 0.0) || (des->is_boolean() && des->get<bool>()));
+		classify(b, cls, model);
+		c.all.push_back(b);
+	}
+}
+
+const Catalog &cat()
+{
+	const bool game = !asBodyStats.empty();
+	unsigned mg = s_cat.modelGen;
+	const bool modelsChanged = modelCacheStale(mg);
+	if (s_cat.built && !modelsChanged && s_cat.game == game && (!game || (s_cat.statsGen == statsGeneration() && s_cat.count == asBodyStats.size()))) { return s_cat; }
+	Catalog c;
+	c.game = game;
+	c.statsGen = statsGeneration();
+	c.count = asBodyStats.size();
+	c.modelGen = mg;
+	c.built = true;
+	if (game) { buildFromStats(c); } else { buildFromJson(c); }
+	finishCatalog(c);
+	s_cat = std::move(c);
+	return s_cat;
+}
+
 // ---------------------------------------------------------------- Modell (PIE 4, eine Ebene je Teil-Ebene, eigene Texturen)
 void texLines(std::ostringstream &o, const iIMDShape &lvl)
 {
@@ -206,11 +403,11 @@ std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 	std::vector<Lv> levels;
 	for (const Part &p : d.parts)
 	{
-		const BODY_STATS *b = bodyByIdMutable(p.body);
-		if (!isUsableChassisPart(b)) { continue; }
+		const BodyInfo *b = bodyInfo(p.body);
+		if (b == nullptr || b->model == nullptr || b->model->displayModel() == nullptr) { continue; }
 		const glm::mat4 m = partMatrix(p);
 		const bool mirrored = glm::determinant(glm::mat3(m)) < 0.f;
-		for (const iIMDShape *lvl = b->pIMD->displayModel(); lvl != nullptr; lvl = lvl->next.get())
+		for (const iIMDShape *lvl = b->model->displayModel(); lvl != nullptr; lvl = lvl->next.get())
 		{
 			if (lvl->points.empty() || lvl->polys.empty()) { continue; }
 			if (lvl->tilesetTextureFiles[0].texfile.empty()) { continue; }
@@ -460,9 +657,62 @@ void refreshAvailability(unsigned player)
 		bool all = true;
 		for (size_t pi : sl.partIdx)
 		{
-			if (pi >= asBodyStats.size() || apCompLists[player][COMP_BODY][pi] != AVAILABLE) { all = false; break; }
+			// (17:55 "sofern man die entsprechenden Forschungen dafuer hat"): erforschbare Teile muessen erforscht sein; Rumpfe, die es nie
+			// im Designer gibt (Scavenger-, Mod-Rumpfe), halten nichts auf
+			if (pi >= asBodyStats.size()) { all = false; break; }
+			if (asBodyStats[pi].designable && apCompLists[player][COMP_BODY][pi] != AVAILABLE) { all = false; break; }
 		}
 		state = all ? AVAILABLE : UNAVAILABLE;
+	}
+}
+
+// ---------------------------------------------------------------- Katalog
+const std::vector<BodyInfo> &catalog() { return cat().all; }
+
+const BodyInfo *bodyInfo(const std::string &id)
+{
+	const Catalog &c = cat();
+	auto it = c.byId.find(id);
+	return it != c.byId.end() ? &c.all[it->second] : nullptr;
+}
+
+bool inGame() { return !asBodyStats.empty(); }
+
+void refreshDefs()
+{
+	std::map<std::string, Def> all;
+	readDir(PACK_DIR, true, all);
+	readDir(USER_DIR, false, all);
+	if (!inGame() || s_slots.empty())
+	{
+		s_defs.clear();
+		for (auto &kv : all) { s_defs.push_back(kv.second); }
+		return;
+	}
+	// im Spiel: angemeldete Bauplaene bleiben, wie sie sind (Plaetze); neu hinzugekommene kommen dazu (bauen erst nach dem Speichern hier)
+	for (auto &kv : all)
+	{
+		if (find(kv.first) == nullptr) { s_defs.push_back(kv.second); }
+	}
+}
+
+std::string previewModel(const Def &d)
+{
+	std::vector<Vector3i> conns;
+	const std::string pie = buildPie(d, conns);
+	if (pie.empty()) { return std::string(); }
+	const std::string name = "compbody_" + slug(d.id) + ".pie";
+	return modelRegisterFromText(WzString::fromUtf8(name), pie) != nullptr ? name : std::string();
+}
+
+const char *sizeText(int size)
+{
+	switch (size)
+	{
+	case SIZE_MEDIUM: return "MEDIUM";
+	case SIZE_HEAVY: return "HEAVY";
+	case SIZE_SUPER_HEAVY: return "SUPER HEAVY";
+	default: return "LIGHT";
 	}
 }
 
@@ -524,13 +774,13 @@ Totals totals(const Def &d)
 	int maxSize = 0, heavy = 0;
 	for (const Part &p : d.parts)
 	{
-		const BODY_STATS *b = bodyByIdMutable(p.body);
+		const BodyInfo *b = bodyInfo(p.body);
 		if (b == nullptr) { continue; }
-		const double h = b->base.hitpoints;
-		hp += h; arm += h * b->base.armour; therm += h * b->base.thermal;
+		const double h = b->hp;
+		hp += h; arm += h * b->armour; therm += h * b->thermal;
 		t.weight += b->weight;
-		t.power += b->base.power;
-		cost += b->buildPower; costMax = std::max(costMax, static_cast<double>(b->buildPower));
+		t.power += b->power;
+		cost += b->cost; costMax = std::max(costMax, static_cast<double>(b->cost));
 		pts += b->buildPoints; ptsMax = std::max(ptsMax, static_cast<double>(b->buildPoints));
 		maxSize = std::max(maxSize, static_cast<int>(b->size));
 		if (b->size >= SIZE_HEAVY) { ++heavy; }
@@ -551,13 +801,13 @@ const BODY_STATS *bodyById(const std::string &id) { return bodyByIdMutable(id); 
 std::vector<Mount> defaultMounts(const Part &chassis)
 {
 	std::vector<Mount> out;
-	const BODY_STATS *b = bodyByIdMutable(chassis.body);
-	if (b == nullptr || b->pIMD == nullptr) { return out; }
+	const BodyInfo *b = bodyInfo(chassis.body);
+	if (b == nullptr || b->model == nullptr) { return out; }
 	const glm::mat4 m = partMatrix(chassis);
-	const size_t n = std::min<size_t>(std::max<unsigned>(1u, b->weaponSlots), b->pIMD->connectors.size());
+	const size_t n = std::min<size_t>(std::max<unsigned>(1u, b->weaponSlots), b->model->connectors.size());
 	for (size_t i = 0; i < n; ++i)
 	{
-		const Vector3i &c = b->pIMD->connectors[i];   // x, Tiefe, Hoehe
+		const Vector3i &c = b->model->connectors[i];   // x, Tiefe, Hoehe
 		const glm::vec4 q = m * glm::vec4(static_cast<float>(c.x), static_cast<float>(c.z), static_cast<float>(c.y), 1.f);
 		Mount mm; mm.pos = glm::vec3(q);
 		out.push_back(mm);
@@ -567,8 +817,8 @@ std::vector<Mount> defaultMounts(const Part &chassis)
 
 bool save(Def &d, std::string &err)
 {
-	if (d.parts.empty()) { err = "Der Rumpf braucht mindestens ein Teil."; return false; }
-	if (bodyByIdMutable(d.parts[0].body) == nullptr) { err = "Unbekanntes Fahrgestell."; return false; }
+	if (d.parts.empty()) { err = "Add at least one hull."; return false; }
+	if (bodyInfo(d.parts[0].body) == nullptr) { err = "Unknown chassis."; return false; }
 	if (d.name.empty()) { d.name = "Neuer Rumpf"; }
 	if (d.mounts.size() > MAX_SLOTS) { d.mounts.resize(MAX_SLOTS); }
 	if (d.id.empty())
@@ -586,37 +836,38 @@ bool save(Def &d, std::string &err)
 	{
 		for (size_t i = 0; i < s_slots.size(); ++i) { if (s_slots[i].defId.empty()) { slotIdx = i; break; } }
 	}
-	if (slotIdx == s_slots.size()) { err = "Kein freier Platz mehr in dieser Sitzung - gespeichert, steht nach einem neuen Spielstart bereit."; }
+	const bool game = inGame() && !s_slots.empty();
+	if (game && slotIdx == s_slots.size()) { err = "Saved - usable after the next game start (no free slot left in this game)."; }
 	// Datei schreiben
 	PHYSFS_mkdir("userdata");
 	PHYSFS_mkdir(USER_DIR);
 	const std::string path = std::string(USER_DIR) + "/" + slug(d.id) + ".json";
-	if (!saveJSONToFile(toJson(d), path.c_str())) { err = "Datei konnte nicht geschrieben werden: " + path; return false; }
+	if (!saveJSONToFile(toJson(d), path.c_str())) { err = "Could not write " + path; return false; }
 	d.preset = false;
 	bool known = false;
 	for (Def &x : s_defs) { if (x.id == d.id) { x = d; known = true; break; } }
 	if (!known) { s_defs.push_back(d); }
+	if (!game) { return true; }   // Hauptmenue: Datei genuegt - das naechste Spiel meldet den Rumpf an
 	if (slotIdx < s_slots.size())
 	{
 		const size_t idx = s_slots[slotIdx].bodyIdx;
 		if (idx < asBodyStats.size()) { applyStats(asBodyStats[idx], d, slotIdx); }
 		for (unsigned p = 0; p < MAX_PLAYERS; ++p) { refreshAvailability(p); }
-		return true;
 	}
-	return false;
+	return true;
 }
 
 bool remove(const std::string &id, std::string &err)
 {
 	Def *d = nullptr;
 	for (Def &x : s_defs) { if (x.id == id) { d = &x; break; } }
-	if (d == nullptr) { err = "Unbekannter Rumpf."; return false; }
+	if (d == nullptr) { err = "Unknown hull."; return false; }
 	d->deleted = true;
 	// Datei behalten (geloescht markiert), damit alte Spielstaende mit diesem Rumpf weiter laden
 	PHYSFS_mkdir("userdata");
 	PHYSFS_mkdir(USER_DIR);
 	const std::string path = std::string(USER_DIR) + "/" + slug(d->id) + ".json";
-	if (!saveJSONToFile(toJson(*d), path.c_str())) { err = "Datei konnte nicht geschrieben werden: " + path; return false; }
+	if (!saveJSONToFile(toJson(*d), path.c_str())) { err = "Could not write " + path; return false; }
 	for (Slot &sl : s_slots)
 	{
 		if (sl.defId == id && sl.bodyIdx < asBodyStats.size()) { asBodyStats[sl.bodyIdx].designable = false; }

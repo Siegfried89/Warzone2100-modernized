@@ -109,7 +109,7 @@ std::vector<std::shared_ptr<W_BUTTON>> s_hex;
 std::vector<std::shared_ptr<W_BUTTON>> s_cmd;
 std::vector<Item> s_items;
 int s_open = -1;                          // offene Leiste (Hex-Art) oder -1
-bool s_planOpen = true;                   // Schlachtplan-Leiste (bleibt offen: Zonen zeichnen mit einem Klick)
+bool s_planOpen = false;                  // Schlachtplan-Leiste - (Wunsch 23.11. 18:00) verborgen hinter dem goldenen Generalsstern, ein Klick zeigt sie
 bool s_hiddenAll = false;
 
 std::vector<DROID *> selection()
@@ -175,29 +175,29 @@ std::vector<Item> itemsFor(int hex)
 	}
 	case H_INFANTRY:
 	{
-		Item cover; cover.img = C_COVER; cover.tip = _("Take cover: the selected infantry (or all infantry, if none is selected) mans the nearest trenches, pits, sandbag positions and buildings");
+		Item cover; cover.img = C_COVER; cover.tip = _("Take cover: infantry mans trenches and buildings");
 		cover.action = []() { if (selectedPlayer < MAX_PLAYERS) { modcover::takeCover(selectedPlayer); } };
 		v.push_back(cover);
-		Item leave; leave.img = C_LEAVE; leave.tip = _("Leave cover: the selected infantry (or all infantry in cover) leaves trenches, pits, craters and buildings and gathers just behind them");
+		Item leave; leave.img = C_LEAVE; leave.tip = _("Leave cover");
 		leave.action = []() { if (selectedPlayer < MAX_PLAYERS) { modcover::leaveCover(selectedPlayer); } };
 		v.push_back(leave);
-		Item spread; spread.img = C_SPREAD; spread.tip = _("Spread out: the selected units spread out evenly (against artillery and bombs)");
+		Item spread; spread.img = C_SPREAD; spread.tip = _("Spread out");
 		spread.action = []() { modincoming::spreadUnits(selection()); };
 		v.push_back(spread);
-		Item salv; salv.img = C_SALVAGE; salv.tip = _("Salvage: drag a circle around parts, artefacts and wrecks - an escorted salvage team recovers everything in it");
+		Item salv; salv.img = C_SALVAGE; salv.tip = _("Salvage: circle wrecks and parts");
 		salv.action = []() { s_planOpen = true; modpaint::selectMode("Salvage Op"); };
 		v.push_back(salv);
-		Item rec; rec.img = C_RECOVER; rec.tip = _("Recover: the selected construction and repair units pick up lost turrets and parts nearby");
+		Item rec; rec.img = C_RECOVER; rec.tip = _("Recover lost parts nearby");
 		rec.action = []() { modrecover::recoverWithSelection(selection()); };
 		v.push_back(rec);
-		Item spade; spade.img = C_SPADE; spade.tip = _("Infantry: build - open the build menu for the selected infantry (trenches, sandbags, MG nests, ammo crates)");
+		Item spade; spade.img = C_SPADE; spade.tip = _("Infantry: build");
 		spade.action = []() {
 			if (!infantryBuilderSelected()) { addConsoleMessage(_("Select infantry with a spade first"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); return; }
 			intResetScreen(true);
 			intShowWidget(RETBUT_BUILD);
 		};
 		v.push_back(spade);
-		Item arty; arty.img = C_ARTY; arty.tip = _("Artillery mode on/off for the selected cannon tanks (barrel raised, indirect fire)");
+		Item arty; arty.img = C_ARTY; arty.tip = _("Artillery mode on/off");
 		arty.action = []() {
 			const std::vector<DROID *> sel = selection();
 			bool any = false, allOn = true;
@@ -216,7 +216,7 @@ std::vector<Item> itemsFor(int hex)
 		arty.isOn = []() { return allSelected(DSO_ARTILLERY, DSS_ARTY_SET); };
 		v.push_back(arty);
 		// (Wunsch 17.11. 15:46) "Fully autonomous": die gewaehlten Einheiten suchen sich selbst Gegner und ziehen sich bei Schaden zurueck
-		Item aut; aut.img = C_AUTO; aut.tip = _("Fully autonomous on/off: idle units hunt the nearest visible enemy on their own and retreat for repairs when badly damaged (your own orders still come first)");
+		Item aut; aut.img = C_AUTO; aut.tip = _("Fully autonomous on/off");
 		aut.action = []() {
 			const std::vector<DROID *> sel = selection();
 			bool any = false, allOn = true;
@@ -236,7 +236,7 @@ std::vector<Item> itemsFor(int hex)
 		aut.isOn = []() { return allSelected(DSO_FULLAUTO, DSS_FULLAUTO_SET); };
 		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_AUTO, true) + 1)) { v.push_back(aut); }   // aelteres Mod-Paket: ohne Bild kein Knopf
 		// (Wunsch 17.11. 20:06) Minen raeumen bei der Einheit: Minenraeumer-Walze an/aus (faehrt zu bekannten Minen), Infanterie entschaerft
-		Item mines; mines.img = C_MINES; mines.tip = _("Clear mines: selected mine flail tanks switch their flail on/off (the drum spins and beats off mines ahead); selected infantry defuses known mines");
+		Item mines; mines.img = C_MINES; mines.tip = _("Clear mines");
 		mines.action = []() { if (selectedPlayer < MAX_PLAYERS) { modmines::clearMines(selectedPlayer); } };
 		mines.isOn = []() {
 			bool any = false;
@@ -250,7 +250,7 @@ std::vector<Item> itemsFor(int hex)
 		};
 		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_MINES, true) + 1)) { v.push_back(mines); }
 		// (Wunsch 17.11. 21:01) Halbketten-Schuetzenpanzer: Infanterie absitzen lassen (Zweitbefehl, ueber das Netz abgeglichen)
-		Item unload; unload.img = C_UNLOAD; unload.tip = _("Unload: the infantry in the selected halftrack APCs, troop wagons or trains dismounts (to load: select infantry and click the APC, the wagon or the locomotive). An empty coupled wagon is uncoupled - it and the wagons behind it stay on the track");
+		Item unload; unload.img = C_UNLOAD; unload.tip = _("Unload / uncouple");
 		unload.action = []() {
 			bool any = false;
 			for (DROID *d : selection())
@@ -265,7 +265,7 @@ std::vector<Item> itemsFor(int hex)
 		};
 		if (s_img != nullptr && s_img->imageDefs.size() >= static_cast<size_t>(cmdImg(C_UNLOAD, true) + 1)) { v.push_back(unload); }
 		// (18.11. 17:52, MF-Besatzung) Pilot steigt aus: der Combot steht danach ohne Besatzung (neutral) da; jede Besatzung kann ihn besteigen
-		Item eject; eject.img = C_EJECT; eject.tip = _("Eject crew: the pilots leave the selected combots, which then stand unmanned and neutral (to board: select a crew and right-click an unmanned combot - also an enemy one)");
+		Item eject; eject.img = C_EJECT; eject.tip = _("Eject crew");
 		eject.action = []() {
 			bool any = false;
 			for (DROID *d : selection())
@@ -283,9 +283,9 @@ std::vector<Item> itemsFor(int hex)
 	{
 		const modlayer::Layer l[3] = { modlayer::ORBIT, modlayer::SURFACE, modlayer::UNDERGROUND };
 		const char *tips[3] = {
-			N_("Orbit layer: floating asteroids and solar panels, only fliers go here - selected Hoverjets/VTOLs climb up"),
+			N_("Orbit layer"),
 			N_("Surface layer: the battlefield (selected fliers descend)"),
-			N_("Underground layer: tunnels, drilled by drill trucks; reached through shafts") };
+			N_("Underground layer") };
 		for (int i = 0; i < 3; ++i)
 		{
 			Item it; it.img = C_ORBIT + i; it.tip = gettext(tips[i]);
@@ -305,13 +305,13 @@ const char *hexTip(int h)
 {
 	switch (h)
 	{
-	case H_CENTER: return N_("Mod commands: close all bars / open them again");
-	case H_PLAN: return N_("Battle plan: show or hide the zone bar (move, rally, attack, defend, artillery, aircraft, combots ...)");
-	case H_FORMATION: return N_("Formations: ring, line, wedge, column, artillery echelon");
-	case H_FIRE: return N_("Fire mode of the selected units: fire at will, return fire, hold fire");
-	case H_RINGS: return N_("Range rings: off / sensor / weapons / both / power grid + oil barrels (click to switch)");
-	case H_INFANTRY: return N_("Infantry & orders: take cover, spread out, salvage, recover, infantry build, artillery mode");
-	case H_LAYERS: return N_("Layers: orbit, surface, underground");
+	case H_CENTER: return N_("Hide / show all bars");
+	case H_PLAN: return N_("Battle plan");
+	case H_FORMATION: return N_("Formations");
+	case H_FIRE: return N_("Fire mode");
+	case H_RINGS: return N_("Range rings (click to switch)");
+	case H_INFANTRY: return N_("Infantry & orders");
+	case H_LAYERS: return N_("Layers");
 	default: return "";
 	}
 }

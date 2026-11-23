@@ -208,6 +208,7 @@ static WzText txtShowSamples_Lst;
 static WzText txtShowSamples_Act;
 // show Orders text
 static WzText txtShowOrders;
+static WzText txtModTime;       // MOD: Zeitfaktor-Anzeige (beim Beenden freigeben, sonst Absturz nach dem Abbau der Grafik)
 static WzText modTxtCmdLabel;   // MOD: Beschriftung "Area Bombardment: Attack Area" / "Fortify" am Mauszeiger
 // show Droid visible/draw counts text
 static WzText droidText;
@@ -1714,6 +1715,7 @@ void shutdown3DView()
 	// show Droid visible/draw counts text
 	droidText = WzText();
 	modTxtCmdLabel = WzText();   // MOD: sonst Absturzmeldung beim Beenden (Textur nicht freigegeben)
+	txtModTime = WzText();       // MOD (23.11.)
 
 	batchedObjectStatusRenderer.clear(); // NOTE: *NOT* reset() - see shutdown3DView_FullReset below for why
 
@@ -6424,7 +6426,6 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 	}
 	// MOD (17.11. 14:39): Zeitfaktor oben in der Mitte anzeigen, solange er nicht 100 % ist (Numblock * / -)
 	{
-		static WzText txtModTime;
 		const int tf = modTimeFactorPercent();
 		if (tf != 100 && GetGameMode() == GS_NORMAL)
 		{

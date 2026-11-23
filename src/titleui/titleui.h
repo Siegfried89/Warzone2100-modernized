@@ -111,6 +111,18 @@ private:
 	int page = 0;
 };
 
+// - modfleets.cpp - MOD (Wunsch 23.11. 17:55): Rumpf-Baukasten als reines Menue-Werkzeug (kein Spielstart); next = zurueck dorthin
+class WzHullForgeTitleUI: public WzTitleUI
+{
+public:
+	explicit WzHullForgeTitleUI(std::shared_ptr<WzTitleUI> next);
+	virtual void start() override;
+	virtual TITLECODE run() override;
+	virtual void render() override;
+private:
+	std::shared_ptr<WzTitleUI> next;
+};
+
 // - modfleets.cpp - MOD (Wunsch 18.11. 00:51): Einheiteneditor direkt im Hauptmenue (ohne Karte, alle Teile frei); speichert in die Flotte
 namespace modfleetsui { void shutdown(); }   // MOD (18.11.): Flotten-Sinnbilder freigeben (frontendShutdown)
 

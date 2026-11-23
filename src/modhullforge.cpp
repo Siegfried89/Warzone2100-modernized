@@ -1,23 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD (Wunsch 23.11. 01:35): Rumpf-Baukasten (siehe modhullforge.h)
 //
-// (Wunsch 23.11. 04:23) Ueberarbeitet:
-//  - "Die Kamera im Rumpfeditor soll ganz einfach per Maus-Drag zu steuern sein": linke Maustaste ziehen = drehen, rechte (oder mittlere)
-//    ziehen = verschieben, Mausrad = Zoom; Klick auf einen Waffenplatz waehlt ihn, Klick auf einen Rumpf waehlt das Teil.
-//  - "Rechtsklick auf den Body in der rechten Leiste loescht ihn" - auch Waffenplaetze (Liste und 3D-Ansicht) loescht ein Rechtsklick.
-//  - "Die Positionen besser und uebersichtlicher trennen. Ausserdem originalen WZ-2100-Stil (Knopfstil) beibehalten": WZ-Fensterrahmen,
-//    WZ-Knoepfe (Schattenkasten, WZ-Schrift), eigene Gruppen VERSCHIEBEN / DREHEN / TEIL / UEBER-RUMPF / ANSICHT.
-//  - "Die Waffenplaetze sollen so aussehen wie der originale WZ-Waffenturmplatz (der gelbe Platzhalter)": jeder Platz zeigt den
-//    WZ-Platzhalter-Turm (znullturret + znullgun) in seiner Blickrichtung.
-//  - "Jeder Rumpf soll gleich seinen natuerlichen Waffenplatz spawnen - wie im normalen WZ-Einheiteneditor. Man kann ihn mit Rechtsklick
-//    entfernen": jedes neue Teil bringt die Waffenplaetze seines Rumpfes mit. Diese Plaetze haengen am Teil: verschieben, drehen, spiegeln,
-//    kopieren oder entfernen des Teils nimmt sie mit (auch nach dem Laden erkannt).
+// (Wunsch 23.11. 04:23) WZ-Stil, Maus-Kamera, Rechtsklick loescht, gelbe WZ-Waffenplaetze, natuerliche Plaetze je Rumpf.
+// (Wunsch 23.11. 17:55) Ueberarbeitet:
+//  - "Das soll ein reines Menue-UI-Feature sein und immer und ueberall greifbar, speicherbar (in real time) sein ... wenn ich eine Hull in
+//    einer Mission speichere, soll sie auch im Fleet-Designer - Hull Forge sein. Und umgekehrt": der Baukasten laeuft im Hauptmenue ohne
+//    Spiel (Flotten-Menue / Einheiten-Designer) und im Spiel (Design-Bildschirm). Beide lesen und schreiben dieselben Bauplaene
+//    (userdata/composites); im Spiel ist ein gespeicherter Rumpf sofort baubar, sobald alle erforschbaren Teile erforscht sind.
+//  - "In der Hull Forge SAEMTLICHE Rumpfe verfuegbar machen. Und schoen nach Fraktionen und auch Mods trennen": Reiter je Herkunft
+//    (Warzone 2100, Scavengers, WZ2120, Metal Fatigue, ...) mit 3D-Bild, darunter die Rumpfe als 3D-Knoepfe in Fraktions-Gruppen.
+//    Im Spiel zeigt ein Schloss, was noch nicht erforscht ist (bauen erst danach).
+//  - "Die Mauszeiger-Ansicht invertieren (sie ist falsch herum)": waagerechtes Ziehen dreht jetzt wie Anfassen (der Rumpf folgt der Maus).
+//  - "Jeden Button mit einem WZ-Stil schnell und einfach verstaendlichen Symbol/Icon versehen ... kindlich, gross": jeder Knopf zeigt ein
+//    grosses Sinnbild (images/modforge.img, Paket forgeicons.py) im Stil der WZ-Designer-Bilder, darunter ein kurzes Wort.
+//  - kurze Tooltips (Wunsch 17:59).
 //
 // Aufbau (virtuelles 640x480-Bild, auf den Bildschirm skaliert):
-//   links   Rumpfliste (Klick = als neues Teil anbauen)
+//   links   Rumpfe: Herkunfts-Reiter, darunter 3D-Knoepfe nach Fraktion (Klick = als neues Teil anbauen)
 //   Mitte   3D-Ansicht des Verbundrumpfes
 //   rechts  Teile-Liste (Teil 1 = Fahrgestell), Waffenplaetze, Werte
-//   unten   Auswahl-Zeile, Gruppen VERSCHIEBEN / DREHEN / TEIL, UEBER-RUMPF (Name, Neu/Laden/Speichern/Loeschen), ANSICHT, Meldungen
+//   unten   Auswahl-Zeile, Gruppen VERSCHIEBEN / DREHEN / TEIL, UEBER-RUMPF (Name, Neu/Laden/Speichern/Loeschen), ANSICHT
 // Tasten (nicht beim Schreiben des Namens): Pfeile = x / vor-zurueck, Bild hoch/runter = Hoehe, Q/E = Gieren, R/F = Nicken,
 // Z/C = Rollen, Umschalt = feinste Stufe, Tab = naechstes Teil, Entf = Teil/Platz entfernen.
 
@@ -26,17 +28,21 @@
 #include "modpanel.h"
 #include "modlayer.h"
 #include "modui.h"
+#include "modwzhd.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/input.h"
+#include "lib/framework/physfs_ext.h"
 #include "lib/framework/vector.h"
 #include "lib/gamelib/gtime.h"
+#include "lib/ivis_opengl/bitimage.h"
 #include "lib/ivis_opengl/imd.h"
 #include "lib/ivis_opengl/ivisdef.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piedef.h"
 #include "lib/ivis_opengl/piematrix.h"
 #include "lib/ivis_opengl/piepalette.h"
+#include "lib/ivis_opengl/piestate.h"
 #include "lib/ivis_opengl/screen.h"
 #include "lib/ivis_opengl/textdraw.h"
 #include "lib/sound/audio.h"
@@ -70,12 +76,11 @@ namespace modhullforge
 namespace
 {
 
+using modcompbody::BodyInfo;
 using modcompbody::Def;
 using modcompbody::Mount;
 using modcompbody::Part;
 
-constexpr int BODY_ROWS = 21;
-constexpr float BODY_ROW_H = 14.f;
 constexpr int PART_ROWS = 8;
 constexpr int MOUNT_ROWS = 8;
 constexpr float LIST_ROW_H = 13.f;
@@ -86,7 +91,26 @@ const float ANGLES[3] = { 5.f, 15.f, 90.f };
 // Bereiche (virtuelle Einheiten)
 constexpr float BAY_X = 166, BAY_Y = 6, BAY_W = 308, BAY_H = 330;
 constexpr float PARTS_Y = 20, SLOTS_HEAD_Y = 134, SLOTS_Y = 148, VALUES_Y = 282;
-constexpr float GROUP_Y = 352, HULL_Y = 400;
+constexpr float ROW_A = 350, ROW_B = 418;
+// Rumpf-Liste links
+constexpr float TAB_X = 6, TAB_Y = 16, TAB_W = 37, TAB_H = 30, TAB_STEP_X = 39, TAB_STEP_Y = 32;
+constexpr int TAB_COLS = 4, TAB_MAX = 8;
+constexpr float LIST_X = 6, LIST_Y = 82, LIST_W = 154, LIST_H = 232;
+constexpr float CELL_W = 76, CELL_H = 50, HEAD_H = 13;
+
+// Sinnbilder (Reihenfolge = forgeicons.py)
+enum ForgeIcon
+{
+	FI_LEFT = 0, FI_RIGHT, FI_DOWN, FI_UP, FI_FWD, FI_BACK,
+	FI_YAW_L, FI_YAW_R, FI_PITCH_DOWN, FI_PITCH_UP, FI_ROLL_L, FI_ROLL_R,
+	FI_COPY, FI_MIRROR, FI_REMOVE, FI_RESET, FI_FLIP_X, FI_FLIP_Y, FI_FLIP_Z,
+	FI_NEW, FI_LOAD_PREV, FI_LOAD_NEXT, FI_SAVE, FI_DELETE,
+	FI_VIEW_FRONT, FI_VIEW_SIDE, FI_VIEW_TOP, FI_AUTO, FI_VIEW_RESET, FI_CLOSE,
+	FI_SLOT_ADD, FI_SLOT_REMOVE, FI_PARTS, FI_SCROLL_UP, FI_SCROLL_DOWN,
+	FI_STEP_S, FI_STEP_M, FI_STEP_L, FI_ANG_S, FI_ANG_M, FI_ANG_L,
+	FI_LOCK,
+	FI_COUNT
+};
 
 struct Ctx
 {
@@ -108,10 +132,11 @@ Ctx ctx()
 }
 
 // ---------------------------------------------------------------- WZ-Schrift (zwischengespeichert)
-enum TextKind { TK_ROW = 0, TK_BUTTON, TK_HEAD };
+enum TextKind { TK_ROW = 0, TK_BUTTON, TK_HEAD, TK_SMALL };
 
 iV_fonts fontFor(TextKind k, float S)
 {
+	if (k == TK_SMALL) { return S < 2.25f ? font_small : font_regular; }
 	if (S < 1.5f) { return k == TK_HEAD ? font_regular_bold : font_small; }
 	if (S < 2.25f) { return k == TK_HEAD ? font_regular_bold : font_regular; }
 	return k == TK_HEAD ? font_large : font_medium;
@@ -124,7 +149,7 @@ WzText &cachedText(const std::string &s, iV_fonts f)
 	const std::string key = std::to_string(static_cast<int>(f)) + "|" + s;
 	auto it = s_texts.find(key);
 	if (it != s_texts.end()) { return it->second; }
-	if (s_texts.size() > 600) { s_texts.clear(); }
+	if (s_texts.size() > 800) { s_texts.clear(); }
 	WzText &t = s_texts[key];
 	t.setText(WzString::fromUtf8(s), f);
 	return t;
@@ -152,8 +177,35 @@ std::string fitW(const std::string &s, int maxW, TextKind k, float S)
 	return t + "...";
 }
 
+// ---------------------------------------------------------------- Sinnbilder
+IMAGEFILE *s_icons = nullptr;
+bool s_iconsTried = false;
+
+bool iconsReady()
+{
+	if (!s_iconsTried)
+	{
+		s_iconsTried = true;
+		if (PHYSFS_exists("images/modforge.img")) { s_icons = iV_LoadImageFile("images/modforge.img"); }
+	}
+	return s_icons != nullptr && s_icons->imageDefs.size() >= static_cast<size_t>(FI_COUNT);
+}
+
+void freeIcons()
+{
+	if (s_icons != nullptr) { iV_FreeImageFile(s_icons); s_icons = nullptr; }
+	s_iconsTried = false;
+}
+
+void drawIcon(int icon, int x, int y, int size, unsigned char alpha = 255)
+{
+	if (icon < 0 || !iconsReady()) { return; }
+	iV_DrawImageFileAnisotropic(s_icons, static_cast<UWORD>(icon), x, y, Vector2f(static_cast<float>(size), static_cast<float>(size)), defaultProjectionMatrix(), alpha);
+}
+
 // ---------------------------------------------------------------- Zustand
 bool s_open = false;
+bool s_menu = false;            // im Hauptmenue geoeffnet (kein Spiel)
 std::shared_ptr<W_SCREEN> s_screen;
 std::shared_ptr<W_FULLSCREENOVERLAY_CLICKFORM> s_root;
 std::shared_ptr<W_EDITBOX> s_nameBox;
@@ -163,6 +215,7 @@ struct Btn
 	std::shared_ptr<W_BUTTON> w;
 	float x = 0, y = 0, wdt = 0, hgt = 0;
 	std::string label;
+	int icon = -1;
 	std::function<bool()> active;   // hervorgehoben (z.B. gewaehlte Schrittweite)
 };
 std::vector<Btn> s_btns;
@@ -183,14 +236,26 @@ int s_step = 1, s_angle = 1;
 float s_yaw = 215.f, s_pitch = 24.f, s_zoom = 1.f;
 float s_panX = 0.f, s_panY = 0.f;   // Verschiebung der Ansicht (Bildpunkte)
 bool s_autoRot = false;
-std::vector<size_t> s_bodies;   // Rumpfe fuer die Liste (Index in asBodyStats)
-int s_bodyScroll = 0;
 int s_partScroll = 0;
 int s_mountScroll = 0;
 int s_loadIdx = -1;
 std::string s_status;
 bool s_statusBad = false;
 unsigned s_statusUntil = 0;
+bool s_closeArmed = false;      // ungespeichert: zweiter Klick auf "Schliessen" verwirft
+unsigned s_closeArmedAt = 0;
+
+// Rumpf-Liste: Herkunfts-Reiter und Eintraege (Ueberschrift oder Zeile mit bis zu zwei Rumpfen)
+std::vector<std::string> s_sources;
+std::vector<size_t> s_sourceRep;     // Katalog-Index des Rumpfes fuer das Reiter-Bild
+std::vector<int> s_sourceCount;
+int s_source = 0;
+struct ListItem { bool heading = false; std::string text; int a = -1, b = -1; };
+std::vector<ListItem> s_items;
+int s_listScroll = 0;
+int s_listPress = -1;                // Katalog-Index unter dem Mausklick (Druecken)
+size_t s_catSize = 0;
+
 // Maus in der 3D-Ansicht
 enum DragMode { DRAG_NONE = 0, DRAG_TURN, DRAG_PAN };
 DragMode s_drag = DRAG_NONE;
@@ -200,6 +265,7 @@ bool s_moved = false;
 bool s_dirty = false;
 unsigned s_availTick = 0;
 int s_lastW = 0, s_lastH = 0;
+int s_pendingTip = -1;           // Katalog-Index des Rumpf-Knopfes unter der Maus (Hinweis-Kasten)
 
 void play(const char *file)
 {
@@ -211,7 +277,7 @@ void setStatus(const std::string &t, bool bad = false)
 {
 	s_status = t;
 	s_statusBad = bad;
-	s_statusUntil = realTime + 7000;
+	s_statusUntil = realTime + 6000;
 }
 
 const char *sizeName(int s)
@@ -227,40 +293,133 @@ const char *sizeName(int s)
 
 std::string bodyName(const std::string &id)
 {
-	const BODY_STATS *b = modcompbody::bodyById(id);
-	if (b == nullptr) { return id; }
-	std::string n = getLocalizedStatsName(b);
-	return n.empty() ? id : n;
+	const BodyInfo *b = modcompbody::bodyInfo(id);
+	return (b == nullptr || b->name.empty()) ? id : b->name;
 }
 
-void rebuildBodyList()
+int teamColour()
 {
-	s_bodies.clear();
-	const bool havePlayer = selectedPlayer < MAX_PLAYERS && apCompLists[selectedPlayer][COMP_BODY] != nullptr;
-	for (size_t i = 0; i < asBodyStats.size(); ++i)
+	return s_menu || selectedPlayer >= MAX_PLAYERS ? 0 : static_cast<int>(getPlayerColour(selectedPlayer));
+}
+
+/// im Spiel: noch nicht erforscht (erforschbar, aber nicht verfuegbar)
+bool locked(const BodyInfo &b)
+{
+	if (s_menu || !modcompbody::inGame() || b.statIdx == SIZE_MAX || !b.designable) { return false; }
+	if (selectedPlayer >= MAX_PLAYERS || apCompLists[selectedPlayer][COMP_BODY] == nullptr) { return false; }
+	return apCompLists[selectedPlayer][COMP_BODY][b.statIdx] != AVAILABLE;
+}
+
+const char *shortSource(const std::string &s)
+{
+	if (s == "Warzone 2100") { return "WZ 2100"; }
+	if (s == "Scavengers") { return "Scavs"; }
+	if (s == "Metal Fatigue") { return "MF"; }
+	if (s == "Supreme Commander") { return "SupCom"; }
+	return s.c_str();
+}
+
+void rebuildItems()
+{
+	const auto &cat = modcompbody::catalog();
+	s_catSize = cat.size();
+	s_items.clear();
+	if (s_source < 0 || s_source >= static_cast<int>(s_sources.size())) { s_listScroll = 0; return; }
+	const std::string &src = s_sources[static_cast<size_t>(s_source)];
+	std::string group;
+	bool open = false;   // Zeile mit einem freien Platz
+	for (size_t i = 0; i < cat.size(); ++i)
 	{
-		const BODY_STATS &b = asBodyStats[i];
-		if (!b.designable || b.pIMD == nullptr || checkIfZNullStat(&b) || modcompbody::isComposite(i)) { continue; }
-		if (havePlayer && apCompLists[selectedPlayer][COMP_BODY][i] != AVAILABLE) { continue; }
-		// Rumpfe mit demselben Modell nur einmal
-		bool dup = false;
-		for (size_t j : s_bodies) { if (asBodyStats[j].pIMD == b.pIMD) { dup = true; break; } }
-		if (!dup) { s_bodies.push_back(i); }
+		const BodyInfo &b = cat[i];
+		if (!b.listed || b.source != src) { continue; }
+		if (b.group != group || s_items.empty())
+		{
+			group = b.group;
+			ListItem h; h.heading = true; h.text = group;
+			s_items.push_back(h);
+			open = false;
+		}
+		if (open) { s_items.back().b = static_cast<int>(i); open = false; }
+		else { ListItem r; r.a = static_cast<int>(i); s_items.push_back(r); open = true; }
 	}
-	std::sort(s_bodies.begin(), s_bodies.end(), [](size_t a, size_t b) {
-		return std::string(getLocalizedStatsName(&asBodyStats[a])) < std::string(getLocalizedStatsName(&asBodyStats[b]));
-	});
-	s_bodyScroll = std::min(s_bodyScroll, std::max(0, static_cast<int>(s_bodies.size()) - BODY_ROWS));
+	s_listScroll = 0;
+}
+
+void rebuildSources()
+{
+	const auto &cat = modcompbody::catalog();
+	const std::string keep = (s_source >= 0 && s_source < static_cast<int>(s_sources.size())) ? s_sources[static_cast<size_t>(s_source)] : std::string();
+	s_sources.clear(); s_sourceRep.clear(); s_sourceCount.clear();
+	for (size_t i = 0; i < cat.size(); ++i)
+	{
+		if (!cat[i].listed) { continue; }
+		auto it = std::find(s_sources.begin(), s_sources.end(), cat[i].source);
+		if (it == s_sources.end())
+		{
+			if (s_sources.size() >= static_cast<size_t>(TAB_MAX)) { continue; }
+			s_sources.push_back(cat[i].source); s_sourceRep.push_back(i); s_sourceCount.push_back(1);
+		}
+		else { ++s_sourceCount[static_cast<size_t>(it - s_sources.begin())]; }
+	}
+	s_source = 0;
+	for (size_t k = 0; k < s_sources.size(); ++k) { if (s_sources[k] == keep) { s_source = static_cast<int>(k); } }
+	rebuildItems();
+}
+
+float itemH(const ListItem &it) { return it.heading ? HEAD_H : CELL_H; }
+
+int maxListScroll()
+{
+	float h = 0.f;
+	for (int i = static_cast<int>(s_items.size()) - 1; i >= 0; --i)
+	{
+		h += itemH(s_items[static_cast<size_t>(i)]);
+		if (h > LIST_H - 4.f) { return std::min(static_cast<int>(s_items.size()) - 1, i + 1); }
+	}
+	return 0;
+}
+
+struct Cell { int cat = -1; float x = 0, y = 0; };
+struct Head { std::string text; float y = 0; };
+
+void listLayout(std::vector<Cell> &cells, std::vector<Head> &heads)
+{
+	float y = LIST_Y + 2.f;
+	for (size_t i = static_cast<size_t>(std::max(0, s_listScroll)); i < s_items.size(); ++i)
+	{
+		const ListItem &it = s_items[i];
+		if (y + itemH(it) > LIST_Y + LIST_H) { break; }
+		if (it.heading) { heads.push_back({ it.text, y }); }
+		else
+		{
+			if (it.a >= 0) { cells.push_back({ it.a, LIST_X + 1.f, y }); }
+			if (it.b >= 0) { cells.push_back({ it.b, LIST_X + 2.f + CELL_W, y }); }
+		}
+		y += itemH(it);
+	}
+}
+
+/// Katalog-Index des Rumpf-Knopfes unter dem Bildpunkt (-1 = keiner)
+int cellAt(int mx, int my)
+{
+	const Ctx c = ctx();
+	std::vector<Cell> cells; std::vector<Head> heads;
+	listLayout(cells, heads);
+	for (const Cell &k : cells)
+	{
+		if (mx >= c.X(k.x) && mx < c.X(k.x + CELL_W) && my >= c.Y(k.y) && my < c.Y(k.y + CELL_H)) { return k.cat; }
+	}
+	return -1;
 }
 
 // ---------------------------------------------------------------- Geometrie-Hilfen
 /// Huelle eines Teils (Eckpunkte der Modell-Grenzen, in Verbund-Koordinaten)
 bool partCorners(const Part &p, glm::vec3 out[8])
 {
-	const BODY_STATS *b = modcompbody::bodyById(p.body);
-	if (b == nullptr || b->pIMD == nullptr) { return false; }
+	const BodyInfo *b = modcompbody::bodyInfo(p.body);
+	if (b == nullptr || b->model == nullptr) { return false; }
 	const glm::mat4 m = modcompbody::partMatrix(p);
-	const Vector3i mn = b->pIMD->min, mx = b->pIMD->max;
+	const Vector3i mn = b->model->min, mx = b->model->max;
 	for (int k = 0; k < 8; ++k)
 	{
 		const glm::vec4 q = m * glm::vec4((k & 1) ? mx.x : mn.x, (k & 2) ? mx.y : mn.y, (k & 4) ? mx.z : mn.z, 1.f);
@@ -312,12 +471,12 @@ bool yawFromDir(const glm::vec3 &d, float &yawDeg)
 std::vector<glm::vec3> naturalSlots(const std::string &bodyId)
 {
 	std::vector<glm::vec3> out;
-	const BODY_STATS *b = modcompbody::bodyById(bodyId);
-	if (b == nullptr || b->pIMD == nullptr) { return out; }
-	const size_t n = std::min<size_t>(std::max<unsigned>(1u, b->weaponSlots), b->pIMD->connectors.size());
+	const BodyInfo *b = modcompbody::bodyInfo(bodyId);
+	if (b == nullptr || b->model == nullptr) { return out; }
+	const size_t n = std::min<size_t>(std::max<unsigned>(1u, b->weaponSlots), b->model->connectors.size());
 	for (size_t i = 0; i < n; ++i)
 	{
-		const Vector3i &c = b->pIMD->connectors[i];   // x, Tiefe, Hoehe
+		const Vector3i &c = b->model->connectors[i];   // x, Tiefe, Hoehe
 		out.emplace_back(static_cast<float>(c.x), static_cast<float>(c.z), static_cast<float>(c.y));
 	}
 	return out;
@@ -429,16 +588,17 @@ void selectMount(int k)
 	if (s_selMount >= s_mountScroll + MOUNT_ROWS) { s_mountScroll = s_selMount - MOUNT_ROWS + 1; }
 }
 
-void addPart(size_t bodyIdx)
+void addPart(size_t catIdx)
 {
-	if (bodyIdx >= asBodyStats.size()) { return; }
+	const auto &cat = modcompbody::catalog();
+	if (catIdx >= cat.size()) { return; }
+	const BodyInfo &b = cat[catIdx];
 	Part p;
-	p.body = asBodyStats[bodyIdx].id.toStdString();
+	p.body = b.id;
 	if (!s_def.parts.empty())
 	{
 		// oben auf den bisherigen Aufbau setzen (danach frei verschieben)
-		const BODY_STATS &b = asBodyStats[bodyIdx];
-		const float bottom = b.pIMD != nullptr ? static_cast<float>(b.pIMD->min.y) : 0.f;
+		const float bottom = b.model != nullptr ? static_cast<float>(b.model->min.y) : 0.f;
 		p.pos = glm::vec3(0.f, std::round((topOfComposite() - bottom) * 2.f) / 2.f, 0.f);
 	}
 	s_def.parts.push_back(p);
@@ -447,8 +607,10 @@ void addPart(size_t bodyIdx)
 	selectPart(idx);
 	s_dirty = true;
 	play("mfui_clank.ogg");
-	const std::string slots = n > 0 ? " - " + std::to_string(n) + (n == 1 ? " weapon slot" : " weapon slots") + " (right-click removes)" : "";
-	setStatus((s_def.parts.size() == 1 ? "Chassis set: " + bodyName(p.body) + " (its propulsion is used)" : "Added: " + bodyName(p.body)) + slots);
+	std::string t = s_def.parts.size() == 1 ? "Chassis: " + b.name : "Added: " + b.name;
+	if (n > 0) { t += " (+" + std::to_string(n) + (n == 1 ? " slot)" : " slots)"); }
+	if (locked(b)) { t += " - needs research to build"; }
+	setStatus(t);
 }
 
 void move(int axis, float sign)
@@ -475,7 +637,7 @@ void rotate(int axis, float sign)
 	// (Wunsch 23.11. 03:05) Waffenplatz: Gieren dreht seine Blickrichtung - die Waffe schwenkt 180 Grad um sie
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
-		if (axis != 0) { setStatus("Weapon slots only turn left/right (yaw): the weapon covers 180 degrees around the slot's facing."); return; }
+		if (axis != 0) { setStatus("Weapon slots only turn left/right."); return; }
 		float &y = s_def.mounts[static_cast<size_t>(s_selMount)].yaw;
 		y = std::remainder(y - (fine ? 1.f : ANGLES[s_angle]) * sign, 360.f);
 		relink(static_cast<size_t>(s_selMount));
@@ -524,7 +686,7 @@ void duplicatePart(bool mirror)
 	selectPart(dst);
 	s_dirty = true;
 	play("mfui_clank.ogg");
-	if (copied > 0) { setStatus(std::string(mirror ? "Mirrored" : "Copied") + " with " + std::to_string(copied) + (copied == 1 ? " weapon slot." : " weapon slots.")); }
+	setStatus(std::string(mirror ? "Mirrored" : "Copied") + (copied > 0 ? " (+" + std::to_string(copied) + (copied == 1 ? " slot)" : " slots)") : std::string()));
 }
 
 void removePart(int i)
@@ -607,7 +769,7 @@ void addMount()
 	relink(s_def.mounts.size() - 1);
 	selectMount(static_cast<int>(s_def.mounts.size()) - 1);
 	s_dirty = true;
-	setStatus("Weapon slot added - move it with the MOVE buttons, turn its facing with Yaw (right-click removes it).");
+	setStatus("Weapon slot added - move it with the MOVE buttons.");
 }
 
 void newHull()
@@ -618,7 +780,7 @@ void newHull()
 	s_sel = -1; s_selMount = -1; s_partScroll = 0; s_mountScroll = 0; s_loadIdx = -1;
 	if (s_nameBox) { s_nameBox->setString(WzString::fromUtf8(s_def.name)); }
 	s_dirty = false;
-	setStatus("Pick the chassis from the hull list on the left (its propulsion is used), then add more hulls.");
+	setStatus("Click a hull on the left - the first one is the chassis.");
 }
 
 void loadCycle(int dir)
@@ -638,7 +800,7 @@ void loadCycle(int dir)
 	s_sel = s_def.parts.empty() ? -1 : 0; s_selMount = -1; s_partScroll = 0; s_mountScroll = 0;
 	if (s_nameBox) { s_nameBox->setString(WzString::fromUtf8(s_def.name)); }
 	s_dirty = false;
-	setStatus(std::string("Loaded: ") + s_def.name + (s_def.preset ? " (preset)" : ""));
+	setStatus(std::string("Loaded: ") + s_def.name + (s_def.preset ? " (preset)" : "") + "  (" + std::to_string(pos + 1) + "/" + std::to_string(idx.size()) + ")");
 }
 
 void doSave()
@@ -647,7 +809,8 @@ void doSave()
 	std::string err;
 	const bool ok = modcompbody::save(s_def, err);
 	if (!err.empty()) { setStatus(err, !ok); }
-	else { setStatus(ok ? "Saved: \"" + s_def.name + "\" - now available in the hull list (campaign, skirmish and the fleet's unit designer session)." : "Could not save.", !ok); }
+	else if (ok) { setStatus("Saved: \"" + s_def.name + (s_menu ? "\" - ready in every game." : "\" - ready to build.")); }
+	else { setStatus("Could not save.", true); }
 	if (ok) { s_dirty = false; play("mfui_clank.ogg"); }
 	const auto &all = modcompbody::defs();
 	for (size_t i = 0; i < all.size(); ++i) { if (all[i].id == s_def.id) { s_loadIdx = static_cast<int>(i); break; } }
@@ -659,6 +822,19 @@ void doDeleteHull()
 	std::string err;
 	if (modcompbody::remove(s_def.id, err)) { setStatus("Deleted: " + s_def.name); newHull(); }
 	else { setStatus(err, true); }
+}
+
+void requestClose()
+{
+	if (s_dirty && !s_def.parts.empty() && !(s_closeArmed && realTime - s_closeArmedAt < 4000))
+	{
+		s_closeArmed = true;
+		s_closeArmedAt = realTime;
+		setStatus("Not saved! Click Close again to discard.", true);
+		return;
+	}
+	s_closeArmed = false;
+	close();
 }
 
 // ---------------------------------------------------------------- Zeichnen
@@ -698,6 +874,32 @@ const iIMDShape *nullGun()
 	return s ? s->displayModel() : nullptr;
 }
 
+/// Bildpunkte je Modelleinheit in der Tiefe BAY_DEPTH (aus der UI-Projektion)
+float pxPerUnit()
+{
+	const glm::mat4 &proj = pie_UIPerspectiveGet();
+	auto ndcX = [&](float wx) { const glm::vec4 c = proj * glm::vec4(wx, 0.f, BAY_DEPTH, 1.f); return c.x / c.w; };
+	return std::max(1e-4f, std::abs(ndcX(100.f) - ndcX(0.f)) * 0.5f * static_cast<float>(pie_GetVideoBufferWidth()) / 100.f);
+}
+
+/// kleines 3D-Bild eines Rumpfes, mittig bei (cx, cy), passend in boxW x boxH Bildpunkte
+void drawThumb(const iIMDBaseShape *m, int cx, int cy, int boxW, int boxH, float yawDeg, int team)
+{
+	if (m == nullptr || m->displayModel() == nullptr) { return; }
+	const float ext = std::max({ 8.f, static_cast<float>(std::abs(m->min.x)), static_cast<float>(std::abs(m->max.x)),
+	                             static_cast<float>(std::abs(m->min.z)), static_cast<float>(std::abs(m->max.z)) });
+	const float radius = std::max(ext, static_cast<float>(m->max.y - m->min.y) * 0.75f);
+	const float midY = static_cast<float>(m->max.y + m->min.y) * 0.5f;
+	const float sc = 0.44f * static_cast<float>(std::min(boxW, boxH)) / (pxPerUnit() * radius);
+	pie_SetGeometricOffset(cx, cy);
+	const glm::mat4 base = glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, BAY_DEPTH))
+	                       * glm::rotate(glm::mat4(1.f), glm::radians(-22.f), glm::vec3(1.f, 0.f, 0.f))
+	                       * glm::rotate(glm::mat4(1.f), glm::radians(yawDeg), glm::vec3(0.f, 1.f, 0.f))
+	                       * glm::scale(glm::mat4(1.f), glm::vec3(sc))
+	                       * glm::translate(glm::mat4(1.f), glm::vec3(0.f, -midY, 0.f));
+	pie_Draw3DShape(m->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base, glm::mat4(1.f));
+}
+
 glm::mat4 bayBase(const Ctx &c, float &scaleOut)
 {
 	const float ext = compositeExtent();
@@ -713,6 +915,11 @@ glm::mat4 bayBase(const Ctx &c, float &scaleOut)
 void setBayOffset(const Ctx &c)
 {
 	pie_SetGeometricOffset(c.X(BAY_X) + c.L(BAY_W) / 2 + static_cast<int>(s_panX), c.Y(BAY_Y) + c.L(BAY_H) / 2 + c.L(30) + static_cast<int>(s_panY));
+}
+
+void resetOffset()
+{
+	pie_SetGeometricOffset(static_cast<int>(screenWidth) / 2, static_cast<int>(screenHeight) / 2);
 }
 
 bool project(const glm::mat4 &base, const glm::vec3 &p, Vector2i &out)
@@ -738,7 +945,7 @@ int mountAt(int mx, int my)
 		const int d = (sp.x - mx) * (sp.x - mx) + (sp.y - my) * (sp.y - my);
 		if (d < bestD) { bestD = d; best = static_cast<int>(i); }
 	}
-	pie_SetGeometricOffset(static_cast<int>(screenWidth) / 2, static_cast<int>(screenHeight) / 2);
+	resetOffset();
 	return best;
 }
 
@@ -767,7 +974,7 @@ int partAt(int mx, int my)
 		const long a = static_cast<long>(x1 - x0) * static_cast<long>(y1 - y0);
 		if (best < 0 || a < bestA) { best = static_cast<int>(i); bestA = a; }
 	}
-	pie_SetGeometricOffset(static_cast<int>(screenWidth) / 2, static_cast<int>(screenHeight) / 2);
+	resetOffset();
 	return best;
 }
 
@@ -776,7 +983,7 @@ void drawBay(const Ctx &c)
 	const int bx = c.X(BAY_X), by = c.Y(BAY_Y), bw = c.L(BAY_W), bh = c.L(BAY_H);
 	wzFrame(bx, by, bw, bh);
 	pie_UniTransBoxFill(bx + 4, by + 4, bx + bw - 4, by + bh - 4, pal_RGBA(0, 4, 14, 150));
-	const int team = static_cast<int>(getPlayerColour(selectedPlayer));
+	const int team = teamColour();
 	setBayOffset(c);
 	float sc = 1.f;
 	const glm::mat4 base = bayBase(c, sc);
@@ -796,11 +1003,11 @@ void drawBay(const Ctx &c)
 	for (size_t i = 0; i < s_def.parts.size(); ++i)
 	{
 		const Part &p = s_def.parts[i];
-		const BODY_STATS *b = modcompbody::bodyById(p.body);
-		if (b == nullptr || b->pIMD == nullptr || b->pIMD->displayModel() == nullptr) { continue; }
+		const BodyInfo *b = modcompbody::bodyInfo(p.body);
+		if (b == nullptr || b->model == nullptr || b->model->displayModel() == nullptr) { continue; }
 		const iIMDShape *flipped = modcompbody::flippedShape(p.body, p.flip);
 		if (flipped != nullptr) { pie_Draw3DShape(flipped, 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p, false), view); }
-		else { pie_Draw3DShape(b->pIMD->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p), view); }
+		else { pie_Draw3DShape(b->model->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p), view); }
 	}
 	// gewaehltes Teil: Rahmen
 	if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0)
@@ -824,13 +1031,12 @@ void drawBay(const Ctx &c)
 		const Mount &m = s_def.mounts[i];
 		const bool sel = static_cast<int>(i) == s_selMount;
 		const glm::mat4 mm = base * glm::translate(glm::mat4(1.f), m.pos) * glm::rotate(glm::mat4(1.f), glm::radians(-m.yaw), glm::vec3(0.f, 1.f, 0.f));
-		const PIELIGHT light = sel ? pal_SetBrightness(static_cast<UBYTE>(205 + 50 * std::sin(static_cast<float>(realTime) * 0.012f))) : WZCOL_WHITE;
 		if (nt != nullptr)
 		{
-			pie_Draw3DShape(nt, 0, team, light, pie_BUTTON, 0, mm, view);
+			pie_Draw3DShape(nt, 0, team, WZCOL_WHITE, pie_BUTTON, 0, mm, view);
 			glm::mat4 gm = mm;
 			if (!nt->connectors.empty()) { gm *= glm::translate(glm::mat4(1.f), glm::vec3(nt->connectors[0].xzy())); }
-			if (ng != nullptr) { pie_Draw3DShape(ng, 0, team, light, pie_BUTTON, 0, gm, view); }
+			if (ng != nullptr) { pie_Draw3DShape(ng, 0, team, WZCOL_WHITE, pie_BUTTON, 0, gm, view); }
 		}
 		Vector2i sp;
 		if (!project(base, m.pos + glm::vec3(0.f, 3.f, 0.f), sp)) { continue; }
@@ -855,10 +1061,103 @@ void drawBay(const Ctx &c)
 		}
 		wzText(std::to_string(i + 1), sp.x + c.L(7), sp.y - c.L(9), sel ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(255, 226, 120, 255), TK_ROW, c.S);
 	}
-	pie_SetGeometricOffset(static_cast<int>(screenWidth) / 2, static_cast<int>(screenHeight) / 2);
-	// Hinweis
-	wzText("Left drag = turn   Right drag = move view   Wheel = zoom   Right-click a slot = remove", bx + c.L(8), by + bh - c.L(14), pal_RGBA(150, 195, 225, 220), TK_ROW, c.S, bw - c.L(12));
-	if (s_def.parts.empty()) { wzText("Pick a chassis from the hull list", bx + c.L(70), by + c.L(150), pal_RGBA(120, 230, 255, 255), TK_BUTTON, c.S); }
+	resetOffset();
+	// Hinweis und Meldungen
+	wzText("Drag: turn   Right drag: move   Wheel: zoom", bx + c.L(8), by + bh - c.L(14), pal_RGBA(150, 195, 225, 220), TK_ROW, c.S, bw - c.L(12));
+	if (s_def.parts.empty()) { wzText("<  Click a hull on the left", bx + c.L(60), by + c.L(150), pal_RGBA(120, 230, 255, 255), TK_BUTTON, c.S); }
+	if (!s_status.empty() && realTime < s_statusUntil)
+	{
+		const std::string t = fitW(s_status, bw - c.L(16), TK_ROW, c.S);
+		const int tw = textW(t, TK_ROW, c.S);
+		pie_UniTransBoxFill(bx + c.L(6), by + c.L(6), bx + c.L(14) + tw, by + c.L(20), pal_RGBA(0, 0, 0, 150));
+		wzText(t, bx + c.L(10), by + c.L(9), s_statusBad ? pal_RGBA(255, 130, 100, 255) : pal_RGBA(120, 255, 170, 255), TK_ROW, c.S);
+	}
+}
+
+/// Rumpf-Liste links: Reiter (3D-Bild + Kurzname) und Rumpf-Knoepfe nach Fraktion
+void drawHullList(const Ctx &c, int &hoverCat)
+{
+	const float S = c.S;
+	const int team = teamColour();
+	const int mx = mouseX(), my = mouseY();
+	groupFrame(c, 2, 2, 162, 336, "HULLS");
+	// Reiter
+	for (size_t k = 0; k < s_sources.size(); ++k)
+	{
+		const float tx = TAB_X + static_cast<float>(k % TAB_COLS) * TAB_STEP_X, ty = TAB_Y + static_cast<float>(k / TAB_COLS) * TAB_STEP_Y;
+		const int x0 = c.X(tx), y0 = c.Y(ty), w = c.L(TAB_W), h = c.L(TAB_H);
+		const bool sel = static_cast<int>(k) == s_source;
+		const bool hover = mx >= x0 && mx < x0 + w && my >= y0 && my < y0 + h;
+		modwzhd::textButton(x0, y0, w, h, std::string(), sel, hover, false);
+		const auto &cat = modcompbody::catalog();
+		if (k < s_sourceRep.size() && s_sourceRep[k] < cat.size())
+		{
+			drawThumb(cat[s_sourceRep[k]].model, x0 + w / 2, y0 + c.L(11), w - c.L(4), c.L(18), (sel || hover) ? static_cast<float>(realTime % 7200u) * 0.05f : 215.f, team);
+		}
+		const std::string lab = fitW(shortSource(s_sources[k]), w - 2, TK_SMALL, S);
+		wzText(lab, x0 + (w - textW(lab, TK_SMALL, S)) / 2, y0 + h - c.L(10), sel ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(190, 196, 236, 255), TK_SMALL, S);
+	}
+	resetOffset();
+	// Liste
+	listFrame(c.X(LIST_X), c.Y(LIST_Y), c.L(LIST_W), c.L(LIST_H));
+	std::vector<Cell> cells; std::vector<Head> heads;
+	listLayout(cells, heads);
+	for (const Head &h : heads)
+	{
+		wzText(h.text, c.X(LIST_X + 4), c.Y(h.y + 1), pal_RGBA(255, 214, 110, 255), TK_SMALL, S);
+		const int lx = c.X(LIST_X + 8) + textW(h.text, TK_SMALL, S);
+		pie_UniTransBoxFill(lx, c.Y(h.y + 7), c.X(LIST_X + LIST_W - 4), c.Y(h.y + 7) + 1, pal_RGBA(90, 130, 210, 170));
+	}
+	const auto &cat = modcompbody::catalog();
+	for (const Cell &k : cells)
+	{
+		if (k.cat < 0 || static_cast<size_t>(k.cat) >= cat.size()) { continue; }
+		const BodyInfo &b = cat[static_cast<size_t>(k.cat)];
+		const int x0 = c.X(k.x), y0 = c.Y(k.y), w = c.L(CELL_W - 1), h = c.L(CELL_H - 2);
+		const bool hover = mx >= x0 && mx < x0 + w && my >= y0 && my < y0 + h;
+		if (hover) { hoverCat = k.cat; }
+		modwzhd::textButton(x0, y0, w, h, std::string(), false, hover, hover && s_listPress == k.cat);
+		const bool lock = locked(b);
+		drawThumb(b.model, x0 + w / 2, y0 + c.L(19), w - c.L(6), c.L(34), hover ? static_cast<float>(realTime % 7200u) * 0.05f : 215.f, team);
+		const std::string n = fitW(b.name, w - c.L(4), TK_SMALL, S);
+		wzText(n, x0 + (w - textW(n, TK_SMALL, S)) / 2, y0 + h - c.L(11), lock ? pal_RGBA(150, 150, 170, 255) : (hover ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(200, 206, 240, 255)), TK_SMALL, S);
+		if (lock)
+		{
+			resetOffset();
+			drawIcon(FI_LOCK, x0 + w - c.L(14), y0 + c.L(2), c.L(12));
+		}
+	}
+	resetOffset();
+	if (s_items.empty()) { wzText("No hulls found", c.X(LIST_X + 8), c.Y(LIST_Y + 10), WZCOL_TEXT_MEDIUM, TK_ROW, S); }
+	// Bildlauf-Anzeige
+	const int maxS = maxListScroll();
+	if (maxS > 0)
+	{
+		const float frac = static_cast<float>(s_listScroll) / static_cast<float>(maxS);
+		const int ty = c.Y(LIST_Y + 2) + static_cast<int>(frac * static_cast<float>(c.L(LIST_H - 24)));
+		pie_UniTransBoxFill(c.X(LIST_X + LIST_W - 3), ty, c.X(LIST_X + LIST_W - 1), ty + c.L(20), pal_RGBA(140, 200, 255, 200));
+	}
+}
+
+/// Hinweis-Kasten am Mauszeiger fuer den Rumpf-Knopf darunter
+void drawHullTip(const Ctx &c, int catIdx)
+{
+	const auto &cat = modcompbody::catalog();
+	if (catIdx < 0 || static_cast<size_t>(catIdx) >= cat.size()) { return; }
+	const BodyInfo &b = cat[static_cast<size_t>(catIdx)];
+	char buf[160];
+	snprintf(buf, sizeof(buf), "%s  -  %u %s  -  HP %u", sizeName(b.size), b.weaponSlots, b.weaponSlots == 1 ? "slot" : "slots", b.hp);
+	const std::string l1 = b.name, l2 = buf, l3 = locked(b) ? "Needs research to build" : (s_def.parts.empty() ? "Click: use as chassis" : "Click: add");
+	const int w = std::max({ textW(l1, TK_BUTTON, c.S), textW(l2, TK_ROW, c.S), textW(l3, TK_ROW, c.S) }) + c.L(12);
+	const int h = c.L(40);
+	int x = mouseX() + c.L(14), y = mouseY() + c.L(12);
+	if (x + w > static_cast<int>(screenWidth)) { x = mouseX() - w - c.L(6); }
+	if (y + h > static_cast<int>(screenHeight)) { y = mouseY() - h - c.L(6); }
+	pie_UniTransBoxFill(x, y, x + w, y + h, pal_RGBA(6, 10, 30, 235));
+	iV_Box(x, y, x + w - 1, y + h - 1, pal_RGBA(103, 103, 163, 255));
+	wzText(l1, x + c.L(6), y + c.L(3), pal_RGBA(255, 255, 255, 255), TK_BUTTON, c.S);
+	wzText(l2, x + c.L(6), y + c.L(16), pal_RGBA(190, 200, 235, 255), TK_ROW, c.S);
+	wzText(l3, x + c.L(6), y + c.L(27), locked(b) ? pal_RGBA(255, 200, 90, 255) : pal_RGBA(120, 255, 170, 255), TK_ROW, c.S);
 }
 
 void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -868,18 +1167,9 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const float S = c.S;
 	pie_BoxFill(0, 0, static_cast<int>(screenWidth), static_cast<int>(screenHeight), pal_RGBA(4, 8, 18, 255));
 
-	// ---- links: Rumpfliste
-	groupFrame(c, 2, 2, 162, 336, "HULLS");
-	wzText("click = add", c.X(76), c.Y(6), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
-	listFrame(c.X(6), c.Y(20), c.L(154), c.L(BODY_ROWS * BODY_ROW_H + 2));
-	for (int i = 0; i < BODY_ROWS; ++i)
-	{
-		const int idx = s_bodyScroll + i;
-		if (idx >= static_cast<int>(s_bodies.size())) { break; }
-		const BODY_STATS &b = asBodyStats[s_bodies[static_cast<size_t>(idx)]];
-		const int ry = c.Y(21.f + i * BODY_ROW_H);
-		wzText(fitW(getLocalizedStatsName(&b), c.L(146), TK_ROW, S), c.X(10), ry + c.L(2), WZCOL_FORM_TEXT, TK_ROW, S);
-	}
+	// ---- links: Rumpfe
+	int hoverCat = -1;
+	drawHullList(c, hoverCat);
 
 	// ---- rechts: Teile
 	groupFrame(c, 476, 2, 162, 128, "PARTS");
@@ -901,7 +1191,7 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	// ---- rechts: Waffenplaetze
 	if (!s_def.mounts.empty()) { s_mountScroll = std::max(0, std::min(s_mountScroll, static_cast<int>(s_def.mounts.size()) - MOUNT_ROWS)); }
 	else { s_mountScroll = 0; }
-	groupFrame(c, 476, SLOTS_HEAD_Y - 4, 162, 150, "WEAPON SLOTS " + std::to_string(s_def.mounts.size()) + "/" + std::to_string(modcompbody::MAX_SLOTS));
+	groupFrame(c, 476, SLOTS_HEAD_Y - 4, 162, 150, "SLOTS " + std::to_string(s_def.mounts.size()) + "/" + std::to_string(modcompbody::MAX_SLOTS));
 	listFrame(c.X(480), c.Y(SLOTS_Y), c.L(154), c.L(MOUNT_ROWS * LIST_ROW_H + 2));
 	for (int r = 0; r < MOUNT_ROWS; ++r)
 	{
@@ -938,56 +1228,83 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 		{
 			const glm::vec3 &p = s_def.mounts[static_cast<size_t>(s_selMount)].pos;
-			snprintf(buf, sizeof(buf), "Selected: weapon slot %d    x %.1f   y %.1f   z %.1f    facing %.0f deg (the weapon turns 180 deg)", s_selMount + 1, p.x, p.y, p.z, s_def.mounts[static_cast<size_t>(s_selMount)].yaw);
+			snprintf(buf, sizeof(buf), "Weapon slot %d    x %.1f   y %.1f   z %.1f    facing %.0f", s_selMount + 1, p.x, p.y, p.z, s_def.mounts[static_cast<size_t>(s_selMount)].yaw);
 			t = buf;
 		}
 		else if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()))
 		{
 			const Part &p = s_def.parts[static_cast<size_t>(s_sel)];
-			snprintf(buf, sizeof(buf), "Selected: part %d %s    x %.1f   y %.1f   z %.1f    yaw %.0f   pitch %.0f   roll %.0f%s%s%s", s_sel + 1, bodyName(p.body).c_str(), p.pos.x, p.pos.y, p.pos.z, p.rot.x, p.rot.y, p.rot.z,
+			snprintf(buf, sizeof(buf), "Part %d %s    x %.1f   y %.1f   z %.1f    turn %.0f   nose %.0f   roll %.0f%s%s%s", s_sel + 1, bodyName(p.body).c_str(), p.pos.x, p.pos.y, p.pos.z, p.rot.x, p.rot.y, p.rot.z,
 			         (p.flip & 1) ? "   flip X" : "", (p.flip & 2) ? "   flip Y" : "", (p.flip & 4) ? "   flip Z" : "");
 			t = buf;
 		}
-		else { t = "Nothing selected - click a part or a weapon slot (list or 3D view)"; }
+		else { t = "Nothing selected - click a part or a slot"; }
 		wzText(fitW(t, c.L(628), TK_ROW, S), c.X(6), c.Y(339), pal_RGBA(255, 226, 140, 255), TK_ROW, S);
 	}
 
 	// ---- Gruppen unten
-	groupFrame(c, 2, GROUP_Y - 2, 204, 46, "MOVE");
-	wzText("step", c.X(84), c.Y(GROUP_Y + 3), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
-	groupFrame(c, 206, GROUP_Y - 2, 238, 46, "ROTATE");
-	wzText("angle", c.X(300), c.Y(GROUP_Y + 3), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
-	groupFrame(c, 444, GROUP_Y - 2, 194, 46, "PART");
-	groupFrame(c, 2, HULL_Y - 2, 442, 56, "SUPER HULL");
-	if (s_dirty) { wzText("unsaved changes", c.X(12), c.Y(HULL_Y + 38), pal_RGBA(255, 190, 90, 255), TK_ROW, S); }
-	groupFrame(c, 444, HULL_Y - 2, 194, 56, "VIEW");
+	groupFrame(c, 2, ROW_A, 204, 66, "MOVE");
+	groupFrame(c, 206, ROW_A, 238, 66, "ROTATE");
+	groupFrame(c, 444, ROW_A, 194, 66, "PART");
+	groupFrame(c, 2, ROW_B, 442, 58, "SUPER HULL");
+	if (s_dirty) { wzText("not saved", c.X(12), c.Y(ROW_B + 38), pal_RGBA(255, 190, 90, 255), TK_ROW, S); }
+	groupFrame(c, 444, ROW_B, 194, 58, "VIEW");
 
-	if (!s_status.empty() && realTime < s_statusUntil)
-	{
-		wzText(fitW(s_status, c.L(628), TK_ROW, S), c.X(6), c.Y(462), s_statusBad ? pal_RGBA(255, 130, 100, 255) : pal_RGBA(120, 255, 170, 255), TK_ROW, S);
-	}
+	// Hinweis-Kasten fuer den Rumpf-Knopf unter der Maus (zuletzt, damit er ueber der Liste liegt)
+	s_pendingTip = hoverCat;
+	if (hoverCat >= 0) { drawHullTip(c, hoverCat); }
 }
 
-/// WZ-Knopf: Schattenkasten wie W_BUTTON (hell oben links, dunkel unten rechts; gedrueckt umgekehrt), Rahmen beim Ueberfahren, WZ-Schrift
+/// WZ-Knopf (Rahmen und Flaeche wie die Knoepfe des WZ-Einheiteneditors) mit grossem Sinnbild und kurzem Wort
 void btnDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
 	const W_BUTTON *b = static_cast<const W_BUTTON *>(psWidget);
 	const size_t k = psWidget->UserData;
 	if (k >= s_btns.size()) { return; }
+	const Btn &bt = s_btns[k];
 	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
-	const int x1 = x0 + psWidget->width(), y1 = y0 + psWidget->height();
-	const bool active = s_btns[k].active ? s_btns[k].active() : false;
+	const int w = psWidget->width(), h = psWidget->height();
+	const bool active = bt.active ? bt.active() : false;
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
 	const bool down = (b->getState() & WBUT_DOWN) != 0;
-	const PIELIGHT fill = active ? pal_RGBA(40, 86, 150, 255) : WZCOL_FORM_BACKGROUND;
-	iV_ShadowBox(x0, y0, x1, y1, 0, down ? WZCOL_FORM_DARK : WZCOL_FORM_LIGHT, down ? WZCOL_FORM_LIGHT : WZCOL_FORM_DARK, fill);
-	if (hl) { iV_Box(x0 + 2, y0 + 2, x1 - 3, y1 - 3, WZCOL_FORM_HILITE); }
+	modwzhd::textButton(x0, y0, w, h, std::string(), active, hl, down);
 	const float S = ctx().S;
-	const std::string &lab = s_btns[k].label;
-	WzText &t = cachedText(lab, fontFor(TK_BUTTON, S));
-	const int tx = x0 + std::max(1, (psWidget->width() - t.width()) / 2) + (down ? 1 : 0);
-	const int ty = y0 + (psWidget->height() - t.lineSize()) / 2 - t.aboveBase() + (down ? 1 : 0);
-	t.render(static_cast<float>(tx), static_cast<float>(ty), (hl || active) ? WZCOL_TEXT_BRIGHT : WZCOL_FORM_TEXT, 0.f, psWidget->width() - 2);
+	const int pad = std::max(1, static_cast<int>(std::lround(2.f * S)));
+	const bool haveIcon = bt.icon >= 0 && iconsReady();
+	const PIELIGHT tc = (hl || active) ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(196, 202, 238, 255);
+	const int dy = down ? 1 : 0;
+	if (!haveIcon)
+	{
+		WzText &t = cachedText(bt.label, fontFor(TK_BUTTON, S));
+		t.render(static_cast<float>(x0 + std::max(1, (w - t.width()) / 2)), static_cast<float>(y0 + (h - t.lineSize()) / 2 - t.aboveBase() + dy), tc, 0.f, w - 2);
+		return;
+	}
+	const unsigned char ia = (hl || active || down) ? 255 : 228;
+	if (h >= w * 3 / 4)
+	{
+		// hoch: Sinnbild oben, Wort darunter (passt das Wort nicht, nur das Sinnbild)
+		const std::string cap = bt.label.empty() ? std::string() : fitW(bt.label, w - 2, TK_SMALL, S);
+		const bool showCap = !cap.empty() && cap.find("...") == std::string::npos;
+		const int capH = showCap ? cachedText(cap, fontFor(TK_SMALL, S)).lineSize() : 0;
+		const int sz = std::max(4, std::min(w - 2 * pad, h - capH - 2 * pad));
+		drawIcon(bt.icon, x0 + (w - sz) / 2, y0 + pad + dy, sz, ia);
+		if (showCap) { wzText(cap, x0 + (w - textW(cap, TK_SMALL, S)) / 2, y0 + h - capH - pad / 2 + dy, tc, TK_SMALL, S); }
+	}
+	else
+	{
+		// breit: Sinnbild links, Wort rechts daneben
+		const int sz = std::max(4, h - 2 * pad);
+		const std::string cap = bt.label.empty() ? std::string() : fitW(bt.label, w - sz - 3 * pad, TK_SMALL, S);
+		const int tw = cap.empty() ? 0 : textW(cap, TK_SMALL, S);
+		const int total = sz + (tw > 0 ? pad + tw : 0);
+		const int ix = x0 + std::max(pad, (w - total) / 2);
+		drawIcon(bt.icon, ix, y0 + pad + dy, sz, ia);
+		if (tw > 0)
+		{
+			WzText &t = cachedText(cap, fontFor(TK_SMALL, S));
+			wzText(cap, ix + sz + pad, y0 + (h - t.lineSize()) / 2 + dy, tc, TK_SMALL, S);
+		}
+	}
 }
 
 void hotDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
@@ -999,17 +1316,20 @@ void hotDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	if ((b->getState() & WBUT_DOWN) != 0) { pie_UniTransBoxFill(x0, y0, x1, y1, pal_RGBA(255, 255, 255, 50)); }
 }
 
+/// unsichtbar (die Reiter zeichnet drawHullList)
+void noDisplay(WIDGET *, UDWORD, UDWORD) {}
+
 // ---------------------------------------------------------------- Aufbau
 /// onClick bekommt true bei Rechtsklick (nur wenn secondary gesetzt ist)
-void addBtn(const std::shared_ptr<WIDGET> &parent, float x, float y, float w, float h, const std::string &label, const char *tip, std::function<void(bool)> onClick,
-            std::function<bool()> active = nullptr, bool invisible = false, bool secondary = false)
+std::shared_ptr<W_BUTTON> addBtn(const std::shared_ptr<WIDGET> &parent, float x, float y, float w, float h, int icon, const std::string &label, const char *tip,
+                                 std::function<void(bool)> onClick, std::function<bool()> active = nullptr, WIDGET_DISPLAY display = nullptr, bool secondary = false)
 {
 	Btn b;
-	b.x = x; b.y = y; b.wdt = w; b.hgt = h; b.label = label; b.active = std::move(active);
+	b.x = x; b.y = y; b.wdt = w; b.hgt = h; b.label = label; b.icon = icon; b.active = std::move(active);
 	b.w = std::make_shared<W_BUTTON>();
 	parent->attach(b.w);
 	if (secondary) { b.w->style |= WBUT_SECONDARY; }
-	b.w->displayFunction = invisible ? hotDisplay : btnDisplay;
+	b.w->displayFunction = display != nullptr ? display : btnDisplay;
 	b.w->UserData = static_cast<UDWORD>(s_btns.size());
 	if (tip != nullptr) { b.w->setTip(tip); }
 	b.w->addOnClickHandler([onClick](W_BUTTON &btn) {
@@ -1017,12 +1337,13 @@ void addBtn(const std::shared_ptr<WIDGET> &parent, float x, float y, float w, fl
 		widgScheduleTask([onClick, right]() { onClick(right); });
 	});
 	s_btns.push_back(b);
+	return b.w;
 }
 
-void addBtn0(const std::shared_ptr<WIDGET> &parent, float x, float y, float w, float h, const std::string &label, const char *tip, std::function<void()> onClick,
+void addBtn0(const std::shared_ptr<WIDGET> &parent, float x, float y, float w, float h, int icon, const std::string &label, const char *tip, std::function<void()> onClick,
              std::function<bool()> active = nullptr)
 {
-	addBtn(parent, x, y, w, h, label, tip, [onClick](bool) { onClick(); }, std::move(active));
+	addBtn(parent, x, y, w, h, icon, label, tip, [onClick](bool) { onClick(); }, std::move(active));
 }
 
 void layout()
@@ -1030,7 +1351,7 @@ void layout()
 	if (!s_root) { return; }
 	const Ctx c = ctx();
 	for (Btn &b : s_btns) { b.w->setGeometry(c.X(b.x), c.Y(b.y), std::max(1, c.L(b.wdt)), std::max(1, c.L(b.hgt))); }
-	if (s_nameBox) { s_nameBox->setGeometry(c.X(10), c.Y(HULL_Y + 15), c.L(150), c.L(18)); }
+	if (s_nameBox) { s_nameBox->setGeometry(c.X(10), c.Y(ROW_B + 15), c.L(150), c.L(18)); }
 	s_lastW = static_cast<int>(screenWidth);
 	s_lastH = static_cast<int>(screenHeight);
 }
@@ -1048,97 +1369,106 @@ void buildScreen()
 	root->backgroundColor = pal_RGBA(0, 0, 0, 0);
 	root->displayFunction = drawScreen;
 	root->onClickedFunc = []() {};
-	root->onCancelPressed = []() { widgScheduleTask([]() { close(); }); };
+	root->onCancelPressed = []() { widgScheduleTask([]() { requestClose(); }); };
 	screen->psForm->attach(root);
 	const std::shared_ptr<WIDGET> parent = root;
 	s_btns.clear();
 
-	// ---- Rumpfliste (unsichtbare Zeilenknoepfe)
-	for (int i = 0; i < BODY_ROWS; ++i)
+	// ---- Herkunfts-Reiter (gezeichnet von drawHullList)
+	for (int k = 0; k < TAB_MAX; ++k)
 	{
-		addBtn(parent, 7, 21.f + i * BODY_ROW_H, 152, BODY_ROW_H, "", "Add this hull as a new part - it brings its own weapon slots (the first part is the chassis and brings the propulsion)", [i](bool) {
-			const size_t idx = static_cast<size_t>(s_bodyScroll + i);
-			if (idx < s_bodies.size()) { addPart(s_bodies[idx]); }
-		}, nullptr, true);
+		const float tx = TAB_X + static_cast<float>(k % TAB_COLS) * TAB_STEP_X, ty = TAB_Y + static_cast<float>(k / TAB_COLS) * TAB_STEP_Y;
+		auto b = addBtn(parent, tx, ty, TAB_W, TAB_H, -1, "", nullptr, [k](bool) {
+			if (k < static_cast<int>(s_sources.size()) && k != s_source) { s_source = k; rebuildItems(); play("mfui_click.ogg"); }
+		}, nullptr, noDisplay);
+		if (k < static_cast<int>(s_sources.size()))
+		{
+			const std::string tip = s_sources[static_cast<size_t>(k)] + " (" + std::to_string(s_sourceCount[static_cast<size_t>(k)]) + ")";
+			b->setTip(tip);
+		}
+		else { b->hide(); }
 	}
-	addBtn0(parent, 6, 318, 75, 16, "Up", "Scroll the hull list up", []() { s_bodyScroll = std::max(0, s_bodyScroll - 10); });
-	addBtn0(parent, 85, 318, 75, 16, "Down", "Scroll the hull list down", []() { s_bodyScroll = std::min(std::max(0, static_cast<int>(s_bodies.size()) - BODY_ROWS), s_bodyScroll + 10); });
+	addBtn0(parent, 6, 317, 75, 18, FI_SCROLL_UP, "Up", "Scroll up", []() { s_listScroll = std::max(0, s_listScroll - 3); });
+	addBtn0(parent, 85, 317, 75, 18, FI_SCROLL_DOWN, "Down", "Scroll down", []() { s_listScroll = std::min(maxListScroll(), s_listScroll + 3); });
 
 	// ---- Teile (Links = waehlen, Rechts = entfernen)
 	for (int i = 0; i < PART_ROWS; ++i)
 	{
-		addBtn(parent, 481, PARTS_Y + 1.f + i * LIST_ROW_H, 152, LIST_ROW_H, "", "Left-click: select this part.  Right-click: remove it (with its weapon slots)", [i](bool right) {
+		addBtn(parent, 481, PARTS_Y + 1.f + i * LIST_ROW_H, 152, LIST_ROW_H, -1, "", "Click: select   Right-click: remove", [i](bool right) {
 			const int idx = s_partScroll + i;
 			if (idx >= static_cast<int>(s_def.parts.size())) { return; }
 			if (right) { removePart(idx); } else { selectPart(idx); }
-		}, nullptr, true, true);
+		}, nullptr, hotDisplay, true);
 	}
 	// ---- Waffenplaetze (Links = waehlen, Rechts = entfernen)
 	for (int i = 0; i < MOUNT_ROWS; ++i)
 	{
-		addBtn(parent, 481, SLOTS_Y + 1.f + i * LIST_ROW_H, 152, LIST_ROW_H, "", "Left-click: select this weapon slot (MOVE/ROTATE then act on it).  Right-click: remove it", [i](bool right) {
+		addBtn(parent, 481, SLOTS_Y + 1.f + i * LIST_ROW_H, 152, LIST_ROW_H, -1, "", "Click: select   Right-click: remove", [i](bool right) {
 			const int idx = s_mountScroll + i;
 			if (idx >= static_cast<int>(s_def.mounts.size())) { return; }
 			if (right) { removeSlot(static_cast<size_t>(idx)); play("mfui_rattle.ogg"); } else { selectMount(idx); }
-		}, nullptr, true, true);
+		}, nullptr, hotDisplay, true);
 	}
-	addBtn0(parent, 598, SLOTS_HEAD_Y - 2, 17, 12, "^", "Scroll the weapon slots up", []() { s_mountScroll = std::max(0, s_mountScroll - MOUNT_ROWS); });
-	addBtn0(parent, 617, SLOTS_HEAD_Y - 2, 17, 12, "v", "Scroll the weapon slots down", []() { s_mountScroll += MOUNT_ROWS; });
-	addBtn0(parent, 480, SLOTS_Y + MOUNT_ROWS * LIST_ROW_H + 6, 50, 16, "+ Slot", "Add a free weapon slot on the selected part", []() { addMount(); });
-	addBtn0(parent, 532, SLOTS_Y + MOUNT_ROWS * LIST_ROW_H + 6, 50, 16, "- Slot", "Remove the selected weapon slot", []() {
+	addBtn0(parent, 598, SLOTS_HEAD_Y - 2, 17, 13, FI_SCROLL_UP, "", "Scroll up", []() { s_mountScroll = std::max(0, s_mountScroll - MOUNT_ROWS); });
+	addBtn0(parent, 617, SLOTS_HEAD_Y - 2, 17, 13, FI_SCROLL_DOWN, "", "Scroll down", []() { s_mountScroll += MOUNT_ROWS; });
+	const float sy = SLOTS_Y + MOUNT_ROWS * LIST_ROW_H + 5;
+	addBtn0(parent, 480, sy, 50, 20, FI_SLOT_ADD, "Slot", "Add weapon slot", []() { addMount(); });
+	addBtn0(parent, 532, sy, 50, 20, FI_SLOT_REMOVE, "Slot", "Remove weapon slot", []() {
 		if (s_selMount >= 0) { deleteSelected(); } else if (!s_def.mounts.empty()) { removeSlot(s_def.mounts.size() - 1); }
 	});
-	addBtn0(parent, 584, SLOTS_Y + MOUNT_ROWS * LIST_ROW_H + 6, 50, 16, "Parts", "Back to editing the selected part", []() { s_selMount = -1; if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; } });
+	addBtn0(parent, 584, sy, 50, 20, FI_PARTS, "Parts", "Edit parts", []() { s_selMount = -1; if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; } });
 
-	// ---- VERSCHIEBEN
+	// ---- VERSCHIEBEN: Schrittweite (Kopfzeile) und sechs Richtungen
 	static const char *stepLbl[3] = { "0.5", "2", "8" };
-	for (int k = 0; k < 3; ++k) { addBtn0(parent, 112.f + k * 30.f, GROUP_Y + 1, 28, 15, stepLbl[k], "Move step (Shift = finest step)", [k]() { s_step = k; }, [k]() { return s_step == k; }); }
-	struct MB { const char *l; const char *tip; int axis; float sign; };
+	static const char *stepTip[3] = { "Small steps (Shift: finest)", "Medium steps", "Big steps" };
+	for (int k = 0; k < 3; ++k) { addBtn0(parent, 64.f + k * 47.f, ROW_A + 2, 45, 13, FI_STEP_S + k, stepLbl[k], stepTip[k], [k]() { s_step = k; }, [k]() { return s_step == k; }); }
+	struct MB { int icon; const char *l; const char *tip; int axis; float sign; };
 	static const MB mv[6] = {
-		{ "Left", "Move left (arrow left)", 0, -1.f }, { "Right", "Move right (arrow right)", 0, 1.f },
-		{ "Down", "Move down (page down)", 1, -1.f }, { "Up", "Move up (page up)", 1, 1.f },
-		{ "Fwd", "Move forward (arrow up)", 2, -1.f }, { "Back", "Move back (arrow down)", 2, 1.f },
+		{ FI_LEFT, "Left", "Move left [Left]", 0, -1.f }, { FI_RIGHT, "Right", "Move right [Right]", 0, 1.f },
+		{ FI_DOWN, "Down", "Move down [PgDn]", 1, -1.f }, { FI_UP, "Up", "Move up [PgUp]", 1, 1.f },
+		{ FI_FWD, "Fwd", "Move forward [Up]", 2, -1.f }, { FI_BACK, "Back", "Move back [Down]", 2, 1.f },
 	};
-	for (int k = 0; k < 6; ++k) { const MB m = mv[k]; addBtn0(parent, 6.f + k * 33.f, GROUP_Y + 20, 31, 20, m.l, m.tip, [m]() { move(m.axis, m.sign); }); }
+	for (int k = 0; k < 6; ++k) { const MB m = mv[k]; addBtn0(parent, 6.f + k * 33.f, ROW_A + 18, 31, 44, m.icon, m.l, m.tip, [m]() { move(m.axis, m.sign); }); }
 	// ---- DREHEN
 	static const char *angLbl[3] = { "5", "15", "90" };
-	for (int k = 0; k < 3; ++k) { addBtn0(parent, 340.f + k * 34.f, GROUP_Y + 1, 32, 15, angLbl[k], "Rotation step in degrees (Shift = 1 degree)", [k]() { s_angle = k; }, [k]() { return s_angle == k; }); }
+	static const char *angTip[3] = { "Turn 5 degrees (Shift: 1)", "Turn 15 degrees", "Turn 90 degrees" };
+	for (int k = 0; k < 3; ++k) { addBtn0(parent, 290.f + k * 51.f, ROW_A + 2, 49, 13, FI_ANG_S + k, angLbl[k], angTip[k], [k]() { s_angle = k; }, [k]() { return s_angle == k; }); }
 	static const MB rt[6] = {
-		{ "Yaw <", "Turn left (Q) - for a weapon slot: its facing", 0, 1.f }, { "Yaw >", "Turn right (E) - for a weapon slot: its facing", 0, -1.f },
-		{ "Nose v", "Tilt nose down (F)", 1, -1.f }, { "Nose ^", "Tilt nose up (R)", 1, 1.f },
-		{ "Roll <", "Roll left (Z)", 2, -1.f }, { "Roll >", "Roll right (C)", 2, 1.f },
+		{ FI_YAW_L, "Turn", "Turn left [Q]", 0, 1.f }, { FI_YAW_R, "Turn", "Turn right [E]", 0, -1.f },
+		{ FI_PITCH_DOWN, "Nose", "Nose down [F]", 1, -1.f }, { FI_PITCH_UP, "Nose", "Nose up [R]", 1, 1.f },
+		{ FI_ROLL_L, "Roll", "Roll left [Z]", 2, -1.f }, { FI_ROLL_R, "Roll", "Roll right [C]", 2, 1.f },
 	};
-	for (int k = 0; k < 6; ++k) { const MB m = rt[k]; addBtn0(parent, 210.f + k * 39.f, GROUP_Y + 20, 37, 20, m.l, m.tip, [m]() { rotate(m.axis, m.sign); }); }
-	// ---- TEIL (oben neben der Ueberschrift: Kopieren/Spiegeln/Entfernen; unten: Zuruecksetzen und Spiegeln der Form)
-	addBtn0(parent, 484, GROUP_Y + 1, 49, 15, "Copy", "Copy the selected part (with its weapon slots) or weapon slot", []() { duplicatePart(false); });
-	addBtn0(parent, 535, GROUP_Y + 1, 49, 15, "Mirror", "Copy the selected part (or slot) mirrored to the other side", []() { duplicatePart(true); });
-	addBtn0(parent, 586, GROUP_Y + 1, 48, 15, "Remove", "Remove the selected part (with its weapon slots) or weapon slot (Del)", []() { deleteSelected(); });
-	addBtn0(parent, 448, GROUP_Y + 20, 46, 20, "Reset", "Reset rotation and flips of the selected part (a slot goes back to its natural place)", []() { resetSelected(); });
-	addBtn0(parent, 496, GROUP_Y + 20, 45, 20, "Flip X", "Mirror the part's shape left/right", []() { flipSelected(1); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 1); });
-	addBtn0(parent, 543, GROUP_Y + 20, 45, 20, "Flip Y", "Mirror the part's shape upside down", []() { flipSelected(2); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 2); });
-	addBtn0(parent, 590, GROUP_Y + 20, 44, 20, "Flip Z", "Mirror the part's shape front/back", []() { flipSelected(4); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 4); });
+	for (int k = 0; k < 6; ++k) { const MB m = rt[k]; addBtn0(parent, 210.f + k * 39.f, ROW_A + 18, 37, 44, m.icon, m.l, m.tip, [m]() { rotate(m.axis, m.sign); }); }
+	// ---- TEIL
+	addBtn0(parent, 448, ROW_A + 14, 26, 48, FI_COPY, "Copy", "Copy part", []() { duplicatePart(false); });
+	addBtn0(parent, 475, ROW_A + 14, 26, 48, FI_MIRROR, "Mirror", "Copy to the other side", []() { duplicatePart(true); });
+	addBtn0(parent, 502, ROW_A + 14, 26, 48, FI_REMOVE, "Del", "Remove [Del]", []() { deleteSelected(); });
+	addBtn0(parent, 529, ROW_A + 14, 26, 48, FI_RESET, "Reset", "Reset rotation", []() { resetSelected(); });
+	addBtn0(parent, 556, ROW_A + 14, 26, 48, FI_FLIP_X, "X", "Flip left/right", []() { flipSelected(1); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 1); });
+	addBtn0(parent, 583, ROW_A + 14, 26, 48, FI_FLIP_Y, "Y", "Flip upside down", []() { flipSelected(2); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 2); });
+	addBtn0(parent, 610, ROW_A + 14, 26, 48, FI_FLIP_Z, "Z", "Flip front/back", []() { flipSelected(4); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 4); });
 	// ---- UEBER-RUMPF
-	addBtn0(parent, 166, HULL_Y + 15, 44, 18, "New", "Start a new super hull", []() { newHull(); });
-	addBtn0(parent, 212, HULL_Y + 15, 52, 18, "< Load", "Load the previous saved super hull", []() { loadCycle(-1); });
-	addBtn0(parent, 266, HULL_Y + 15, 52, 18, "Load >", "Load the next saved super hull", []() { loadCycle(1); });
-	addBtn0(parent, 320, HULL_Y + 15, 56, 18, "Save", "Save: the super hull is written to your user folder and appears in the hull list everywhere", []() { doSave(); });
-	addBtn0(parent, 378, HULL_Y + 15, 60, 18, "Delete", "Delete this super hull (old savegames keep working)", []() { doDeleteHull(); });
+	addBtn0(parent, 168, ROW_B + 13, 52, 42, FI_NEW, "New", "New hull", []() { newHull(); });
+	addBtn0(parent, 222, ROW_B + 13, 52, 42, FI_LOAD_PREV, "Prev", "Previous saved hull", []() { loadCycle(-1); });
+	addBtn0(parent, 276, ROW_B + 13, 52, 42, FI_LOAD_NEXT, "Next", "Next saved hull", []() { loadCycle(1); });
+	addBtn0(parent, 330, ROW_B + 13, 52, 42, FI_SAVE, "Save", "Save hull", []() { doSave(); });
+	addBtn0(parent, 384, ROW_B + 13, 52, 42, FI_DELETE, "Delete", "Delete hull", []() { doDeleteHull(); });
 	// ---- ANSICHT
-	addBtn0(parent, 448, HULL_Y + 15, 45, 16, "Front", "View from the front", []() { s_yaw = 180.f; s_pitch = 8.f; });
-	addBtn0(parent, 495, HULL_Y + 15, 45, 16, "Side", "View from the side", []() { s_yaw = 270.f; s_pitch = 4.f; });
-	addBtn0(parent, 542, HULL_Y + 15, 45, 16, "Top", "View from above", []() { s_yaw = 180.f; s_pitch = 85.f; });
-	addBtn0(parent, 589, HULL_Y + 15, 45, 16, "Auto", "Turn the view automatically", []() { s_autoRot = !s_autoRot; }, []() { return s_autoRot; });
-	addBtn0(parent, 448, HULL_Y + 34, 92, 16, "Reset view", "Centre the view again (zoom and position)", []() { s_zoom = 1.f; s_panX = 0.f; s_panY = 0.f; s_yaw = 215.f; s_pitch = 24.f; });
-	addBtn0(parent, 542, HULL_Y + 34, 92, 16, "Close", "Close the hull forge", []() { close(); });
+	addBtn0(parent, 448, ROW_B + 13, 30, 42, FI_VIEW_FRONT, "Front", "Front view", []() { s_yaw = 180.f; s_pitch = 8.f; });
+	addBtn0(parent, 479, ROW_B + 13, 30, 42, FI_VIEW_SIDE, "Side", "Side view", []() { s_yaw = 270.f; s_pitch = 4.f; });
+	addBtn0(parent, 510, ROW_B + 13, 30, 42, FI_VIEW_TOP, "Top", "Top view", []() { s_yaw = 180.f; s_pitch = 85.f; });
+	addBtn0(parent, 541, ROW_B + 13, 30, 42, FI_AUTO, "Spin", "Spin view", []() { s_autoRot = !s_autoRot; }, []() { return s_autoRot; });
+	addBtn0(parent, 572, ROW_B + 13, 30, 42, FI_VIEW_RESET, "Center", "Center view", []() { s_zoom = 1.f; s_panX = 0.f; s_panY = 0.f; s_yaw = 215.f; s_pitch = 24.f; });
+	addBtn0(parent, 603, ROW_B + 13, 32, 42, FI_CLOSE, "Close", "Close [Esc]", []() { requestClose(); });
 
 	// ---- Name
 	s_nameBox = std::make_shared<W_EDITBOX>();
 	root->attach(s_nameBox);
 	s_nameBox->setBoxColours(WZCOL_FORM_LIGHT, WZCOL_FORM_HILITE, WZCOL_FORM_BACKGROUND);
-	s_nameBox->setPlaceholder(WzString::fromUtf8("Name of the super hull"));
+	s_nameBox->setPlaceholder(WzString::fromUtf8("Hull name"));
 	s_nameBox->setMaxStringSize(40);
 	s_nameBox->setString(WzString::fromUtf8(s_def.name));
-	s_nameBox->setTip("Name of the super hull");
+	s_nameBox->setTip("Hull name");
 	s_nameBox->setOnEditingStoppedHandler([](W_EDITBOX &w) { s_def.name = w.getString().toStdString(); s_dirty = true; });
 
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
@@ -1170,7 +1500,8 @@ void dragTo(int x, int y)
 	}
 	if (s_drag == DRAG_TURN)
 	{
-		s_yaw += static_cast<float>(x - s_lastX) * 0.5f;
+		// (Wunsch 17:55 "die Mauszeiger-Ansicht invertieren, sie ist falsch herum"): der Rumpf folgt der Maus wie angefasst
+		s_yaw -= static_cast<float>(x - s_lastX) * 0.5f;
 		s_pitch = std::clamp(s_pitch + static_cast<float>(y - s_lastY) * 0.35f, -10.f, 89.f);
 	}
 	else if (s_drag == DRAG_PAN)
@@ -1203,11 +1534,11 @@ void dragEnd(int x, int y)
 	s_moved = false;
 }
 
-/// Maus in der 3D-Ansicht: links ziehen = drehen, rechts/Mitte ziehen = verschieben; Klick links = Platz/Teil waehlen,
-/// Klick rechts auf einen Platz = entfernen.
+/// Maus: 3D-Ansicht (links ziehen = drehen, rechts/Mitte ziehen = verschieben; Klick links = Platz/Teil waehlen, Klick rechts auf einen
+/// Platz = entfernen) und Rumpf-Knoepfe (Klick = anbauen).
 /// Die Vollbild-Form leert jedes Bild den Eingabepuffer (gehaltene Tasten gelten danach als losgelassen) - darum zaehlen hier die
 /// rohen Druck-/Loslass-Ereignisse dieses Bildes (inputGetClicks), gehalten wird selbst mitgefuehrt.
-void bayMouse()
+void handleMouse()
 {
 	for (const MousePress &p : inputGetClicks())
 	{
@@ -1219,11 +1550,21 @@ void bayMouse()
 			{
 				s_dragBtn = b; s_pressX = s_lastX = p.pos.x; s_pressY = s_lastY = p.pos.y; s_moved = false; s_drag = DRAG_NONE;
 			}
+			else if (b == 0) { s_listPress = cellAt(p.pos.x, p.pos.y); }
 		}
-		else if (p.action == MousePress::Release && b == s_dragBtn)
+		else if (p.action == MousePress::Release)
 		{
-			dragTo(p.pos.x, p.pos.y);
-			dragEnd(p.pos.x, p.pos.y);
+			if (b == s_dragBtn)
+			{
+				dragTo(p.pos.x, p.pos.y);
+				dragEnd(p.pos.x, p.pos.y);
+			}
+			else if (b == 0 && s_listPress >= 0)
+			{
+				const int cell = cellAt(p.pos.x, p.pos.y);
+				if (cell == s_listPress) { addPart(static_cast<size_t>(cell)); }
+				s_listPress = -1;
+			}
 		}
 	}
 	if (s_dragBtn >= 0) { dragTo(mouseX(), mouseY()); }
@@ -1236,19 +1577,29 @@ bool isOpen()
 	return s_open;
 }
 
-bool open()
+bool open(bool inMenu)
 {
 	if (s_open) { return true; }
+	s_menu = inMenu || !modcompbody::inGame();
+	modcompbody::refreshDefs();   // (17:55) im Spiel oder im Menue gespeicherte Rumpfe sind ueberall da
 	if (s_def.parts.empty() && s_def.name.empty()) { s_def.name = "New hull"; }
+	// Teile, die es hier nicht gibt (anderes Paket), entfernen
+	for (size_t i = s_def.parts.size(); i-- > 0;)
+	{
+		if (modcompbody::bodyInfo(s_def.parts[i].body) == nullptr) { s_def.parts.erase(s_def.parts.begin() + static_cast<std::ptrdiff_t>(i)); s_links.clear(); }
+	}
 	if (s_links.size() != s_def.mounts.size()) { inferLinks(); }
-	rebuildBodyList();
+	if (s_sel >= static_cast<int>(s_def.parts.size())) { s_sel = s_def.parts.empty() ? -1 : 0; }
+	rebuildSources();
 	if (!s_screen) { buildScreen(); }
 	s_open = true;
+	s_closeArmed = false;
+	s_listPress = -1;
 	modpanel::setSuppressed(true);
 	modlayer::setSuppressed(true);
 	s_root->show(true);
 	layout();
-	if (s_def.parts.empty()) { setStatus("Pick the chassis from the hull list on the left (its propulsion is used), then add more hulls."); }
+	if (s_def.parts.empty()) { setStatus("Click a hull on the left - the first one is the chassis."); }
 	return true;
 }
 
@@ -1265,22 +1616,25 @@ void close()
 		s_btns.clear();
 	}
 	s_texts.clear();
+	freeIcons();
 	s_dragBtn = -1;
+	s_pendingTip = -1;
 	modpanel::setSuppressed(false);
 	modlayer::setSuppressed(false);
-	if (intMode == INT_DESIGN) { intDesignRefreshComponents(); }   // neue/geaenderte Verbundrumpfe sofort in der Liste
+	if (!s_menu && intMode == INT_DESIGN) { intDesignRefreshComponents(); }   // neue/geaenderte Verbundrumpfe sofort in der Liste
 }
 
 void tick()
 {
 	// Verbundrumpfe: baubar, sobald alle Teil-Rumpfe erforscht sind (Fabriklisten fragen die Verfuegbarkeit ab)
-	if (realTime - s_availTick > 1000 || realTime < s_availTick)
+	if (modcompbody::inGame() && (realTime - s_availTick > 1000 || realTime < s_availTick))
 	{
 		s_availTick = realTime;
 		if (selectedPlayer < MAX_PLAYERS) { modcompbody::refreshAvailability(selectedPlayer); }
 	}
 	if (!s_open || !s_root) { return; }
 	if (static_cast<int>(screenWidth) != s_lastW || static_cast<int>(screenHeight) != s_lastH) { layout(); s_texts.clear(); }
+	if (modcompbody::catalog().size() != s_catSize) { rebuildSources(); }
 	if (s_autoRot) { s_yaw = std::fmod(s_yaw + 0.35f, 360.f); }
 	// Mausrad: in der Ansicht Zoom, sonst Listen blaettern
 	const Vector2i wheel = getMouseWheelSpeed();
@@ -1289,9 +1643,9 @@ void tick()
 	if (wheel.y != 0)
 	{
 		if (mouseInBay()) { s_zoom = std::clamp(s_zoom * (wheel.y > 0 ? 1.12f : 1.f / 1.12f), 0.3f, 6.f); }
-		else if (mx >= c.X(6) && mx <= c.X(160) && my >= c.Y(20) && my <= c.Y(20.f + BODY_ROWS * BODY_ROW_H))
+		else if (mx >= c.X(LIST_X) && mx <= c.X(LIST_X + LIST_W) && my >= c.Y(LIST_Y) && my <= c.Y(LIST_Y + LIST_H))
 		{
-			s_bodyScroll = std::clamp(s_bodyScroll + (wheel.y > 0 ? -3 : 3), 0, std::max(0, static_cast<int>(s_bodies.size()) - BODY_ROWS));
+			s_listScroll = std::clamp(s_listScroll + (wheel.y > 0 ? -1 : 1), 0, maxListScroll());
 		}
 		else if (mx >= c.X(480) && my >= c.Y(PARTS_Y) && my <= c.Y(PARTS_Y + PART_ROWS * LIST_ROW_H))
 		{
@@ -1302,7 +1656,7 @@ void tick()
 			s_mountScroll = std::clamp(s_mountScroll + (wheel.y > 0 ? -1 : 1), 0, std::max(0, static_cast<int>(s_def.mounts.size()) - MOUNT_ROWS));
 		}
 	}
-	bayMouse();
+	handleMouse();
 	// Tasten (nicht beim Schreiben des Namens)
 	if (W_EDITBOX::currentEditBox() != nullptr) { return; }
 	if (keyPressed(KEY_LEFTARROW)) { move(0, -1.f); }
@@ -1332,8 +1686,10 @@ void shutdown()
 	s_root = nullptr;
 	s_nameBox = nullptr;
 	s_btns.clear();
-	s_bodies.clear();
+	s_items.clear();
 	s_texts.clear();
+	freeIcons();
+	s_pendingTip = -1;
 }
 
 // ---------------------------------------------------------------- Einstiegstaste im Design-Bildschirm

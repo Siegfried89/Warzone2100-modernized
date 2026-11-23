@@ -116,6 +116,8 @@
 
 bool intAddDesign(bool bShowCentreScreen);
 void intRemoveDesign();
+/// MOD (23.11.): zwischengespeicherte Texte des Designers freigeben (beim Beenden vor dem Abbau der Grafik)
+void intDesignFreeTexts();
 void intProcessDesign(UDWORD id);
 void intRunDesign();
 

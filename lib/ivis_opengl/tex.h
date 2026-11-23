@@ -51,6 +51,8 @@ void pie_AssignTexture(size_t page, gfx_api::texture* texture);
 //*************************************************************************
 
 optional<size_t> iV_GetTexture(const char *filename, gfx_api::texture_type textureType, int maxWidth = -1, int maxHeight = -1);
+/// MOD (23.11. "Ladezeiten"): schon geladene Texturseite nachschlagen, ohne zu laden (nullopt = noch nicht geladen)
+optional<size_t> iV_FindLoadedTexture(const std::string &filename);
 
 class ResourceLoadingController;
 

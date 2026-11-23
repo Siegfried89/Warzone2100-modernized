@@ -34,6 +34,8 @@
 #include "../intdisplay.h"
 #include "../multiint.h"
 #include "../modfleetdesigner.h"
+#include "../modcompbody.h"
+#include "../modhullforge.h"
 #include "../display.h"
 #include "../intfac.h"
 #include "../modwzhd.h"
@@ -491,11 +493,6 @@ void WzFleetTitleUI::build()
 	s_iconSpots.push_back({IC_FLEET, 14, 10, 40});
 	headLabel(form, ID_HEAD + 20, 60, 8, 300, _("FLEETS"), pal_RGBA(200, 240, 255, 255), font_large, 30);
 	headLabel(form, ID_HEAD + 21, 60, 34, 330, _("Your unit designs - for every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
-	headLabel(form, ID_HEAD + 23, W - 250, 8, 160, _("Unit designer"), pal_RGBA(255, 214, 110, 255), font_regular_bold, 20, true);
-	// (Wunsch 23.11. 04:23 "Der Rumpfeditor laesst sich nicht im Fleet-Editor finden"): Knopf zum Rumpf-Baukasten (startet die
-	// Designer-Sitzung im Hintergrund und oeffnet sofort den Baukasten; danach steht der Design-Bildschirm mit den Ueber-Rumpfen bereit)
-	wzTextButton(form, ID_FORGE, W - 230, 30, 120, 22, _("Hull Forge"), _("Hull Forge: combine several hulls into one super hull. Opens with all parts; afterwards the unit designer shows your super hulls. Closing the designer brings you back here."));
-	wzImgButton(form, ID_DESIGNER, W - 72, 8, 54, 46, IMAGE_DESIGN_UP, IMAGE_DESIGN_DOWN, _("Design units with all parts; save them with the star. Closing the designer brings you back here."), IC_DESIGNER);
 
 	// ---- links: Flotten
 	const std::string active = s_doc.value("active", std::string());
@@ -529,24 +526,32 @@ void WzFleetTitleUI::build()
 	if (!fleets().empty()) { edit->setString(WzString::fromUtf8(fleets()[selected].value("name", std::string()))); }
 	// Aktionen als WZ-Befehlsknoepfe (1,5-fach), Beschriftung darunter
 	struct Act { unsigned id; int icon; const char *cap; const char *tip; };
-	const Act acts[6] = {
-		{ID_NEW, IC_NEW, _("New"), _("New fleet from all designs saved with the star")},
-		{ID_RENAME, IC_RENAME, _("Rename"), _("Give the selected fleet the name from the box")},
-		{ID_UPDATE, IC_UPDATE, _("Update"), _("This fleet takes over the designs saved with the star")},
-		{ID_FAV, IC_STAR, _("Favourite"), _("Favourite fleets are listed first")},
-		{ID_DEL, IC_DELETE, _("Delete"), _("Delete the selected fleet")},
-		{ID_USE, IC_USE, _("Everywhere"), _("The designs of this fleet are available in every game mode (campaign, skirmish, multiplayer)")}};
+	// (Wunsch 23.11. 17:55 "die beiden Buttons Hull Forge und Unit Designer oben rechts sollen auch nach links unten ... warum hat der
+	// Hull-Forge-Button kein Symbol, und warum ist der Fleet-Designer-Button (das Oktagon mit dem Panzer) nicht im WZ-Stil?"): beide jetzt
+	// unten links bei den anderen Aktionen, als WZ-Knopf mit Sinnbild und Wort darunter (wie Neu/Umbenennen/Aktualisieren)
+	const Act acts[8] = {
+		{ID_NEW, IC_NEW, _("New"), _("New fleet from starred designs")},
+		{ID_RENAME, IC_RENAME, _("Rename"), _("Rename fleet")},
+		{ID_UPDATE, IC_UPDATE, _("Update"), _("Take over starred designs")},
+		{ID_FAV, IC_STAR, _("Favourite"), _("Favourites come first")},
+		{ID_DEL, IC_DELETE, _("Delete"), _("Delete fleet")},
+		{ID_USE, IC_USE, _("Everywhere"), _("Use this fleet in every game mode")},
+		{ID_DESIGNER, IC_DESIGNER, _("Designer"), _("Unit designer")},
+		{ID_FORGE, IC_DESIGNER, _("Hull Forge"), _("Hull Forge: build super hulls")}};
 	// (18.11. 12:03) Original-WZ-Bilder, wo es sie gibt (Diskette, Stern, Muelltonne); Neu/Umbenennen/Ueberall im selben WZ-Stil
 	struct Look { int img, hi; const char *named; };
-	const Look looks[6] = {{-1, -1, "wz_new"}, {-1, -1, "wz_rename"}, {IMAGE_DES_SAVE, IMAGE_DES_SAVEH, nullptr},
-	                       {IMAGE_DES_COMMAND, IMAGE_DES_COMMANDDOWN, nullptr}, {IMAGE_DES_BIN, IMAGE_DES_BINH, nullptr}, {-1, -1, "wz_globe"}};
-	for (int k = 0; k < 6; ++k)
+	const Look looks[8] = {{-1, -1, "wz_new"}, {-1, -1, "wz_rename"}, {IMAGE_DES_SAVE, IMAGE_DES_SAVEH, nullptr},
+	                       {IMAGE_DES_COMMAND, IMAGE_DES_COMMANDDOWN, nullptr}, {IMAGE_DES_BIN, IMAGE_DES_BINH, nullptr}, {-1, -1, "wz_globe"},
+	                       {-1, -1, "wz_designer"}, {-1, -1, "wz_forge"}};
+	// drei Reihen; in der dritten bleibt die erste Spalte frei (darunter liegt der Zurueck-Knopf)
+	static const int slot[8] = {0, 1, 2, 3, 4, 5, 7, 8};
+	for (int k = 0; k < 8; ++k)
 	{
-		const int cx = 16 + (k % 3) * 70, cy = 302 + (k / 3) * 58;
+		const int cx = 16 + (slot[k] % 3) * 70, cy = 298 + (slot[k] / 3) * 52;
 		const int bw = 45 * 13 / 10, bh = 24 * 13 / 10;
 		if (looks[k].named != nullptr) { wzNamedButton(form, acts[k].id, cx + 8 + (54 - bw) / 2, cy + 2, bw, bh, looks[k].named, acts[k].tip, acts[k].icon); }
 		else { wzImgButton(form, acts[k].id, cx + 8 + (54 - bw) / 2, cy + 2, bw, bh, looks[k].img, looks[k].hi, acts[k].tip, acts[k].icon); }
-		headLabel(form, ID_HEAD + 40 + static_cast<unsigned>(k), cx - 4, cy + 38, 78, acts[k].cap, pal_RGBA(190, 210, 240, 255), font_small, 16, true);
+		headLabel(form, ID_HEAD + 60 + static_cast<unsigned>(k), cx - 4, cy + 35, 78, acts[k].cap, pal_RGBA(190, 210, 240, 255), font_small, 16, true);
 	}
 
 	// ---- Fusszeile: Zurueck + Meldung
@@ -555,7 +560,7 @@ void WzFleetTitleUI::build()
 	auto info = std::make_shared<W_LABEL>();
 	form->attach(info);
 	info->id = ID_INFO;
-	info->setGeometry(130, PANEL_H - 31, W - 146, 22);
+	info->setGeometry(240, PANEL_H - 31, W - 256, 22);
 	info->setFont(font_regular, WZCOL_TEXT_BRIGHT);
 	info->setString(WzString::fromUtf8(s_info));
 
@@ -566,7 +571,7 @@ void WzFleetTitleUI::build()
 	{
 		s_iconSpots.push_back({IC_DESIGNER, X, 62, 20});
 		headLabel(form, ID_HEAD + 2, X + 24, 62, RW - 24, _("How it works:"), pal_RGBA(255, 214, 110, 255));
-		headLabel(form, ID_HEAD + 5, X, 90, RW, _("1. Click \"Unit designer\" (top right)."), WZCOL_TEXT_BRIGHT, font_regular);
+		headLabel(form, ID_HEAD + 5, X, 90, RW, _("1. Click \"Designer\" (bottom left)."), WZCOL_TEXT_BRIGHT, font_regular);
 		headLabel(form, ID_HEAD + 6, X, 114, RW, _("2. Build units and save each with the star."), WZCOL_TEXT_BRIGHT, font_regular);
 		headLabel(form, ID_HEAD + 7, X, 138, RW, _("3. Close the designer - your fleet appears here."), WZCOL_TEXT_BRIGHT, font_regular);
 		headLabel(form, ID_HEAD + 8, X, 162, RW, _("4. \"Use everywhere\" puts it in every factory."), WZCOL_TEXT_BRIGHT, font_regular);
@@ -608,7 +613,7 @@ void WzFleetTitleUI::build()
 		if (l.head)
 		{
 			s_iconSpots.push_back({l.cat, X, y, 22});
-			headLabel(form, ID_HEAD + 30 + static_cast<unsigned>(k), X + 26, y, RW - 26, l.text, pal_RGBA(120, 210, 255, 255), font_regular_bold);
+			headLabel(form, ID_HEAD + 30 + static_cast<unsigned>(k - page * DESIGN_ROWS), X + 26, y, RW - 26, l.text, pal_RGBA(120, 210, 255, 255), font_regular_bold);
 		}
 		else
 		{
@@ -724,7 +729,7 @@ TITLECODE WzFleetTitleUI::run()
 		            : std::string(_("Could not write the design files"));
 	}
 	else if (id == ID_DESIGNER) { changeTitleUI(std::make_shared<WzUnitDesignTitleUI>(selected)); rebuild = false; }   // (18.11.) direkt im Hauptmenue
-	else if (id == ID_FORGE) { modfleetdesigner::request(true); rebuild = false; }   // (23.11.) Rumpf-Baukasten in der Designer-Sitzung
+	else if (id == ID_FORGE) { changeTitleUI(std::make_shared<WzHullForgeTitleUI>(wzTitleUICurrent)); rebuild = false; }   // (17:55) reines Menue-Werkzeug
 	else if (id == ID_PREV) { --page; }
 	else if (id == ID_NEXT) { ++page; }
 	else if (id == ID_BACK) { changeTitleMode(TITLE); rebuild = false; }
@@ -874,6 +879,48 @@ void loadParts()
 }
 
 const DesignPart *partAt(int i) { return (i >= 0 && i < static_cast<int>(s_parts.size())) ? &s_parts[static_cast<size_t>(i)] : nullptr; }
+
+/// (Wunsch 23.11. 17:55) Ueber-Rumpfe aus dem Rumpf-Baukasten (im Spiel oder im Menue gespeichert) als Rumpfe im Einheiten-Designer:
+/// Modell aus den Teilen, Werte zusammengerechnet; Laufwerke wie beim Fahrgestell
+void refreshCompositeParts()
+{
+	auto idOf = [](int i) { const DesignPart *p = partAt(i); return p ? p->id : std::string(); };
+	const std::string keepBody = idOf(s_ds.body), keepProp = idOf(s_ds.prop);
+	const std::string keepT[3] = { idOf(s_ds.turret[0]), idOf(s_ds.turret[1]), idOf(s_ds.turret[2]) };
+	modcompbody::refreshDefs();
+	s_parts.erase(std::remove_if(s_parts.begin(), s_parts.end(), [](const DesignPart &p) { return p.kind == PK_BODY && p.id.rfind("CompBody", 0) == 0; }), s_parts.end());
+	std::vector<DesignPart> add;
+	for (const modcompbody::Def &d : modcompbody::defs())
+	{
+		if (d.deleted || d.parts.empty() || modcompbody::bodyInfo(d.parts[0].body) == nullptr) { continue; }
+		const std::string model = modcompbody::previewModel(d);
+		if (model.empty()) { continue; }
+		const modcompbody::Totals t = modcompbody::totals(d);
+		DesignPart p;
+		p.id = d.id; p.kind = PK_BODY; p.name = d.name; p.model = model;
+		p.power = static_cast<int>(t.cost); p.weight = static_cast<int>(t.weight); p.hp = static_cast<int>(t.hp);
+		p.armour = static_cast<int>(t.armour); p.engine = static_cast<int>(t.power); p.slots = std::max(1, static_cast<int>(t.slots));
+		p.size = modcompbody::sizeText(t.size);
+		for (const DesignPart &q : s_parts) { if (q.kind == PK_BODY && q.id == d.parts[0].body) { p.extra = q.extra; break; } }
+		add.push_back(p);
+	}
+	s_parts.insert(s_parts.end(), add.begin(), add.end());
+	std::stable_sort(s_parts.begin(), s_parts.end(), [](const DesignPart &a, const DesignPart &b) {
+		if (a.kind != b.kind) { return a.kind < b.kind; }
+		if (a.power != b.power) { return a.power < b.power; }
+		return a.name < b.name;
+	});
+	auto find = [](const std::string &id, int kindMin, int kindMax) {
+		if (id.empty()) { return -1; }
+		for (size_t i = 0; i < s_parts.size(); ++i) { if (s_parts[i].id == id && s_parts[i].kind >= kindMin && s_parts[i].kind <= kindMax) { return static_cast<int>(i); } }
+		return -1;
+	};
+	s_ds.body = find(keepBody, PK_BODY, PK_BODY);
+	s_ds.prop = find(keepProp, PK_PROP, PK_PROP);
+	for (int k = 0; k < 3; ++k) { s_ds.turret[k] = find(keepT[k], PK_WEAPON, PK_ECM); }
+	if (s_ds.body < 0) { for (size_t i = 0; i < s_parts.size(); ++i) { if (s_parts[i].kind == PK_BODY) { s_ds.body = static_cast<int>(i); break; } } }
+	if (s_ds.prop < 0) { for (size_t i = 0; i < s_parts.size(); ++i) { if (s_parts[i].kind == PK_PROP) { s_ds.prop = static_cast<int>(i); break; } } }
+}
 bool vtolProp() { const DesignPart *p = partAt(s_ds.prop); return p != nullptr && p->ptype == "Lift"; }
 bool flyOnlyBody() { const DesignPart *b = partAt(s_ds.body); return b != nullptr && b->id == "Body-Manta"; }   // Nurfluegler: nur Senkrechtstarter
 int bodySlots() { const DesignPart *b = partAt(s_ds.body); return b ? std::min(3, b->slots) : 1; }
@@ -1142,7 +1189,40 @@ WzUnitDesignTitleUI::WzUnitDesignTitleUI(int fleetIndex) : fleet(fleetIndex)
 
 void WzUnitDesignTitleUI::start()
 {
+	refreshCompositeParts();   // (17:55) Ueber-Rumpfe aus dem Baukasten
 	build();
+}
+
+// ---------------------------------------------------------------- MOD (Wunsch 23.11. 17:55): Rumpf-Baukasten im Hauptmenue
+// "Der Hull-Forge-Button im Hauptmenue - Fleet Designer startet zuerst ein Spiel ... Das soll ein reines Menue-UI-Feature sein": der
+// Baukasten liegt als Vollbild-Ebene ueber dem leeren Menue-Bildschirm; Schliessen fuehrt dorthin zurueck, woher er geoeffnet wurde.
+WzHullForgeTitleUI::WzHullForgeTitleUI(std::shared_ptr<WzTitleUI> nextUI) : next(std::move(nextUI))
+{
+}
+
+void WzHullForgeTitleUI::start()
+{
+	widgDelete(psWScreen, FRONTEND_BACKDROP);
+	modhullforge::open(true);
+}
+
+TITLECODE WzHullForgeTitleUI::run()
+{
+	if (!modhullforge::isOpen())
+	{
+		std::shared_ptr<WzTitleUI> n = next;
+		if (n == nullptr) { n = std::make_shared<WzFleetTitleUI>(); }
+		changeTitleUI(n);
+		return TITLECODE_CONTINUE;
+	}
+	modhullforge::tick();
+	widgRunScreen(psWScreen);
+	return TITLECODE_CONTINUE;
+}
+
+void WzHullForgeTitleUI::render()
+{
+	widgDisplayScreen(psWScreen);
 }
 
 void WzUnitDesignTitleUI::build()
@@ -1172,8 +1252,9 @@ void WzUnitDesignTitleUI::build()
 	// ---- Kopf
 	s_iconSpots.push_back({IC_DESIGNER, 14, 10, 40});
 	headLabel(form, ID_D_HEAD, 60, 8, 360, _("UNIT DESIGNER"), pal_RGBA(200, 240, 255, 255), font_large, 30);
-	headLabel(form, ID_D_HEAD + 1, 60, 34, 540, _("All parts unlocked - saved designs go into your fleet and every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
-	wzTextButton(form, ID_D_FORGE, PANEL_W - 146, 8, 128, 24, _("Hull Forge"), _("Hull Forge: combine several hulls into one super hull. Opens with all parts; afterwards the unit designer shows your super hulls."));
+	headLabel(form, ID_D_HEAD + 1, 60, 34, 460, _("All parts unlocked - saved designs go into your fleet and every game mode"), pal_RGBA(130, 180, 220, 255), font_regular, 18);
+	wzNamedButton(form, ID_D_FORGE, PANEL_W - 78, 4, 58, 31, "wz_forge", _("Hull Forge: build super hulls"), IC_DESIGNER);   // (17:55) mit Sinnbild
+	headLabel(form, ID_D_HEAD + 9, PANEL_W - 88, 36, 78, _("Hull Forge"), pal_RGBA(190, 210, 240, 255), font_small, 16, true);
 	if (s_parts.empty())
 	{
 		headLabel(form, ID_D_HEAD + 2, 16, 90, PANEL_W - 32, _("No parts found (stats files missing)."), WZCOL_TEXT_BRIGHT, font_regular);
@@ -1414,7 +1495,7 @@ TITLECODE WzUnitDesignTitleUI::run()
 		}
 	}
 	else if (id == ID_D_BACK) { s_fleetReturnSelect = fleet; changeTitleUI(std::make_shared<WzFleetTitleUI>()); rebuild = false; }
-	else if (id == ID_D_FORGE) { s_fleetReturnSelect = fleet; modfleetdesigner::request(true); rebuild = false; }   // (23.11.) Rumpf-Baukasten
+	else if (id == ID_D_FORGE) { changeTitleUI(std::make_shared<WzHullForgeTitleUI>(wzTitleUICurrent)); rebuild = false; }   // (17:55) Rumpf-Baukasten im Menue
 	else { rebuild = false; }
 	if (rebuild) { build(); }
 	return TITLECODE_CONTINUE;
@@ -1432,6 +1513,7 @@ namespace modfleetsui
 {
 void shutdown()
 {
+	modhullforge::shutdown();   // (17:55) Baukasten-Sinnbilder liegen ebenfalls in Texturen, die frontendShutdown freigibt
 	if (s_icons != nullptr)
 	{
 		iV_FreeImageFile(s_icons);
