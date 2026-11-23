@@ -158,7 +158,7 @@ void drawImg(int id, int x, int y, int w, int h)
 	iV_DrawImageFileAnisotropic(img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(w), static_cast<float>(h)), defaultProjectionMatrix(), 255);
 }
 
-[[maybe_unused]] std::string mmss(int secs)
+std::string mmss(int secs)
 {
 	char buf[16];
 	snprintf(buf, sizeof(buf), "%d:%02d", std::max(0, secs) / 60, std::max(0, secs) % 60);
@@ -196,35 +196,32 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 	std::vector<Tile> t;
 	// Reihe 1: der Oelkreislauf von links nach rechts
 	{
-		// (23.11.) stetige Einnahmen: zaehlt, ob jeder Oelturm an einem Kraftwerk haengt (je Kraftwerk 4, wie in WZ)
-		const int unlinked = std::max(0, v.derricks - v.linkedDerricks);
-		const Lamp l = v.derricks == 0 ? L_BAD : (unlinked > 0 ? L_WARN : L_OK);
-		std::string tip = "\xC3\x96lt\xC3\xBCrme: " + (v.derricks == 0 ? std::string("keiner") : std::to_string(v.derricks) + " | am Kraftwerk " + std::to_string(v.linkedDerricks) + " | F\xC3\xA4sser " + of(v.derrickBarrels, v.derrickCap));
-		if (unlinked > 0) { tip += " | " + std::to_string(unlinked) + " ohne Kraftwerk (je Kraftwerk 4) - bringen nichts"; }
-		const std::string prob = v.derricks == 0 ? "Keine \xC3\x96lt\xC3\xBCrme" : std::to_string(unlinked) + " \xC3\x96lturm ohne Kraftwerk - Kraftwerk bauen";
-		t.push_back({l, OI_DERRICK, std::to_string(v.derricks) + (unlinked > 0 ? "!" : ""), tip, prob, v.derricks == 0 ? 3 : 8});
+		const Lamp l = v.derricks == 0 ? L_BAD : (v.derricksFull > 0 ? L_WARN : L_OK);
+		std::string tip = "\xC3\x96lt\xC3\xBCrme: " + (v.derricks == 0 ? std::string("keiner") : std::to_string(v.derricks) + " | F\xC3\xA4sser " + of(v.derrickBarrels, v.derrickCap));
+		if (v.derricksFull > 0) { tip += " | " + std::to_string(v.derricksFull) + " voll - es wird nichts abgeholt"; }
+		const std::string prob = v.derricks == 0 ? "Keine \xC3\x96lt\xC3\xBCrme" : std::to_string(v.derricksFull) + " \xC3\x96lturm voll - mehr Pickups";
+		t.push_back({l, OI_DERRICK, std::to_string(v.derricks) + (v.derricksFull > 0 ? "!" : ""), tip, prob, v.derricks == 0 ? 3 : 20});
 	}
 	{
-		const Lamp l = (v.pickups > 0 || v.pipeDerricks > 0) ? L_OK : (v.derricks > 0 && v.refineries > 0 ? L_WARN : L_OFF);
-		std::string tip = "Transport zur Raffinerie (Pickup oder Rohr - ohne nur 75 % Ertrag): " + std::to_string(v.pickups);
+		const Lamp l = (v.pickups > 0 || v.pipeDerricks > 0) ? L_OK : (v.derricks > 0 ? L_BAD : L_OFF);
+		std::string tip = "Transport (Pickups holen die F\xC3\xA4sser): " + std::to_string(v.pickups);
 		if (v.pickups > 0) { tip += " | geladen " + of(v.pickupBarrels, v.pickupCap); }
 		if (v.pipeDerricks > 0) { tip += " | per Rohr: " + std::to_string(v.pipeDerricks) + " \xC3\x96lt\xC3\xBCrme"; }
-		t.push_back({l, OI_PICKUP, std::to_string(v.pickups), tip, "Kein Pickup/Rohr zur Raffinerie - nur 75 %", 9});
+		t.push_back({l, OI_PICKUP, std::to_string(v.pickups), tip, "Keine Pickups f\xC3\xBCr das \xC3\x96l", 4});
 	}
 	{
 		const bool full = v.refCap > 0 && v.refIn >= v.refCap;
-		const Lamp l = v.refineries == 0 ? (v.derricks > 0 ? L_WARN : L_OFF) : (v.refNoPower > 0 || full ? L_WARN : L_OK);
+		const Lamp l = v.refineries == 0 ? (v.derricks > 0 ? L_BAD : L_OFF) : (v.refNoPower > 0 || full ? L_WARN : L_OK);
 		std::string tip = "Raffinerie: " + (v.refineries == 0 ? std::string("keine") : std::to_string(v.refineries) + " | Eingang " + of(v.refIn, v.refCap) + " | Ausgang " + of(v.refOut, v.refCap));
 		if (v.refNoPower > 0) { tip += " | ohne Strom: Notbetrieb (langsam)"; }
-		if (v.refineries == 0) { tip += " | ohne Raffinerie bringen die \xC3\x96lt\xC3\xBCrme nur 75 % (mit 120 %)"; }
-		const std::string prob = v.refineries == 0 ? "Keine Raffinerie - nur 75 %" : (v.refNoPower > 0 ? "Raffinerie ohne Strom (Notbetrieb)" : "Raffinerie voll - mehr Tanker");
+		const std::string prob = v.refineries == 0 ? "Keine Raffinerie" : (v.refNoPower > 0 ? "Raffinerie ohne Strom (Notbetrieb)" : "Raffinerie voll - mehr Tanker");
 		t.push_back({l, OI_REFINERY, std::to_string(v.refineries), tip, prob, v.refineries == 0 ? 5 : 21});
 	}
 	{
-		const Lamp l = v.tankers > 0 ? L_OK : (v.refineries > 0 ? L_WARN : L_OFF);
-		std::string tip = "\xC3\x96ltanker (bringen das Raffinat zu Tankstelle/Lager/Kraftwerk; ohne Tanker muss die Raffinerie nah am Kraftwerk stehen): " + std::to_string(v.tankers);
+		const Lamp l = v.tankers > 0 ? L_OK : (v.refineries > 0 ? L_BAD : L_OFF);
+		std::string tip = "\xC3\x96ltanker (bringen das Raffinat zu Lager/Kraftwerk): " + std::to_string(v.tankers);
 		if (v.tankers > 0) { tip += " | geladen " + of(v.tankerBarrels, v.tankerCap); }
-		t.push_back({l, OI_TANKER, std::to_string(v.tankers), tip, "Kein \xC3\x96ltanker", 26});
+		t.push_back({l, OI_TANKER, std::to_string(v.tankers), tip, "Kein \xC3\x96ltanker", 6});
 	}
 	{
 		const Lamp l = v.stores > 0 ? L_OK : L_OFF;
@@ -232,12 +229,11 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 		t.push_back({l, OI_STORE, v.stores == 0 ? std::string("-") : pct(v.storeBarrels, v.storeCap), tip, "", 99});
 	}
 	{
-		// (23.11.) stetige Einnahmen wie in WZ: angeschlossene Oeltuerme / Plaetze (4 je Kraftwerk) und der laufende Ertrag
-		const Lamp l = v.gens == 0 ? L_BAD : (v.linkedDerricks == 0 ? L_BAD : (v.crudeDerricks > 0 || v.gensIdle > 0 ? L_WARN : L_OK));
-		std::string tip = "Kraftwerke: " + (v.gens == 0 ? std::string("keins") : std::to_string(v.gens) + " | \xC3\x96lt\xC3\xBCrme angeschlossen " + of(v.linkedDerricks, v.derrickSlots) + " | Ertrag +" + std::to_string(v.ratePerMin) + "/min");
-		if (v.crudeDerricks > 0) { tip += " | " + std::to_string(v.crudeDerricks) + " nur Roh\xC3\xB6l (75 %) - mit Raffinerie 120 %"; }
-		const std::string prob = v.gens == 0 ? "Kein Kraftwerk" : (v.linkedDerricks == 0 ? "Kraftwerk ohne \xC3\x96lturm" : (v.crudeDerricks > 0 ? "Nur Roh\xC3\xB6l - Raffinerie fehlt" : "Kraftwerk ohne \xC3\x96lturm"));
-		t.push_back({l, OI_POWERGEN, v.gens == 0 ? std::string("0") : of(v.linkedDerricks, v.derrickSlots), tip, prob, v.gens == 0 ? 1 : (v.linkedDerricks == 0 ? 2 : 22)});
+		const Lamp l = v.gens == 0 ? L_BAD : (v.minFuel == 0 ? L_BAD : (v.gensHungry > 0 ? L_WARN : L_OK));
+		std::string tip = "Kraftwerke: " + (v.gens == 0 ? std::string("keins") : std::to_string(v.gens));
+		if (v.gens > 0 && v.minFuel >= 0) { tip += " | \xC3\x96l reicht noch mindestens " + mmss(v.minFuel); }
+		const std::string prob = v.gens == 0 ? "Kein Kraftwerk" : (v.minFuel == 0 ? "Kraftwerk ohne \xC3\x96l" : "Kraftwerk braucht bald \xC3\x96l");
+		t.push_back({l, OI_POWERGEN, v.gens == 0 ? std::string("0") : (v.minFuel >= 0 ? mmss(v.minFuel) : std::to_string(v.gens)), tip, prob, v.gens == 0 ? 1 : (v.minFuel == 0 ? 2 : 22)});
 	}
 	// Reihe 2: Stromnetz und Ergebnis
 	{
@@ -473,7 +469,8 @@ void drawWorldIcons(const glm::mat4 &m)
 		if (down) { iconNoPower(cx, sp.y, r, pulse); cx += 2 * r + 4; }
 		if (hungry)
 		{
-			iconLowOil(cx, sp.y, r, true, pulseFast);   // (23.11.) Kraftwerk ohne angeschlossenen Oelturm
+			const bool empty = modoil::generatorFuel(s) <= 0;
+			iconLowOil(cx, sp.y, r, empty, empty ? pulseFast : pulse);
 		}
 	}
 }
