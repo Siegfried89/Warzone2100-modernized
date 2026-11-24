@@ -161,7 +161,7 @@ void tick()
 				continue;
 			}
 			it->second--;
-			gain += twoTowers(s->pStructureType) ? INCOME_2 : INCOME_1;
+			gain += (twoTowers(s->pStructureType) ? INCOME_2 : INCOME_1) * modoil::INCOME_MULT;   // (24.11. 15:19) alle Einnahmen x3
 		}
 		if (gain > 0)
 		{

@@ -782,7 +782,7 @@ void WzFleetTitleUI::render()
 
 namespace
 {
-enum PartKind { PK_BODY = 0, PK_PROP, PK_WEAPON, PK_SENSOR, PK_CONSTRUCT, PK_REPAIR, PK_ECM };
+enum PartKind { PK_BODY = 0, PK_PROP, PK_WEAPON, PK_SENSOR, PK_CONSTRUCT, PK_REPAIR, PK_ECM, PK_BRAIN };   // (24.11.) + Kommandoturm
 struct DesignPart
 {
 	std::string id, name, model, mount, size, ptype;
@@ -794,6 +794,7 @@ struct DesignPart
 	float lift = 0.f;                   // Verbundrumpf: Hub ueber dem Laufwerk (modcompbody::liftOf)
 	std::string source;                 // Rumpf: Herkunft/Fraktion wie im Rumpf-Baukasten ("Scavengers", "Project", "Metal Fatigue" ...)
 	int sourceRank = 99;                // Reihenfolge der Fraktions-Reiter
+	std::string brainWeapon;            // Kommandoturm: seine Waffe (CommandTurret1)
 	std::string origin = "WZ";          // andere Teile: wer sie einfuehrt - "WZ" (Grundspiel), "Scavengers", "Metal Fatigue", "C&C 3", "Naval", "Custom"
 };
 std::vector<DesignPart> s_parts;
@@ -856,7 +857,8 @@ void loadParts()
 	s_partsLoaded = true;
 	struct Src { const char *file; int kind; };
 	const Src srcs[] = {{"stats/body.json", PK_BODY}, {"stats/propulsion.json", PK_PROP}, {"stats/weapons.json", PK_WEAPON}, {"stats/sensor.json", PK_SENSOR},
-	                    {"stats/construction.json", PK_CONSTRUCT}, {"stats/repair.json", PK_REPAIR}, {"stats/ecm.json", PK_ECM}};
+	                    {"stats/construction.json", PK_CONSTRUCT}, {"stats/repair.json", PK_REPAIR}, {"stats/ecm.json", PK_ECM}, {"stats/brain.json", PK_BRAIN}};
+	std::map<std::string, std::pair<std::string, std::string>> weaponModels;   // alle Waffen: Modell + Halterung (Kommandoturm zeigt seine Waffe)
 	for (const Src &src : srcs)
 	{
 		if (!PHYSFS_exists(src.file)) { continue; }
@@ -867,6 +869,7 @@ void loadParts()
 			const nlohmann::json &e = it.value();
 			if (!e.is_object()) { continue; }
 			if (src.kind == PK_PROP) { s_propType[it.key()] = jsonStr(e, "type"); s_propModel[it.key()] = jsonStr(e, "model"); }
+			if (src.kind == PK_WEAPON) { weaponModels[it.key()] = {jsonStr(e, "model"), jsonStr(e, "mountModel")}; }
 			auto des = e.find("designable");
 			const bool designable = des != e.end() && jsonTruthy(*des);
 			// (Wunsch 23.11. 23:24 "Der Fleet-Designer hat nicht alle Vanilla-Fraktionsruempfe"): die WZ-Fraktionsruempfe sind im Paket
@@ -886,10 +889,17 @@ void loadParts()
 				want = k != "ZNULLPROP" && k.rfind("BaBa", 0) != 0 && k.rfind("CyborgLegs", 0) != 0 && k.rfind("MFL_", 0) != 0 && k != "RailBogie"
 				       && (jsonStr(e, "type") != "Legged" || !jsonStr(e, "walkerModel").empty());
 			}
+			else if (src.kind == PK_WEAPON)
+			{
+				static const char *const HIDDEN_VANILLA[] = {"Cannon1-VTOL", "MG1-VTOL", "MG2-VTOL", "PlasmaHeavy", "SpyTurret01"};
+				for (const char *h : HIDDEN_VANILLA) { if (it.key() == h) { want = true; } }
+			}
 			else
 			{
-				static const char *const HIDDEN_VANILLA[] = {"Cannon1-VTOL", "MG1-VTOL", "MG2-VTOL", "PlasmaHeavy", "SpyTurret01", "Spade1Mk1"};
-				for (const char *h : HIDDEN_VANILLA) { if (it.key() == h) { want = true; } }
+				// (Wunsch 24.11. 15:19 "Commander Turret fehlt ueberall ... Bitte jetzt endlich mal ALLE SYSTEMTUERME EGAL WAS verfuegbar machen"):
+				// jeder Sensor-, Stoersender-, Bau-, Reparatur- und Kommandoturm - nur keine Platzhalter (ZNULL...) und keine eingebauten Teile
+				// (Lage DEFAULT: Standard-Sensor, Auto-Reparatur, Fatboy-Schild - die sind kein Turm)
+				want = it.key().rfind("ZNULL", 0) != 0 && jsonStr(e, "location") != "DEFAULT";
 			}
 			if (!want) { continue; }
 			DesignPart p;
@@ -925,12 +935,26 @@ void loadParts()
 			case PK_REPAIR:
 				p.model = jsonStr(e, "model"); p.mount = jsonStr(e, "mountModel");
 				break;
+			case PK_BRAIN:
+			{
+				// Kommandoturm: sein Modell ist das der Kommando-Waffe ("turret")
+				p.mount = jsonStr(e, "turret");   // vorlaeufig: Waffen-ID, unten durch Modell/Halterung ersetzt
+				break;
+			}
 			default:
 				p.model = jsonStr(e, "sensorModel"); p.mount = jsonStr(e, "mountModel");
 				break;
 			}
 			s_parts.push_back(p);
 		}
+	}
+	for (DesignPart &p : s_parts)
+	{
+		if (p.kind != PK_BRAIN) { continue; }
+		const auto wm = weaponModels.find(p.mount);
+		p.brainWeapon = p.mount;
+		p.model = wm != weaponModels.end() ? wm->second.first : std::string();
+		p.mount = wm != weaponModels.end() ? wm->second.second : std::string();
 	}
 	// Fraktion je Teil
 	for (DesignPart &p : s_parts)
@@ -1030,7 +1054,7 @@ void refreshCompositeParts()
 	};
 	s_ds.body = find(keepBody, PK_BODY, PK_BODY);
 	s_ds.prop = find(keepProp, PK_PROP, PK_PROP);
-	for (int k = 0; k < MAX_DSLOTS; ++k) { s_ds.slot[k] = find(keepT[k], PK_WEAPON, PK_ECM); }
+	for (int k = 0; k < MAX_DSLOTS; ++k) { s_ds.slot[k] = find(keepT[k], PK_WEAPON, PK_BRAIN); }
 	if (s_ds.body < 0) { for (size_t i = 0; i < s_parts.size(); ++i) { if (s_parts[i].kind == PK_BODY) { s_ds.body = static_cast<int>(i); break; } } }
 	if (s_ds.prop < 0) { for (size_t i = 0; i < s_parts.size(); ++i) { if (s_parts[i].kind == PK_PROP) { s_ds.prop = static_cast<int>(i); break; } } }
 }
@@ -1050,6 +1074,7 @@ bool inFaction(const DesignPart &p)
 	const std::string &f = s_ds.faction;
 	if (p.kind == PK_BODY) { return p.source == f; }
 	if (f == "Custom") { return true; }
+	if (p.kind >= PK_SENSOR) { return true; }   // (Wunsch 24.11. 15:19 "ALLE Systemtuerme, egal was") Systemtuerme in jedem Reiter
 	if (p.origin == "WZ") { return p.kind != PK_PROP || f != "Scavengers"; }
 	return p.origin == f;
 }
@@ -1101,6 +1126,9 @@ bool turretValid(int slot, const DesignPart &t)
 {
 	if (t.kind < PK_WEAPON) { return false; }
 	if (!inFaction(t)) { return false; }
+	// Kommandoturm: nur allein auf Platz 1 (Kommandeure tragen nur ihn); steht er dort, bleiben die anderen Plaetze leer
+	if (t.kind == PK_BRAIN && slot != 0) { return false; }
+	if (slot > 0) { const DesignPart *t0 = partAt(s_ds.slot[0]); if (t0 != nullptr && t0->kind == PK_BRAIN) { return false; } }
 	if (slot < 0 || slot >= bodySlots()) { return false; }
 	if (vtolProp())
 	{
@@ -1754,6 +1782,14 @@ bool designJson(nlohmann::json &t, std::string &err)
 	nlohmann::json weapons = nlohmann::json::array(), weapConn = nlohmann::json::array(), systems = nlohmann::json::array();
 	const DesignPart *sensor = nullptr, *ecm = nullptr, *cons = nullptr, *rep = nullptr;
 	bool identity = true;
+	if (const DesignPart *br = partAt(s_ds.slot[0]); br != nullptr && br->kind == PK_BRAIN)
+	{
+		// Kommandeur: Kommandoturm + seine Waffe (wie das Spiel ihn speichert)
+		t["type"] = "DROID_COMMAND";
+		t["brain"] = br->id;
+		t["weapons"] = nlohmann::json::array({br->brainWeapon.empty() ? std::string("CommandTurret1") : br->brainWeapon});
+		return true;
+	}
 	for (int s = 0; s < bodySlots(); ++s)
 	{
 		const DesignPart *q = partAt(s_ds.slot[s]);
@@ -1880,6 +1916,10 @@ TITLECODE WzUnitDesignTitleUI::run()
 			else
 			{
 				const DesignPart *np = partAt(idx);
+				if (np != nullptr && np->kind == PK_BRAIN)
+				{
+					for (int s = 1; s < MAX_DSLOTS; ++s) { s_ds.slot[s] = -1; }   // Kommandeur: nur der Kommandoturm
+				}
 				if (np != nullptr && isRoleKind(np->kind))
 				{
 					// hoechstens ein Bau- ODER Reparaturturm: ein anderer weicht
@@ -1992,11 +2032,13 @@ void editDesign(const nlohmann::json &e, int fleet, int designIdx)
 	};
 	const std::string keepFaction = s_ds.faction;
 	s_ds = DesignState();
+	const bool commander = e.value("type", std::string()) == "DROID_COMMAND" || !e.value("brain", std::string()).empty();
 	s_ds.body = find(e.value("body", std::string()), PK_BODY);
 	s_ds.prop = find(e.value("propulsion", std::string()), PK_PROP);
 	const nlohmann::json ms = e.contains("modSlots") && e["modSlots"].is_object() ? e["modSlots"] : nlohmann::json::object();
+	if (commander) { s_ds.slot[0] = find(e.value("brain", std::string()), PK_BRAIN); }
 	// Waffen auf ihren Plaetzen (modSlots.weapConn, sonst der Reihe nach)
-	if (e.contains("weapons") && e["weapons"].is_array())
+	if (!commander && e.contains("weapons") && e["weapons"].is_array())
 	{
 		const nlohmann::json wc = ms.contains("weapConn") && ms["weapConn"].is_array() ? ms["weapConn"] : nlohmann::json::array();
 		for (size_t i = 0; i < e["weapons"].size(); ++i)

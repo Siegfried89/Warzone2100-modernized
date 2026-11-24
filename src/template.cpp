@@ -311,6 +311,13 @@ bool designableTemplate(const DROID_TEMPLATE *psTempl, int player, bool quiet)
 	{
 		return true; // Don't care about AIs
 	}
+	// MOD (Wunsch 24.11. 15:19 "Ich konnte NICHTS aber auch GAR nichts ausbilden. Warum?"): im Gefecht ohne Netzwerk lehnte diese
+	// Mehrspieler-Pruefung jede Vorlage mit nicht frei entwerfbaren Teilen ab - die eigene Scavenger-Fraktion baut aber mit Scav-Teilen
+	// (Scav-MGs, Infanterie, Laufwerke), die im Designer nicht waehlbar sind. Die Pruefung gilt nur noch in echten Netzwerkspielen.
+	if (!NetPlay.bComms)
+	{
+		return true;
+	}
 
 	char const *failPart = nullptr;
 	WzString failPartName;

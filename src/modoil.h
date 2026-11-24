@@ -34,6 +34,9 @@ bool isOilTarget(const DROID *psDroid, const STRUCTURE *psStruct);
 bool startOrder(DROID *psDroid, int x, int y, uint16_t code);
 /// (17.11. 20:35) Einnahmen-Buch: jede Spielminute steht im Log, woher die Energie kam ("MOD-Wirtschaft ...")
 enum IncomeKind { INC_BARRELS = 0, INC_SOLAR, INC_LAVA, INC_SALVAGE, INC_NUCLEAR, INC_PIPE, INC_COUNT };
+/// (Wunsch 24.11. 15:19 "Da man in diesem Mod so viel baut, muessen wir alle Energieeinnahmen verdreifachen. Es geht VIEL zu langsam"):
+/// alle Einnahmen x3 - Oeltuerme (WZ-Verknuepfung und Pipeline), Faesser, Solar, Atom, Bergung
+constexpr int INCOME_MULT = 3;
 void noteIncome(int player, int kind, int amount);
 /// (17.11. 20:35) Gebaeude fertig gebaut: Kraftwerk -> ein Oeltanker und ein Fracht-Lkw stehen sofort daneben, Raffinerie -> ein Fracht-Lkw
 void onBuilt(STRUCTURE *psStruct);

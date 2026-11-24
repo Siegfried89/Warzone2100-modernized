@@ -47,13 +47,14 @@ constexpr int GEN_CABLE_HEIGHT = 90;
 constexpr int SAG_STEPS = 12;
 // (Wunsch 17.11. 20:35) Umspannwerk: zentraler Knoten. Leistung in "Einheiten": Kraftwerk 40 (+20 mit Modul), Solarpaneel 1;
 // Verbraucher 1, grosse (Fabrik/Forschung/Raffinerie) 3.
-constexpr int GEN_CAPACITY = 40;
-constexpr int GEN_MODULE_CAPACITY = 20;
-constexpr int PANEL_CAPACITY = 1;
+// (Wunsch 24.11. 15:19 "Da man in diesem Mod so viel baut, muessen wir alle Energieeinnahmen verdreifachen"): Netzleistung x3
+constexpr int GEN_CAPACITY = 40 * 3;
+constexpr int GEN_MODULE_CAPACITY = 20 * 3;
+constexpr int PANEL_CAPACITY = 1 * 3;
 // (Wunsch 18.11. 12:54 "Ausbilden geht immer noch nicht. Bei KEINER Einheit.") Die Fabrik stand im PowerDown: das Kraftwerk hatte kein
 // Oel mehr (oder die Fabrik lag ausserhalb des Netzes) - dann lief gar nichts. Die Kommandozentrale liefert jetzt Notstrom: eine stetige
 // kleine Quelle (reicht fuer Fabrik + Forschung in ihrer Naehe), auch ohne Oel. Volle Leistung weiterhin nur mit laufendem Kraftwerk.
-constexpr int NOTSTROM_CAPACITY = 6;
+constexpr int NOTSTROM_CAPACITY = 6 * 3;
 constexpr int SMALL_DEMAND = 1;
 constexpr int BIG_DEMAND = 3;
 constexpr int PANEL_LINK_RANGE = 2 * 128;     // Paneele bis 2 Felder auseinander bilden ein Solarfeld
@@ -93,6 +94,8 @@ bool s_hasGen[MAX_PLAYERS] = {};                   // PowerDown nur, wenn der Sp
 int s_solarConnected[MAX_PLAYERS] = {};            // (20.11. 19:06) Solarpaneele, die ueber Masten an einem Umspannwerk haengen (geschlossener Kreislauf)
 int s_subCount[MAX_PLAYERS] = {};                  // Umspannwerke
 int s_subFed[MAX_PLAYERS] = {};                    // davon mit Strom
+int s_downNoGrid[MAX_PLAYERS] = {};                // (24.11.) ohne Strom, weil kein Mast/Umspannwerk in Reichweite bzw. Netz ohne Quelle
+int s_downOverload[MAX_PLAYERS] = {};              // (24.11.) ohne Strom, weil das Netz ueberlastet ist
 std::unordered_map<uint32_t, bool> s_held;           // wir haben die Fabrik/Forschung selbst auf Halt gesetzt (nicht der Spieler)
 constexpr int BASE_GEN_RANGE = 9 * 128;              // Fabriken/Forschung: 9 Felder um ein laufendes Kraftwerk
 constexpr unsigned RESTART_STAGGER_MS = 1200;        // MF: Gebaeude fahren einzeln nacheinander hoch
@@ -259,6 +262,8 @@ void update()
 		s_solarConnected[p] = 0;
 		s_subCount[p] = 0;
 		s_subFed[p] = 0;
+		s_downNoGrid[p] = 0;
+		s_downOverload[p] = 0;
 		std::vector<Node> poles, gens, subs, panels, cons;
 		std::vector<int> genCap;
 		std::vector<int> panelCap;   // Solarpaneel 1, laufendes Atomkraftwerk 150 (stetige Quellen)
@@ -308,8 +313,10 @@ void update()
 			}
 		}
 		if (poles.empty() && gens.empty() && cons.empty() && subs.empty()) { continue; }
-		// (20:35) ab dem ersten Umspannwerk ist es der zentrale Knoten des Netzes. (Wunsch 20.11. 19:06 "Umspannwerk soll Pflicht sein. Das ist
-		// das Endstueck und versorgt ueber die Masten alles"): fuer Spieler mit Oel-Wirtschaft IMMER - ohne Umspannwerk hat kein Gebaeude Strom.
+		// (20:35) ab dem ersten Umspannwerk ist es ein Knoten des Netzes. (Wunsch 24.11. 15:19 "Die Umspannwerke sind KEINE Voraussetzung
+		// dafuer, dass ein Gebaeude Strom hat ... Die MASTEN sind die Verbindung mit dem Stromnetz"): Netz-Modus fuer Spieler mit Oel-Wirtschaft
+		// (und alle mit Umspannwerk): Gebaeude bekommen Strom ueber Masten (oder ein Umspannwerk) aus jedem Netz mit einer Quelle - laufendes
+		// Kraftwerk, Solarfeld, Atomkraftwerk, Notstrom der Kommandozentrale. Ein Umspannwerk ist nur noch ein Knoten mit grossem Versorgungskreis.
 		const bool subMode = !subs.empty() || modoil::manages(p);
 
 		const int n = static_cast<int>(poles.size());
@@ -426,7 +433,7 @@ void update()
 		for (int r = 0; r < total; r++)
 		{
 			if (find(par, r) != r) { continue; }
-			live[r] = subMode ? ((hasSub[r] && (solarCap[r] > 0 || genCapC[r] > 0)) || (hasHQ[r] && emergCap[r] > 0)) : hasGenC[r];
+			live[r] = subMode ? (solarCap[r] > 0 || genCapC[r] > 0) : hasGenC[r];
 		}
 		// Verbraucher einem Netz zuordnen: Versorgungsbereich eines Mastes oder Umspannwerks (ohne Umspannwerk wie bisher auch eines Kraftwerks);
 		// liegen mehrere in Reichweite, gewinnt ein Netz mit Strom, dann das naechste
@@ -488,13 +495,8 @@ void update()
 			if (find(par, r) != r) { continue; }
 			if (subMode)
 			{
-				if (!hasSub[r])
-				{
-					// ohne Umspannwerk nur der Notstrom der Kommandozentrale (22.11. 18:27)
-					if (hasHQ[r] && emergCap[r] > 0) { capacity[r] = emergCap[r]; fed[r] = 1; }
-					continue;
-				}
-				// (20.11. 19:06) keine Bereitschaft mehr: Oel- und Solar-Kreislauf sind unabhaengig, ihre Leistung zaehlt zusammen
+				// (20.11. 19:06) keine Bereitschaft: Oel- und Solar-Kreislauf sind unabhaengig, ihre Leistung zaehlt zusammen (mit dem Notstrom
+				// der Kommandozentrale); (24.11.) Umspannwerk nicht mehr noetig
 				capacity[r] = solarCap[r] + genCapC[r];
 				fed[r] = capacity[r] > 0;
 			}
@@ -509,11 +511,15 @@ void update()
 		{
 			if (s_standbyNet.count(find(par, G0 + k))) { s_standby.insert(gens[k].id); }
 		}
-		// (20.11. 19:06) Solar-Kreislauf: nur Paneele, deren Netz ein Umspannwerk hat, bringen Einnahmen (modlava)
+		// (20.11. 19:06) Solar-Kreislauf: nur Paneele am Netz bringen Einnahmen (modlava) - (24.11.) am Netz = ueber einen Mast (oder ein
+		// Umspannwerk) angeschlossen, kein Umspannwerk mehr noetig
+		std::vector<char> gridNode(total, 0);
+		for (int i = 0; i < n; i++) { gridNode[find(par, i)] = 1; }
+		for (int k = 0; k < m; k++) { gridNode[find(par, S0 + k)] = 1; }
 		s_solarConnected[p] = 0;
 		for (int k = 0; k < q; k++)
 		{
-			if (panelNuke[static_cast<size_t>(k)] == 0 && hasSub[find(par, P0 + k)]) { s_solarConnected[p]++; }
+			if (panelNuke[static_cast<size_t>(k)] == 0 && gridNode[find(par, P0 + k)]) { s_solarConnected[p]++; }
 		}
 		s_subCount[p] = m;
 		s_subFed[p] = 0;
@@ -525,7 +531,7 @@ void update()
 		for (int r = 0; r < total; r++)
 		{
 			if (find(par, r) != r || !fed[r]) { continue; }
-			const bool real = realSrc[r] || genCapC[r] > 0 || (subMode && hasSub[r] && solarCap[r] - emergCap[r] > 0);
+			const bool real = realSrc[r] || genCapC[r] > 0 || (subMode && solarCap[r] - emergCap[r] > 0);
 			if (real) { modoil::noteDuty(p); break; }
 		}
 		s_standbyNet.clear();
@@ -563,7 +569,9 @@ void update()
 			{
 				const int need = c.big ? BIG_DEMAND : SMALL_DEMAND;
 				if (used[net] + need <= capacity[net]) { used[net] += need; ok = true; }
+				else { s_downOverload[p]++; }
 			}
+			else { s_downNoGrid[p]++; }
 			if (s_crewOff.find(c.id) != s_crewOff.end()) { ok = false; }   // Besatzungsmangel: wie ohne Strom abgeschaltet
 			// PowerDown: kehrt die Versorgung zurueck, faehrt das Gebaeude nach Reihenfolge (ein Gebaeude je 1,2 s) wieder hoch
 			const auto wasDown = s_down.find(c.id);
@@ -580,6 +588,12 @@ void update()
 int solarPanelsConnected(int player)
 {
 	return (player >= 0 && player < MAX_PLAYERS) ? s_solarConnected[player] : 0;
+}
+
+void downReasons(int player, int &noGrid, int &overload)
+{
+	noGrid = (player >= 0 && player < MAX_PLAYERS) ? s_downNoGrid[player] : 0;
+	overload = (player >= 0 && player < MAX_PLAYERS) ? s_downOverload[player] : 0;
 }
 
 int substations(int player, int &fed)

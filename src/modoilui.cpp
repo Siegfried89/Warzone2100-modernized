@@ -241,15 +241,17 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 	{
 		int fed = 0;
 		const int subs = modgrid::substations(static_cast<int>(selectedPlayer), fed);
-		const Lamp l = subs == 0 ? L_BAD : (fed == 0 ? L_BAD : (fed < subs ? L_WARN : L_OK));
-		const std::string tip = "Umspannwerk (Pflicht - versorgt \xC3\xBC" "ber die Masten alle Geb\xC3\xA4ude): " + (subs == 0 ? std::string("keins - kein Strom!") : std::to_string(subs) + " | davon mit Strom " + std::to_string(fed));
-		const std::string prob = subs == 0 ? "Umspannwerk fehlt - kein Strom!" : (fed == 0 ? "Umspannwerk bekommt keinen Strom" : "Ein Umspannwerk ohne Strom");
-		t.push_back({l, OI_SUBSTATION, subs == 0 ? std::string("0") : of(fed, subs), tip, prob, subs == 0 || fed == 0 ? 0 : 23});
+		// (Wunsch 24.11. 15:19) Umspannwerk ist keine Pflicht mehr - die Masten verbinden die Gebaeude mit dem Netz
+		const Lamp l = subs == 0 ? L_OFF : (fed == 0 ? L_BAD : (fed < subs ? L_WARN : L_OK));
+		const std::string tip = "Umspannwerk (nicht n\xC3\xB6tig - Netzknoten mit gro\xC3\x9F" "em Versorgungskreis; die Masten verbinden die Geb\xC3\xA4ude mit dem Netz): "
+		                        + (subs == 0 ? std::string("keins") : std::to_string(subs) + " | davon mit Strom " + std::to_string(fed));
+		const std::string prob = fed == 0 ? "Umspannwerk bekommt keinen Strom" : "Ein Umspannwerk ohne Strom";
+		t.push_back({l, OI_SUBSTATION, subs == 0 ? std::string("-") : of(fed, subs), tip, subs == 0 ? std::string() : prob, subs > 0 && fed == 0 ? 0 : 23});
 	}
 	{
 		const int sp = modgrid::solarPanelsConnected(static_cast<int>(selectedPlayer));
 		const Lamp l = sp > 0 ? L_OK : L_OFF;
-		const std::string tip = "Solar: " + (sp == 0 ? std::string("keine Paneele am Umspannwerk") : std::to_string(sp) + " Paneele | +" + std::to_string(sp * 6) + "/min (tags\xC3\xBC" "ber)");
+		const std::string tip = "Solar: " + (sp == 0 ? std::string("keine Paneele am Netz (Mast in der N\xC3\xA4he?)") : std::to_string(sp) + " Paneele am Netz | +" + std::to_string(sp * 6 * modoil::INCOME_MULT) + "/min (tags\xC3\xBC" "ber)");
 		t.push_back({l, OI_SOLAR, std::to_string(sp), tip, "", 99});
 	}
 	{
@@ -266,7 +268,13 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 	}
 	{
 		const Lamp l = v.buildingsDown > 0 ? L_BAD : L_OK;
-		const std::string tip = "Geb\xC3\xA4ude ohne Strom: " + (v.buildingsDown == 0 ? std::string("keine") : std::to_string(v.buildingsDown) + " (stehen still - Masten/Umspannwerk pr\xC3\xBC" "fen)");
+		int noGrid = 0, overload = 0;
+		modgrid::downReasons(static_cast<int>(selectedPlayer), noGrid, overload);
+		std::string why;
+		if (noGrid > 0) { why += std::to_string(noGrid) + " ohne Netz (Mast in der N\xC3\xA4he bauen)"; }
+		if (overload > 0) { why += std::string(why.empty() ? "" : ", ") + std::to_string(overload) + " Netz \xC3\xBC" "berlastet (mehr Kraftwerke/Solar)"; }
+		if (why.empty()) { why = "fahren gerade hoch"; }
+		const std::string tip = "Geb\xC3\xA4ude ohne Strom: " + (v.buildingsDown == 0 ? std::string("keine") : std::to_string(v.buildingsDown) + " (stehen still: " + why + ")");
 		t.push_back({l, OI_NOPOWER, std::to_string(v.buildingsDown), tip, std::to_string(v.buildingsDown) + " Geb\xC3\xA4ude ohne Strom", 7});
 	}
 	return t;
