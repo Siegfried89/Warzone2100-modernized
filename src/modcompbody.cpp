@@ -48,6 +48,7 @@ struct Slot
 	std::string defId;                               // leer = frei
 	glm::mat4 prop = glm::mat4(1.f);
 	bool propShift = false;
+	float lift = 0.f;                                // (24.11.) Rumpf ueber das Laufwerk heben (Teile unter dem Fahrgestell)
 	std::vector<size_t> partIdx;                     // Teil-Rumpfe (fuer die Verfuegbarkeit)
 	std::vector<float> yaw;                          // Blickrichtung je Anschluss (Grad)
 };
@@ -536,6 +537,7 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 	sl.defId = d.id;
 	sl.prop = partMatrix(d.parts[0]);
 	sl.propShift = (glm::length(d.parts[0].pos) > 1e-3f || glm::length(d.parts[0].rot) > 1e-3f || std::fabs(d.parts[0].scale - 1.f) > 1e-3f);
+	sl.lift = liftOf(d);
 	sl.yaw.clear();
 	{
 		std::vector<Mount> mounts = d.mounts;
@@ -624,6 +626,38 @@ bool isComposite(size_t bodyIdx)
 {
 	if (bodyIdx < s_first || bodyIdx >= s_first + s_slots.size()) { return false; }
 	return !s_slots[bodyIdx - s_first].defId.empty();
+}
+
+float propLift(size_t bodyIdx)
+{
+	if (!isComposite(bodyIdx)) { return 0.f; }
+	return s_slots[bodyIdx - s_first].lift;
+}
+
+float liftOf(const Def &d)
+{
+	// (Wunsch 24.11. 01:23 "alle Antriebe ... nicht sichtbar"): liegen Teile tiefer als das Fahrgestell (Teil 0), steckte das Laufwerk
+	// unsichtbar im Rumpf (z.B. "Vulture": Tiger oben als Fahrgestell, Python und Deck darunter). Der Rumpf steht dann so weit hoeher,
+	// dass das unterste Teil so auf dem Laufwerk sitzt wie sonst das Fahrgestell.
+	if (d.parts.empty()) { return 0.f; }
+	float lowest = 1e9f, chassisLow = 1e9f;
+	for (size_t i = 0; i < d.parts.size(); ++i)
+	{
+		const BodyInfo *b = bodyInfo(d.parts[i].body);
+		const iIMDShape *m = (b != nullptr && b->model != nullptr) ? b->model->displayModel() : nullptr;
+		if (m == nullptr) { continue; }
+		const glm::mat4 pm = partMatrix(d.parts[i]);
+		float lo = 1e9f;
+		for (int c = 0; c < 8; ++c)
+		{
+			const glm::vec4 v((c & 1) ? m->max.x : m->min.x, (c & 2) ? m->max.y : m->min.y, (c & 4) ? m->max.z : m->min.z, 1.f);
+			lo = std::min(lo, (pm * v).y);
+		}
+		lowest = std::min(lowest, lo);
+		if (i == 0) { chassisLow = lo; }
+	}
+	if (lowest > 1e8f || chassisLow > 1e8f) { return 0.f; }
+	return std::max(0.f, chassisLow - lowest);
 }
 
 const glm::mat4 *propOffset(size_t bodyIdx)

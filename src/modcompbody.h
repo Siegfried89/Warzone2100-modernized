@@ -78,6 +78,8 @@ void shutdown();
 bool isComposite(size_t bodyIdx);
 /// Lage des Fahrgestells (Teil 0) fuer die Laufwerk-Modelle; nullptr = keine Verschiebung
 const glm::mat4 *propOffset(size_t bodyIdx);
+/// (24.11.) so weit steht der Rumpf (mit Tuermen) ueber dem Laufwerk, wenn Teile tiefer liegen als das Fahrgestell; 0 = gar nicht
+float propLift(size_t bodyIdx);
 /// Blickrichtung des Platzes (Anschluss) eines Verbundrumpfes in Grad; false = kein Verbundrumpf (Waffe dreht frei)
 bool mountYaw(size_t bodyIdx, int connector, float &yawDeg);
 /// Waffe weaponSlot eines Fahrzeugs auf einem Verbundrumpf (kein VTOL): Blickrichtung ihres Platzes als 16-Bit-Winkel (relativ zum Rumpf).
@@ -120,6 +122,8 @@ const char *sizeText(int size);
 const std::vector<Def> &defs();
 const Def *find(const std::string &id);
 glm::mat4 partMatrix(const Part &p, bool withFlip = true);
+/// Hub des Rumpfes ueber dem Laufwerk (unterstes Teil sitzt auf dem Laufwerk wie sonst das Fahrgestell), siehe propLift
+float liftOf(const Def &d);
 /// gespiegelte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
 const iIMDShape *flippedShape(const std::string &bodyId, int flipMask);
 Totals totals(const Def &d);

@@ -1724,6 +1724,14 @@ DROID_TYPE droidTemplateType(const DROID_TEMPLATE *psTemplate)
 	{
 		type = DROID_COMMAND;
 	}
+	else if (psTemplate->modSlots.numSys > 0 && psTemplate->asParts[COMP_CONSTRUCT] != 0)
+	{
+		type = DROID_CONSTRUCT;   // MOD (Wunsch 24.11. 01:26): Bauturm neben Waffen/Sensoren - baut und schiesst (modslots)
+	}
+	else if (psTemplate->modSlots.numSys > 0 && psTemplate->getRepairStats()->location == LOC_TURRET && psTemplate->asParts[COMP_REPAIRUNIT] != 0)
+	{
+		type = DROID_REPAIR;      // MOD (Wunsch 24.11. 01:26): Reparaturturm neben Waffen/Sensoren
+	}
 	else if (psTemplate->modSlots.numSys > 0 && psTemplate->numWeaps > 0)
 	{
 		type = DROID_WEAPON;   // MOD (23.11. 02:16): Waffen und Systemtuerme zugleich - ein Kampffahrzeug (modslots)
@@ -1772,9 +1780,11 @@ static unsigned calcSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, 
 		sum += func(asWeaponStats[asWeaps[i]]);
 	}
 	// MOD (23.11. 02:16): weitere Systemtuerme neben Waffen (modslots)
-	modslots::forEachExtra(modSlots, asParts, COMP_SENSOR, COMP_ECM, [&](int comp, unsigned stat) {
+	modslots::forEachExtra(modSlots, asParts, [&](int comp, unsigned stat) {
 		if (comp == COMP_SENSOR && stat < asSensorStats.size()) { sum += func(asSensorStats[stat]); }
 		else if (comp == COMP_ECM && stat < asECMStats.size()) { sum += func(asECMStats[stat]); }
+		else if (comp == COMP_CONSTRUCT && stat < asConstructStats.size()) { sum += func(asConstructStats[stat]); }
+		else if (comp == COMP_REPAIRUNIT && stat < asRepairStats.size()) { sum += func(asRepairStats[stat]); }
 	});
 	return sum;
 }
@@ -1803,9 +1813,11 @@ static unsigned calcUpgradeSum(const uint16_t (&asParts)[DROID_MAXCOMP], int num
 		}
 	}
 	// MOD (23.11. 02:16): weitere Systemtuerme neben Waffen (modslots)
-	modslots::forEachExtra(modSlots, asParts, COMP_SENSOR, COMP_ECM, [&](int comp, unsigned stat) {
+	modslots::forEachExtra(modSlots, asParts, [&](int comp, unsigned stat) {
 		if (comp == COMP_SENSOR && stat < asSensorStats.size()) { sum += func(asSensorStats[stat].upgrade[player]); }
 		else if (comp == COMP_ECM && stat < asECMStats.size()) { sum += func(asECMStats[stat].upgrade[player]); }
+		else if (comp == COMP_CONSTRUCT && stat < asConstructStats.size()) { sum += func(asConstructStats[stat].upgrade[player]); }
+		else if (comp == COMP_REPAIRUNIT && stat < asRepairStats.size()) { sum += func(asRepairStats[stat].upgrade[player]); }
 	});
 	return sum;
 }
@@ -2510,7 +2522,13 @@ void	groupConsoleInformOfCentering(UDWORD groupNumber)
 static void modWalkerHipTrans(const DROID *psDroid, Affine3F &af)
 {
 	const PROPULSION_STATS *prop = psDroid->getPropulsionStats();
-	if (prop == nullptr || prop->walkerIMD == nullptr || prop->walkerIMD->connectors.empty()) { return; }
+	if (prop == nullptr || prop->walkerIMD == nullptr || prop->walkerIMD->connectors.empty())
+	{
+		// MOD (24.11.): Verbundrumpf ueber dem Laufwerk angehoben (modcompbody::propLift) - die Waffen mit
+		const float lift = modcompbody::propLift(psDroid->asBits[COMP_BODY]);
+		if (lift > 0.f) { af.Trans(0, -static_cast<int>(std::lround(lift)), 0); }
+		return;
+	}
 	const Vector3i &hip = prop->walkerIMD->connectors[0];
 	af.Trans(hip.x, -hip.z, -hip.y);
 }
