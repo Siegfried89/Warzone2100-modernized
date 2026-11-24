@@ -362,6 +362,8 @@ static void updateCurrentPower(STRUCTURE *psStruct, UDWORD player, int ticks)
 		extractedPower = static_cast<int64_t>(piped) * asPower[player].powerModifier * EXTRACT_POINTS * FP_ONE / (100 * GAME_UPDATES_PER_SEC);
 	}
 
+	extractedPower *= modoil::INCOME_MULT;   // MOD (24.11. 15:19): alle Energieeinnahmen x3
+
 	syncDebug("updateCurrentPower%d = %" PRId64",%u", player, extractedPower, multiplier);
 
 	asPower[player].currentPower += (extractedPower * multiplier) / 100 * ticks;

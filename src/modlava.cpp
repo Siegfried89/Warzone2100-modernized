@@ -479,7 +479,7 @@ void tick(GameWorld &world)
 		// Oelturm bringt 33-50), und bei Spielern mit Oel-Wirtschaft nur, wenn es ueber Masten an einem Umspannwerk haengt.
 		const int panels = modoil::manages(p) ? modgrid::solarPanelsConnected(p) : income + ((s_sec % 4 == 0) ? incomeUnder : 0);
 		s_solarAcc[p] += std::max(0, panels);
-		const int solarGain = s_solarAcc[p] / SOLAR_SECS_PER_ENERGY;
+		const int solarGain = s_solarAcc[p] / SOLAR_SECS_PER_ENERGY * modoil::INCOME_MULT;   // (24.11. 15:19) alle Einnahmen x3
 		s_solarAcc[p] %= SOLAR_SECS_PER_ENERGY;
 		if (solarGain > 0) { addPower(p, solarGain); modoil::noteIncome(p, modoil::INC_SOLAR, solarGain); }
 		if (modoil::manages(p))

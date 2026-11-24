@@ -3065,10 +3065,21 @@ bool intValidTemplate(DROID_TEMPLATE *psTempl, const char *newName, bool complai
 	const bool infantrySpade = psTempl->asParts[COMP_CONSTRUCT] != 0
 		&& (psTempl->droidType == DROID_PERSON || psTempl->droidType == DROID_CYBORG || psTempl->droidType == DROID_CYBORG_SUPER)
 		&& psTempl->getPropulsionStats()->propulsionType == PROPULSION_TYPE_LEGGED;
+	// MOD (24.11.): eingebaute Teile (Lage DEFAULT: Standard-Sensor, Auto-Reparatur, Fatboy-Schild ...) sind keine Tuerme - vorher galt
+	// jede Vorlage als "gemischt", sobald die Forschung einen neuen Standard-Sensor / eine neue Auto-Reparatur brachte (Vorlage hatte noch
+	// den alten), und die Fabrik lehnte sie ab
+	auto turretPart = [&](COMPONENT_TYPE c) {
+		if (psTempl->asParts[c] == 0) { return false; }
+		switch (c)
+		{
+		case COMP_SENSOR: return psTempl->asParts[c] != aDefaultSensor[player] && psTempl->getSensorStats()->location == LOC_TURRET;
+		case COMP_ECM: return psTempl->asParts[c] != aDefaultECM[player] && psTempl->getECMStats()->location == LOC_TURRET;
+		case COMP_REPAIRUNIT: return psTempl->asParts[c] != aDefaultRepair[player] && psTempl->getRepairStats()->location == LOC_TURRET;
+		default: return true;
+		}
+	};
 	if (psTempl->numWeaps != 0 && psTempl->modSlots.numSys == 0 &&   // MOD (23.11. 02:16): Systemtuerme neben Waffen (modslots) sind erlaubt
-	    ((psTempl->asParts[COMP_SENSOR] && psTempl->asParts[COMP_SENSOR] != aDefaultSensor[player]) ||
-	     (psTempl->asParts[COMP_ECM] && psTempl->asParts[COMP_ECM] != aDefaultECM[player]) ||
-	     (psTempl->asParts[COMP_REPAIRUNIT] && psTempl->asParts[COMP_REPAIRUNIT] != aDefaultRepair[player]) ||
+	    (turretPart(COMP_SENSOR) || turretPart(COMP_ECM) || turretPart(COMP_REPAIRUNIT) ||
 	     (psTempl->asParts[COMP_CONSTRUCT] && !infantrySpade)))
 	{
 		debug(level, "Cannot mix system and weapon turrets in a template!");

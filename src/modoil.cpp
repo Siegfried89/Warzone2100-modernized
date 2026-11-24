@@ -636,7 +636,7 @@ EconomyView economyView(int p)
 		if (isTank(d)) { v.tankers++; v.tankerBarrels += n; v.tankerCap += cap; }
 		else { v.pickups++; v.pickupBarrels += n; v.pickupCap += cap; }
 	}
-	v.pipeRatePerMin = static_cast<int>(pipeRateNum / 10000);
+	v.pipeRatePerMin = static_cast<int>(pipeRateNum * INCOME_MULT / 10000);   // (24.11.) x3
 	v.power = getPower(static_cast<unsigned>(p));
 	v.powerMax = getPowerMaxStorage(static_cast<unsigned>(p));
 	v.incomeLastMinute = static_cast<int>(s_lastIncome[p]);
@@ -1104,6 +1104,7 @@ int barrelEnergy(const STRUCTURE *gen, bool fromStore)
 	int64_t e = static_cast<int64_t>(GEN_ENERGY) * std::max(1, getBuildingPowerPoints(gen)) / GEN_REF_POINTS;
 	e = e * getPowerModifier(static_cast<int>(gen->player)) / 100;
 	if (fromStore) { e = e * (100 + STORE_BONUS) / 100; }
+	e *= INCOME_MULT;   // (24.11. 15:19) alle Energieeinnahmen x3
 	return static_cast<int>(std::max<int64_t>(1, e));
 }
 
@@ -1792,25 +1793,60 @@ bool spawnNear(const STRUCTURE *s, const char *templateId)
 }
 } // namespace
 
-void onBuilt(STRUCTURE *s)
+namespace
 {
-	// (Wunsch 17.11. 20:35) "Oeltanker spawnen beim Bau eines Kraftwerks, und Lkw, die die Oelfaesser zur Raffinerie bringen"
-	if (s == nullptr || s->died || s->capacity != 0 || !modPresent() || !manages(static_cast<int>(s->player))) { return; }   // capacity != 0: Modul fertig
+/// Geschenk des ersten Kraftwerks / der ersten Raffinerie (siehe onBuilt); haveTank/haveLkw: schon vorhandene Fahrzeuge nicht verdoppeln
+void giftFor(STRUCTURE *s, bool haveTank, bool haveLkw)
+{
 	const STRUCTURE_STATS *st = s->pStructureType;
 	const int p = static_cast<int>(s->player);
-	// (Wunsch 20.11. 17:46 Punkt 4) nur beim ERSTEN Kraftwerk bzw. der ERSTEN Raffinerie der Partie - danach nicht mehr (sonst Abreissen +
-	// Neubauen = beliebig viele Gratis-Fahrzeuge)
 	if (st->type == REF_POWER_GEN && !(s_gift[p] & 1))
 	{
 		s_gift[p] |= 1;
-		spawnNear(s, "ScavTanker");
-		spawnNear(s, "ScavLkw");
+		if (!haveTank) { spawnNear(s, "ScavTanker"); }
+		if (!haveLkw) { spawnNear(s, "ScavLkw"); }
 	}
 	else if (isRefinery(st) && !(s_gift[p] & 2))
 	{
 		s_gift[p] |= 2;
-		spawnNear(s, "ScavLkw");
+		if (!haveLkw) { spawnNear(s, "ScavLkw"); }
 	}
+}
+
+/// (Wunsch 24.11. 15:19 "Im Wuestenskirmish ist kein Oeltanker gespawnt"): steht das Kraftwerk (bzw. die Raffinerie) schon auf der Karte,
+/// wurde es nie "gebaut" - das Geschenk kommt dann in der ersten Sekunde der Partie (ohne vorhandene Tanker/Pickups zu verdoppeln)
+void startGifts()
+{
+	for (int p = 0; p < MAX_PLAYERS; p++)
+	{
+		if ((s_gift[p] & 3) == 3 || !manages(p)) { continue; }
+		STRUCTURE *gen = nullptr, *ref = nullptr;
+		for (STRUCTURE *s : gameWorld.objects.structures[p])
+		{
+			if (s->died || s->status != SS_BUILT || s->pStructureType == nullptr) { continue; }
+			if (s->pStructureType->type == REF_POWER_GEN && gen == nullptr) { gen = s; }
+			else if (isRefinery(s->pStructureType) && ref == nullptr) { ref = s; }
+		}
+		if (gen == nullptr && ref == nullptr) { continue; }
+		bool haveTank = false, haveLkw = false;
+		for (const DROID *d : gameWorld.objects.droids[p])
+		{
+			if (d->died || cargoCapacity(d) <= 0) { continue; }
+			if (isTank(d)) { haveTank = true; } else { haveLkw = true; }
+		}
+		if (gen != nullptr && !(s_gift[p] & 1)) { giftFor(gen, haveTank, haveLkw); haveLkw = true; }
+		if (ref != nullptr && !(s_gift[p] & 2)) { giftFor(ref, haveTank, haveLkw); }
+	}
+}
+}
+
+void onBuilt(STRUCTURE *s)
+{
+	// (Wunsch 17.11. 20:35) "Oeltanker spawnen beim Bau eines Kraftwerks, und Lkw, die die Oelfaesser zur Raffinerie bringen"
+	if (s == nullptr || s->died || s->capacity != 0 || !modPresent() || !manages(static_cast<int>(s->player))) { return; }   // capacity != 0: Modul fertig
+	// (Wunsch 20.11. 17:46 Punkt 4) nur beim ERSTEN Kraftwerk bzw. der ERSTEN Raffinerie der Partie - danach nicht mehr (sonst Abreissen +
+	// Neubauen = beliebig viele Gratis-Fahrzeuge)
+	giftFor(s, false, false);
 }
 
 namespace
@@ -1855,6 +1891,7 @@ void tick()
 	s_have = true;
 	s_lastSec = gameTime / 1000;
 	if (!modPresent()) { return; }
+	startGifts();
 	logistics();
 	// Energie der verbrannten Faesser stetig auszahlen (mit mehreren Oeltuermen steigt das Konto wie in Vanilla laufend)
 	for (int p = 0; p < MAX_PLAYERS; p++)

@@ -36,4 +36,6 @@ bool generatorStandby(const STRUCTURE *psGen);
 int solarPanelsConnected(int player);
 /// (20.11. 19:06) Zahl der Umspannwerke; fed = davon mit Strom
 int substations(int player, int &fed);
+/// (24.11.) warum Gebaeude ohne Strom sind: kein Mast/Umspannwerk in Reichweite (bzw. Netz ohne Quelle) / Netz ueberlastet
+void downReasons(int player, int &noGrid, int &overload);
 }

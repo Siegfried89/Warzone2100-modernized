@@ -178,9 +178,10 @@ bool onPickup(const FEATURE *psFeature, int player)
 	if (st == AVAILABLE || st == FOUND)
 	{
 		// schon bekannt: Schrott bringt etwas Energie
-		addPower(player, static_cast<int32_t>(c->scrap));
-		modoil::noteIncome(static_cast<int>(player), modoil::INC_SALVAGE, static_cast<int>(c->scrap));
-		say(player, "Salvaged scrap from " + c->name + ": +" + std::to_string(c->scrap) + " power");
+		const int scrap = static_cast<int>(c->scrap) * modoil::INCOME_MULT;   // (24.11. 15:19) alle Einnahmen x3
+		addPower(player, scrap);
+		modoil::noteIncome(static_cast<int>(player), modoil::INC_SALVAGE, scrap);
+		say(player, "Salvaged scrap from " + c->name + ": +" + std::to_string(scrap) + " power");
 		return true;
 	}
 	setAvailability(player, *c, FOUND);
