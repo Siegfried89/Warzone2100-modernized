@@ -2691,6 +2691,11 @@ static void setTemplateStat(DROID_TEMPLATE *psTemplate, COMPONENT_STATS *psStats
 		break;
 	}
 	case COMP_REPAIRUNIT:
+		if (useSlots && ((REPAIR_STATS *)psStats)->location == LOC_TURRET)   // MOD (Wunsch 24.11. 01:26): Reparaturturm neben Waffen
+		{
+			modslots::assign(*psTemplate, modCurSlot(), COMP_REPAIRUNIT, static_cast<unsigned>((REPAIR_STATS *)psStats - asRepairStats.data()), selectedPlayer);
+			break;
+		}
 		clearTurret();
 		psTemplate->asParts[COMP_REPAIRUNIT] = (REPAIR_STATS *)psStats - asRepairStats.data();
 		break;
@@ -2713,6 +2718,11 @@ static void setTemplateStat(DROID_TEMPLATE *psTemplate, COMPONENT_STATS *psStats
 		psTemplate->asParts[COMP_SENSOR] = (SENSOR_STATS *)psStats - asSensorStats.data();
 		break;
 	case COMP_CONSTRUCT:
+		if (useSlots)   // MOD (Wunsch 24.11. 01:26): Bauturm neben Waffen
+		{
+			modslots::assign(*psTemplate, modCurSlot(), COMP_CONSTRUCT, static_cast<unsigned>((CONSTRUCT_STATS *)psStats - asConstructStats.data()), selectedPlayer);
+			break;
+		}
 		clearTurret();
 		psTemplate->asParts[COMP_CONSTRUCT] = (CONSTRUCT_STATS *)psStats - asConstructStats.data();
 		break;

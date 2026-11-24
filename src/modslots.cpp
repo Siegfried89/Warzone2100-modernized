@@ -73,6 +73,31 @@ void removeSys(ModSlots &s, unsigned i)
 	s.sysConn[s.numSys] = -1;
 }
 
+/// Bau- oder Reparaturturm (die stehen hoechstens einmal in der Belegung)
+bool isRole(int comp) { return comp == COMP_CONSTRUCT || comp == COMP_REPAIRUNIT; }
+
+bool sysStatOk(int comp, unsigned stat)
+{
+	switch (comp)
+	{
+	case COMP_SENSOR: return stat < asSensorStats.size();
+	case COMP_ECM: return stat < asECMStats.size();
+	case COMP_CONSTRUCT: return stat > 0 && stat < asConstructStats.size();
+	case COMP_REPAIRUNIT: return stat > 0 && stat < asRepairStats.size();
+	default: return false;
+	}
+}
+
+/// Systemturm i aus der Belegung einer Vorlage nehmen; ein Bau-/Reparaturturm verschwindet auch aus asParts
+void removeSysT(DROID_TEMPLATE &t, unsigned i)
+{
+	if (i >= t.modSlots.numSys) { return; }
+	const int c = t.modSlots.sysComp[i];
+	removeSys(t.modSlots, i);
+	if (c == COMP_CONSTRUCT) { t.asParts[COMP_CONSTRUCT] = 0; }
+	if (c == COMP_REPAIRUNIT && isTurretRepair(t)) { t.asParts[COMP_REPAIRUNIT] = 0; }
+}
+
 /// alle Waffen bekommen ihren Anschluss fest eingetragen (vor dem Verschieben/Einfuegen)
 void pinWeapons(DROID_TEMPLATE &t)
 {
@@ -82,7 +107,8 @@ void pinWeapons(DROID_TEMPLATE &t)
 	}
 }
 
-/// Fahrzeug mit einem einzigen Systemturm (bisherige Form) in die Belegungs-Form bringen; Bau/Reparatur/Kommando fallen weg
+/// Fahrzeug mit einem einzigen Systemturm (bisherige Form) in die Belegungs-Form bringen; der Kommandoturm faellt weg
+/// (24.11.: Bau- und Reparaturturm bleiben - als Systemturm auf Platz 1)
 void toSlotForm(DROID_TEMPLATE &t)
 {
 	if (t.asParts[COMP_BRAIN] != 0)
@@ -92,20 +118,25 @@ void toSlotForm(DROID_TEMPLATE &t)
 		for (unsigned i = 0; i < MAX_WEAPONS; ++i) { t.asWeaps[i] = 0; }
 		t.modSlots.reset();
 	}
-	t.asParts[COMP_CONSTRUCT] = 0;
-	if (isTurretRepair(t)) { t.asParts[COMP_REPAIRUNIT] = 0; }
 	if (t.modSlots.numSys == 0 && t.numWeaps == 0)
 	{
-		if (isTurretSensor(t))
+		int comp = -1;
+		unsigned stat = 0;
+		if (isTurretSensor(t)) { comp = COMP_SENSOR; stat = t.asParts[COMP_SENSOR]; }
+		else if (isTurretEcm(t)) { comp = COMP_ECM; stat = t.asParts[COMP_ECM]; }
+		else if (t.asParts[COMP_CONSTRUCT] != 0) { comp = COMP_CONSTRUCT; stat = t.asParts[COMP_CONSTRUCT]; }
+		else if (isTurretRepair(t)) { comp = COMP_REPAIRUNIT; stat = t.asParts[COMP_REPAIRUNIT]; }
+		if (comp >= 0)
 		{
-			t.modSlots.sysComp[0] = COMP_SENSOR; t.modSlots.sysStat[0] = t.asParts[COMP_SENSOR]; t.modSlots.sysConn[0] = 0;
+			t.modSlots.sysComp[0] = static_cast<uint8_t>(comp); t.modSlots.sysStat[0] = static_cast<uint16_t>(stat); t.modSlots.sysConn[0] = 0;
 			t.modSlots.numSys = 1;
 		}
-		else if (isTurretEcm(t))
-		{
-			t.modSlots.sysComp[0] = COMP_ECM; t.modSlots.sysStat[0] = t.asParts[COMP_ECM]; t.modSlots.sysConn[0] = 0;
-			t.modSlots.numSys = 1;
-		}
+	}
+	else if (t.modSlots.numSys == 0)
+	{
+		// Waffen-Fahrzeug: ein alter Bau-/Reparaturturm daneben gab es nicht - sicherheitshalber weg
+		t.asParts[COMP_CONSTRUCT] = 0;
+		if (isTurretRepair(t)) { t.asParts[COMP_REPAIRUNIT] = 0; }
 	}
 	pinWeapons(t);
 }
@@ -119,7 +150,7 @@ void removeAt(DROID_TEMPLATE &t, int slot)
 	}
 	for (int i = static_cast<int>(t.modSlots.numSys) - 1; i >= 0; --i)
 	{
-		if (t.modSlots.sysConn[i] == slot) { removeSys(t.modSlots, static_cast<unsigned>(i)); }
+		if (t.modSlots.sysConn[i] == slot) { removeSysT(t, static_cast<unsigned>(i)); }
 	}
 }
 
@@ -182,9 +213,17 @@ Occupant occupant(const DROID_TEMPLATE &t, int slot)
 void assign(DROID_TEMPLATE &t, int slot, int comp, unsigned stat, unsigned player)
 {
 	if (slot < 0 || slot >= static_cast<int>(MAX_WEAPONS)) { return; }
-	if (comp != COMP_WEAPON && comp != COMP_SENSOR && comp != COMP_ECM) { return; }
+	if (comp != COMP_WEAPON && comp != COMP_SENSOR && comp != COMP_ECM && !isRole(comp)) { return; }
 	toSlotForm(t);
 	removeAt(t, slot);
+	if (isRole(comp))
+	{
+		// hoechstens ein Bau- ODER Reparaturturm je Fahrzeug: ein anderer weicht
+		for (int i = static_cast<int>(t.modSlots.numSys) - 1; i >= 0; --i)
+		{
+			if (isRole(t.modSlots.sysComp[i])) { removeSysT(t, static_cast<unsigned>(i)); }
+		}
+	}
 	if (comp == COMP_WEAPON)
 	{
 		if (t.numWeaps < static_cast<int>(MAX_WEAPONS) && stat < asWeaponStats.size())
@@ -196,7 +235,7 @@ void assign(DROID_TEMPLATE &t, int slot, int comp, unsigned stat, unsigned playe
 	}
 	else if (t.modSlots.numSys < MOD_MAX_SYS)
 	{
-		const bool ok = (comp == COMP_SENSOR) ? stat < asSensorStats.size() : stat < asECMStats.size();
+		const bool ok = sysStatOk(comp, stat);
 		if (ok)
 		{
 			const unsigned n = t.modSlots.numSys;
@@ -234,7 +273,7 @@ void clearSlot(DROID_TEMPLATE &t, int slot, unsigned player)
 		break;
 	case SLOT_SYSTEM:
 		pinWeapons(t);
-		removeSys(t.modSlots, static_cast<unsigned>(o.index));
+		removeSysT(t, static_cast<unsigned>(o.index));
 		if (t.modSlots.numSys == 0)
 		{
 			// eingebaute Teile (LOC_DEFAULT, z.B. Fatboy-Schild) bleiben
@@ -252,6 +291,12 @@ void fitToBody(DROID_TEMPLATE &t, unsigned player)
 	const bool hadSys = t.modSlots.numSys > 0;
 	if (!usable(t))
 	{
+		// ohne freie Belegung: ein Bau-/Reparaturturm aus der Belegung bleibt nur, wenn keine Waffen da sind (bisherige Form)
+		for (unsigned i = 0; i < t.modSlots.numSys; ++i)
+		{
+			const int c = t.modSlots.sysComp[i];
+			if (isRole(c) && t.numWeaps > 0) { if (c == COMP_CONSTRUCT) { t.asParts[COMP_CONSTRUCT] = 0; } else if (isTurretRepair(t)) { t.asParts[COMP_REPAIRUNIT] = 0; } }
+		}
 		t.modSlots.reset();
 		if (t.numWeaps > static_cast<int>(n))
 		{
@@ -268,7 +313,7 @@ void fitToBody(DROID_TEMPLATE &t, unsigned player)
 		}
 		for (int i = static_cast<int>(t.modSlots.numSys) - 1; i >= 0; --i)
 		{
-			if (t.modSlots.sysConn[i] >= static_cast<int>(n)) { removeSys(t.modSlots, static_cast<unsigned>(i)); }
+			if (t.modSlots.sysConn[i] >= static_cast<int>(n)) { removeSysT(t, static_cast<unsigned>(i)); }
 		}
 	}
 	if (hadSys && t.modSlots.numSys == 0)
@@ -285,9 +330,17 @@ void normalize(DROID_TEMPLATE &t, unsigned player)
 	// ungueltige Systemtuerme verwerfen
 	for (int i = static_cast<int>(s.numSys) - 1; i >= 0; --i)
 	{
-		const bool ok = (s.sysComp[i] == COMP_SENSOR && s.sysStat[i] < asSensorStats.size())
-		             || (s.sysComp[i] == COMP_ECM && s.sysStat[i] < asECMStats.size());
-		if (!ok || s.sysConn[i] < 0) { removeSys(s, static_cast<unsigned>(i)); }
+		const bool ok = sysStatOk(s.sysComp[i], s.sysStat[i]);
+		if (!ok || s.sysConn[i] < 0) { removeSysT(t, static_cast<unsigned>(i)); }
+	}
+	// hoechstens ein Bau-/Reparaturturm (der erste bleibt)
+	{
+		bool seen = false;
+		for (unsigned i = 0; i < s.numSys; )
+		{
+			if (isRole(s.sysComp[i])) { if (seen) { removeSys(s, i); continue; } seen = true; }
+			++i;
+		}
 	}
 	// Waffen nach Platz ordnen: die Waffe auf dem niedrigsten Platz ist die erste (Hauptwaffe)
 	if (t.numWeaps > 1)
@@ -300,16 +353,13 @@ void normalize(DROID_TEMPLATE &t, unsigned player)
 	// ein einzelner Systemturm auf Platz 1 ohne Waffen = Fahrzeug wie bisher
 	if (s.numSys == 1 && t.numWeaps == 0 && s.sysConn[0] == 0)
 	{
-		if (s.sysComp[0] == COMP_SENSOR)
-		{
-			t.asParts[COMP_SENSOR] = s.sysStat[0];
-			if (isTurretEcm(t)) { t.asParts[COMP_ECM] = static_cast<uint16_t>(defaultEcm(player)); }
-		}
-		else
-		{
-			t.asParts[COMP_ECM] = s.sysStat[0];
-			if (isTurretSensor(t)) { t.asParts[COMP_SENSOR] = static_cast<uint16_t>(defaultSensor(player)); }
-		}
+		const int c = s.sysComp[0];
+		const uint16_t st = s.sysStat[0];
+		if (isTurretSensor(t) && c != COMP_SENSOR) { t.asParts[COMP_SENSOR] = static_cast<uint16_t>(defaultSensor(player)); }
+		if (isTurretEcm(t) && c != COMP_ECM) { t.asParts[COMP_ECM] = static_cast<uint16_t>(defaultEcm(player)); }
+		if (c != COMP_CONSTRUCT) { t.asParts[COMP_CONSTRUCT] = 0; }
+		if (c != COMP_REPAIRUNIT && isTurretRepair(t)) { t.asParts[COMP_REPAIRUNIT] = 0; }
+		t.asParts[c] = st;
 		removeSys(s, 0);
 	}
 	if (s.numSys == 0)
@@ -336,7 +386,7 @@ void normalize(DROID_TEMPLATE &t, unsigned player)
 			const int r = sensorRange(asSensorStats[s.sysStat[i]], static_cast<int>(std::min<unsigned>(player, MAX_PLAYERS - 1)));
 			if (r > rangeS) { rangeS = r; bestS = s.sysStat[i]; }
 		}
-		else
+		else if (s.sysComp[i] == COMP_ECM)
 		{
 			const int r = ecmRange(asECMStats[s.sysStat[i]], static_cast<int>(std::min<unsigned>(player, MAX_PLAYERS - 1)));
 			if (r > rangeE) { rangeE = r; bestE = s.sysStat[i]; }
@@ -347,8 +397,16 @@ void normalize(DROID_TEMPLATE &t, unsigned player)
 	if (bestE >= 0) { t.asParts[COMP_ECM] = static_cast<uint16_t>(bestE); }
 	else if (isTurretEcm(t)) { t.asParts[COMP_ECM] = static_cast<uint16_t>(defaultEcm(player)); }
 	t.asParts[COMP_BRAIN] = 0;
-	t.asParts[COMP_CONSTRUCT] = 0;
-	if (isTurretRepair(t)) { t.asParts[COMP_REPAIRUNIT] = 0; }
+	// (24.11.) Bau-/Reparaturturm der Belegung steht in asParts: Bauen/Reparieren, Fahrzeugart, Aufwertungen wie gewohnt
+	int cons = -1, rep = -1;
+	for (unsigned i = 0; i < s.numSys; ++i)
+	{
+		if (s.sysComp[i] == COMP_CONSTRUCT) { cons = s.sysStat[i]; }
+		if (s.sysComp[i] == COMP_REPAIRUNIT) { rep = s.sysStat[i]; }
+	}
+	t.asParts[COMP_CONSTRUCT] = static_cast<uint16_t>(cons >= 0 ? cons : 0);
+	if (rep >= 0) { t.asParts[COMP_REPAIRUNIT] = static_cast<uint16_t>(rep); }
+	else if (isTurretRepair(t)) { t.asParts[COMP_REPAIRUNIT] = 0; }
 }
 
 bool valid(const DROID_TEMPLATE &t, std::string *why)
@@ -361,7 +419,10 @@ bool valid(const DROID_TEMPLATE &t, std::string *why)
 	if (static_cast<unsigned>(std::max<int>(0, t.numWeaps)) + s.numSys > n) { return fail("more turrets than slots"); }
 	if (s.numSys > 0)
 	{
-		if (t.asParts[COMP_BRAIN] != 0 || t.asParts[COMP_CONSTRUCT] != 0 || isTurretRepair(t)) { return fail("construction/repair/command turrets cannot be combined"); }
+		if (t.asParts[COMP_BRAIN] != 0) { return fail("command turrets cannot be combined"); }
+		unsigned roles = 0;
+		for (unsigned i = 0; i < s.numSys; ++i) { if (isRole(s.sysComp[i])) { ++roles; } }
+		if (roles > 1) { return fail("only one construction or repair turret per vehicle"); }
 		if (t.asParts[COMP_PROPULSION] < asPropulsionStats.size() && asPropulsionStats[t.asParts[COMP_PROPULSION]].propulsionType == PROPULSION_TYPE_LIFT)
 		{
 			return fail("VTOLs cannot carry system turrets beside weapons");
@@ -377,9 +438,7 @@ bool valid(const DROID_TEMPLATE &t, std::string *why)
 	for (unsigned i = 0; i < s.numSys; ++i)
 	{
 		if (!take(s.sysConn[i])) { return fail("system turret on an invalid or doubly used slot"); }
-		const bool ok = (s.sysComp[i] == COMP_SENSOR && s.sysStat[i] < asSensorStats.size())
-		             || (s.sysComp[i] == COMP_ECM && s.sysStat[i] < asECMStats.size());
-		if (!ok) { return fail("invalid system turret"); }
+		if (!sysStatOk(s.sysComp[i], s.sysStat[i])) { return fail("invalid system turret"); }
 	}
 	return true;
 }
@@ -424,12 +483,19 @@ nlohmann::json toJson(const ModSlots &s)
 	for (unsigned i = 0; i < s.numSys && i < MOD_MAX_SYS; ++i)
 	{
 		nlohmann::json e = nlohmann::json::object();
-		const bool sensor = s.sysComp[i] == COMP_SENSOR;
 		const COMPONENT_STATS *cs = nullptr;
-		if (sensor && s.sysStat[i] < asSensorStats.size()) { cs = &asSensorStats[s.sysStat[i]]; }
-		if (!sensor && s.sysStat[i] < asECMStats.size()) { cs = &asECMStats[s.sysStat[i]]; }
+		const char *type = nullptr;
+		const unsigned st = s.sysStat[i];
+		switch (s.sysComp[i])
+		{
+		case COMP_SENSOR: if (st < asSensorStats.size()) { cs = &asSensorStats[st]; type = "sensor"; } break;
+		case COMP_ECM: if (st < asECMStats.size()) { cs = &asECMStats[st]; type = "ecm"; } break;
+		case COMP_CONSTRUCT: if (st < asConstructStats.size()) { cs = &asConstructStats[st]; type = "construct"; } break;
+		case COMP_REPAIRUNIT: if (st < asRepairStats.size()) { cs = &asRepairStats[st]; type = "repair"; } break;
+		default: break;
+		}
 		if (cs == nullptr) { continue; }
-		e["type"] = sensor ? "sensor" : "ecm";
+		e["type"] = type;
 		e["id"] = cs->id.toUtf8();
 		e["slot"] = static_cast<int>(s.sysConn[i]);
 		sys.push_back(e);
@@ -457,11 +523,12 @@ bool fromJson(const nlohmann::json &j, ModSlots &s)
 		for (const auto &e : *sys)
 		{
 			if (s.numSys >= MOD_MAX_SYS || !e.is_object()) { break; }
-			const bool sensor = e.value("type", std::string("sensor")) != "ecm";
-			const int idx = getCompFromID(sensor ? COMP_SENSOR : COMP_ECM, WzString::fromUtf8(e.value("id", std::string())));
+			const std::string type = e.value("type", std::string("sensor"));
+			const int comp = type == "ecm" ? COMP_ECM : type == "construct" ? COMP_CONSTRUCT : type == "repair" ? COMP_REPAIRUNIT : COMP_SENSOR;
+			const int idx = getCompFromID(static_cast<COMPONENT_TYPE>(comp), WzString::fromUtf8(e.value("id", std::string())));
 			const int slot = e.value("slot", -1);
 			if (idx < 0 || slot < 0 || slot >= static_cast<int>(MAX_WEAPONS)) { continue; }
-			s.sysComp[s.numSys] = static_cast<uint8_t>(sensor ? COMP_SENSOR : COMP_ECM);
+			s.sysComp[s.numSys] = static_cast<uint8_t>(comp);
 			s.sysStat[s.numSys] = static_cast<uint16_t>(idx);
 			s.sysConn[s.numSys] = static_cast<int8_t>(slot);
 			s.numSys = static_cast<uint8_t>(s.numSys + 1);

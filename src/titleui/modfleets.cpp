@@ -80,7 +80,7 @@ nlohmann::json &fleets() { return s_doc["fleets"]; }
 /// Vergleichsschluessel eines Entwurfs (wie das Spiel: Name + Teile)
 std::string identity(const nlohmann::json &e)
 {
-	static const char *keys[] = {"name", "type", "body", "propulsion", "brain", "repair", "ecm", "sensor", "construct", "weapons"};
+	static const char *keys[] = {"name", "type", "body", "propulsion", "brain", "repair", "ecm", "sensor", "construct", "weapons", "modSlots"};
 	nlohmann::json id = nlohmann::json::object();
 	for (const char *k : keys)
 	{
@@ -765,28 +765,42 @@ enum PartKind { PK_BODY = 0, PK_PROP, PK_WEAPON, PK_SENSOR, PK_CONSTRUCT, PK_REP
 struct DesignPart
 {
 	std::string id, name, model, mount, size, ptype;
+	std::string walker;        // Antrieb: Lauf-Beine (walkerModel) - der Rumpf sitzt auf ihrer Huefte
 	int kind = 0, power = 0, weight = 0, hp = 0, armour = 0, engine = 0, speed = 0, slots = 1, damage = 0, range = 0, firePause = 0, wsize = 2;
 	bool vtolWeapon = false, direct = true;
 	nlohmann::json extra;      // Rumpf: propulsionExtraModels
+	glm::mat4 propM = glm::mat4(1.f);   // Verbundrumpf: Lage des Fahrgestells (Laufwerk folgt ihm)
+	float lift = 0.f;                   // Verbundrumpf: Hub ueber dem Laufwerk (modcompbody::liftOf)
 };
 std::vector<DesignPart> s_parts;
 std::map<std::string, int> s_powerRatio;
+std::map<std::string, std::string> s_propType;   // alle Antriebe (auch nicht waehlbare): ID -> Art (fuer die Laufwerk-Modelle der Rumpfe)
 bool s_partsLoaded = false;
+// (Wunsch 24.11. 01:23 "Die mehreren Turrets sind nicht ausruestbar ... so gestaltet, dass man sehr sehr viele Turrets ausruesten kann"):
+// Turm-Plaetze wie im Spiel bis 30 (MAX_WEAPONS); (01:26 "Systemtuerme und Waffentuerme gleichzeitig") jeder Platz traegt eine Waffe ODER
+// einen Systemturm (Sensor/Schild, Stoersender, Bau- oder Reparaturturm - Bau/Reparatur hoechstens einer), wie modslots im Spiel.
+constexpr int MAX_DSLOTS = 30;
+constexpr int MAX_DSYS = 16;       // = MOD_MAX_SYS
 struct DesignState
 {
 	int body = -1, prop = -1;
-	int turret[3] = {-1, -1, -1};
-	int tab = 0, page = 0;
-	int sub[6] = {0, 0, 0, 0, 0, 0};   // (18.11. 12:03) Unterreiter je Reiter: Rumpf leicht/mittel/schwer/ueberschwer, Antrieb Land/Wasser/Luft, Turm Waffen/Systeme
+	int slot[MAX_DSLOTS];
+	int cur = 0;                   // gewaehlter Turm-Platz
+	int slotPage = 0;              // Seite der Platz-Leiste
+	int tab = 0, page = 0;         // Reiter: 0 Rumpf, 1 Antrieb, 2 Tuerme
+	int sub[3] = {0, 0, 0};   // (18.11. 12:03) Unterreiter je Reiter: Rumpf leicht/mittel/schwer/ueberschwer, Antrieb Land/Wasser/Luft, Turm Waffen/Systeme
 	std::string name;
 	bool edited = false;
 	std::string info;
+	DesignState() { for (int &v : slot) { v = -1; } }
 };
 DesignState s_ds;
 constexpr unsigned ID_D_TAB = 4599600, ID_D_ITEM = 4599620, ID_D_PREV = 4599660, ID_D_NEXT = 4599661, ID_D_SAVE = 4599662, ID_D_BACK = 4599663;
 constexpr unsigned ID_D_NAME = 4599664, ID_D_VIEW = 4599665, ID_D_INFO = 4599666, ID_D_HEAD = 4599700, ID_D_SUB = 4599680;
 constexpr unsigned ID_D_FORGE = 4599667;   // (23.11. 04:23) Rumpf-Baukasten
+constexpr unsigned ID_D_SLOT = 4599800, ID_D_SPREV = 4599840, ID_D_SNEXT = 4599841, ID_D_SCLEAR = 4599842, ID_D_SFILL = 4599843;
 constexpr int D_ROWS = 12;
+int s_rows = D_ROWS;               // Zeilen der Teile-Liste (je nach Platz ueber der Liste)
 
 bool jsonTruthy(const nlohmann::json &j)
 {
@@ -822,6 +836,7 @@ void loadParts()
 		{
 			const nlohmann::json &e = it.value();
 			if (!e.is_object()) { continue; }
+			if (src.kind == PK_PROP) { s_propType[it.key()] = jsonStr(e, "type"); }
 			auto des = e.find("designable");
 			// (Wunsch 23.11. 23:24 "Der Fleet-Designer hat nicht alle Vanilla-Fraktionsruempfe"): die WZ-Fraktionsruempfe sind im Paket
 			// nicht "designable" (im Spiel ersetzt durch die Scav-Fassungen) - hier gehoeren sie trotzdem dazu
@@ -845,6 +860,7 @@ void loadParts()
 				break;
 			case PK_PROP:
 				p.model = jsonStr(e, "model"); p.ptype = jsonStr(e, "type"); p.speed = jsonInt(e, "speed"); p.hp = jsonInt(e, "hitpointPctOfBody");
+				p.walker = jsonStr(e, "walkerModel");
 				break;
 			case PK_WEAPON:
 			{
@@ -883,13 +899,29 @@ void loadParts()
 
 const DesignPart *partAt(int i) { return (i >= 0 && i < static_cast<int>(s_parts.size())) ? &s_parts[static_cast<size_t>(i)] : nullptr; }
 
+const iIMDShape *shapeOf(const std::string &model)
+{
+	if (model.empty()) { return nullptr; }
+	iIMDBaseShape *b = modelGet(WzString::fromUtf8(model));
+	return b ? b->displayModel() : nullptr;
+}
+
+void drawShape(const iIMDShape *shape, const glm::mat4 &m)
+{
+	for (const iIMDShape *imd = shape; imd != nullptr; imd = imd->next.get())
+	{
+		pie_Draw3DButton(imd, imd->getTeamColourForModel(0), m, glm::mat4(1.f));
+	}
+}
+
 /// (Wunsch 23.11. 17:55) Ueber-Rumpfe aus dem Rumpf-Baukasten (im Spiel oder im Menue gespeichert) als Rumpfe im Einheiten-Designer:
 /// Modell aus den Teilen, Werte zusammengerechnet; Laufwerke wie beim Fahrgestell
 void refreshCompositeParts()
 {
 	auto idOf = [](int i) { const DesignPart *p = partAt(i); return p ? p->id : std::string(); };
 	const std::string keepBody = idOf(s_ds.body), keepProp = idOf(s_ds.prop);
-	const std::string keepT[3] = { idOf(s_ds.turret[0]), idOf(s_ds.turret[1]), idOf(s_ds.turret[2]) };
+	std::string keepT[MAX_DSLOTS];
+	for (int k = 0; k < MAX_DSLOTS; ++k) { keepT[k] = idOf(s_ds.slot[k]); }
 	modcompbody::refreshDefs();
 	s_parts.erase(std::remove_if(s_parts.begin(), s_parts.end(), [](const DesignPart &p) { return p.kind == PK_BODY && p.id.rfind("CompBody", 0) == 0; }), s_parts.end());
 	std::vector<DesignPart> add;
@@ -904,6 +936,8 @@ void refreshCompositeParts()
 		p.power = static_cast<int>(t.cost); p.weight = static_cast<int>(t.weight); p.hp = static_cast<int>(t.hp);
 		p.armour = static_cast<int>(t.armour); p.engine = static_cast<int>(t.power); p.slots = std::max(1, static_cast<int>(t.slots));
 		p.size = modcompbody::sizeText(t.size);
+		p.propM = modcompbody::partMatrix(d.parts[0]);   // (24.11.) Laufwerk unter dem Fahrgestell wie im Spiel
+		p.lift = modcompbody::liftOf(d);
 		for (const DesignPart &q : s_parts) { if (q.kind == PK_BODY && q.id == d.parts[0].body) { p.extra = q.extra; break; } }
 		add.push_back(p);
 	}
@@ -920,23 +954,34 @@ void refreshCompositeParts()
 	};
 	s_ds.body = find(keepBody, PK_BODY, PK_BODY);
 	s_ds.prop = find(keepProp, PK_PROP, PK_PROP);
-	for (int k = 0; k < 3; ++k) { s_ds.turret[k] = find(keepT[k], PK_WEAPON, PK_ECM); }
+	for (int k = 0; k < MAX_DSLOTS; ++k) { s_ds.slot[k] = find(keepT[k], PK_WEAPON, PK_ECM); }
 	if (s_ds.body < 0) { for (size_t i = 0; i < s_parts.size(); ++i) { if (s_parts[i].kind == PK_BODY) { s_ds.body = static_cast<int>(i); break; } } }
 	if (s_ds.prop < 0) { for (size_t i = 0; i < s_parts.size(); ++i) { if (s_parts[i].kind == PK_PROP) { s_ds.prop = static_cast<int>(i); break; } } }
 }
 bool vtolProp() { const DesignPart *p = partAt(s_ds.prop); return p != nullptr && p->ptype == "Lift"; }
 bool flyOnlyBody() { const DesignPart *b = partAt(s_ds.body); return b != nullptr && b->id == "Body-Manta"; }   // Nurfluegler: nur Senkrechtstarter
-int bodySlots() { const DesignPart *b = partAt(s_ds.body); return b ? std::min(3, b->slots) : 1; }
+bool isSystemKind(int kind) { return kind >= PK_SENSOR; }
+bool isRoleKind(int kind) { return kind == PK_CONSTRUCT || kind == PK_REPAIR; }
+
+/// Turm-Plaetze des Rumpfs (wie im Spiel: hoechstens so viele, wie das Modell Anschluesse hat; bis 30)
+int bodySlots()
+{
+	const DesignPart *b = partAt(s_ds.body);
+	if (b == nullptr) { return 1; }
+	int n = std::clamp(b->slots, 1, MAX_DSLOTS);
+	if (const iIMDShape *m = shapeOf(b->model))
+	{
+		if (!m->connectors.empty()) { n = std::min(n, static_cast<int>(m->connectors.size())); }
+	}
+	return std::max(1, n);
+}
+/// freie Belegung (Waffen und Systeme gemischt, jeder Platz frei) wie modslots::usable: mindestens zwei Plaetze, kein Senkrechtstarter
+bool freeSlots() { return bodySlots() >= 2 && !vtolProp(); }
 
 bool turretValid(int slot, const DesignPart &t)
 {
 	if (t.kind < PK_WEAPON) { return false; }
-	if (slot >= bodySlots()) { return false; }
-	if (slot > 0)
-	{
-		const DesignPart *t0 = partAt(s_ds.turret[0]);
-		if (t.kind != PK_WEAPON || t0 == nullptr || t0->kind != PK_WEAPON) { return false; }
-	}
+	if (slot < 0 || slot >= bodySlots()) { return false; }
 	if (vtolProp())
 	{
 		if (t.kind != PK_WEAPON || !t.vtolWeapon || !t.direct) { return false; }
@@ -951,6 +996,45 @@ bool turretValid(int slot, const DesignPart &t)
 		const bool light = b != nullptr && b->size == "LIGHT";
 		if (t.wsize == 0 && !light) { return false; }
 		if (t.wsize == 1 && light) { return false; }
+	}
+	if (!freeSlots())
+	{
+		// wie bisher (ein Platz, Senkrechtstarter): weitere Plaetze nur Waffen neben einer Waffe
+		if (slot > 0)
+		{
+			const DesignPart *t0 = partAt(s_ds.slot[0]);
+			if (t.kind != PK_WEAPON || t0 == nullptr || t0->kind != PK_WEAPON) { return false; }
+		}
+		return true;
+	}
+	if (isSystemKind(t.kind))
+	{
+		int sys = 0;
+		for (int k = 0; k < bodySlots(); ++k)
+		{
+			const DesignPart *o = k != slot ? partAt(s_ds.slot[k]) : nullptr;
+			if (o != nullptr && isSystemKind(o->kind)) { ++sys; }
+		}
+		if (sys >= MAX_DSYS) { return false; }
+	}
+	return true;
+}
+
+/// (Wunsch 24.11. 01:23 "alle Antriebe ... nicht sichtbar (an der Einheit nach dem Ausruesten)"): nur Antriebe, die an diesem Rumpf ein
+/// Modell haben - Laufwerk-Modell des Rumpfs (propulsionExtraModels), Lauf-Beine, oder ein Rumpf mit eingebautem Fahrwerk (Pluenderer-
+/// Autos, Schiffe ...: kein einziges Boden-Laufwerk-Modell) fuer Bodenantriebe
+bool propFits(const DesignPart &b, const DesignPart &p)
+{
+	if (!p.walker.empty()) { return true; }
+	if (b.extra.is_object() && b.extra.contains(p.id)) { return true; }
+	if (p.ptype == "Lift") { return false; }
+	if (b.extra.is_object())
+	{
+		for (auto it = b.extra.begin(); it != b.extra.end(); ++it)
+		{
+			const auto ty = s_propType.find(it.key());
+			if (ty == s_propType.end() || ty->second != "Lift") { return false; }   // hat eigene Boden-Laufwerke - dieses fehlt
+		}
 	}
 	return true;
 }
@@ -971,44 +1055,46 @@ bool propIn(const DesignPart &p, int cat)
 	const bool land = !air && p.ptype != "Propellor";
 	return cat == 0 ? land : (cat == 1 ? water : air);
 }
+/// Systemtuerme auf dem gewaehlten Platz moeglich? (freie Belegung: ueberall; sonst nur auf Platz 1)
+bool systemsHere() { return freeSlots() || s_ds.cur == 0; }
 int subCount(int tab)
 {
 	if (tab == 0) { return 4; }
 	if (tab == 1) { return 3; }
-	return tab == 2 ? 2 : 1;   // weitere Waffenplaetze: nur Waffen
+	return systemsHere() ? 2 : 1;
 }
 bool inSub(int tab, const DesignPart &p)
 {
-	const int c = s_ds.sub[std::clamp(tab, 0, 5)];
+	const int c = s_ds.sub[std::clamp(tab, 0, 2)];
 	if (tab == 0) { return bodyClass(p) == c; }
 	if (tab == 1) { return propIn(p, c); }
-	if (tab == 2) { return c == 0 ? p.kind == PK_WEAPON : p.kind != PK_WEAPON; }
-	return true;
+	return c == 0 ? p.kind == PK_WEAPON : p.kind != PK_WEAPON;
 }
-/// Unterreiter, in dem das gewaehlte Teil steht (beim Wechsel des Reiters)
+/// Unterreiter, in dem das gewaehlte Teil steht (beim Wechsel des Reiters oder Platzes)
 int subOfCurrent(int tab)
 {
 	if (tab == 0) { const DesignPart *b = partAt(s_ds.body); return b ? bodyClass(*b) : 0; }
 	if (tab == 1) { const DesignPart *p = partAt(s_ds.prop); if (!p) { return 0; } for (int c = 0; c < 3; ++c) { if (propIn(*p, c)) { return c; } } return 0; }
-	if (tab == 2) { const DesignPart *t = partAt(s_ds.turret[0]); return (t && t->kind != PK_WEAPON) ? 1 : 0; }
-	return 0;
+	const DesignPart *t = partAt(s_ds.slot[std::clamp(s_ds.cur, 0, MAX_DSLOTS - 1)]);
+	return (t && t->kind != PK_WEAPON) ? 1 : 0;
 }
 
 std::vector<int> candidates(int tab)
 {
 	std::vector<int> out;
+	const DesignPart *b = partAt(s_ds.body);
 	for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
 	{
 		const DesignPart &p = s_parts[static_cast<size_t>(i)];
 		if (tab == 0 && p.kind == PK_BODY && inSub(0, p)) { out.push_back(i); }
-		else if (tab == 1 && p.kind == PK_PROP && (!flyOnlyBody() || p.ptype == "Lift") && inSub(1, p)) { out.push_back(i); }
-		else if (tab >= 2 && turretValid(tab - 2, p) && inSub(tab, p)) { out.push_back(i); }
+		else if (tab == 1 && p.kind == PK_PROP && (!flyOnlyBody() || p.ptype == "Lift") && (b == nullptr || propFits(*b, p)) && inSub(1, p)) { out.push_back(i); }
+		else if (tab == 2 && turretValid(s_ds.cur, p) && inSub(2, p)) { out.push_back(i); }
 	}
 	if (tab == 0)
 	{
 		// (Wunsch 23.11. 23:24) Ruempfe nach Herkunft: Projekt, New Paradigm, Kollektiv, Nexus, Transporter, Scavengers, WZ2120, MF, ...
-		auto rank = [](const DesignPart &p) { const modcompbody::BodyInfo *b = modcompbody::bodyInfo(p.id); return b != nullptr ? b->sourceRank : 99; };
-		std::stable_sort(out.begin(), out.end(), [&](int a, int b) { return rank(s_parts[static_cast<size_t>(a)]) < rank(s_parts[static_cast<size_t>(b)]); });
+		auto rank = [](const DesignPart &p) { const modcompbody::BodyInfo *bi = modcompbody::bodyInfo(p.id); return bi != nullptr ? bi->sourceRank : 99; };
+		std::stable_sort(out.begin(), out.end(), [&](int a, int c) { return rank(s_parts[static_cast<size_t>(a)]) < rank(s_parts[static_cast<size_t>(c)]); });
 	}
 	return out;
 }
@@ -1030,6 +1116,7 @@ std::string bodyTag(const DesignPart &p)
 	return s;
 }
 
+/// Entwurf an Rumpf/Antrieb anpassen: Antrieb mit Modell, ungueltige Tuerme weg, hoechstens ein Bau-/Reparaturturm
 void fixTurrets()
 {
 	if (flyOnlyBody() && !vtolProp())
@@ -1039,18 +1126,42 @@ void fixTurrets()
 			if (s_parts[static_cast<size_t>(i)].kind == PK_PROP && s_parts[static_cast<size_t>(i)].ptype == "Lift") { s_ds.prop = i; break; }
 		}
 	}
-	for (int s = 0; s < 3; ++s)
+	const DesignPart *b = partAt(s_ds.body), *p = partAt(s_ds.prop);
+	if (b != nullptr && p != nullptr && !propFits(*b, *p))
 	{
-		const DesignPart *t = partAt(s_ds.turret[s]);
-		if (t != nullptr && !turretValid(s, *t)) { s_ds.turret[s] = -1; }
-		if (s >= bodySlots()) { s_ds.turret[s] = -1; }
+		// gleiche Art bevorzugt (Raeder -> Raeder anderer Stufe), sonst der erste Antrieb mit Modell
+		int best = -1;
+		for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
+		{
+			const DesignPart &q = s_parts[static_cast<size_t>(i)];
+			if (q.kind != PK_PROP || !propFits(*b, q) || (flyOnlyBody() && q.ptype != "Lift")) { continue; }
+			if (best < 0) { best = i; }
+			if (q.ptype == p->ptype) { best = i; break; }
+		}
+		if (best >= 0) { s_ds.prop = best; }
 	}
-	if (s_ds.turret[0] < 0)
+	const int n = bodySlots();
+	bool role = false;
+	for (int s = 0; s < MAX_DSLOTS; ++s)
 	{
-		const std::vector<int> c = candidates(2);
-		if (!c.empty()) { s_ds.turret[0] = c.front(); }
+		const DesignPart *t = partAt(s_ds.slot[s]);
+		if (t == nullptr) { s_ds.slot[s] = -1; continue; }
+		if (s >= n || !turretValid(s, *t)) { s_ds.slot[s] = -1; continue; }
+		if (isRoleKind(t->kind)) { if (role) { s_ds.slot[s] = -1; continue; } role = true; }
 	}
-	if (s_ds.turret[0] < 0) { s_ds.turret[1] = s_ds.turret[2] = -1; }
+	if (!freeSlots() && s_ds.slot[0] < 0) { for (int s = 1; s < MAX_DSLOTS; ++s) { s_ds.slot[s] = -1; } }
+	s_ds.cur = std::clamp(s_ds.cur, 0, n - 1);
+}
+
+/// erster Turm, wenn der Entwurf noch keinen hat (neuer Entwurf)
+void defaultTurret()
+{
+	for (int s = 0; s < bodySlots(); ++s) { if (s_ds.slot[s] >= 0) { return; } }
+	for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
+	{
+		const DesignPart &t = s_parts[static_cast<size_t>(i)];
+		if (t.kind == PK_WEAPON && turretValid(0, t)) { s_ds.slot[0] = i; return; }
+	}
 }
 
 void defaultDesign()
@@ -1063,11 +1174,19 @@ void defaultDesign()
 		if (s_ds.prop < 0 && p.kind == PK_PROP && p.ptype != "Lift") { s_ds.prop = i; }
 	}
 	fixTurrets();
+	defaultTurret();
+}
+
+/// erster belegter Turm-Platz (Hauptturm fuer Namen)
+const DesignPart *mainTurret()
+{
+	for (int s = 0; s < bodySlots(); ++s) { if (const DesignPart *t = partAt(s_ds.slot[s])) { return t; } }
+	return nullptr;
 }
 
 std::string autoName()
 {
-	const DesignPart *t = partAt(s_ds.turret[0]), *b = partAt(s_ds.body), *p = partAt(s_ds.prop);
+	const DesignPart *t = mainTurret(), *b = partAt(s_ds.body), *p = partAt(s_ds.prop);
 	std::string n;
 	if (t) { n += t->name; }
 	if (b) { n += (n.empty() ? "" : " ") + b->name; }
@@ -1085,9 +1204,9 @@ DesignNumbers numbers()
 	r.power = b->power + p->power * b->power / 100;
 	r.weight = b->weight + p->weight * b->weight / 100;
 	r.hp = b->hp + p->hp * b->hp / 100;
-	for (int s = 0; s < 3; ++s)
+	for (int s = 0; s < bodySlots(); ++s)
 	{
-		const DesignPart *t = partAt(s_ds.turret[s]);
+		const DesignPart *t = partAt(s_ds.slot[s]);
 		if (t == nullptr) { continue; }
 		r.power += t->power; r.weight += t->weight; r.hp += t->hp;
 		if (t->kind == PK_WEAPON) { r.damage += t->damage; r.range = std::max(r.range, t->range); }
@@ -1099,21 +1218,6 @@ DesignNumbers numbers()
 	if (b->engine > r.weight) { spd = spd * 3 / 2; }
 	r.speed = p->speed > 0 ? std::min(p->speed, spd) : spd;
 	return r;
-}
-
-const iIMDShape *shapeOf(const std::string &model)
-{
-	if (model.empty()) { return nullptr; }
-	iIMDBaseShape *b = modelGet(WzString::fromUtf8(model));
-	return b ? b->displayModel() : nullptr;
-}
-
-void drawShape(const iIMDShape *shape, const glm::mat4 &m)
-{
-	for (const iIMDShape *imd = shape; imd != nullptr; imd = imd->next.get())
-	{
-		pie_Draw3DButton(imd, imd->getTeamColourForModel(0), m, glm::mat4(1.f));
-	}
 }
 
 class DesignView : public WIDGET
@@ -1129,33 +1233,37 @@ public:
 		if (bs == nullptr) { return; }
 		static int s_rot = 45;
 		s_rot = (s_rot + realTimeAdjustedAverage(BUTTONOBJ_ROTSPEED)) % 360;
-		// (Wunsch 18.11. 12:03 "Das Modell wird nicht richtig dargestellt": winzig und flach) Groesse aus der tatsaechlichen Projektion:
-		// das ganze Fahrzeug (Rumpf, Antrieb, Turm) fuellt gut die Haelfte des Fensters - die Mod-Modelle sind halb so gross wie die
-		// Originale, daher passte die feste Groesse des Spiel-Designers nicht.
-		float ext = static_cast<float>(std::max({std::abs(bs->min.x), std::abs(bs->max.x), std::abs(bs->min.z), std::abs(bs->max.z), 1}));
-		float top = static_cast<float>(std::max(bs->max.y, 1));
-		float bottom = static_cast<float>(std::min(bs->min.y, 0));
-		for (int s = 0; s < 3; ++s)
-		{
-			const DesignPart *t = partAt(s_ds.turret[s]);
-			const iIMDShape *gun = t ? shapeOf(t->model) : nullptr;
-			if (gun == nullptr || bs->connectors.empty()) { continue; }
-			const size_t ci = bs->connectors.size() > static_cast<size_t>(s) ? static_cast<size_t>(s) : 0;
-			top = std::max(top, static_cast<float>(bs->connectors[ci].z + gun->max.y));
-			ext = std::max(ext, static_cast<float>(std::max(std::abs(gun->min.z), std::abs(gun->max.z)) + std::abs(bs->connectors[ci].y)));
-		}
+		// Laufwerk: Modell des Rumpfs fuer diesen Antrieb (links/rechts), bzw. Lauf-Beine
+		const iIMDShape *propL = nullptr, *propR = nullptr;
 		if (p != nullptr && b->extra.is_object())
 		{
 			auto pe = b->extra.find(p->id);
 			if (pe != b->extra.end() && pe->is_object())
 			{
-				if (const iIMDShape *pl = shapeOf(jsonStr(*pe, "left")))
-				{
-					ext = std::max(ext, static_cast<float>(std::max({std::abs(pl->min.x), std::abs(pl->max.x), std::abs(pl->min.z), std::abs(pl->max.z)})));
-					bottom = std::min(bottom, static_cast<float>(pl->min.y));
-				}
+				propL = shapeOf(jsonStr(*pe, "left"));
+				propR = shapeOf(jsonStr(*pe, "right"));
 			}
 		}
+		const iIMDShape *legs = (p != nullptr && !p->walker.empty()) ? shapeOf(p->walker) : nullptr;
+		glm::vec3 hip(0.f);
+		if (legs != nullptr && !legs->connectors.empty()) { hip = glm::vec3(legs->connectors[0].xzy()); }
+		const float lift = legs != nullptr ? 0.f : b->lift;   // Verbundrumpf mit Teilen unter dem Fahrgestell steht hoeher (wie im Spiel)
+		const glm::vec3 bodyOff = legs != nullptr ? hip : glm::vec3(0.f, lift, 0.f);
+
+		// (Wunsch 18.11. 12:03 "Das Modell wird nicht richtig dargestellt": winzig und flach) Groesse aus der tatsaechlichen Projektion.
+		// (Wunsch 24.11. 01:23 "Die Kameraentfernung soll nicht immer vor und zurueck springen, wenn sich ein paar Ausruestungsgegenstaende/
+		// Waffen und anderes veraendern" - 01:34 "kein sanftes Gleiten"): der Ausschnitt haengt NUR am Rumpf (mit Laufwerk), nicht an
+		// Tuermen, Waffen oder Systemen - er aendert sich nur beim Rumpf- oder Antriebswechsel, sofort.
+		float ext = static_cast<float>(std::max({std::abs(bs->min.x), std::abs(bs->max.x), std::abs(bs->min.z), std::abs(bs->max.z), 1}));
+		float top = static_cast<float>(std::max(bs->max.y, 1)) + bodyOff.y;
+		float bottom = std::min(static_cast<float>(bs->min.y) + bodyOff.y, 0.f);
+		for (const iIMDShape *ps : {propL, legs})
+		{
+			if (ps == nullptr) { continue; }
+			ext = std::max(ext, static_cast<float>(std::max({std::abs(ps->min.x), std::abs(ps->max.x), std::abs(ps->min.z), std::abs(ps->max.z)})));
+			bottom = std::min(bottom, static_cast<float>(ps->min.y));
+		}
+		top += 0.25f * std::max(8.f, top - bottom);   // Platz fuer Tuerme, unabhaengig davon, welche es sind
 		const float radius = std::max({ext, (top - bottom) * 0.75f, 8.f});
 		const float midY = (top + bottom) * 0.5f;
 		pie_SetGeometricOffset((x0 + x1) / 2, (y0 + y1) / 2);
@@ -1170,28 +1278,24 @@ public:
 		                     * glm::rotate(glm::radians(static_cast<float>(s_rot)), glm::vec3(0.f, 1.f, 0.f))
 		                     * glm::scale(glm::vec3(scale))
 		                     * glm::translate(glm::vec3(0.f, -midY, 0.f));
+		const glm::mat4 propBase = legs != nullptr ? base : base * b->propM;   // Verbundrumpf: Laufwerk unter dem Fahrgestell
+		const glm::mat4 bodyBase = base * glm::translate(bodyOff);
 		// Laufwerk links/rechts (die vom Betrachter abgewandte Seite zuerst)
-		const iIMDShape *propL = nullptr, *propR = nullptr;
-		if (p != nullptr && b->extra.is_object())
-		{
-			auto pe = b->extra.find(p->id);
-			if (pe != b->extra.end() && pe->is_object())
-			{
-				propL = shapeOf(jsonStr(*pe, "left"));
-				propR = shapeOf(jsonStr(*pe, "right"));
-			}
-		}
 		const bool leftFirst = s_rot > 180;
 		const iIMDShape *firstProp = leftFirst ? propL : propR, *secondProp = leftFirst ? propR : propL;
-		if (firstProp) { drawShape(firstProp, base); }
-		drawShape(bs, base);
-		for (int s = 0; s < 3; ++s)
+		if (legs) { drawShape(legs, base); }
+		if (firstProp) { drawShape(firstProp, propBase); }
+		drawShape(bs, bodyBase);
+		for (int s = 0; s < bodySlots(); ++s)
 		{
-			const DesignPart *t = partAt(s_ds.turret[s]);
+			const DesignPart *t = partAt(s_ds.slot[s]);
 			if (t == nullptr) { continue; }
-			glm::mat4 m = base;
-			const size_t ci = bs->connectors.size() > static_cast<size_t>(s) ? static_cast<size_t>(s) : 0;
-			if (!bs->connectors.empty()) { m *= glm::translate(glm::vec3(bs->connectors[ci].xzy())); }
+			glm::mat4 m = bodyBase;
+			if (!bs->connectors.empty())
+			{
+				const size_t ci = bs->connectors.size() > static_cast<size_t>(s) ? static_cast<size_t>(s) : 0;
+				m *= glm::translate(glm::vec3(bs->connectors[ci].xzy()));
+			}
 			const iIMDShape *mount = shapeOf(t->mount);
 			if (mount != nullptr)
 			{
@@ -1199,11 +1303,29 @@ public:
 				if (!mount->connectors.empty()) { m *= glm::translate(glm::vec3(mount->connectors[0].xzy())); }
 			}
 			const iIMDShape *gun = shapeOf(t->model);
-			if (gun != nullptr) { drawShape(gun, m); }
+			if (gun != nullptr && gun != mount) { drawShape(gun, m); }
 		}
-		if (secondProp) { drawShape(secondProp, base); }
+		if (secondProp) { drawShape(secondProp, propBase); }
 	}
 };
+
+/// Knopf der Platz-Leiste: Nummer im WZ-Stil, darunter ein Strich in der Farbe des Inhalts (Waffe orange, System gruen, leer ohne)
+void displaySlotButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
+	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
+	const int w = psWidget->width(), h = psWidget->height();
+	const int slot = static_cast<int>(psWidget->UserData);
+	const bool sel = slot == s_ds.cur;
+	const bool down = (b->getState() & WBUT_DOWN) != 0;
+	modwzhd::textButton(x0, y0, w, h, std::to_string(slot + 1), sel, b->isMouseOverWidget(), down);
+	const DesignPart *t = (slot >= 0 && slot < MAX_DSLOTS) ? partAt(s_ds.slot[slot]) : nullptr;
+	if (t != nullptr)
+	{
+		const PIELIGHT col = t->kind == PK_WEAPON ? pal_RGBA(255, 170, 60, 255) : pal_RGBA(110, 230, 140, 255);
+		pie_UniTransBoxFill(x0 + 3, y0 + h - 5, x0 + w - 3, y0 + h - 2, col);
+	}
+}
 } // namespace
 
 WzUnitDesignTitleUI::WzUnitDesignTitleUI(int fleetIndex) : fleet(fleetIndex)
@@ -1286,15 +1408,16 @@ void WzUnitDesignTitleUI::build()
 		headLabel(form, ID_D_HEAD + 2, 16, 90, PANEL_W - 32, _("No parts found (stats files missing)."), WZCOL_TEXT_BRIGHT, font_regular);
 	}
 
-	// ---- Reiter: Rumpf, Laufwerk, Turm 1..n - (18.11. 12:03) Original-WZ-Bilder des Design-Bildschirms (verschoenert), darunter die Unterreiter
+	// ---- Reiter: Rumpf, Laufwerk, Tuerme - (18.11. 12:03) Original-WZ-Bilder des Design-Bildschirms (verschoenert), darunter die Unterreiter.
+	// (24.11. 01:23) Die Tuerme haben EINEN Reiter; die Plaetze waehlt die Platz-Leiste darunter (bis 30 Plaetze - vorher lagen "Turret 2/3"
+	// als eigene Reiter hinter dem Vorschaufenster und waren nicht anklickbar)
 	const int slots = bodySlots();
-	const int ntabs = 2 + slots;
 	struct Tab { int img, hi; std::string cap; };
-	std::vector<Tab> tabs = {{IMAGE_DES_BODY, IMAGE_DES_BODYH, _("Body")}, {IMAGE_DES_PROPULSION, IMAGE_DES_PROPULSIONH, _("Propulsion")}};
-	for (int s = 0; s < slots; ++s) { tabs.push_back({IMAGE_DES_TURRET, IMAGE_DES_TURRETH, slots > 1 ? astringf(_("Turret %d"), s + 1) : std::string(_("Turret"))}); }
-	if (s_ds.tab >= ntabs) { s_ds.tab = 0; }
+	const std::vector<Tab> tabs = {{IMAGE_DES_BODY, IMAGE_DES_BODYH, _("Body")}, {IMAGE_DES_PROPULSION, IMAGE_DES_PROPULSIONH, _("Propulsion")},
+	                               {IMAGE_DES_TURRET, IMAGE_DES_TURRETH, slots > 1 ? std::string(_("Turrets")) : std::string(_("Turret"))}};
+	s_ds.tab = std::clamp(s_ds.tab, 0, 2);
 	const int tabW = 45 * 13 / 10, tabH = 24 * 13 / 10, tabGap = 4;
-	for (int k = 0; k < ntabs; ++k)
+	for (int k = 0; k < 3; ++k)
 	{
 		const int cx = 18 + k * (tabW + tabGap);
 		const Tab &t = tabs[static_cast<size_t>(k)];
@@ -1305,59 +1428,94 @@ void WzUnitDesignTitleUI::build()
 	// Unterreiter: Rumpf leicht/mittel/schwer/ueberschwer, Antrieb Land/Wasser/Luft, Turm Waffen/Systeme (WZ-Bilder)
 	const int nsub = subCount(s_ds.tab);
 	s_ds.sub[s_ds.tab] = std::clamp(s_ds.sub[s_ds.tab], 0, nsub - 1);
-	if (nsub > 1)
+	const int sy = 62 + tabH + 18;
+	if (s_ds.tab == 2)
 	{
-		const int sy = 62 + tabH + 18;
-		if (s_ds.tab == 2)
+		const int w2 = 37 * 13 / 10, h2 = 24 * 13 / 10;
+		const int imgs[2][2] = {{IMAGE_DES_WEAPONS, IMAGE_DES_WEAPONSDOWN}, {IMAGE_DES_SYSTEMS, IMAGE_DES_SYSTEMSDOWN}};
+		const char *tips[2] = {_("Weapons"), _("Systems (sensor, shield, construction, repair, ECM)")};
+		for (int k = 0; k < nsub; ++k)
 		{
-			const int w2 = 37 * 13 / 10, h2 = 24 * 13 / 10;
-			const int imgs[2][2] = {{IMAGE_DES_WEAPONS, IMAGE_DES_WEAPONSDOWN}, {IMAGE_DES_SYSTEMS, IMAGE_DES_SYSTEMSDOWN}};
-			const char *tips[2] = {_("Weapons"), _("Systems (sensor, construction, repair, ECM)")};
-			for (int k = 0; k < 2; ++k)
-			{
-				auto b = wzImgButton(form, ID_D_SUB + static_cast<unsigned>(k), 18 + k * (w2 + 6), sy, w2, h2, imgs[k][0], imgs[k][1], tips[k], IC_ARTY);
-				if (k == s_ds.sub[2]) { b->setState(WBUT_CLICKLOCK); }
-			}
-			headLabel(form, ID_D_HEAD + 20, 18 + 2 * (w2 + 6) + 4, sy + 6, 110, s_ds.sub[2] == 0 ? _("Weapons") : _("Systems"), pal_RGBA(255, 214, 110, 255), font_regular, 20);
+			auto b = wzImgButton(form, ID_D_SUB + static_cast<unsigned>(k), 18 + k * (w2 + 6), sy, w2, h2, imgs[k][0], imgs[k][1], tips[k], IC_ARTY);
+			if (k == s_ds.sub[2]) { b->setState(WBUT_CLICKLOCK); }
 		}
-		else
+		const std::string cap = slots > 1 ? astringf(_("Slot %d / %d"), s_ds.cur + 1, slots) : std::string(s_ds.sub[2] == 0 ? _("Weapons") : _("Systems"));
+		headLabel(form, ID_D_HEAD + 20, 18 + 2 * (w2 + 6) + 4, sy + 6, 112, cap, pal_RGBA(255, 214, 110, 255), font_regular, 20);
+	}
+	else if (nsub > 1)
+	{
+		const char *bodyCats[4] = {N_("Light"), N_("Medium"), N_("Heavy"), N_("Super")};
+		const char *propCats[3] = {N_("Land"), N_("Water"), N_("Air")};
+		const char *bodyTips[4] = {N_("Light bodies"), N_("Medium bodies"), N_("Heavy bodies"), N_("Super heavy bodies")};
+		const char *propTips[3] = {N_("Land: wheels, half-tracks, tracks, legs, hover"), N_("Water: ships and hover"), N_("Air: VTOL")};
+		const int totalW = 214, gap = 4;
+		const int w = (totalW - (nsub - 1) * gap) / nsub;
+		for (int k = 0; k < nsub; ++k)
 		{
-			const char *bodyCats[4] = {N_("Light"), N_("Medium"), N_("Heavy"), N_("Super")};
-			const char *propCats[3] = {N_("Land"), N_("Water"), N_("Air")};
-			const char *bodyTips[4] = {N_("Light bodies"), N_("Medium bodies"), N_("Heavy bodies"), N_("Super heavy bodies")};
-			const char *propTips[3] = {N_("Land: wheels, half-tracks, tracks, legs, hover"), N_("Water: ships and hover"), N_("Air: VTOL")};
-			const int totalW = 214, gap = 4;
-			const int w = (totalW - (nsub - 1) * gap) / nsub;
-			for (int k = 0; k < nsub; ++k)
-			{
-				const char *cap = s_ds.tab == 0 ? bodyCats[k] : propCats[k];
-				const char *tip = s_ds.tab == 0 ? bodyTips[k] : propTips[k];
-				auto b = wzTextButton(form, ID_D_SUB + static_cast<unsigned>(k), 18 + k * (w + gap), sy, w, 24, gettext(cap), gettext(tip));
-				if (k == s_ds.sub[s_ds.tab]) { b->setState(WBUT_CLICKLOCK); }
-			}
+			const char *cap = s_ds.tab == 0 ? bodyCats[k] : propCats[k];
+			const char *tip = s_ds.tab == 0 ? bodyTips[k] : propTips[k];
+			auto b = wzTextButton(form, ID_D_SUB + static_cast<unsigned>(k), 18 + k * (w + gap), sy, w, 24, gettext(cap), gettext(tip));
+			if (k == s_ds.sub[s_ds.tab]) { b->setState(WBUT_CLICKLOCK); }
 		}
+	}
+	int listY = sy + 34;
+
+	// ---- Platz-Leiste (Reiter Tuerme, Rumpf mit mehreren Plaetzen): Nummern 1..n, Pfeile bei vielen Plaetzen, leeren, auf alle verteilen
+	if (s_ds.tab == 2 && slots > 1)
+	{
+		const int bw = 22, bh = 22, step = bw + 2;
+		const bool paged = slots > 7;
+		const int per = paged ? 5 : slots;
+		const int pages = (slots + per - 1) / per;
+		if (s_ds.cur / per != s_ds.slotPage) { s_ds.slotPage = s_ds.cur / per; }
+		s_ds.slotPage = std::clamp(s_ds.slotPage, 0, pages - 1);
+		int x = 18;
+		if (paged) { wzNamedButton(form, ID_D_SPREV, x, listY, 18, bh, "wz_left", _("Previous slots"), IC_LEFT); x += 22; }
+		for (int k = s_ds.slotPage * per; k < slots && k < (s_ds.slotPage + 1) * per; ++k)
+		{
+			W_BUTINIT init;
+			init.formID = FRONTEND_BOTFORM;
+			init.id = ID_D_SLOT + static_cast<unsigned>(k);
+			init.x = static_cast<short>(x);
+			init.y = static_cast<short>(listY);
+			init.width = static_cast<unsigned short>(bw);
+			init.height = static_cast<unsigned short>(bh);
+			init.pDisplay = displaySlotButton;
+			init.UserData = static_cast<UDWORD>(k);
+			auto btn = std::make_shared<W_BUTTON>(&init);
+			form->attach(btn);
+			const DesignPart *t = partAt(s_ds.slot[k]);
+			btn->setTip(t ? astringf(_("Slot %d: %s"), k + 1, t->name.c_str()) : astringf(_("Slot %d: empty"), k + 1));
+			x += step;
+		}
+		if (paged) { wzNamedButton(form, ID_D_SNEXT, x, listY, 18, bh, "wz_right", _("Next slots"), IC_RIGHT); x += 22; }
+		x = std::max(x + 2, 18 + 7 * step + 2);
+		wzTextButton(form, ID_D_SCLEAR, x, listY, 22, bh, "X", _("Empty this slot"));
+		wzTextButton(form, ID_D_SFILL, x + 24, listY, 26, bh, _("All"), _("Put this turret on every empty slot"));
+		listY += bh + 6;
 	}
 
 	// ---- links: Liste der Teile des Unterreiters
 	const std::vector<int> cand = candidates(s_ds.tab);
-	const bool allowNone = s_ds.tab >= 3;   // weitere Waffenplaetze duerfen leer bleiben
+	const bool allowNone = s_ds.tab == 2 && (freeSlots() || s_ds.cur > 0);   // Plaetze duerfen leer bleiben (ohne freie Belegung nicht Platz 1)
 	std::vector<int> rows;
 	if (allowNone) { rows.push_back(-1); }
 	rows.insert(rows.end(), cand.begin(), cand.end());
-	const int pages = std::max(1, (static_cast<int>(rows.size()) + D_ROWS - 1) / D_ROWS);
+	const int pagerY = PANEL_H - 66;
+	s_rows = std::clamp((pagerY - 2 - listY) / LINE_H, 4, D_ROWS);
+	const int pages = std::max(1, (static_cast<int>(rows.size()) + s_rows - 1) / s_rows);
 	s_ds.page = std::clamp(s_ds.page, 0, pages - 1);
-	const int current = s_ds.tab == 0 ? s_ds.body : (s_ds.tab == 1 ? s_ds.prop : s_ds.turret[s_ds.tab - 2]);
+	const int current = s_ds.tab == 0 ? s_ds.body : (s_ds.tab == 1 ? s_ds.prop : s_ds.slot[std::clamp(s_ds.cur, 0, MAX_DSLOTS - 1)]);
 	s_selectedButton = 0;
-	const int listY = nsub > 1 ? 62 + tabH + 18 + 34 : 62 + tabH + 22;
 	int y = listY;
-	for (int k = s_ds.page * D_ROWS; k < static_cast<int>(rows.size()) && k < (s_ds.page + 1) * D_ROWS; ++k)
+	for (int k = s_ds.page * s_rows; k < static_cast<int>(rows.size()) && k < (s_ds.page + 1) * s_rows; ++k)
 	{
 		const int idx = rows[static_cast<size_t>(k)];
 		const DesignPart *p = partAt(idx);
 		std::string t = p ? p->name : std::string(_("(none)"));
 		if (p && p->power > 0) { t += astringf("  (%d)", p->power); }
 		if (p && p->kind == PK_BODY) { const std::string tag = bodyTag(*p); if (!tag.empty()) { t += "  - " + tag; } }   // (23.11. 23:24) Herkunft
-		const unsigned id = ID_D_ITEM + static_cast<unsigned>(k - s_ds.page * D_ROWS);
+		const unsigned id = ID_D_ITEM + static_cast<unsigned>(k - s_ds.page * s_rows);
 		lineButton(form, id, 24, y, 210, t);
 		if (idx == current) { s_selectedButton = id; }
 		y += LINE_H;
@@ -1365,10 +1523,9 @@ void WzUnitDesignTitleUI::build()
 	if (rows.empty()) { headLabel(form, ID_D_HEAD + 3, 24, y, 210, _("Nothing fits this body/propulsion"), WZCOL_TEXT_MEDIUM, font_regular); }
 	if (pages > 1)
 	{
-		const int fy = std::min(listY + D_ROWS * LINE_H + 4, PANEL_H - 66);
-		wzNamedButton(form, ID_D_PREV, 24, fy, 36, 24, "wz_left", _("Previous page"), IC_LEFT);   // MOD (21.11.): Tooltip
-		headLabel(form, ID_D_HEAD + 4, 70, fy + 2, 60, astringf("%d / %d", s_ds.page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22, true);
-		wzNamedButton(form, ID_D_NEXT, 140, fy, 36, 24, "wz_right", _("Next page"), IC_RIGHT);
+		wzNamedButton(form, ID_D_PREV, 24, pagerY, 36, 24, "wz_left", _("Previous page"), IC_LEFT);   // MOD (21.11.): Tooltip
+		headLabel(form, ID_D_HEAD + 4, 70, pagerY + 2, 60, astringf("%d / %d", s_ds.page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22, true);
+		wzNamedButton(form, ID_D_NEXT, 140, pagerY, 36, 24, "wz_right", _("Next page"), IC_RIGHT);
 	}
 
 	// ---- rechts: 3D-Vorschau
@@ -1415,6 +1572,56 @@ void WzUnitDesignTitleUI::build()
 	info->setString(WzString::fromUtf8(s_ds.info));
 }
 
+namespace
+{
+/// Entwurf als Vorlage (wie das Spiel sie speichert): Waffen in Platz-Reihenfolge, Systemtuerme; sind Plaetze frei belegt oder Systeme
+/// neben Waffen, steht die Belegung in "modSlots" (modslots im Spiel)
+bool designJson(nlohmann::json &t, std::string &err)
+{
+	const DesignPart *b = partAt(s_ds.body), *p = partAt(s_ds.prop);
+	if (b == nullptr || p == nullptr || mainTurret() == nullptr) { err = _("A design needs a body, a propulsion and a turret"); return false; }
+	t = nlohmann::json::object();
+	t["body"] = b->id; t["propulsion"] = p->id;
+	nlohmann::json weapons = nlohmann::json::array(), weapConn = nlohmann::json::array(), systems = nlohmann::json::array();
+	const DesignPart *sensor = nullptr, *ecm = nullptr, *cons = nullptr, *rep = nullptr;
+	bool identity = true;
+	for (int s = 0; s < bodySlots(); ++s)
+	{
+		const DesignPart *q = partAt(s_ds.slot[s]);
+		if (q == nullptr) { continue; }
+		if (q->kind == PK_WEAPON)
+		{
+			if (static_cast<int>(weapons.size()) != s) { identity = false; }
+			weapons.push_back(q->id);
+			weapConn.push_back(s);
+			continue;
+		}
+		const char *type = q->kind == PK_SENSOR ? "sensor" : q->kind == PK_ECM ? "ecm" : q->kind == PK_CONSTRUCT ? "construct" : "repair";
+		systems.push_back(nlohmann::json{{"type", type}, {"id", q->id}, {"slot", s}});
+		if (q->kind == PK_SENSOR && sensor == nullptr) { sensor = q; }
+		if (q->kind == PK_ECM && ecm == nullptr) { ecm = q; }
+		if (q->kind == PK_CONSTRUCT) { cons = q; }
+		if (q->kind == PK_REPAIR) { rep = q; }
+	}
+	t["type"] = cons ? "CONSTRUCT" : rep ? "REPAIR" : !weapons.empty() ? "WEAPON" : sensor ? "SENSOR" : "ECM";
+	if (!weapons.empty()) { t["weapons"] = weapons; }
+	if (sensor) { t["sensor"] = sensor->id; }
+	if (ecm) { t["ecm"] = ecm->id; }
+	if (cons) { t["construct"] = cons->id; }
+	if (rep) { t["repair"] = rep->id; }
+	// bisherige Form: nur Waffen ab Platz 1 lueckenlos, oder ein einziger Systemturm auf Platz 1
+	const bool classic = (systems.empty() && identity) || (weapons.empty() && systems.size() == 1 && systems[0]["slot"].get<int>() == 0);
+	if (!classic)
+	{
+		nlohmann::json ms = nlohmann::json::object();
+		ms["weapConn"] = weapConn;
+		if (!systems.empty()) { ms["systems"] = systems; }
+		t["modSlots"] = ms;
+	}
+	return true;
+}
+}
+
 TITLECODE WzUnitDesignTitleUI::run()
 {
 	screen_disableMapPreview();
@@ -1433,57 +1640,92 @@ TITLECODE WzUnitDesignTitleUI::run()
 	}
 	bool rebuild = true;
 	s_ds.info.clear();
-	if (id >= ID_D_TAB && id < ID_D_TAB + 6)
+	if (id >= ID_D_TAB && id < ID_D_TAB + 3)
 	{
 		s_ds.tab = static_cast<int>(id - ID_D_TAB); s_ds.page = 0;
 		s_ds.sub[s_ds.tab] = subOfCurrent(s_ds.tab);   // Unterreiter des gewaehlten Teils
 	}
-	else if (id >= ID_D_SUB && id < ID_D_SUB + 4) { s_ds.sub[std::clamp(s_ds.tab, 0, 5)] = static_cast<int>(id - ID_D_SUB); s_ds.page = 0; }
+	else if (id >= ID_D_SUB && id < ID_D_SUB + 4) { s_ds.sub[std::clamp(s_ds.tab, 0, 2)] = static_cast<int>(id - ID_D_SUB); s_ds.page = 0; }
+	else if (id >= ID_D_SLOT && id < ID_D_SLOT + MAX_DSLOTS)
+	{
+		s_ds.cur = static_cast<int>(id - ID_D_SLOT); s_ds.page = 0;
+		s_ds.sub[2] = subOfCurrent(2);
+	}
+	else if (id == ID_D_SPREV || id == ID_D_SNEXT)
+	{
+		const int per = bodySlots() > 7 ? 5 : std::max(1, bodySlots());
+		const int pages = (bodySlots() + per - 1) / per;
+		s_ds.slotPage = std::clamp(s_ds.slotPage + (id == ID_D_SNEXT ? 1 : -1), 0, pages - 1);
+		s_ds.cur = std::min(s_ds.slotPage * per, bodySlots() - 1);
+		s_ds.sub[2] = subOfCurrent(2); s_ds.page = 0;
+	}
+	else if (id == ID_D_SCLEAR)
+	{
+		s_ds.slot[std::clamp(s_ds.cur, 0, MAX_DSLOTS - 1)] = -1;
+		fixTurrets();
+	}
+	else if (id == ID_D_SFILL)
+	{
+		const DesignPart *t = partAt(s_ds.slot[std::clamp(s_ds.cur, 0, MAX_DSLOTS - 1)]);
+		if (t == nullptr) { s_ds.info = _("Choose a turret for this slot first"); }
+		else if (isRoleKind(t->kind)) { s_ds.info = _("Only one construction or repair turret per vehicle"); }
+		else
+		{
+			int added = 0;
+			for (int s = 0; s < bodySlots(); ++s)
+			{
+				if (s_ds.slot[s] >= 0 || !turretValid(s, *t)) { continue; }
+				s_ds.slot[s] = s_ds.slot[s_ds.cur];
+				++added;
+			}
+			fixTurrets();
+			s_ds.info = astringf(_("%d more slots carry %s"), added, t->name.c_str());
+		}
+	}
 	else if (id >= ID_D_ITEM && id < ID_D_ITEM + D_ROWS)
 	{
 		const std::vector<int> cand = candidates(s_ds.tab);
 		std::vector<int> rows;
-		if (s_ds.tab >= 3) { rows.push_back(-1); }
+		if (s_ds.tab == 2 && (freeSlots() || s_ds.cur > 0)) { rows.push_back(-1); }
 		rows.insert(rows.end(), cand.begin(), cand.end());
-		const size_t k = static_cast<size_t>(s_ds.page * D_ROWS) + (id - ID_D_ITEM);
+		const size_t k = static_cast<size_t>(s_ds.page * s_rows) + (id - ID_D_ITEM);
 		if (k < rows.size())
 		{
 			const int idx = rows[k];
 			if (s_ds.tab == 0) { s_ds.body = idx; }
 			else if (s_ds.tab == 1) { s_ds.prop = idx; }
-			else { s_ds.turret[s_ds.tab - 2] = idx; }
+			else
+			{
+				const DesignPart *np = partAt(idx);
+				if (np != nullptr && isRoleKind(np->kind))
+				{
+					// hoechstens ein Bau- ODER Reparaturturm: ein anderer weicht
+					for (int s = 0; s < MAX_DSLOTS; ++s)
+					{
+						const DesignPart *o = partAt(s_ds.slot[s]);
+						if (s != s_ds.cur && o != nullptr && isRoleKind(o->kind)) { s_ds.slot[s] = -1; }
+					}
+				}
+				s_ds.slot[std::clamp(s_ds.cur, 0, MAX_DSLOTS - 1)] = idx;
+			}
 			fixTurrets();
+			if (s_ds.tab != 2) { defaultTurret(); }
 		}
 	}
 	else if (id == ID_D_PREV) { --s_ds.page; }
 	else if (id == ID_D_NEXT) { ++s_ds.page; }
 	else if (id == ID_D_SAVE)
 	{
-		const DesignPart *b = partAt(s_ds.body), *p = partAt(s_ds.prop), *t0 = partAt(s_ds.turret[0]);
-		if (b == nullptr || p == nullptr || t0 == nullptr)
+		nlohmann::json t;
+		std::string err;
+		if (!designJson(t, err))
 		{
-			s_ds.info = _("A design needs a body, a propulsion and a turret");
+			s_ds.info = err;
 		}
 		else
 		{
 			std::string name = s_ds.name.empty() ? autoName() : s_ds.name;
-			nlohmann::json t = nlohmann::json::object();
-			t["name"] = name; t["body"] = b->id; t["propulsion"] = p->id;
-			switch (t0->kind)
-			{
-			case PK_SENSOR: t["type"] = "SENSOR"; t["sensor"] = t0->id; break;
-			case PK_CONSTRUCT: t["type"] = "CONSTRUCT"; t["construct"] = t0->id; break;
-			case PK_REPAIR: t["type"] = "REPAIR"; t["repair"] = t0->id; break;
-			case PK_ECM: t["type"] = "ECM"; t["ecm"] = t0->id; break;
-			default:
-			{
-				t["type"] = "WEAPON";
-				nlohmann::json w = nlohmann::json::array();
-				for (int s = 0; s < 3; ++s) { if (const DesignPart *ws = partAt(s_ds.turret[s])) { w.push_back(ws->id); } }
-				t["weapons"] = w;
-				break;
-			}
-			}
+			t["name"] = name;
 			// in die Flotte (ohne Doppelte); ohne Flotte entsteht "Fleet 1"
 			if (fleets().empty())
 			{

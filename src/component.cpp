@@ -1045,8 +1045,16 @@ static bool modDrawSysTurrets(const DROID *psDroid, const iIMDShape *connBody, c
 	{
 		const iIMDBaseShape *mount = nullptr, *turret = nullptr;
 		const bool sensor = ms.sysComp[k] == COMP_SENSOR;
-		if (sensor && ms.sysStat[k] < asSensorStats.size()) { mount = asSensorStats[ms.sysStat[k]].pMountGraphic; turret = asSensorStats[ms.sysStat[k]].pIMD; }
-		else if (!sensor && ms.sysStat[k] < asECMStats.size()) { mount = asECMStats[ms.sysStat[k]].pMountGraphic; turret = asECMStats[ms.sysStat[k]].pIMD; }
+		const unsigned st = ms.sysStat[k];
+		switch (ms.sysComp[k])
+		{
+		case COMP_SENSOR: if (st < asSensorStats.size()) { mount = asSensorStats[st].pMountGraphic; turret = asSensorStats[st].pIMD; } break;
+		case COMP_ECM: if (st < asECMStats.size()) { mount = asECMStats[st].pMountGraphic; turret = asECMStats[st].pIMD; } break;
+		// (Wunsch 24.11. 01:26) Bau- und Reparaturturm neben Waffen
+		case COMP_CONSTRUCT: if (st < asConstructStats.size()) { mount = asConstructStats[st].pMountGraphic; turret = asConstructStats[st].pIMD; } break;
+		case COMP_REPAIRUNIT: if (st < asRepairStats.size()) { mount = asRepairStats[st].pMountGraphic; turret = asRepairStats[st].pIMD; } break;
+		default: break;
+		}
 		glm::mat4 m = bodyMatrix;
 		float h = heightAboveMap;
 		const int c = ms.sysConn[k];
@@ -1246,6 +1254,12 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 		}
 	}
 
+	// MOD (24.11.): Verbundrumpf mit Teilen unter dem Fahrgestell steht hoeher, damit das Laufwerk unter dem untersten Teil sichtbar ist
+	if (!modWalker)
+	{
+		const float lift = modcompbody::propLift(psDroid->asBits[COMP_BODY]);
+		if (lift > 0.f) { modifiedModelMatrix *= glm::translate(glm::vec3(0.f, lift, 0.f)); }
+	}
 	if (shaking) { modifiedModelMatrix *= hullShake; }   // MOD: ab hier (Rumpf, Turm, Waffen) mit dem Rumpf-Wackeln
 
 	/* set default components transparent */
@@ -1399,7 +1413,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 			const iIMDShape *vis = modVisibleFlipLevel(animBody, modGaitAnimStart(psDroid, animBody, psDroid->timeAnimationStarted));
 			if (vis != nullptr && vis->connectors.size() >= psShapeBody->connectors.size()) { connBody = vis; }
 		}
-		switch (psDroid->droidType)
+		// MOD (Wunsch 24.11. 01:26): Bau-/Reparaturfahrzeug mit Waffen (modslots) - Waffen wie ein Kampffahrzeug, die Systemtuerme (auch
+		// der Bau-/Reparaturturm) an ihren Plaetzen
+		const bool modMixedRole = psDroid->modSlots.numSys > 0 && psDroid->numWeaps > 0
+		                          && (psDroid->droidType == DROID_CONSTRUCT || psDroid->droidType == DROID_REPAIR);
+		switch (modMixedRole ? DROID_WEAPON : psDroid->droidType)
 		{
 		case DROID_DEFAULT:
 		case DROID_TRANSPORTER:
