@@ -41,6 +41,7 @@
 #include "../modwzhd.h"
 
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -771,10 +772,16 @@ struct DesignPart
 	nlohmann::json extra;      // Rumpf: propulsionExtraModels
 	glm::mat4 propM = glm::mat4(1.f);   // Verbundrumpf: Lage des Fahrgestells (Laufwerk folgt ihm)
 	float lift = 0.f;                   // Verbundrumpf: Hub ueber dem Laufwerk (modcompbody::liftOf)
+	std::string source;                 // Rumpf: Herkunft/Fraktion wie im Rumpf-Baukasten ("Scavengers", "Project", "Metal Fatigue" ...)
+	int sourceRank = 99;                // Reihenfolge der Fraktions-Reiter
+	int group = 0;                      // andere Teile: PG_SHARED, PG_SCAV (nur Scavenger), PG_FACTION (nur WZ-Fraktionen), PG_MF
 };
+// (Wunsch 24.11. 02:13 "sauber im Fleet-Designer zwischen Scavenger und anderen Fraktionen trennen"): Teile nach Fraktion
+enum PartGroup { PG_SHARED = 0, PG_SCAV, PG_FACTION, PG_MF };
 std::vector<DesignPart> s_parts;
 std::map<std::string, int> s_powerRatio;
 std::map<std::string, std::string> s_propType;   // alle Antriebe (auch nicht waehlbare): ID -> Art (fuer die Laufwerk-Modelle der Rumpfe)
+std::map<std::string, std::string> s_propModel;  // alle Antriebe: ID -> eigenes Modell (Ersatz-Laufwerk, wenn der Rumpf keines hat)
 bool s_partsLoaded = false;
 // (Wunsch 24.11. 01:23 "Die mehreren Turrets sind nicht ausruestbar ... so gestaltet, dass man sehr sehr viele Turrets ausruesten kann"):
 // Turm-Plaetze wie im Spiel bis 30 (MAX_WEAPONS); (01:26 "Systemtuerme und Waffentuerme gleichzeitig") jeder Platz traegt eine Waffe ODER
@@ -788,6 +795,7 @@ struct DesignState
 	int cur = 0;                   // gewaehlter Turm-Platz
 	int slotPage = 0;              // Seite der Platz-Leiste
 	int tab = 0, page = 0;         // Reiter: 0 Rumpf, 1 Antrieb, 2 Tuerme
+	std::string faction;           // gewaehlte Fraktion (Herkunft der Rumpfe, oben die Reiterleiste)
 	int sub[3] = {0, 0, 0};   // (18.11. 12:03) Unterreiter je Reiter: Rumpf leicht/mittel/schwer/ueberschwer, Antrieb Land/Wasser/Luft, Turm Waffen/Systeme
 	std::string name;
 	bool edited = false;
@@ -799,6 +807,8 @@ constexpr unsigned ID_D_TAB = 4599600, ID_D_ITEM = 4599620, ID_D_PREV = 4599660,
 constexpr unsigned ID_D_NAME = 4599664, ID_D_VIEW = 4599665, ID_D_INFO = 4599666, ID_D_HEAD = 4599700, ID_D_SUB = 4599680;
 constexpr unsigned ID_D_FORGE = 4599667;   // (23.11. 04:23) Rumpf-Baukasten
 constexpr unsigned ID_D_SLOT = 4599800, ID_D_SPREV = 4599840, ID_D_SNEXT = 4599841, ID_D_SCLEAR = 4599842, ID_D_SFILL = 4599843;
+constexpr unsigned ID_D_FACTION = 4599850;   // + Index (Fraktions-Reiter)
+constexpr int D_TOP = 84;                    // Oberkante der Reiter/Vorschau (darueber die Fraktions-Reiter)
 constexpr int D_ROWS = 12;
 int s_rows = D_ROWS;               // Zeilen der Teile-Liste (je nach Platz ueber der Liste)
 
@@ -836,12 +846,32 @@ void loadParts()
 		{
 			const nlohmann::json &e = it.value();
 			if (!e.is_object()) { continue; }
-			if (src.kind == PK_PROP) { s_propType[it.key()] = jsonStr(e, "type"); }
+			if (src.kind == PK_PROP) { s_propType[it.key()] = jsonStr(e, "type"); s_propModel[it.key()] = jsonStr(e, "model"); }
 			auto des = e.find("designable");
+			const bool designable = des != e.end() && jsonTruthy(*des);
 			// (Wunsch 23.11. 23:24 "Der Fleet-Designer hat nicht alle Vanilla-Fraktionsruempfe"): die WZ-Fraktionsruempfe sind im Paket
-			// nicht "designable" (im Spiel ersetzt durch die Scav-Fassungen) - hier gehoeren sie trotzdem dazu
-			const bool wzFaction = src.kind == PK_BODY && modcompbody::isWzFactionBody(it.key());
-			if (!wzFaction && (des == e.end() || !jsonTruthy(*des))) { continue; }
+			// nicht "designable" (im Spiel ersetzt durch die Scav-Fassungen) - hier gehoeren sie trotzdem dazu.
+			// (Wunsch 24.11. 02:13 "natuerlich ALLE Antriebe einbauen ... sauber zwischen Scavenger und anderen Fraktionen trennen"):
+			// alle Rumpfe des Rumpf-Baukastens (nach Fraktion getrennt), alle Fahrzeug-Antriebe (auch Luftkissen und die WZ-Originale der
+			// Scav-Laufwerke) und die im Paket versteckten Vanilla-Teile (VTOL-MG/-Kanone, Plasma-Werfer, Spaeher-Turm, Spaten)
+			bool want = designable;
+			if (src.kind == PK_BODY)
+			{
+				const modcompbody::BodyInfo *bi = modcompbody::bodyInfo(it.key());
+				want = designable || modcompbody::isWzFactionBody(it.key()) || (bi != nullptr && bi->listed);
+			}
+			else if (src.kind == PK_PROP)
+			{
+				const std::string &k = it.key();
+				want = k != "ZNULLPROP" && k.rfind("BaBa", 0) != 0 && k.rfind("CyborgLegs", 0) != 0 && k.rfind("MFL_", 0) != 0 && k != "RailBogie"
+				       && (jsonStr(e, "type") != "Legged" || !jsonStr(e, "walkerModel").empty());
+			}
+			else
+			{
+				static const char *const HIDDEN_VANILLA[] = {"Cannon1-VTOL", "MG1-VTOL", "MG2-VTOL", "PlasmaHeavy", "SpyTurret01", "Spade1Mk1"};
+				for (const char *h : HIDDEN_VANILLA) { if (it.key() == h) { want = true; } }
+			}
+			if (!want) { continue; }
 			DesignPart p;
 			p.id = it.key();
 			p.kind = src.kind;
@@ -880,6 +910,27 @@ void loadParts()
 				break;
 			}
 			s_parts.push_back(p);
+		}
+	}
+	// Fraktion je Teil
+	for (DesignPart &p : s_parts)
+	{
+		if (p.kind == PK_BODY)
+		{
+			const modcompbody::BodyInfo *bi = modcompbody::bodyInfo(p.id);
+			p.source = bi != nullptr ? bi->source : std::string("Mods");
+			p.sourceRank = bi != nullptr ? bi->sourceRank : 11;
+			continue;
+		}
+		auto ends = [&](const char *t) { const size_t n = std::strlen(t); return p.id.size() >= n && p.id.compare(p.id.size() - n, n, t) == 0; };
+		auto starts = [&](const char *t) { return p.id.rfind(t, 0) == 0; };
+		if (ends("-Scav") || ends("-SCAVS") || starts("Baba") || starts("Scav") || starts("scav") || p.id == "Helicopter") { p.group = PG_SCAV; }
+		else if (starts("MF")) { p.group = PG_MF; }
+		else if (p.kind == PK_PROP && s_propType.count(p.id + "-Scav") != 0) { p.group = PG_FACTION; }   // WZ-Original eines Scav-Laufwerks
+		else
+		{
+			static const char *const HIDDEN_VANILLA[] = {"Cannon1-VTOL", "MG1-VTOL", "MG2-VTOL", "PlasmaHeavy", "SpyTurret01", "Spade1Mk1"};
+			for (const char *h : HIDDEN_VANILLA) { if (p.id == h) { p.group = PG_FACTION; } }
 		}
 	}
 	std::stable_sort(s_parts.begin(), s_parts.end(), [](const DesignPart &a, const DesignPart &b) {
@@ -938,6 +989,7 @@ void refreshCompositeParts()
 		p.size = modcompbody::sizeText(t.size);
 		p.propM = modcompbody::partMatrix(d.parts[0]);   // (24.11.) Laufwerk unter dem Fahrgestell wie im Spiel
 		p.lift = modcompbody::liftOf(d);
+		if (const modcompbody::BodyInfo *ci = modcompbody::bodyInfo(d.parts[0].body)) { p.source = ci->source; p.sourceRank = ci->sourceRank; }   // Fraktion des Fahrgestells
 		for (const DesignPart &q : s_parts) { if (q.kind == PK_BODY && q.id == d.parts[0].body) { p.extra = q.extra; break; } }
 		add.push_back(p);
 	}
@@ -963,6 +1015,48 @@ bool flyOnlyBody() { const DesignPart *b = partAt(s_ds.body); return b != nullpt
 bool isSystemKind(int kind) { return kind >= PK_SENSOR; }
 bool isRoleKind(int kind) { return kind == PK_CONSTRUCT || kind == PK_REPAIR; }
 
+/// (Wunsch 24.11. 02:13) Fraktions-Reiter: Rumpfe nach Herkunft; Scav-Teile (Scav-Laufwerke, Scav-Waffen, Ladeflaechen ...) nur bei den
+/// Scavengern, die WZ-Originale derselben Teile nur bei den Fraktionen, MF-Antriebe bei Metal Fatigue, alles andere ueberall
+bool scavFaction() { return s_ds.faction == "Scavengers"; }
+bool inFaction(const DesignPart &p)
+{
+	if (p.kind == PK_BODY) { return p.source == s_ds.faction; }
+	switch (p.group)
+	{
+	case PG_SCAV: return scavFaction();
+	case PG_FACTION: return !scavFaction();
+	case PG_MF: return s_ds.faction == "Metal Fatigue";
+	default: return true;
+	}
+}
+/// Fraktionen mit Rumpfen, in der Reihenfolge des Rumpf-Baukastens
+std::vector<std::string> factionList()
+{
+	std::vector<std::pair<int, std::string>> v;
+	for (const DesignPart &p : s_parts)
+	{
+		if (p.kind != PK_BODY) { continue; }
+		bool have = false;
+		for (const auto &e : v) { if (e.second == p.source) { have = true; } }
+		if (!have) { v.emplace_back(p.sourceRank, p.source); }
+	}
+	std::stable_sort(v.begin(), v.end(), [](const std::pair<int, std::string> &a, const std::pair<int, std::string> &b) { return a.first < b.first; });
+	std::vector<std::string> out;
+	for (const auto &e : v) { out.push_back(e.second); }
+	return out;
+}
+const char *factionLabel(const std::string &s)
+{
+	if (s == "Project") { return "Projekt"; }
+	if (s == "New Paradigm") { return "NP"; }
+	if (s == "Collective") { return "Kollektiv"; }
+	if (s == "Warzone 2100") { return "WZ Transp."; }
+	if (s == "Scavengers") { return "Scavs"; }
+	if (s == "Metal Fatigue") { return "MF"; }
+	if (s == "Supreme Commander") { return "SupCom"; }
+	return s.c_str();
+}
+
 /// Turm-Plaetze des Rumpfs (wie im Spiel: hoechstens so viele, wie das Modell Anschluesse hat; bis 30)
 int bodySlots()
 {
@@ -981,6 +1075,7 @@ bool freeSlots() { return bodySlots() >= 2 && !vtolProp(); }
 bool turretValid(int slot, const DesignPart &t)
 {
 	if (t.kind < PK_WEAPON) { return false; }
+	if (!inFaction(t)) { return false; }
 	if (slot < 0 || slot >= bodySlots()) { return false; }
 	if (vtolProp())
 	{
@@ -1020,23 +1115,34 @@ bool turretValid(int slot, const DesignPart &t)
 	return true;
 }
 
-/// (Wunsch 24.11. 01:23 "alle Antriebe ... nicht sichtbar (an der Einheit nach dem Ausruesten)"): nur Antriebe, die an diesem Rumpf ein
-/// Modell haben - Laufwerk-Modell des Rumpfs (propulsionExtraModels), Lauf-Beine, oder ein Rumpf mit eingebautem Fahrwerk (Pluenderer-
-/// Autos, Schiffe ...: kein einziges Boden-Laufwerk-Modell) fuer Bodenantriebe
-bool propFits(const DesignPart &b, const DesignPart &p)
+/// (Wunsch 24.11. 01:23 "alle Antriebe ... nicht sichtbar (an der Einheit nach dem Ausruesten)" / 02:13 "natuerlich ALLE Antriebe"):
+/// hat der Rumpf fuer diesen Antrieb kein eigenes Laufwerk-Modell, zeigt die Vorschau das Modell des Antriebs selbst (wie im Spiel) -
+/// ausser bei Rumpfen mit eingebautem Fahrwerk (Pluenderer-Autos ...: kein einziges Boden-Laufwerk) fuer Raeder/Ketten
+const iIMDShape *fallbackProp(const DesignPart &b, const DesignPart &p)
 {
-	if (!p.walker.empty()) { return true; }
-	if (b.extra.is_object() && b.extra.contains(p.id)) { return true; }
-	if (p.ptype == "Lift") { return false; }
-	if (b.extra.is_object())
+	if (!p.walker.empty()) { return nullptr; }
+	if (b.extra.is_object() && b.extra.contains(p.id)) { return nullptr; }
+	const bool ground = p.ptype == "Wheeled" || p.ptype == "Half-Tracked" || p.ptype == "Tracked" || p.ptype == "Legged";
+	if (ground)
 	{
-		for (auto it = b.extra.begin(); it != b.extra.end(); ++it)
+		bool builtIn = true;
+		if (b.extra.is_object())
 		{
-			const auto ty = s_propType.find(it.key());
-			if (ty == s_propType.end() || ty->second != "Lift") { return false; }   // hat eigene Boden-Laufwerke - dieses fehlt
+			for (auto it = b.extra.begin(); it != b.extra.end(); ++it)
+			{
+				const auto ty = s_propType.find(it.key());
+				if (ty == s_propType.end() || ty->second != "Lift") { builtIn = false; break; }
+			}
 		}
+		if (builtIn) { return nullptr; }
 	}
-	return true;
+	std::string m = p.model;
+	if (m.empty() && p.id.size() > 5 && p.id.compare(p.id.size() - 5, 5, "-Scav") == 0)
+	{
+		const auto it = s_propModel.find(p.id.substr(0, p.id.size() - 5));   // Scav-Fassung ohne eigenes Modell: das des Originals
+		if (it != s_propModel.end()) { m = it->second; }
+	}
+	return shapeOf(m);
 }
 
 // (Wunsch 18.11. 12:03) "statt 1-5 besser sortiert in leicht, mittel, schwer, ueberschwer; Antrieb vorab eingeteilt in Land, Wasser, Luft;
@@ -1082,12 +1188,11 @@ int subOfCurrent(int tab)
 std::vector<int> candidates(int tab)
 {
 	std::vector<int> out;
-	const DesignPart *b = partAt(s_ds.body);
 	for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
 	{
 		const DesignPart &p = s_parts[static_cast<size_t>(i)];
-		if (tab == 0 && p.kind == PK_BODY && inSub(0, p)) { out.push_back(i); }
-		else if (tab == 1 && p.kind == PK_PROP && (!flyOnlyBody() || p.ptype == "Lift") && (b == nullptr || propFits(*b, p)) && inSub(1, p)) { out.push_back(i); }
+		if (tab == 0 && p.kind == PK_BODY && inFaction(p) && inSub(0, p)) { out.push_back(i); }
+		else if (tab == 1 && p.kind == PK_PROP && inFaction(p) && (!flyOnlyBody() || p.ptype == "Lift") && inSub(1, p)) { out.push_back(i); }
 		else if (tab == 2 && turretValid(s_ds.cur, p) && inSub(2, p)) { out.push_back(i); }
 	}
 	if (tab == 0)
@@ -1126,17 +1231,28 @@ void fixTurrets()
 			if (s_parts[static_cast<size_t>(i)].kind == PK_PROP && s_parts[static_cast<size_t>(i)].ptype == "Lift") { s_ds.prop = i; break; }
 		}
 	}
-	const DesignPart *b = partAt(s_ds.body), *p = partAt(s_ds.prop);
-	if (b != nullptr && p != nullptr && !propFits(*b, *p))
+	// Rumpf aus der gewaehlten Fraktion (Wechsel des Fraktions-Reiters): der erste ihrer Rumpfe
+	const DesignPart *b = partAt(s_ds.body);
+	if (b == nullptr || !inFaction(*b))
 	{
-		// gleiche Art bevorzugt (Raeder -> Raeder anderer Stufe), sonst der erste Antrieb mit Modell
+		for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
+		{
+			if (s_parts[static_cast<size_t>(i)].kind == PK_BODY && inFaction(s_parts[static_cast<size_t>(i)])) { s_ds.body = i; break; }
+		}
+	}
+	// Antrieb aus der Fraktion: das Gegenstueck (Scav-Laufwerk <-> WZ-Original), sonst dieselbe Art, sonst der erste
+	const DesignPart *p = partAt(s_ds.prop);
+	if (p == nullptr || !inFaction(*p) || (flyOnlyBody() && p->ptype != "Lift"))
+	{
+		std::string twin;
+		if (p != nullptr) { twin = (p->id.size() > 5 && p->id.compare(p->id.size() - 5, 5, "-Scav") == 0) ? p->id.substr(0, p->id.size() - 5) : p->id + "-Scav"; }
 		int best = -1;
 		for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
 		{
 			const DesignPart &q = s_parts[static_cast<size_t>(i)];
-			if (q.kind != PK_PROP || !propFits(*b, q) || (flyOnlyBody() && q.ptype != "Lift")) { continue; }
-			if (best < 0) { best = i; }
-			if (q.ptype == p->ptype) { best = i; break; }
+			if (q.kind != PK_PROP || !inFaction(q) || (flyOnlyBody() && q.ptype != "Lift")) { continue; }
+			if (q.id == twin) { best = i; break; }
+			if (best < 0 || (p != nullptr && q.ptype == p->ptype && s_parts[static_cast<size_t>(best)].ptype != p->ptype)) { best = i; }
 		}
 		if (best >= 0) { s_ds.prop = best; }
 	}
@@ -1166,12 +1282,13 @@ void defaultTurret()
 
 void defaultDesign()
 {
+	if (s_ds.faction.empty()) { s_ds.faction = "Scavengers"; }   // die eigene Fraktion
 	if (s_ds.body >= 0) { return; }
 	for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
 	{
 		const DesignPart &p = s_parts[static_cast<size_t>(i)];
-		if (s_ds.body < 0 && p.kind == PK_BODY) { s_ds.body = i; }
-		if (s_ds.prop < 0 && p.kind == PK_PROP && p.ptype != "Lift") { s_ds.prop = i; }
+		if (s_ds.body < 0 && p.kind == PK_BODY && inFaction(p)) { s_ds.body = i; }
+		if (s_ds.prop < 0 && p.kind == PK_PROP && p.ptype != "Lift" && inFaction(p)) { s_ds.prop = i; }
 	}
 	fixTurrets();
 	defaultTurret();
@@ -1245,25 +1362,33 @@ public:
 			}
 		}
 		const iIMDShape *legs = (p != nullptr && !p->walker.empty()) ? shapeOf(p->walker) : nullptr;
+		if (p != nullptr && propL == nullptr && propR == nullptr && legs == nullptr) { propL = fallbackProp(*b, *p); }
 		glm::vec3 hip(0.f);
 		if (legs != nullptr && !legs->connectors.empty()) { hip = glm::vec3(legs->connectors[0].xzy()); }
 		const float lift = legs != nullptr ? 0.f : b->lift;   // Verbundrumpf mit Teilen unter dem Fahrgestell steht hoeher (wie im Spiel)
 		const glm::vec3 bodyOff = legs != nullptr ? hip : glm::vec3(0.f, lift, 0.f);
 
-		// (Wunsch 18.11. 12:03 "Das Modell wird nicht richtig dargestellt": winzig und flach) Groesse aus der tatsaechlichen Projektion.
-		// (Wunsch 24.11. 01:23 "Die Kameraentfernung soll nicht immer vor und zurueck springen, wenn sich ein paar Ausruestungsgegenstaende/
-		// Waffen und anderes veraendern" - 01:34 "kein sanftes Gleiten"): der Ausschnitt haengt NUR am Rumpf (mit Laufwerk), nicht an
-		// Tuermen, Waffen oder Systemen - er aendert sich nur beim Rumpf- oder Antriebswechsel, sofort.
+		// (Wunsch 18.11. 12:03 "Das Modell wird nicht richtig dargestellt": winzig und flach) Groesse aus der tatsaechlichen Projektion:
+		// das ganze Fahrzeug (Rumpf, Antrieb, Turm) fuellt gut die Haelfte des Fensters - die Mod-Modelle sind halb so gross wie die
+		// Originale, daher passte die feste Groesse des Spiel-Designers nicht. (24.11. 02:18: Kamera wieder wie vorher - mit den Tuermen)
 		float ext = static_cast<float>(std::max({std::abs(bs->min.x), std::abs(bs->max.x), std::abs(bs->min.z), std::abs(bs->max.z), 1}));
 		float top = static_cast<float>(std::max(bs->max.y, 1)) + bodyOff.y;
 		float bottom = std::min(static_cast<float>(bs->min.y) + bodyOff.y, 0.f);
+		for (int s = 0; s < bodySlots(); ++s)
+		{
+			const DesignPart *t = partAt(s_ds.slot[s]);
+			const iIMDShape *gun = t ? shapeOf(t->model) : nullptr;
+			if (gun == nullptr || bs->connectors.empty()) { continue; }
+			const size_t ci = bs->connectors.size() > static_cast<size_t>(s) ? static_cast<size_t>(s) : 0;
+			top = std::max(top, static_cast<float>(bs->connectors[ci].z + gun->max.y) + bodyOff.y);
+			ext = std::max(ext, static_cast<float>(std::max(std::abs(gun->min.z), std::abs(gun->max.z)) + std::abs(bs->connectors[ci].y)));
+		}
 		for (const iIMDShape *ps : {propL, legs})
 		{
 			if (ps == nullptr) { continue; }
 			ext = std::max(ext, static_cast<float>(std::max({std::abs(ps->min.x), std::abs(ps->max.x), std::abs(ps->min.z), std::abs(ps->max.z)})));
 			bottom = std::min(bottom, static_cast<float>(ps->min.y));
 		}
-		top += 0.25f * std::max(8.f, top - bottom);   // Platz fuer Tuerme, unabhaengig davon, welche es sind
 		const float radius = std::max({ext, (top - bottom) * 0.75f, 8.f});
 		const float midY = (top + bottom) * 0.5f;
 		pie_SetGeometricOffset((x0 + x1) / 2, (y0 + y1) / 2);
@@ -1408,6 +1533,24 @@ void WzUnitDesignTitleUI::build()
 		headLabel(form, ID_D_HEAD + 2, 16, 90, PANEL_W - 32, _("No parts found (stats files missing)."), WZCOL_TEXT_BRIGHT, font_regular);
 	}
 
+	// ---- (Wunsch 24.11. 02:13 "sauber zwischen Scavenger und anderen Fraktionen trennen") Fraktions-Reiter ueber allem, wie im Rumpf-Baukasten
+	{
+		const std::vector<std::string> fl = factionList();
+		if (!fl.empty())
+		{
+			const int n = static_cast<int>(fl.size()), gap = 3;
+			const int w = std::min(96, (PANEL_W - 32 - (n - 1) * gap) / n);
+			for (int k = 0; k < n; ++k)
+			{
+				const std::string &f = fl[static_cast<size_t>(k)];
+				const std::string tip = f == "Scavengers" ? std::string(_("Scavengers: scav hulls, scav propulsion and scav turrets"))
+				                                         : astringf(_("%s hulls (with the original WZ parts)"), f.c_str());
+				auto b = wzTextButton(form, ID_D_FACTION + static_cast<unsigned>(k), 16 + k * (w + gap), 56, w, 22, factionLabel(f), tip.c_str());
+				if (f == s_ds.faction) { b->setState(WBUT_CLICKLOCK); }
+			}
+		}
+	}
+
 	// ---- Reiter: Rumpf, Laufwerk, Tuerme - (18.11. 12:03) Original-WZ-Bilder des Design-Bildschirms (verschoenert), darunter die Unterreiter.
 	// (24.11. 01:23) Die Tuerme haben EINEN Reiter; die Plaetze waehlt die Platz-Leiste darunter (bis 30 Plaetze - vorher lagen "Turret 2/3"
 	// als eigene Reiter hinter dem Vorschaufenster und waren nicht anklickbar)
@@ -1421,14 +1564,14 @@ void WzUnitDesignTitleUI::build()
 	{
 		const int cx = 18 + k * (tabW + tabGap);
 		const Tab &t = tabs[static_cast<size_t>(k)];
-		auto b = wzImgButton(form, ID_D_TAB + static_cast<unsigned>(k), cx, 62, tabW, tabH, t.img, t.hi, t.cap.c_str(), IC_TANK);
+		auto b = wzImgButton(form, ID_D_TAB + static_cast<unsigned>(k), cx, D_TOP, tabW, tabH, t.img, t.hi, t.cap.c_str(), IC_TANK);
 		if (k == s_ds.tab) { b->setState(WBUT_CLICKLOCK); }
-		headLabel(form, ID_D_HEAD + 10 + static_cast<unsigned>(k), cx - 4, 62 + tabH + 1, tabW + 8, t.cap, k == s_ds.tab ? pal_RGBA(255, 214, 110, 255) : pal_RGBA(190, 210, 240, 255), font_small, 14, true);
+		headLabel(form, ID_D_HEAD + 10 + static_cast<unsigned>(k), cx - 4, D_TOP + tabH + 1, tabW + 8, t.cap, k == s_ds.tab ? pal_RGBA(255, 214, 110, 255) : pal_RGBA(190, 210, 240, 255), font_small, 14, true);
 	}
 	// Unterreiter: Rumpf leicht/mittel/schwer/ueberschwer, Antrieb Land/Wasser/Luft, Turm Waffen/Systeme (WZ-Bilder)
 	const int nsub = subCount(s_ds.tab);
 	s_ds.sub[s_ds.tab] = std::clamp(s_ds.sub[s_ds.tab], 0, nsub - 1);
-	const int sy = 62 + tabH + 18;
+	const int sy = D_TOP + tabH + 18;
 	if (s_ds.tab == 2)
 	{
 		const int w2 = 37 * 13 / 10, h2 = 24 * 13 / 10;
@@ -1532,7 +1675,7 @@ void WzUnitDesignTitleUI::build()
 	auto view = std::make_shared<DesignView>();
 	form->attach(view);
 	view->id = ID_D_VIEW;
-	view->setGeometry(250, 62, PANEL_W - 266, 236);
+	view->setGeometry(250, D_TOP, PANEL_W - 266, 298 - D_TOP);
 	view->setTransparentToClicks(true);
 
 	// ---- Werte
@@ -1640,7 +1783,21 @@ TITLECODE WzUnitDesignTitleUI::run()
 	}
 	bool rebuild = true;
 	s_ds.info.clear();
-	if (id >= ID_D_TAB && id < ID_D_TAB + 3)
+	if (id >= ID_D_FACTION && id < ID_D_FACTION + 32)
+	{
+		const std::vector<std::string> fl = factionList();
+		const size_t k = id - ID_D_FACTION;
+		if (k < fl.size() && fl[k] != s_ds.faction)
+		{
+			s_ds.faction = fl[k];
+			s_ds.page = 0;
+			fixTurrets();
+			defaultTurret();
+			s_ds.sub[0] = subOfCurrent(0); s_ds.sub[1] = subOfCurrent(1); s_ds.sub[2] = subOfCurrent(2);
+			s_ds.edited = false;
+		}
+	}
+	else if (id >= ID_D_TAB && id < ID_D_TAB + 3)
 	{
 		s_ds.tab = static_cast<int>(id - ID_D_TAB); s_ds.page = 0;
 		s_ds.sub[s_ds.tab] = subOfCurrent(s_ds.tab);   // Unterreiter des gewaehlten Teils

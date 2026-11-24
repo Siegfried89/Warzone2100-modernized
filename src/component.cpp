@@ -475,11 +475,65 @@ void displayResearchButton(const BASE_STATS *Stat, const Vector3i *Rotation, con
 }
 
 
+// MOD (Wunsch 24.11. 01:23 "alle Antriebe ... nicht sichtbar" / 02:13 "natuerlich ALLE Antriebe einbauen"): hat der Rumpf fuer einen
+// Antrieb kein eigenes Laufwerk-Modell (z.B. Luftkissen auf einem Pluenderer-Auto, Hubschrauber auf einem Panzer), zeigt das Fahrzeug das
+// Modell des Antriebs selbst (bei Scav-Fassungen ohne eigenes Modell das des WZ-Originals). Nicht bei Infanterie/Cyborgs/Transportern,
+// nicht bei Lauf-Beinen (eigene Zeichnung) und nicht fuer Raeder/Ketten an Rumpfen mit eingebautem Fahrwerk (kein Boden-Laufwerk-Modell).
+static const iIMDBaseShape *modPropFallback(const DROID *psDroid)
+{
+	const unsigned bodyStat = psDroid->asBits[COMP_BODY], propStat = psDroid->asBits[COMP_PROPULSION];
+	if (bodyStat >= asBodyStats.size() || propStat >= asPropulsionStats.size()) { return nullptr; }
+	switch (psDroid->droidType)
+	{
+	case DROID_CYBORG: case DROID_CYBORG_SUPER: case DROID_CYBORG_CONSTRUCT: case DROID_CYBORG_REPAIR:
+	case DROID_PERSON: case DROID_TRANSPORTER: case DROID_SUPERTRANSPORTER:
+		return nullptr;
+	default:
+		break;
+	}
+	const PROPULSION_STATS &ps = asPropulsionStats[propStat];
+	if (ps.walkerIMD != nullptr || ps.propulsionType == PROPULSION_TYPE_LEGGED) { return nullptr; }
+	const BODY_STATS &bs = asBodyStats[bodyStat];
+	const bool ground = ps.propulsionType == PROPULSION_TYPE_WHEELED || ps.propulsionType == PROPULSION_TYPE_HALF_TRACKED || ps.propulsionType == PROPULSION_TYPE_TRACKED;
+	if (ground)
+	{
+		static std::vector<int8_t> s_hasGround;   // je Rumpf: -1 unbekannt, 0 eingebautes Fahrwerk, 1 hat Boden-Laufwerk-Modelle
+		if (s_hasGround.size() != asBodyStats.size()) { s_hasGround.assign(asBodyStats.size(), -1); }
+		if (s_hasGround[bodyStat] < 0)
+		{
+			int8_t has = 0;
+			for (size_t k = 0; k < asPropulsionStats.size() && k * NUM_PROP_SIDES + LEFT_PROP < bs.ppIMDList.size(); ++k)
+			{
+				if (bs.ppIMDList[k * NUM_PROP_SIDES + LEFT_PROP] != nullptr && asPropulsionStats[k].propulsionType != PROPULSION_TYPE_LIFT) { has = 1; break; }
+			}
+			s_hasGround[bodyStat] = has;
+		}
+		if (s_hasGround[bodyStat] == 0) { return nullptr; }
+	}
+	if (ps.pIMD != nullptr) { return ps.pIMD; }
+	static std::vector<const iIMDBaseShape *> s_twin;   // je Antrieb: Modell des Originals (ohne "-Scav")
+	static std::vector<int8_t> s_twinDone;
+	if (s_twinDone.size() != asPropulsionStats.size()) { s_twinDone.assign(asPropulsionStats.size(), 0); s_twin.assign(asPropulsionStats.size(), nullptr); }
+	if (!s_twinDone[propStat])
+	{
+		s_twinDone[propStat] = 1;
+		const std::string id = ps.id.toStdString();
+		if (id.size() > 5 && id.compare(id.size() - 5, 5, "-Scav") == 0)
+		{
+			const int t = getCompFromID(COMP_PROPULSION, WzString::fromUtf8(id.substr(0, id.size() - 5)));
+			if (t >= 0 && static_cast<size_t>(t) < asPropulsionStats.size()) { s_twin[propStat] = asPropulsionStats[t].pIMD; }
+		}
+	}
+	return s_twin[propStat];
+}
+
 static inline const iIMDBaseShape *getLeftPropulsionIMD(const DROID *psDroid)
 {
 	int bodyStat = psDroid->asBits[COMP_BODY];
 	int propStat = psDroid->asBits[COMP_PROPULSION];
-	return asBodyStats[bodyStat].ppIMDList[propStat * NUM_PROP_SIDES + LEFT_PROP];
+	const iIMDBaseShape *m = asBodyStats[bodyStat].ppIMDList[propStat * NUM_PROP_SIDES + LEFT_PROP];
+	if (m == nullptr && asBodyStats[bodyStat].ppIMDList[propStat * NUM_PROP_SIDES + RIGHT_PROP] == nullptr) { m = modPropFallback(psDroid); }
+	return m;
 }
 
 static inline const iIMDBaseShape *getRightPropulsionIMD(const DROID *psDroid)
