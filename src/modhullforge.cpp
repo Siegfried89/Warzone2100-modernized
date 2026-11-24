@@ -46,6 +46,8 @@
 #include "lib/ivis_opengl/screen.h"
 #include "lib/ivis_opengl/textdraw.h"
 #include "lib/sound/audio.h"
+#include "lib/framework/frameresource.h"
+#include "lib/sound/mixer.h"
 #include "lib/widget/button.h"
 #include "lib/widget/editbox.h"
 #include "lib/widget/form.h"
@@ -269,8 +271,16 @@ int s_pendingTip = -1;           // Katalog-Index des Rumpf-Knopfes unter der Ma
 
 void play(const char *file)
 {
-	const int id = audio_GetTrackID(file);
-	if (id >= 0) { audio_PlayTrack(id); }
+	// MOD (Log 24.11. 00:55 "Unable to find data for mfui_clank.ogg type WAV"): im Titelmenue sind die Klaenge aus audio.wrf noch nicht
+	// geladen (die kommen erst mit den Spieldaten) -> dann die Datei aus audio/mf direkt abspielen statt stumm zu bleiben (und ohne Assert)
+	if (resPresent("WAV", file))
+	{
+		const int id = audio_GetTrackID(file);
+		if (id >= 0) { audio_PlayTrack(id); }
+		return;
+	}
+	const std::string path = std::string("audio/mf/") + file;
+	if (PHYSFS_exists(path.c_str())) { audio_PlayStream(path.c_str(), sound_GetUIVolume(), nullptr, nullptr); }
 }
 
 void setStatus(const std::string &t, bool bad = false)
@@ -710,7 +720,7 @@ void removePart(int i)
 	else { selectPart(std::min(std::max(0, s_sel > i ? s_sel - 1 : s_sel), static_cast<int>(s_def.parts.size()) - 1)); }
 	s_selMount = -1;
 	s_dirty = true;
-	play("mfui_rattle.ogg");
+	play("mfui_detach.ogg"); /* MOD: mfui_rattle.ogg gab es nie */
 }
 
 void deleteSelected()
@@ -720,7 +730,7 @@ void deleteSelected()
 		const int k = s_selMount;
 		removeSlot(static_cast<size_t>(k));
 		if (!s_def.mounts.empty()) { selectMount(std::min(k, static_cast<int>(s_def.mounts.size()) - 1)); }
-		play("mfui_rattle.ogg");
+		play("mfui_detach.ogg"); /* MOD: mfui_rattle.ogg gab es nie */
 		return;
 	}
 	removePart(s_sel);
@@ -1383,7 +1393,7 @@ void buildScreen()
 	{
 		const float tx = TAB_X + static_cast<float>(k % TAB_COLS) * TAB_STEP_X, ty = TAB_Y + static_cast<float>(k / TAB_COLS) * TAB_STEP_Y;
 		auto b = addBtn(parent, tx, ty, TAB_W, TAB_H, -1, "", nullptr, [k](bool) {
-			if (k < static_cast<int>(s_sources.size()) && k != s_source) { s_source = k; rebuildItems(); play("mfui_click.ogg"); }
+			if (k < static_cast<int>(s_sources.size()) && k != s_source) { s_source = k; rebuildItems(); play("mfclick_move.ogg"); /* MOD: mfui_click.ogg gab es nie */ }
 		}, nullptr, noDisplay);
 		if (k < static_cast<int>(s_sources.size()))
 		{
@@ -1410,7 +1420,7 @@ void buildScreen()
 		addBtn(parent, 481, SLOTS_Y + 1.f + i * LIST_ROW_H, 152, LIST_ROW_H, -1, "", "Click: select   Right-click: remove", [i](bool right) {
 			const int idx = s_mountScroll + i;
 			if (idx >= static_cast<int>(s_def.mounts.size())) { return; }
-			if (right) { removeSlot(static_cast<size_t>(idx)); play("mfui_rattle.ogg"); } else { selectMount(idx); }
+			if (right) { removeSlot(static_cast<size_t>(idx)); play("mfui_detach.ogg"); /* MOD: mfui_rattle.ogg gab es nie */ } else { selectMount(idx); }
 		}, nullptr, hotDisplay, true);
 	}
 	addBtn0(parent, 598, SLOTS_HEAD_Y - 2, 17, 13, FI_SCROLL_UP, "", "Scroll up", []() { s_mountScroll = std::max(0, s_mountScroll - MOUNT_ROWS); });
@@ -1529,7 +1539,7 @@ void dragEnd(int x, int y)
 		else if (s_dragBtn == 1 && m >= 0)
 		{
 			removeSlot(static_cast<size_t>(m));
-			play("mfui_rattle.ogg");
+			play("mfui_detach.ogg"); /* MOD: mfui_rattle.ogg gab es nie */
 			setStatus("Weapon slot removed.");
 		}
 	}
