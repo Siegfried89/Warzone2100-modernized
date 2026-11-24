@@ -2160,7 +2160,7 @@ void drawOverlay(const glm::mat4 &m)
 			gens.push_back(s);
 			const auto it = s_fuel.find(s->id);
 			const int fuel = it == s_fuel.end() ? START_FUEL : it->second;
-			bar(m, s->pos.x, s->pos.y, s->pos.z + 230, (fuel + GEN_SECS - 1) / GEN_SECS, GEN_BARREL_CAP, fuel > HUNGRY_BELOW ? okOn : lowOn, barOff);   // (17:46) Faesser
+			bar(m, s->pos.x, s->pos.y, s->pos.z + 230, (fuel + GEN_SECS - 1) / GEN_SECS, GEN_BARREL_CAP, fuel > GEN_SECS ? okOn : lowOn, barOff);   // (17:46) Faesser; rot unter 2
 		}
 	}
 	for (const FEATURE *f : gameWorld.objects.features[0])
