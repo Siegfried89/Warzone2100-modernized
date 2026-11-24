@@ -2,6 +2,7 @@
 // MOD: Munitions-Nachschub Fabrik -> Lkw -> Depot -> Front (siehe modcrates.h)
 
 #include "modcrates.h"
+#include "modapc.h"
 #include "modshockwave.h"
 #include "modammo.h"
 #include "modcontrol.h"
@@ -463,6 +464,7 @@ void autopilot()
 			// (Wunsch 18.11. 02:44) "alle Fahrzeuge wie Lkw und Oeltanker nehmen selbstaendig ihre Arbeit auf, immer wieder, falls sie
 			// abbeordert werden, aber mit kurzer Wartezeit": nach einem Spieler-Befehl nur 6 s Pause, sobald der Lkw frei ist
 			if (modoil::isBusy(d->id) || modcontrol::sincePlayerOrder(d) < 6000u || idleMs(d) < 6000u) { continue; }
+			if (modapc::isApc(d) && modapc::load(d) > 0) { continue; }   // (24.11.) mit Mannschaft an Bord: kein Kisten-Autopilot
 			auto it = s_trucks.find(d->id);
 			if (it != s_trucks.end() && it->second.job != J_NONE) { continue; }
 			trucks.push_back(d);
@@ -505,13 +507,9 @@ void autopilot()
 int capacity(const DROID *d)
 {
 	if (d == nullptr || d->isVtol() || d->isTransporter()) { return 0; }
-	const CONSTRUCT_STATS *cs = d->getConstructStats();
-	if (cs == nullptr) { return 0; }
-	const std::string id = cs->id.toUtf8();
-	if (id == "ScavBed1") { return 3; }   // (18.11.) groessere Pickup-Ladeflaeche: 3 statt 2
-	if (id == "ScavBed3") { return 3; }
-	if (id == "ScavBed2") { return 4; }
-	if (id == "ScavBucket") { return 4; }
+	// (Wunsch 24.11. 17:46 "Munitionskisten ueber den APC (Mannschaftstransporter, der auch Einheiten laden kann)"): nur noch die
+	// Schuetzenpanzer fahren Kisten (6 Plaetze); Ladeflaechen-Lkw (Pickup = Wrack-Bergung) und Radlader nicht mehr
+	if (modapc::isApc(d)) { return 6; }
 	return 0;
 }
 
