@@ -553,7 +553,10 @@ bool isDeep(const STRUCTURE *psStructure)
 
 int displayHeight(const STRUCTURE *psStructure, int fallback)
 {
-	if (psStructure == nullptr || psStructure->status != SS_BUILT || !isDeep(psStructure)) { return fallback; }
+	// (24.11.) auch die flachen Graeben sind jetzt eingegraben (Gelaende-Rinne): alle Graeben und tiefen Gruben auf den Originalboden
+	const std::string *key = familyOf(psStructure);
+	const bool sinks = isDeep(psStructure) || (key != nullptr && key->rfind("tr", 0) == 0);
+	if (psStructure == nullptr || psStructure->status != SS_BUILT || !sinks) { return fallback; }
 	const int half = DIST_TILE / 2;
 	const int x0 = map_coord(psStructure->pos.x - half), y0 = map_coord(psStructure->pos.y - half);
 	const int x1 = map_coord(psStructure->pos.x + half), y1 = map_coord(psStructure->pos.y + half);

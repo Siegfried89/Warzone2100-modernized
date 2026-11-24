@@ -12,6 +12,7 @@
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
 #include "lib/framework/fixedpoint.h"
+#include "lib/framework/trig.h"
 #include "lib/framework/file.h"
 
 #include <physfs.h>
@@ -69,6 +70,116 @@ struct Cell
 };
 
 std::unordered_map<uint64_t, Cell> s_cells;
+
+// MOD (24.11.): Graben-Absenkungen als Rinnen/Becken (siehe TrenchSink in modterrain.h)
+std::vector<TrenchSink> s_trench;
+int s_trenchLayer = -1;
+std::unordered_map<uint64_t, std::vector<uint16_t>> s_trenchTiles;   // Feld -> Graben, deren Feld (128 x 128) es beruehrt
+constexpr int TRENCH_HALF = DIST_TILE / 2;   // halbe Feldbreite (Original-Kachel, auch im Feinraster)
+constexpr int TRENCH_RIM = 22;               // halbe Breite der Rinne in voller Tiefe (Graben 40 breit)
+constexpr int PIT_RIM = 40;                  // Becken der Grube (lichte Weite 76)
+constexpr int RAMP_LEN = 30;                 // Anstieg zur Feldkante, wo kein absenkender Nachbar ist
+
+/// Anteil der vollen Tiefe (0..1024) im Abstand perp von der Rinnenmitte: bis rim voll, bis zur Feldkante linear auf 0
+int rimShareI(int perp, int rim)
+{
+	if (perp <= rim) { return 1024; }
+	if (perp >= TRENCH_HALF) { return 0; }
+	return (TRENCH_HALF - perp) * 1024 / (TRENCH_HALF - rim);
+}
+float rimShareF(float perp, float rim)
+{
+	if (perp <= rim) { return 1.f; }
+	if (perp >= static_cast<float>(TRENCH_HALF)) { return 0.f; }
+	return (static_cast<float>(TRENCH_HALF) - perp) / (static_cast<float>(TRENCH_HALF) - rim);
+}
+
+const int ARM_DX[4] = {0, 1, 0, -1};
+const int ARM_DY[4] = {-1, 0, 1, 0};
+
+/// Anteil (0..1024) eines Grabens am Weltpunkt (ganzzahlig, deterministisch)
+int trenchShareI(const TrenchSink &t, int px, int py)
+{
+	const int dx = px - t.x, dy = py - t.y;
+	if (std::abs(dx) > TRENCH_HALF || std::abs(dy) > TRENCH_HALF) { return 0; }
+	const int rim = t.pit ? PIT_RIM : TRENCH_RIM;
+	int best = rimShareI(t.pit ? std::max(std::abs(dx), std::abs(dy)) : iHypot(dx, dy), rim);
+	for (int k = 0; k < 4; ++k)
+	{
+		if ((t.arms & (1 << k)) == 0) { continue; }
+		const int along = dx * ARM_DX[k] + dy * ARM_DY[k];
+		if (along <= 0) { continue; }
+		const int perp = std::abs(dx * ARM_DY[k] - dy * ARM_DX[k]);
+		int v = rimShareI(perp, TRENCH_RIM);
+		if ((t.ramps & (1 << k)) != 0) { v = v * std::clamp(TRENCH_HALF - along, 0, RAMP_LEN) / RAMP_LEN; }
+		best = std::max(best, v);
+	}
+	return best;
+}
+float trenchShareF(const TrenchSink &t, float px, float py)
+{
+	const float dx = px - static_cast<float>(t.x), dy = py - static_cast<float>(t.y);
+	const float H = static_cast<float>(TRENCH_HALF);
+	if (std::fabs(dx) > H || std::fabs(dy) > H) { return 0.f; }
+	const float rim = static_cast<float>(t.pit ? PIT_RIM : TRENCH_RIM);
+	float best = rimShareF(t.pit ? std::max(std::fabs(dx), std::fabs(dy)) : std::sqrt(dx * dx + dy * dy), rim);
+	for (int k = 0; k < 4; ++k)
+	{
+		if ((t.arms & (1 << k)) == 0) { continue; }
+		const float along = dx * static_cast<float>(ARM_DX[k]) + dy * static_cast<float>(ARM_DY[k]);
+		if (along <= 0.f) { continue; }
+		const float perp = std::fabs(dx * static_cast<float>(ARM_DY[k]) - dy * static_cast<float>(ARM_DX[k]));
+		float v = rimShareF(perp, static_cast<float>(TRENCH_RIM));
+		if ((t.ramps & (1 << k)) != 0) { v *= std::clamp((H - along) / static_cast<float>(RAMP_LEN), 0.f, 1.f); }
+		best = std::max(best, v);
+	}
+	return best;
+}
+
+const std::vector<uint16_t> *trenchesAt(int layer, int tileX, int tileY)
+{
+	if (s_trench.empty() || layer != s_trenchLayer) { return nullptr; }
+	const auto it = s_trenchTiles.find((static_cast<uint64_t>(static_cast<uint32_t>(tileX)) << 32) | static_cast<uint32_t>(tileY));
+	return it == s_trenchTiles.end() ? nullptr : &it->second;
+}
+
+/// Standhoehe (Spiellogik): in der Rinne die Sohle, zum Rand hin flacher
+int trenchStandI(int layer, int px, int py)
+{
+	const std::vector<uint16_t> *l = trenchesAt(layer, px >> TILE_SHIFT, py >> TILE_SHIFT);
+	if (l == nullptr) { return 0; }
+	int best = 0;
+	for (uint16_t i : *l)
+	{
+		const TrenchSink &t = s_trench[i];
+		const int sh = trenchShareI(t, px, py);
+		if (sh > 0) { best = std::max(best, std::min(t.floor, (t.vis * sh + 512) / 1024)); }
+	}
+	return best;
+}
+float trenchDepthF(int layer, float px, float py, bool stand)
+{
+	const std::vector<uint16_t> *l = trenchesAt(layer, static_cast<int>(std::floor(px / TILE_UNITS)), static_cast<int>(std::floor(py / TILE_UNITS)));
+	if (l == nullptr) { return 0.f; }
+	float best = 0.f;
+	for (uint16_t i : *l)
+	{
+		const TrenchSink &t = s_trench[i];
+		const float sh = trenchShareF(t, px, py);
+		if (sh <= 0.f) { continue; }
+		const float d = static_cast<float>(t.vis) * sh;
+		best = std::max(best, stand ? std::min(static_cast<float>(t.floor), d) : d);
+	}
+	return best;
+}
+int trenchVisI(int layer, int px, int py)
+{
+	const std::vector<uint16_t> *l = trenchesAt(layer, px >> TILE_SHIFT, py >> TILE_SHIFT);
+	if (l == nullptr) { return 0; }
+	int best = 0;
+	for (uint16_t i : *l) { best = std::max(best, (s_trench[i].vis * trenchShareI(s_trench[i], px, py) + 512) / 1024); }
+	return best;
+}
 
 int layerTag()
 {
@@ -284,11 +395,12 @@ inline float overlapF(float c, float lo)
 
 int sinkAt(const WorldMapState &mapState, int worldX, int worldY)
 {
-	if (s_cells.empty() || &mapState != &gameWorld.map)
+	if ((s_cells.empty() && s_trench.empty()) || &mapState != &gameWorld.map)
 	{
 		return 0;
 	}
 	const int layer = layerTag();
+	const int trench = trenchStandI(layer, worldX, worldY);   // (24.11.) Graben-Rinne: Sohle
 	const int tx = worldX >> TILE_SHIFT, ty = worldY >> TILE_SHIFT;
 	int sum = 0;
 	for (int dy = -1; dy <= 1; ++dy)
@@ -304,7 +416,7 @@ int sinkAt(const WorldMapState &mapState, int worldX, int worldY)
 		}
 	}
 	constexpr int norm = 4 * SINK_EDGE * SINK_EDGE;
-	return (sum + norm / 2) / norm;
+	return std::max(trench, (sum + norm / 2) / norm);
 }
 
 namespace
@@ -326,13 +438,13 @@ float sinkWeighted(float worldX, float worldY, bool visual)
 			if (d != 0) { sum += static_cast<float>(d) * wx * wy; }
 		}
 	}
-	return sum / static_cast<float>(4 * SINK_EDGE * SINK_EDGE);
+	return std::max(trenchDepthF(layer, worldX, worldY, !visual), sum / static_cast<float>(4 * SINK_EDGE * SINK_EDGE));
 }
 } // namespace
 
 float sinkAtF(const WorldMapState &mapState, float worldX, float worldY)
 {
-	if (s_cells.empty() || &mapState != &gameWorld.map)
+	if ((s_cells.empty() && s_trench.empty()) || &mapState != &gameWorld.map)
 	{
 		return 0.f;
 	}
@@ -341,7 +453,7 @@ float sinkAtF(const WorldMapState &mapState, float worldX, float worldY)
 
 float sinkStandF(const WorldMapState &mapState, float worldX, float worldY)
 {
-	if (s_cells.empty() || &mapState != &gameWorld.map)
+	if ((s_cells.empty() && s_trench.empty()) || &mapState != &gameWorld.map)
 	{
 		return 0.f;
 	}
@@ -379,18 +491,19 @@ int cornerTotal(int layer, int x, int y)
 
 int sinkAtCorner(const WorldMapState &mapState, int x, int y)
 {
-	if (s_cells.empty() || &mapState != &gameWorld.map)
+	if ((s_cells.empty() && s_trench.empty()) || &mapState != &gameWorld.map)
 	{
 		return 0;
 	}
 	// (17.11.) tiefe Graeben (Bauwerke) senken die Ecken; Krater/Schuetzenloecher den Feldmittelpunkt (centerSink) - (23.11.) im
 	// Feinraster zusaetzlich den gemeinsamen Mittel-Eckpunkt eines 2 x 2-Kraters
-	return cornerTotal(layerTag(), x, y);
+	const int layer = layerTag();
+	return std::max(cornerTotal(layer, x, y), trenchVisI(layer, world_coord(x), world_coord(y)));   // (24.11.) Graben-Rinne
 }
 
 int centerSink(const WorldMapState &mapState, int x, int y)
 {
-	if (s_cells.empty() || &mapState != &gameWorld.map)
+	if ((s_cells.empty() && s_trench.empty()) || &mapState != &gameWorld.map)
 	{
 		return 0;
 	}
@@ -408,6 +521,13 @@ int centerSink(const WorldMapState &mapState, int x, int y)
 			const int want = std::max(avg, d / 2);
 			return std::max(0, want - avg);
 		}
+	}
+	// (24.11.) Graben-Rinne/Becken: Mittelpunkt so tief wie die Rinne dort, abzueglich der schon abgesenkten Ecken
+	const int tr = trenchVisI(layer, world_coord(x) + TILE_UNITS / 2, world_coord(y) + TILE_UNITS / 2);
+	if (tr > 0)
+	{
+		const int avg = (sinkAtCorner(mapState, x, y) + sinkAtCorner(mapState, x + 1, y) + sinkAtCorner(mapState, x, y + 1) + sinkAtCorner(mapState, x + 1, y + 1) + 2) / 4;
+		return std::max({0, std::max(d, tr) - avg, d > f ? d - f : 0});
 	}
 	return d > f ? d - f : 0;   // die Ecken sind um die Grabentiefe schon abgesenkt
 }
@@ -724,8 +844,61 @@ void setStructureSink(int tileX, int tileY, int depth)
 	tidy(k, tileX, tileY);
 }
 
+void setTrenchSinks(std::vector<TrenchSink> list)
+{
+	const int layer = layerTag();
+	auto same = [](const TrenchSink &a, const TrenchSink &b) {
+		return a.x == b.x && a.y == b.y && a.floor == b.floor && a.vis == b.vis && a.arms == b.arms && a.ramps == b.ramps && a.pit == b.pit;
+	};
+	std::sort(list.begin(), list.end(), [](const TrenchSink &a, const TrenchSink &b) { return a.y != b.y ? a.y < b.y : a.x < b.x; });
+	if (layer == s_trenchLayer && list.size() == s_trench.size() && std::equal(list.begin(), list.end(), s_trench.begin(), same)) { return; }
+	// geaenderte Felder neu zeichnen (alte und neue Lage)
+	auto touch = [](const TrenchSink &t) {
+		const int x0 = (t.x - TRENCH_HALF) >> TILE_SHIFT, y0 = (t.y - TRENCH_HALF) >> TILE_SHIFT;
+		const int x1 = (t.x + TRENCH_HALF) >> TILE_SHIFT, y1 = (t.y + TRENCH_HALF) >> TILE_SHIFT;
+		for (int ty = y0; ty <= y1; ++ty) { for (int tx = x0; tx <= x1; ++tx) { if (tileOnMap(gameWorld.map, tx, ty)) { dirtyAround(tx, ty); } } }
+	};
+	if (layer == s_trenchLayer)
+	{
+		// nur die Unterschiede (beide Listen sortiert)
+		size_t i = 0, j = 0;
+		auto before = [](const TrenchSink &a, const TrenchSink &b) { return a.y != b.y ? a.y < b.y : a.x < b.x; };
+		while (i < s_trench.size() || j < list.size())
+		{
+			if (j >= list.size() || (i < s_trench.size() && before(s_trench[i], list[j]))) { touch(s_trench[i++]); }
+			else if (i >= s_trench.size() || before(list[j], s_trench[i])) { touch(list[j++]); }
+			else { if (!same(s_trench[i], list[j])) { touch(s_trench[i]); touch(list[j]); } ++i; ++j; }
+		}
+	}
+	else
+	{
+		for (const TrenchSink &t : s_trench) { touch(t); }
+		for (const TrenchSink &t : list) { touch(t); }
+	}
+	s_trench.swap(list);
+	s_trenchLayer = layer;
+	s_trenchTiles.clear();
+	for (size_t n = 0; n < s_trench.size() && n < 65535; ++n)
+	{
+		const TrenchSink &t = s_trench[n];
+		const int x0 = (t.x - TRENCH_HALF) >> TILE_SHIFT, y0 = (t.y - TRENCH_HALF) >> TILE_SHIFT;
+		const int x1 = (t.x + TRENCH_HALF) >> TILE_SHIFT, y1 = (t.y + TRENCH_HALF) >> TILE_SHIFT;
+		for (int ty = y0; ty <= y1; ++ty)
+		{
+			for (int tx = x0; tx <= x1; ++tx)
+			{
+				s_trenchTiles[(static_cast<uint64_t>(static_cast<uint32_t>(tx)) << 32) | static_cast<uint32_t>(ty)].push_back(static_cast<uint16_t>(n));
+			}
+		}
+	}
+	++s_version;
+}
+
 void reset()
 {
+	s_trench.clear();
+	s_trenchTiles.clear();
+	s_trenchLayer = -1;
 	s_cells.clear();
 	s_pending.clear();
 	s_blockCache.clear();

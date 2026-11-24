@@ -234,6 +234,14 @@ Def s_def;
 std::vector<Link> s_links;      // parallel zu s_def.mounts
 int s_sel = -1;                 // gewaehltes Teil
 int s_selMount = -1;            // gewaehlter Waffenplatz (>= 0: Verschieben wirkt auf ihn)
+// MOD (Wunsch 24.11. 15:33 "die Ruempfe dicker, duenner, laenger, breiter machen - in einem Unter-Fenster, das mit einem Knopf kommt,
+// bitte das jetzige sehr gute UI nicht noch komplexer machen"): Form-Fenster ueber der Ansicht, Knopf "Form" in der Gruppe PART
+bool s_shapeOpen = false;
+bool s_shapeAll = false;        // ganzer Rumpf statt des gewaehlten Teils
+int s_shapeStep = 1;            // 5 %, 10 %, 25 %
+std::vector<size_t> s_shapeBtns; // Indizes der Knoepfe des Form-Fensters in s_btns
+constexpr float SH_X = 172, SH_Y = 226, SH_W = 250, SH_H = 108;   // Form-Fenster (unten links in der Ansicht)
+const float SHAPE_STEPS[3] = { 0.05f, 0.10f, 0.25f };
 int s_step = 1, s_angle = 1;
 float s_yaw = 215.f, s_pitch = 24.f, s_zoom = 1.f;
 float s_panX = 0.f, s_panY = 0.f;   // Verschiebung der Ansicht (Bildpunkte)
@@ -772,6 +780,67 @@ void resetSelected()
 	s_dirty = true;
 }
 
+/// Form aendern: Achse 0 = Breite (x), 1 = Hoehe (y), 2 = Laenge (z); sign +1 groesser, -1 kleiner (Faktor 1 + Schritt bzw. sein Kehrwert)
+void shapeChange(int axis, float sign)
+{
+	const float f = sign > 0.f ? 1.f + SHAPE_STEPS[s_shapeStep] : 1.f / (1.f + SHAPE_STEPS[s_shapeStep]);
+	if (!s_shapeAll)
+	{
+		if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size())) { setStatus("Select a part first (or switch to the whole hull).", true); return; }
+		Part &p = s_def.parts[static_cast<size_t>(s_sel)];
+		p.stretch[axis] = std::clamp(p.stretch[axis] * f, 0.25f, 4.f);
+		syncPart(s_sel);
+	}
+	else
+	{
+		if (s_def.parts.empty()) { return; }
+		// ganzer Rumpf: Lagen strecken und jedes Teil entlang der Welt-Achse (ueber seine Drehung auf die Teil-Achsen verteilt)
+		glm::vec3 F(1.f); F[axis] = f;
+		std::vector<bool> linked(s_def.mounts.size(), false);
+		for (size_t k = 0; k < s_def.mounts.size(); ++k) { linked[k] = linkValid(k); }
+		for (size_t i = 0; i < s_def.parts.size(); ++i)
+		{
+			Part &p = s_def.parts[i];
+			p.pos[axis] *= f;
+			glm::mat4 r(1.f);
+			r = glm::rotate(r, glm::radians(p.rot.x), glm::vec3(0.f, 1.f, 0.f));
+			r = glm::rotate(r, glm::radians(p.rot.y), glm::vec3(1.f, 0.f, 0.f));
+			r = glm::rotate(r, glm::radians(p.rot.z), glm::vec3(0.f, 0.f, 1.f));
+			for (int j = 0; j < 3; ++j)
+			{
+				glm::vec3 e(0.f); e[j] = 1.f;
+				const glm::vec3 w = glm::vec3(r * glm::vec4(e, 0.f));
+				p.stretch[j] = std::clamp(p.stretch[j] * glm::length(F * w), 0.25f, 4.f);
+			}
+			syncPart(static_cast<int>(i));
+		}
+		for (size_t k = 0; k < s_def.mounts.size(); ++k) { if (!linked[k]) { s_def.mounts[k].pos[axis] *= f; } }
+	}
+	s_dirty = true;
+}
+
+void shapeReset()
+{
+	if (s_shapeAll) { for (size_t i = 0; i < s_def.parts.size(); ++i) { s_def.parts[i].stretch = glm::vec3(1.f); syncPart(static_cast<int>(i)); } }
+	else if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size())) { s_def.parts[static_cast<size_t>(s_sel)].stretch = glm::vec3(1.f); syncPart(s_sel); }
+	else { return; }
+	s_dirty = true;
+	play("mfui_clank.ogg");
+}
+
+void shapeShow(bool on)
+{
+	s_shapeOpen = on;
+	for (size_t k : s_shapeBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
+}
+
+bool inShapePanel(int x, int y)
+{
+	if (!s_shapeOpen) { return false; }
+	const Ctx c = ctx();
+	return x >= c.X(SH_X) && x <= c.X(SH_X + SH_W) && y >= c.Y(SH_Y) && y <= c.Y(SH_Y + SH_H);
+}
+
 void addMount()
 {
 	if (s_def.mounts.size() >= modcompbody::MAX_SLOTS) { setStatus("At most " + std::to_string(modcompbody::MAX_SLOTS) + " weapon slots.", true); return; }
@@ -1235,6 +1304,31 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 
 	drawBay(c);
 
+	// ---- (24.11.) Form-Fenster (die Knoepfe zeichnen sich selbst darueber)
+	if (s_shapeOpen)
+	{
+		pie_UniTransBoxFill(c.X(SH_X), c.Y(SH_Y), c.X(SH_X + SH_W), c.Y(SH_Y + SH_H), pal_RGBA(6, 12, 28, 235));
+		groupFrame(c, SH_X, SH_Y, SH_W, SH_H, "SHAPE");
+		const bool havePart = s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size());
+		const std::string who = s_shapeAll ? "whole hull" : (havePart ? "part " + std::to_string(s_sel + 1) + " " + bodyName(s_def.parts[static_cast<size_t>(s_sel)].body) : "no part selected");
+		wzText(fitW(who, c.L(SH_W - 60), TK_ROW, S), c.X(SH_X + 50), c.Y(SH_Y + 3), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
+		static const char *names[3] = { "Length", "Width", "Height" };
+		static const int axes[3] = { 2, 0, 1 };
+		for (int r = 0; r < 3; ++r)
+		{
+			const float ry = SH_Y + 34 + r * 18;
+			wzText(names[r], c.X(SH_X + 6), c.Y(ry + 2), WZCOL_TEXT_BRIGHT, TK_ROW, S);
+			std::string v = "-";
+			if (!s_shapeAll && havePart)
+			{
+				char buf[32];
+				snprintf(buf, sizeof(buf), "%d %%", static_cast<int>(std::lround(s_def.parts[static_cast<size_t>(s_sel)].stretch[axes[r]] * 100.f)));
+				v = buf;
+			}
+			wzText(v, c.X(SH_X + 126) - textW(v, TK_ROW, S) / 2, c.Y(ry + 2), pal_RGBA(255, 226, 140, 255), TK_ROW, S);
+		}
+	}
+
 	// ---- Auswahl-Zeile
 	{
 		std::string t;
@@ -1251,6 +1345,11 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			snprintf(buf, sizeof(buf), "Part %d %s    x %.1f   y %.1f   z %.1f    turn %.0f   nose %.0f   roll %.0f%s%s%s", s_sel + 1, bodyName(p.body).c_str(), p.pos.x, p.pos.y, p.pos.z, p.rot.x, p.rot.y, p.rot.z,
 			         (p.flip & 1) ? "   flip X" : "", (p.flip & 2) ? "   flip Y" : "", (p.flip & 4) ? "   flip Z" : "");
 			t = buf;
+			if (glm::length(p.stretch - glm::vec3(1.f)) > 1e-3f)
+			{
+				snprintf(buf, sizeof(buf), "   shape L%d W%d H%d %%", static_cast<int>(std::lround(p.stretch.z * 100.f)), static_cast<int>(std::lround(p.stretch.x * 100.f)), static_cast<int>(std::lround(p.stretch.y * 100.f)));
+				t += buf;
+			}
 		}
 		else { t = "Nothing selected - click a part or a slot"; }
 		wzText(fitW(t, c.L(628), TK_ROW, S), c.X(6), c.Y(339), pal_RGBA(255, 226, 140, 255), TK_ROW, S);
@@ -1289,7 +1388,8 @@ void btnDisplay(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int dy = down ? 1 : 0;
 	if (!haveIcon)
 	{
-		WzText &t = cachedText(bt.label, fontFor(TK_BUTTON, S));
+		const TextKind tk = textW(bt.label, TK_BUTTON, S) > w - 2 ? TK_SMALL : TK_BUTTON;   // (24.11.) schmale Knoepfe
+		WzText &t = cachedText(bt.label, fontFor(tk, S));
 		t.render(static_cast<float>(x0 + std::max(1, (w - t.width()) / 2)), static_cast<float>(y0 + (h - t.lineSize()) / 2 - t.aboveBase() + dy), tc, 0.f, w - 2);
 		return;
 	}
@@ -1453,14 +1553,38 @@ void buildScreen()
 		{ FI_ROLL_L, "Roll", "Roll left [Z]", 2, -1.f }, { FI_ROLL_R, "Roll", "Roll right [C]", 2, 1.f },
 	};
 	for (int k = 0; k < 6; ++k) { const MB m = rt[k]; addBtn0(parent, 210.f + k * 39.f, ROW_A + 18, 37, 44, m.icon, m.l, m.tip, [m]() { rotate(m.axis, m.sign); }); }
-	// ---- TEIL
-	addBtn0(parent, 448, ROW_A + 14, 26, 48, FI_COPY, "Copy", "Copy part", []() { duplicatePart(false); });
-	addBtn0(parent, 475, ROW_A + 14, 26, 48, FI_MIRROR, "Mirror", "Copy to the other side", []() { duplicatePart(true); });
-	addBtn0(parent, 502, ROW_A + 14, 26, 48, FI_REMOVE, "Del", "Remove [Del]", []() { deleteSelected(); });
-	addBtn0(parent, 529, ROW_A + 14, 26, 48, FI_RESET, "Reset", "Reset rotation", []() { resetSelected(); });
-	addBtn0(parent, 556, ROW_A + 14, 26, 48, FI_FLIP_X, "X", "Flip left/right", []() { flipSelected(1); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 1); });
-	addBtn0(parent, 583, ROW_A + 14, 26, 48, FI_FLIP_Y, "Y", "Flip upside down", []() { flipSelected(2); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 2); });
-	addBtn0(parent, 610, ROW_A + 14, 26, 48, FI_FLIP_Z, "Z", "Flip front/back", []() { flipSelected(4); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 4); });
+	// ---- TEIL ((24.11.) acht Knoepfe: dazu "Form" fuer das Form-Fenster)
+	constexpr float PW = 22.5f, PS = 23.5f;
+	addBtn0(parent, 448 + 0 * PS, ROW_A + 14, PW, 48, FI_COPY, "Copy", "Copy part", []() { duplicatePart(false); });
+	addBtn0(parent, 448 + 1 * PS, ROW_A + 14, PW, 48, FI_MIRROR, "Mirror", "Copy to the other side", []() { duplicatePart(true); });
+	addBtn0(parent, 448 + 2 * PS, ROW_A + 14, PW, 48, FI_REMOVE, "Del", "Remove [Del]", []() { deleteSelected(); });
+	addBtn0(parent, 448 + 3 * PS, ROW_A + 14, PW, 48, FI_RESET, "Reset", "Reset rotation", []() { resetSelected(); });
+	addBtn0(parent, 448 + 4 * PS, ROW_A + 14, PW, 48, FI_FLIP_X, "X", "Flip left/right", []() { flipSelected(1); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 1); });
+	addBtn0(parent, 448 + 5 * PS, ROW_A + 14, PW, 48, FI_FLIP_Y, "Y", "Flip upside down", []() { flipSelected(2); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 2); });
+	addBtn0(parent, 448 + 6 * PS, ROW_A + 14, PW, 48, FI_FLIP_Z, "Z", "Flip front/back", []() { flipSelected(4); }, []() { return partSelected() && (s_def.parts[static_cast<size_t>(s_sel)].flip & 4); });
+	addBtn0(parent, 448 + 7 * PS, ROW_A + 14, PW, 48, -1, "Form", "Shape: make the part (or the whole hull) longer, wider, thicker or thinner",
+	        []() { shapeShow(!s_shapeOpen); play("mfclick_move.ogg"); }, []() { return s_shapeOpen; });
+	// ---- (24.11.) Form-Fenster (anfangs verborgen)
+	{
+		const size_t first = s_btns.size();
+		addBtn0(parent, SH_X + 4, SH_Y + 16, 44, 14, -1, "Part", "Change the selected part", []() { s_shapeAll = false; }, []() { return !s_shapeAll; });
+		addBtn0(parent, SH_X + 50, SH_Y + 16, 70, 14, -1, "Whole hull", "Change the whole hull (all parts and their places)", []() { s_shapeAll = true; }, []() { return s_shapeAll; });
+		static const char *stLbl[3] = { "5%", "10%", "25%" };
+		for (int k = 0; k < 3; ++k) { addBtn0(parent, SH_X + 150 + k * 32.f, SH_Y + 16, 30, 14, -1, stLbl[k], "Step size", [k]() { s_shapeStep = k; }, [k]() { return s_shapeStep == k; }); }
+		static const int axes[3] = { 2, 0, 1 };
+		static const char *minusTip[3] = { "Shorter", "Narrower", "Thinner (lower)" };
+		static const char *plusTip[3] = { "Longer", "Wider", "Thicker (higher)" };
+		for (int r = 0; r < 3; ++r)
+		{
+			const int ax = axes[r];
+			addBtn0(parent, SH_X + 70, SH_Y + 34 + r * 18.f, 28, 16, -1, "-", minusTip[r], [ax]() { shapeChange(ax, -1.f); });
+			addBtn0(parent, SH_X + 154, SH_Y + 34 + r * 18.f, 28, 16, -1, "+", plusTip[r], [ax]() { shapeChange(ax, 1.f); });
+		}
+		addBtn0(parent, SH_X + 4, SH_Y + 89, 60, 16, -1, "Reset", "Back to the original shape", []() { shapeReset(); });
+		addBtn0(parent, SH_X + SH_W - 64, SH_Y + 89, 60, 16, -1, "Done", "Close the shape window", []() { shapeShow(false); });
+		s_shapeBtns.clear();
+		for (size_t k = first; k < s_btns.size(); ++k) { s_shapeBtns.push_back(k); }
+	}
 	// ---- UEBER-RUMPF
 	addBtn0(parent, 168, ROW_B + 13, 52, 42, FI_NEW, "New", "New hull", []() { newHull(); });
 	addBtn0(parent, 222, ROW_B + 13, 52, 42, FI_LOAD_PREV, "Prev", "Previous saved hull", []() { loadCycle(-1); });
@@ -1488,6 +1612,7 @@ void buildScreen()
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
 	s_screen = screen;
 	s_root = root;
+	shapeShow(s_shapeOpen);
 }
 
 bool mouseInBay()
@@ -1499,6 +1624,7 @@ bool mouseInBay()
 
 bool inBay(int x, int y)
 {
+	if (inShapePanel(x, y)) { return false; }   // (24.11.) Form-Fenster liegt ueber der Ansicht
 	const Ctx c = ctx();
 	return x >= c.X(BAY_X) && x <= c.X(BAY_X + BAY_W) && y >= c.Y(BAY_Y) && y <= c.Y(BAY_Y + BAY_H);
 }

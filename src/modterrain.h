@@ -59,8 +59,24 @@ int sinkAtCorner(const WorldMapState &mapState, int x, int y);
 int centerSink(const WorldMapState &mapState, int x, int y);
 /// (17.11.) Krater/Schuetzenloch auf diesem Feld: fuer alle Fahrzeuge (Raeder, Ketten, Halbketten, Luftkissen) unbefahrbar
 bool blocksVehicles(const WorldMapState &mapState, int x, int y);
-/// Absenkung durch ein Bauwerk (tiefer Graben) setzen; 0 = aufheben
+/// Absenkung durch ein Bauwerk (tiefer Graben) setzen; 0 = aufheben (alt: ganze Kachel - seit 24.11. ungenutzt, siehe TrenchSink)
 void setStructureSink(int tileX, int tileY, int depth);
+
+/// MOD (Wunsch 24.11. 15:33 "Die Graeben sind keine, und die tiefen Graeben versinken nicht richtig"): Graben-Bauwerke senken das
+/// Gelaende nicht mehr als ganze Kachel (Kasten, in dem das schmale Grabenmodell schwebte), sondern nur entlang ihres Grabens: eine Rinne
+/// durch die Feldmitte zu jeder offenen Seite (Graben an Graben durchgehend, zu einem Feld ohne Graben steigt die Rinne bis zur Feldkante
+/// auf Bodenhoehe an), bei Gruben ein Becken. Ausserhalb des Feldes (128 x 128 um die Mitte) bleibt das Gelaende unberuehrt.
+struct TrenchSink
+{
+	int x = 0, y = 0;       ///< Mitte (Welt)
+	int floor = 0;          ///< Sohle des Modells unter dem Boden (Standhoehe der Einheiten in der Rinne)
+	int vis = 0;            ///< Tiefe des Gelaendenetzes in der Rinne (tiefer als die Sohle - das grobe Netz stoesst nirgends durch)
+	uint8_t arms = 0;       ///< Rinne zur Seite: 1 Nord, 2 Ost, 4 Sued, 8 West
+	uint8_t ramps = 0;      ///< davon: steigt zur Feldkante auf Bodenhoehe an (kein absenkender Nachbar)
+	bool pit = false;       ///< Grube: Becken statt Rinne
+};
+/// alle Graben-Absenkungen der aktiven Ebene neu setzen (aus dem Spielzustand, auf allen Rechnern gleich; Reihenfolge egal)
+void setTrenchSinks(std::vector<TrenchSink> list);
 
 /// (17.11. 14:14) "Beim Krater sieht man einen kegelfoermigen Erdhaufen. Den schuettet der Bagger dann hinein."
 /// Erdhaufen am Rand jedes Kraters/Schuetzenlochs der aktiven Ebene (nur Anzeige): Weltlage, Groesse 0..1 (nach Resttiefe), Drehung

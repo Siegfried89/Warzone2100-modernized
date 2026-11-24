@@ -92,6 +92,7 @@ nlohmann::json toJson(const Def &d)
 		e["body"] = p.body; e["pos"] = vec3(p.pos); e["rot"] = vec3(p.rot);
 		if (std::fabs(p.scale - 1.f) > 1e-4f) { e["scale"] = p.scale; }
 		if (p.flip != 0) { e["flip"] = p.flip; }
+		if (glm::length(p.stretch - glm::vec3(1.f)) > 1e-4f) { e["stretch"] = vec3(p.stretch); }   // (24.11.) Form
 		parts.push_back(e);
 	}
 	j["parts"] = parts;
@@ -123,6 +124,7 @@ bool fromJson(const nlohmann::json &j, Def &d)
 		if (e.contains("rot")) { p.rot = vec3(e["rot"]); }
 		p.scale = std::clamp(e.value("scale", 1.f), 0.1f, 4.f);
 		p.flip = std::clamp(e.value("flip", 0), 0, 7);
+		if (e.contains("stretch")) { p.stretch = glm::clamp(vec3(e["stretch"]), glm::vec3(0.25f), glm::vec3(4.f)); }
 		d.parts.push_back(p);
 	}
 	if (j.contains("mounts") && j["mounts"].is_array())
@@ -536,7 +538,8 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 	Slot &sl = s_slots[slotIdx];
 	sl.defId = d.id;
 	sl.prop = partMatrix(d.parts[0]);
-	sl.propShift = (glm::length(d.parts[0].pos) > 1e-3f || glm::length(d.parts[0].rot) > 1e-3f || std::fabs(d.parts[0].scale - 1.f) > 1e-3f);
+	sl.propShift = (glm::length(d.parts[0].pos) > 1e-3f || glm::length(d.parts[0].rot) > 1e-3f || std::fabs(d.parts[0].scale - 1.f) > 1e-3f
+	               || glm::length(d.parts[0].stretch - glm::vec3(1.f)) > 1e-3f);
 	sl.lift = liftOf(d);
 	sl.yaw.clear();
 	{
@@ -779,7 +782,7 @@ glm::mat4 partMatrix(const Part &p, bool withFlip)
 	m = glm::rotate(m, glm::radians(p.rot.x), glm::vec3(0.f, 1.f, 0.f));
 	m = glm::rotate(m, glm::radians(p.rot.y), glm::vec3(1.f, 0.f, 0.f));
 	m = glm::rotate(m, glm::radians(p.rot.z), glm::vec3(0.f, 0.f, 1.f));
-	glm::vec3 sc(p.scale);
+	glm::vec3 sc = p.scale * p.stretch;   // (24.11.) Form je Achse
 	if (withFlip)
 	{
 		if (p.flip & 1) { sc.x = -sc.x; }

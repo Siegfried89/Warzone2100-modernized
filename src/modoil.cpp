@@ -6,6 +6,7 @@
 #include "modcontrol.h"   // (21.11.) Spieler-Befehl unterbricht den Autopiloten kurz
 #include "action.h"
 #include "modterrain.h"
+#include "modfort.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/vector.h"
@@ -1651,49 +1652,72 @@ void logistics()
 
 // ---------------------------------------------------------------- tiefe Graeben: Gelaende absenken
 
-constexpr int TRENCH_DEPTH = 24;   // (17.11. 14:14) = Sohle der tiefen Modelle (trench.py); das Netz darunter senkt modterrain tiefer
+constexpr int TRENCH_DEPTH = 24;   // (17.11. 14:14) = Sohle der tiefen Modelle (trench.py)
 
-bool isDeepTrench(const STRUCTURE_STATS *st)
+/// MOD (Wunsch 24.11. 15:33 "Die Graeben sind keine, und die tiefen Graeben versinken nicht richtig"): JEDER Graben ist eingegraben -
+/// Sohle des Modells unter dem Boden (floor) und Tiefe des Gelaendenetzes in der Rinne (vis, tiefer, damit das grobe Netz nirgends
+/// durch die Sohle stoesst). 0 = senkt nicht (flache Gruben, Mauern ...).
+struct SinkKind { int floor = 0, vis = 0; bool pit = false; };
+SinkKind sinkKindOf(const STRUCTURE_STATS *st)
 {
-	if (st == nullptr || !st->infantryPassable) { return false; }
-	return st->id.toUtf8().find("Deep") != std::string::npos;
+	SinkKind k;
+	if (st == nullptr || st->type == REF_DEMOLISH) { return k; }
+	const std::string id = st->id.toUtf8();
+	if (id == "A0BaBaTrench" || id == "A0BaBaTrenchCover") { k.floor = 12; k.vis = 26; }
+	else if (id == "A0BaBaTrenchDeep" || id == "A0BaBaTrenchDeepCover") { k.floor = TRENCH_DEPTH; k.vis = 44; }
+	else if (id == "A0BaBaTrenchEarth") { k.floor = 10; k.vis = 22; }
+	else if (id == "A0BaBaTrenchEarthDeep") { k.floor = 20; k.vis = 38; }
+	else if (id == "A0BaBaPitSquareDeep" || id == "A0BaBaPitHexDeep") { k.floor = TRENCH_DEPTH; k.vis = 48; k.pit = true; }
+	return k;
 }
 
 void updateTerrain()
 {
-	std::set<std::pair<int, int>> want;
+	// alle fertigen Graben-Bauwerke der aktiven Ebene (Mitte -> Art); Reihenfolge der Liste egal (modterrain sortiert)
+	std::map<std::pair<int, int>, std::pair<const STRUCTURE *, SinkKind>> at;
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		for (const STRUCTURE *s : gameWorld.objects.structures[p])
 		{
-			if (s == nullptr || s->died || s->status != SS_BUILT || !isDeepTrench(s->pStructureType)) { continue; }
-			// (17.11.) alle Felder unter der Stellung (Feinraster: Block aus 2x2 Feldern)
-			constexpr int S = DIST_TILE / TILE_UNITS;
-			const int tx0 = map_coord(s->pos.x - (S * TILE_UNITS) / 2), ty0 = map_coord(s->pos.y - (S * TILE_UNITS) / 2);
-			for (int j = 0; j < S; ++j)
-			{
-				for (int i = 0; i < S; ++i) { want.insert(std::make_pair(tx0 + i, ty0 + j)); }
-			}
+			if (s == nullptr || s->died || s->status != SS_BUILT) { continue; }
+			const SinkKind k = sinkKindOf(s->pStructureType);
+			if (k.floor <= 0) { continue; }
+			at[std::make_pair(s->pos.x, s->pos.y)] = std::make_pair(s, k);
 		}
 	}
-	if (want.empty() && s_lowered.empty()) { return; }
-	for (const auto &t : want)
+	if (at.empty()) { modterrain::setTrenchSinks({}); return; }
+	static const int DX[4] = {0, 1, 0, -1}, DY[4] = {-1, 0, 1, 0};   // Seite k: 1 Nord, 2 Ost, 4 Sued, 8 West
+	std::vector<modterrain::TrenchSink> list;
+	list.reserve(at.size());
+	for (const auto &kv : at)
 	{
-		if (s_lowered.find(t) == s_lowered.end())
+		const STRUCTURE *s = kv.second.first;
+		const SinkKind &k = kv.second.second;
+		modterrain::TrenchSink t;
+		t.x = s->pos.x; t.y = s->pos.y; t.floor = k.floor; t.vis = k.vis; t.pit = k.pit;
+		uint8_t sinkNb = 0;
+		for (int d = 0; d < 4; ++d)
 		{
-			s_lowered[t] = TRENCH_DEPTH;
-			modterrain::setStructureSink(t.first, t.second, TRENCH_DEPTH);
+			if (at.count(std::make_pair(s->pos.x + DX[d] * DIST_TILE, s->pos.y + DY[d] * DIST_TILE)) != 0) { sinkNb |= static_cast<uint8_t>(1 << d); }
 		}
-	}
-	for (auto it = s_lowered.begin(); it != s_lowered.end();)
-	{
-		if (want.count(it->first) == 0)
+		uint8_t arms = sinkNb;
+		if (modfort::isFort(s))
 		{
-			modterrain::setStructureSink(it->first.first, it->first.second, 0);
-			it = s_lowered.erase(it);
+			// Stellungsnetz: Gaenge des Modells (auch zu Gruben und Eingaengen ohne absenkenden Nachbarn)
+			arms |= static_cast<uint8_t>(modfort::sides(map_coord(s->pos.x), map_coord(s->pos.y)) & 0x0f);
 		}
-		else { ++it; }
+		else if (!k.pit)
+		{
+			// Erdgraben (gewoehnliches Mauer-Modell): ein Nachbar = gerades Stueck, das auf der Gegenseite offen endet;
+			// keiner = gerades Stueck in Baurichtung
+			if (arms == 1 || arms == 2 || arms == 4 || arms == 8) { arms |= static_cast<uint8_t>(((arms << 2) | (arms >> 2)) & 0x0f); }
+			else if (arms == 0) { arms = (((s->rot.direction + 0x2000u) >> 14) & 1u) ? 0x05 : 0x0a; }   // Richtung 0: Modell laengs x
+		}
+		t.arms = arms;
+		t.ramps = static_cast<uint8_t>(arms & ~sinkNb);
+		list.push_back(t);
 	}
+	modterrain::setTrenchSinks(std::move(list));
 }
 
 } // namespace

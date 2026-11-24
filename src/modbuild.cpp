@@ -1119,6 +1119,31 @@ void autoHelp(GameWorld &world)
 }
 } // namespace
 
+STRUCTURE_STATS *trenchVariant(STRUCTURE_STATS *st, unsigned player, const Vector2i &worldPos)
+{
+	if (st == nullptr || player >= MAX_PLAYERS) { return st; }
+	const std::string id = st->id.toUtf8();
+	const char *coverId = id == "A0BaBaTrench" ? "A0BaBaTrenchCover" : (id == "A0BaBaTrenchDeep" ? "A0BaBaTrenchDeepCover" : nullptr);
+	if (coverId == nullptr) { return st; }
+	STRUCTURE_STATS *cover = getStructStatsFromName(WzString::fromUtf8(coverId));
+	if (cover == nullptr) { return st; }
+	const int cidx = static_cast<int>(cover - asStructureStats);
+	if (cidx < 0 || cidx >= static_cast<int>(numStructureStats)) { return st; }
+	if (apStructTypeLists[player][cidx] != AVAILABLE && apStructTypeLists[player][cidx] != REDUNDANT) { return st; }
+	// Plan-Kacheln (Original-Kacheln, auch im Feinraster); Laufindex entlang waagrechter und senkrechter Linien
+	const int tx = std::max(0, worldPos.x) / DIST_TILE, ty = std::max(0, worldPos.y) / DIST_TILE;
+	const int n = tx + ty;
+	constexpr int CYCLE = 8;
+	const uint32_t c = static_cast<uint32_t>(n / CYCLE);
+	uint32_t h = c * 2654435761u ^ 0x9e3779b9u;
+	h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+	if (h % 5u == 0u) { return st; }   // manche Abschnitte ganz offen ("ab und zu")
+	const int run = 1 + static_cast<int>((h >> 4) % 3u);                                      // 1, 2 oder 3 ueberdachte Felder
+	const int start = 1 + static_cast<int>((h >> 8) % static_cast<uint32_t>(CYCLE - run - 1));   // nicht am Abschnittsrand
+	const int k = n % CYCLE;
+	return (k >= start && k < start + run) ? cover : st;
+}
+
 void tick(GameWorld &world)
 {
 	autoHelp(world);   // (20.11.) Baufahrzeuge helfen nach ihrem Bau in der Naehe mit
