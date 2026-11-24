@@ -104,6 +104,7 @@ struct CargoState
 	uint32_t target = 0;
 	int kind = 0;               // Ziel: 0 Kraftwerk, 1 Wasserturm, 2 Raffinerie, 3 Oelturm
 	bool tank = false;          // Oeltransporter (holt veredelte Faesser an der Raffinerie)
+	int content = 0;            // (Wunsch 24.11. 17:01, nur noch Tanker) Ladung: 0 leer, 1 Rohoel (Oelturm -> Raffinerie), 2 veredelt
 	int tx = 0, ty = 0;
 	int stuck = 0;
 	int pause = 0;
@@ -140,6 +141,7 @@ std::map<uint32_t, int> s_station;           // (16.11.) Tankstelle -> Vorrat in
 std::map<std::pair<int, int>, int> s_lowered;   // tiefe Graeben: abgesenkte Kachel -> Tiefe (modterrain)
 std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
+bool s_startChecked[MAX_PLAYERS] = {};       // (24.11. 17:01) Tanker fuer schon stehende Oeltuerme/Raffinerien vergeben
 int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwerk-Geschenk, Bit 2 = Raffinerie-Geschenk schon vergeben
 bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
 int s_bank[MAX_PLAYERS] = {};               // (Wunsch 21.11. 20:22) Energie verbrannter Faesser, die noch stetig ins Konto laeuft
@@ -214,10 +216,8 @@ int cargoCapacity(const DROID *d)
 {
 	const CONSTRUCT_STATS *cs = d->getConstructStats();
 	if (cs == nullptr) { return 0; }
-	if (idIs(cs->id, "ScavBed1")) { return 3; }   // (18.11.) groessere Pickup-Ladeflaeche: 3 statt 2
-	if (idIs(cs->id, "ScavBed3")) { return 3; }
-	if (idIs(cs->id, "ScavBed2")) { return 4; }
-	if (idIs(cs->id, "ScavBucket")) { return 6; }
+	// (Wunsch 24.11. 17:01 "Fasstransporter-Trucks GANZ entfernen ... Den Oeltransport von jeder Stelle zu jeder Stelle uebernehmen ab jetzt
+	// NUR noch die Oeltanker"): Ladeflaechen (Pickup, Pritsche, Schaufel) fahren kein Oel mehr (Munitionskisten weiterhin, modcrates)
 	if (idIs(cs->id, "ScavTank") || idIs(cs->id, "ScavTankB")) { return 10; }
 	return 0;
 }
@@ -634,8 +634,10 @@ EconomyView economyView(int p)
 		if (cap <= 0) { continue; }
 		const auto it = s_cargo.find(d->id);
 		const int n = it == s_cargo.end() ? 0 : it->second.n;
-		if (isTank(d)) { v.tankers++; v.tankerBarrels += n; v.tankerCap += cap; }
-		else { v.pickups++; v.pickupBarrels += n; v.pickupCap += cap; }
+		// (24.11. 17:01) nur noch Tanker: im Fenster zaehlen sie beim Transport (Rohoel) und beim Oeltanker (veredelt)
+		const bool raw = it != s_cargo.end() && it->second.content == 1;
+		v.tankers++; v.tankerCap += cap; v.pickups++; v.pickupCap += cap;
+		if (raw) { v.pickupBarrels += n; } else { v.tankerBarrels += n; }
 	}
 	v.pipeRatePerMin = static_cast<int>(pipeRateNum * INCOME_MULT / 10000);   // (24.11.) x3
 	v.power = getPower(static_cast<unsigned>(p));
@@ -699,6 +701,7 @@ bool manages(int player)
 
 void reset()
 {
+	for (bool &b : s_startChecked) { b = false; }
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		for (int k = 0; k < INC_COUNT; k++) { s_ledger[p][k] = 0; }
@@ -754,6 +757,11 @@ void saveState(std::vector<int64_t> &out)
 		if (s_duty[p]) { out.push_back(11); out.push_back(p); out.push_back(1); }
 		if (s_bank[p] > 0) { out.push_back(12); out.push_back(p); out.push_back(s_bank[p]); }
 	}
+	// (24.11. 17:01) geladene Faesser der Tanker (vorher gingen sie beim Speichern verloren): Wert = Anzahl + Inhalt * 65536
+	for (const auto &kv : s_cargo)
+	{
+		if (kv.second.n > 0) { out.push_back(13); out.push_back(static_cast<int64_t>(kv.first)); out.push_back(kv.second.n + kv.second.content * 65536); }
+	}
 }
 
 void loadState(const std::vector<int64_t> &in)
@@ -772,6 +780,7 @@ void loadState(const std::vector<int64_t> &in)
 		case 10: if (id < MAX_PLAYERS) { s_gift[id] = iv; } break;
 		case 11: if (id < MAX_PLAYERS) { s_duty[id] = iv != 0; } break;
 		case 12: if (id < MAX_PLAYERS) { s_bank[id] = iv; } break;
+		case 13: { CargoState &c = s_cargo[id]; c.n = iv & 0xffff; c.content = (iv >> 16) & 3; if (c.content == 0) { c.content = 2; } } break;
 		case 5: s_storeR[id] += iv; break;
 		case 6: s_refIn[id] = iv; break;
 		case 7: s_refOut[id] = iv; break;
@@ -905,8 +914,8 @@ bool isOilTarget(const DROID *d, const STRUCTURE *s)
 	if (d == nullptr || s == nullptr || s->died || s->status != SS_BUILT || d->player != s->player || !manages(static_cast<int>(d->player))) { return false; }
 	if (cargoCapacity(d) <= 0) { return false; }
 	const STRUCTURE_STATS *st = s->pStructureType;
-	if (isTank(d)) { return isRefinery(st) || st->type == REF_POWER_GEN || modfuel::isStation(s) || isOilStore(st); }
-	return st->type == REF_RESOURCE_EXTRACTOR || isRefinery(st);
+	// (24.11. 17:01) der Tanker faehrt alles: Rohoel am Oelturm, Raffinerie (Rohoel abgeben / veredeltes laden), Kraftwerk, Tankstelle, Lager
+	return st->type == REF_RESOURCE_EXTRACTOR || isRefinery(st) || st->type == REF_POWER_GEN || modfuel::isStation(s) || isOilStore(st);
 }
 
 bool startOrder(DROID *d, int x, int y, uint16_t code)
@@ -929,11 +938,13 @@ bool startOrder(DROID *d, int x, int y, uint16_t code)
 	if (tgt == nullptr) { return true; }
 	const STRUCTURE_STATS *st = tgt->pStructureType;
 	int mode = 0, kind = 0;
-	if (st->type == REF_RESOURCE_EXTRACTOR) { mode = 1; kind = 3; }                         // Pickup: Rohoel am Oelturm laden
-	else if (isRefinery(st)) { if (c.tank) { mode = c.n < c.cap ? 1 : 0; kind = 2; } else if (c.n > 0) { mode = 2; kind = 2; } }
-	else if (st->type == REF_POWER_GEN) { if (c.n > 0) { mode = 2; kind = 0; } }
-	else if (modfuel::isStation(tgt)) { if (c.n > 0) { mode = 2; kind = 4; } }
-	else if (isOilStore(st)) { if (c.n > 0) { mode = 2; kind = 1; } }
+	if (c.n <= 0) { c.content = 0; }
+	const bool raw = c.n > 0 && c.content == 1, refined = c.n > 0 && c.content != 1;
+	if (st->type == REF_RESOURCE_EXTRACTOR) { if (!refined && c.n < c.cap) { mode = 1; kind = 3; } }   // Rohoel am Oelturm laden
+	else if (isRefinery(st)) { if (raw) { mode = 2; kind = 2; } else if (c.n < c.cap) { mode = 1; kind = 2; } }   // Rohoel abgeben / Veredeltes laden
+	else if (st->type == REF_POWER_GEN) { if (refined) { mode = 2; kind = 0; } }
+	else if (modfuel::isStation(tgt)) { if (refined) { mode = 2; kind = 4; } }
+	else if (isOilStore(st)) { if (refined) { mode = 2; kind = 1; } }
 	if (mode == 0) { return true; }
 	c.mode = mode; c.kind = kind; c.target = tgt->id; c.tx = tgt->pos.x; c.ty = tgt->pos.y;
 	return true;
@@ -957,7 +968,7 @@ void drawCargo(const DROID *d, const iIMDShape *bed, const glm::mat4 &m, const g
 	const CONSTRUCT_STATS *cs = d->getConstructStats();
 	if (cs == nullptr || !cs->id.startsWith("ScavBed")) { return; }   // offene Ladeflaechen; Tanker/Schaufel zeigen nichts
 	const auto it = s_cargo.find(d->id);
-	const int barrels = (it != s_cargo.end() && !it->second.tank) ? std::max(0, it->second.n) : 0;
+	const int barrels = (it != s_cargo.end() && !it->second.tank) ? std::max(0, it->second.n) : 0;   // (24.11.) immer 0: nur Tanker fahren Oel
 	const int crates = std::max(0, modcrates::crates(d));
 	const int n = std::min(8, barrels + crates);
 	if (n <= 0) { return; }
@@ -1069,13 +1080,12 @@ void onDroidDestroyed(const DROID *psDel)
 	// (Wunsch 20.11. 17:46 / 19:06 "beide spawnen kostenlos") letzter Oeltanker bzw. letzter Pickup zerstoert -> sofort ein neuer (leer, gratis)
 	if (cargoCapacity(psDel) > 0 && manages(static_cast<int>(psDel->player)))
 	{
-		const bool tank = isTank(psDel);
 		bool other = false;
 		for (const DROID *d : gameWorld.objects.droids[psDel->player])
 		{
-			if (d != psDel && !d->died && cargoCapacity(d) > 0 && isTank(d) == tank) { other = true; break; }
+			if (d != psDel && !d->died && cargoCapacity(d) > 0) { other = true; break; }
 		}
-		if (!other) { s_tankRespawn.emplace_back(static_cast<int>(psDel->player), tank); }
+		if (!other) { s_tankRespawn.emplace_back(static_cast<int>(psDel->player), true); }   // (24.11.) nur noch Tanker
 	}
 	const auto it = s_cargo.find(psDel->id);
 	if (it == s_cargo.end()) { return; }
@@ -1355,6 +1365,15 @@ void logistics()
 				if (it != avail.end()) { it->second -= std::max(0, kv.second.cap - kv.second.n); }
 			}
 		}
+		// (24.11. 17:01) Rohoel, das schon zur Raffinerie unterwegs ist (Platz im Eingang nicht doppelt vergeben)
+		std::map<uint32_t, int> refIncoming;
+		for (const auto &kv : s_cargo)
+		{
+			if (kv.second.player == p && kv.second.mode == 2 && kv.second.kind == 2) { refIncoming[kv.second.target] += kv.second.n; }
+		}
+		auto refRoom = [&](const STRUCTURE *r) { return REF_CAP - s_refIn[r->id] - refIncoming[r->id]; };
+		int refRoomTotal = 0;
+		for (STRUCTURE *r : sn.refs) { refRoomTotal += std::max(0, refRoom(r)); }
 		// "hungriges" Kraftwerk: hoechstens HUNGRY_BELOW Sekunden Vorrat und kein Lager mit Faessern in seiner Reichweite
 		auto hungryFor = [&](const DROID *d) -> STRUCTURE *
 		{
@@ -1444,10 +1463,15 @@ void logistics()
 				{
 					if (c.mode == 1)
 					{
-						int &stock = (c.kind == 3) ? s_barrels[c.target] : s_refOut[c.target];
-						const int take = std::min(cap - c.n, stock);
-						c.n += take;
-						stock -= take;
+						const int kindContent = (c.kind == 3) ? 1 : 2;   // Oelturm: Rohoel, Raffinerie: veredelt
+						if (c.n <= 0) { c.content = kindContent; }
+						if (c.content == kindContent)   // (24.11.) nie Roh- und veredeltes Oel mischen
+						{
+							int &stock = (c.kind == 3) ? s_barrels[c.target] : s_refOut[c.target];
+							const int take = std::min(cap - c.n, stock);
+							c.n += take;
+							stock -= take;
+						}
 					}
 					else if (c.kind == 1)
 					{
@@ -1455,12 +1479,14 @@ void logistics()
 						s_storeR[c.target] += m;
 						c.n -= m;
 					}
-					else if (c.kind == 2)
+					else if (c.kind == 2 && c.content == 1)
 					{
 						const int m = std::min(c.n, std::max(0, REF_CAP - s_refIn[c.target]));
 						s_refIn[c.target] += m;
 						c.n -= m;
 					}
+					else if (c.kind == 2) { /* veredeltes Oel gehoert nicht in den Raffinerie-Eingang */ }
+					else if (c.content == 1) { /* Rohoel nur in die Raffinerie */ }
 					else if (c.kind == 4)
 					{
 						// Tankstelle: 1 veredeltes Fass = 1 Fass Vorrat (= 2 volle Tanks)
@@ -1474,6 +1500,7 @@ void logistics()
 						deliverToGenerator(p, ts, c.n, false);
 						c.n = 0;
 					}
+					if (c.n <= 0) { c.n = 0; c.content = 0; }
 					// (Wunsch 20.11. 19:06) beim Abliefern haelt der Oeltanker kurz, dazu leises Rueckfahr-Piepen wie in der Stadt
 					if (c.mode == 2 && c.tank)
 					{
@@ -1497,48 +1524,22 @@ void logistics()
 
 			if (c.mode != 0) { continue; }
 
-			if (!c.tank)
+			if (c.n <= 0) { c.n = 0; c.content = 0; }
+			// (Wunsch 24.11. 17:01) der Oeltanker faehrt ALLES Oel: Rohoel vom Oelturm zur Raffinerie und veredeltes Oel von der Raffinerie zu
+			// Kraftwerk / Tankstelle / Lager. Er mischt nie: geladenes Rohoel geht nur in die Raffinerie.
+			auto nearestRawPickup = [&]() -> STRUCTURE *
 			{
-				// Fracht-Lkw (Rohoel): erst volladen, dann zur naechsten Raffinerie mit Platz. Rohoel geht nirgends sonst hin (20.11.).
-				if (cap - c.n > 0)
+				STRUCTURE *best = nullptr;
+				int64_t bd = INT64_MAX;
+				for (STRUCTURE *s : sn.derricks)
 				{
-					STRUCTURE *best = nullptr;
-					int64_t bd = INT64_MAX;
-					for (STRUCTURE *s : sn.derricks)
-					{
-						if (avail[s->id] <= 0) { continue; }
-						const int64_t dd = d2(d->pos.x, d->pos.y, s->pos.x, s->pos.y);
-						if (dd < bd) { bd = dd; best = s; }
-					}
-					if (best != nullptr)
-					{
-						avail[best->id] -= (cap - c.n);
-						go(1, 3, best->id, best->pos.x, best->pos.y);
-						continue;
-					}
+					if (avail[s->id] <= 0) { continue; }
+					const int64_t dd = d2(d->pos.x, d->pos.y, s->pos.x, s->pos.y);
+					if (dd < bd) { bd = dd; best = s; }
 				}
-				if (c.n > 0)
-				{
-					STRUCTURE *br = nullptr;
-					int64_t bd = INT64_MAX;
-					for (STRUCTURE *r : sn.refs)
-					{
-						if (s_refIn[r->id] >= REF_CAP) { continue; }
-						const int64_t dd = d2(d->pos.x, d->pos.y, r->pos.x, r->pos.y);
-						if (dd < bd) { bd = dd; br = r; }
-					}
-					if (br != nullptr) { go(2, 2, br->id, br->pos.x, br->pos.y); }
-				}
-				continue;
-			}
-
-			// Oeltanker (veredelt): Raffinerie -> Kraftwerk / Tankstelle, wahlweise ueber das Lager.
-			// (20.11. Punkt 7) Ein hungriges Kraftwerk wird beliefert, bevor der Tanker nachlaedt.
-			if (c.n > 0)
-			{
-				if (STRUCTURE *hungry = hungryFor(d)) { go(2, 0, hungry->id, hungry->pos.x, hungry->pos.y); continue; }
-			}
-			if (cap - c.n > 0)
+				return best;
+			};
+			auto nearestRefinedPickup = [&]() -> STRUCTURE *
 			{
 				STRUCTURE *best = nullptr;
 				int64_t bd = INT64_MAX;
@@ -1548,14 +1549,70 @@ void logistics()
 					const int64_t dd = d2(d->pos.x, d->pos.y, s->pos.x, s->pos.y);
 					if (dd < bd) { bd = dd; best = s; }
 				}
-				if (best != nullptr)
+				return best;
+			};
+			if (c.n > 0 && c.content == 1)
+			{
+				// Rohoel geladen: auffuellen, solange die Raffinerien noch Platz haben, dann zur naechsten Raffinerie mit Platz
+				if (cap - c.n > 0 && refRoomTotal >= cap)
+				{
+					if (STRUCTURE *best = nearestRawPickup())
+					{
+						avail[best->id] -= (cap - c.n);
+						go(1, 3, best->id, best->pos.x, best->pos.y);
+						continue;
+					}
+				}
+				STRUCTURE *br = nullptr;
+				int64_t bd = INT64_MAX;
+				for (STRUCTURE *r : sn.refs)
+				{
+					if (refRoom(r) <= 0) { continue; }
+					const int64_t dd = d2(d->pos.x, d->pos.y, r->pos.x, r->pos.y);
+					if (dd < bd) { bd = dd; br = r; }
+				}
+				if (br != nullptr) { refIncoming[br->id] += c.n; refRoomTotal -= c.n; go(2, 2, br->id, br->pos.x, br->pos.y); }
+				continue;   // keine Raffinerie mit Platz: mit der Ladung warten
+			}
+			if (c.n <= 0)
+			{
+				// leer: veredeltes Oel holen, wenn ein Kraftwerk hungert oder an einer Raffinerie mindestens eine halbe Ladung wartet; sonst
+				// Rohoel zur Raffinerie bringen (nur so viel, wie dort Platz ist); sonst den Rest an veredeltem Oel
+				// veredeltes Oel nur holen, wenn es jemand braucht (laufendes Kraftwerk oder Tankstelle mit Platz) - sonst stuende der Tanker
+				// voll herum und faehre kein Rohoel mehr
+				bool refinedDemand = !activeGens.empty();
+				for (STRUCTURE *st : sn.stations) { if (s_station[st->id] < STATION_CAP * 1000) { refinedDemand = true; break; } }
+				STRUCTURE *ref = refinedDemand ? nearestRefinedPickup() : nullptr;
+				STRUCTURE *raw = refRoomTotal > 0 ? nearestRawPickup() : nullptr;
+				const bool hungry = hungryFor(d) != nullptr;
+				const bool refinedWaiting = ref != nullptr && (hungry || avail[ref->id] >= cap / 2 || s_refOut[ref->id] >= REF_CAP);
+				if (ref != nullptr && (refinedWaiting || raw == nullptr))
+				{
+					avail[ref->id] -= cap;
+					go(1, 2, ref->id, ref->pos.x, ref->pos.y);
+					continue;
+				}
+				if (raw != nullptr)
+				{
+					avail[raw->id] -= cap;
+					refRoomTotal -= std::min(cap, avail[raw->id] + cap);
+					go(1, 3, raw->id, raw->pos.x, raw->pos.y);
+					continue;
+				}
+				continue;
+			}
+			// veredeltes Oel geladen: Raffinerie -> Kraftwerk / Tankstelle, wahlweise ueber das Lager.
+			// (20.11. Punkt 7) Ein hungriges Kraftwerk wird beliefert, bevor der Tanker nachlaedt.
+			if (STRUCTURE *hungry = hungryFor(d)) { go(2, 0, hungry->id, hungry->pos.x, hungry->pos.y); continue; }
+			if (cap - c.n > 0)
+			{
+				if (STRUCTURE *best = nearestRefinedPickup())
 				{
 					avail[best->id] -= (cap - c.n);
 					go(1, 2, best->id, best->pos.x, best->pos.y);
 					continue;
 				}
 			}
-			if (c.n <= 0) { continue; }
 			// Tankstelle mit wenig Vorrat (unter STATION_LOW)
 			{
 				STRUCTURE *bs = nullptr;
@@ -1819,58 +1876,55 @@ bool spawnNear(const STRUCTURE *s, const char *templateId)
 
 namespace
 {
-/// Geschenk des ersten Kraftwerks / der ersten Raffinerie (siehe onBuilt); haveTank/haveLkw: schon vorhandene Fahrzeuge nicht verdoppeln
-void giftFor(STRUCTURE *s, bool haveTank, bool haveLkw)
+/// (Wunsch 24.11. 17:01 "Sobald ein Oilrig gebaut ist, spawnt einer. Sobald eine Raffinerie gebaut ist, spawnt einer."): jeder Oelturm und
+/// jede Raffinerie bringt einen Oeltanker mit. Damit Abreissen und Neubauen keine Gratis-Tanker erzeugt, gilt eine Obergrenze: so viele
+/// Tanker wie Oeltuerme + Raffinerien des Spielers (gezaehlt mit dem neuen Gebaeude) - steht schon genug Tanker da, kommt keiner.
+int tankerQuota(int p)
 {
-	const STRUCTURE_STATS *st = s->pStructureType;
+	int q = 0;
+	for (const STRUCTURE *s : gameWorld.objects.structures[p])
+	{
+		if (s->died || s->status != SS_BUILT || s->pStructureType == nullptr) { continue; }
+		if (s->pStructureType->type == REF_RESOURCE_EXTRACTOR || isRefinery(s->pStructureType)) { q++; }
+	}
+	return q;
+}
+int tankerCount(int p)
+{
+	int n = 0;
+	for (const DROID *d : gameWorld.objects.droids[p]) { if (!d->died && cargoCapacity(d) > 0) { n++; } }
+	return n;
+}
+void tankerFor(STRUCTURE *s)
+{
 	const int p = static_cast<int>(s->player);
-	if (st->type == REF_POWER_GEN && !(s_gift[p] & 1))
-	{
-		s_gift[p] |= 1;
-		if (!haveTank) { spawnNear(s, "ScavTanker"); }
-		if (!haveLkw) { spawnNear(s, "ScavLkw"); }
-	}
-	else if (isRefinery(st) && !(s_gift[p] & 2))
-	{
-		s_gift[p] |= 2;
-		if (!haveLkw) { spawnNear(s, "ScavLkw"); }
-	}
+	if (tankerCount(p) < tankerQuota(p)) { spawnNear(s, "ScavTanker"); }
 }
 
-/// (Wunsch 24.11. 15:19 "Im Wuestenskirmish ist kein Oeltanker gespawnt"): steht das Kraftwerk (bzw. die Raffinerie) schon auf der Karte,
-/// wurde es nie "gebaut" - das Geschenk kommt dann in der ersten Sekunde der Partie (ohne vorhandene Tanker/Pickups zu verdoppeln)
+
+/// Oeltuerme und Raffinerien, die schon auf der Karte stehen, wurden nie "gebaut": zu Beginn einer neuen Partie (erste Sekunden) bekommt
+/// jeder Spieler die Tanker dafuer (bis zur Obergrenze). Nicht beim Laden eines Spielstands (dort sind die Tanker schon da).
 void startGifts()
 {
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
-		if ((s_gift[p] & 3) == 3 || !manages(p)) { continue; }
-		STRUCTURE *gen = nullptr, *ref = nullptr;
+		if (s_startChecked[p]) { continue; }
+		s_startChecked[p] = true;
+		if (!manages(p) || gameTime > 10000) { continue; }
 		for (STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->died || s->status != SS_BUILT || s->pStructureType == nullptr) { continue; }
-			if (s->pStructureType->type == REF_POWER_GEN && gen == nullptr) { gen = s; }
-			else if (isRefinery(s->pStructureType) && ref == nullptr) { ref = s; }
+			if (s->pStructureType->type == REF_RESOURCE_EXTRACTOR || isRefinery(s->pStructureType)) { tankerFor(s); }
 		}
-		if (gen == nullptr && ref == nullptr) { continue; }
-		bool haveTank = false, haveLkw = false;
-		for (const DROID *d : gameWorld.objects.droids[p])
-		{
-			if (d->died || cargoCapacity(d) <= 0) { continue; }
-			if (isTank(d)) { haveTank = true; } else { haveLkw = true; }
-		}
-		if (gen != nullptr && !(s_gift[p] & 1)) { giftFor(gen, haveTank, haveLkw); haveLkw = true; }
-		if (ref != nullptr && !(s_gift[p] & 2)) { giftFor(ref, haveTank, haveLkw); }
 	}
 }
 }
 
 void onBuilt(STRUCTURE *s)
 {
-	// (Wunsch 17.11. 20:35) "Oeltanker spawnen beim Bau eines Kraftwerks, und Lkw, die die Oelfaesser zur Raffinerie bringen"
 	if (s == nullptr || s->died || s->capacity != 0 || !modPresent() || !manages(static_cast<int>(s->player))) { return; }   // capacity != 0: Modul fertig
-	// (Wunsch 20.11. 17:46 Punkt 4) nur beim ERSTEN Kraftwerk bzw. der ERSTEN Raffinerie der Partie - danach nicht mehr (sonst Abreissen +
-	// Neubauen = beliebig viele Gratis-Fahrzeuge)
-	giftFor(s, false, false);
+	// (Wunsch 24.11. 17:01) Oelturm oder Raffinerie fertig -> ein Oeltanker steht daneben (bis zur Obergrenze, siehe tankerFor)
+	if (s->pStructureType->type == REF_RESOURCE_EXTRACTOR || isRefinery(s->pStructureType)) { tankerFor(s); }
 }
 
 namespace
@@ -1887,7 +1941,7 @@ void processTankRespawns()
 		const bool tank = req.second;
 		if (p < 0 || p >= MAX_PLAYERS) { continue; }
 		bool have = false;
-		for (const DROID *d : gameWorld.objects.droids[p]) { if (!d->died && cargoCapacity(d) > 0 && isTank(d) == tank) { have = true; break; } }
+		for (const DROID *d : gameWorld.objects.droids[p]) { if (!d->died && cargoCapacity(d) > 0) { have = true; break; } }
 		if (have) { continue; }
 		const STRUCTURE *at = nullptr;
 		int rank = 99;
@@ -1898,7 +1952,8 @@ void processTankRespawns()
 			const int r = (t == REF_FACTORY && !s->isMobileCore()) ? 0 : t == REF_HQ ? 1 : isRefinery(s->pStructureType) ? 2 : t == REF_POWER_GEN ? 3 : 99;
 			if (r < rank) { rank = r; at = s; }
 		}
-		if (at != nullptr && spawnNear(at, tank ? "ScavTanker" : "ScavLkw"))
+		if (!tank) { continue; }   // (24.11.) keine Pickups mehr
+		if (at != nullptr && spawnNear(at, "ScavTanker"))
 		{
 			debug(LOG_INFO, "MOD-Wirtschaft: letzter %s von Spieler %d zerstoert - Ersatz an %s", tank ? "Oeltanker" : "Pickup", p, getStatsName(at->pStructureType));
 		}
