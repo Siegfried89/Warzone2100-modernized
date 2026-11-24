@@ -236,7 +236,6 @@ int s_sel = -1;                 // gewaehltes Teil
 int s_selMount = -1;            // gewaehlter Waffenplatz (>= 0: Verschieben wirkt auf ihn)
 int s_step = 1, s_angle = 1;
 float s_yaw = 215.f, s_pitch = 24.f, s_zoom = 1.f;
-float s_frameExt = 0.f;   // (Wunsch 24.11. 01:23 "nicht so viel springen"): Bildausschnitt - waechst nur in Stufen, schrumpft nie von selbst
 float s_panX = 0.f, s_panY = 0.f;   // Verschiebung der Ansicht (Bildpunkte)
 bool s_autoRot = false;
 int s_partScroll = 0;
@@ -791,7 +790,6 @@ void newHull()
 {
 	s_def = Def();
 	s_def.name = "New hull";
-	s_frameExt = 0.f;
 	s_links.clear();
 	s_sel = -1; s_selMount = -1; s_partScroll = 0; s_mountScroll = 0; s_loadIdx = -1;
 	if (s_nameBox) { s_nameBox->setString(WzString::fromUtf8(s_def.name)); }
@@ -810,7 +808,6 @@ void loadCycle(int dir)
 	if (s_loadIdx >= 0) { pos = (pos + dir + static_cast<int>(idx.size())) % static_cast<int>(idx.size()); }
 	s_loadIdx = idx[static_cast<size_t>(pos)];
 	s_def = all[static_cast<size_t>(s_loadIdx)];
-	s_frameExt = 0.f;
 	// alte Entwuerfe ohne eigene Plaetze: die des Fahrgestells (wie im Spiel)
 	if (s_def.mounts.empty() && !s_def.parts.empty()) { s_def.mounts = modcompbody::defaultMounts(s_def.parts[0]); }
 	inferLinks();
@@ -917,19 +914,9 @@ void drawThumb(const iIMDBaseShape *m, int cx, int cy, int boxW, int boxH, float
 	pie_Draw3DShape(m->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base, glm::mat4(1.f));
 }
 
-/// Groesse, auf die die Halle eingestellt ist: bleibt stehen, solange der Rumpf hineinpasst; erst wenn er den Rand erreicht, eine
-/// Stufe weiter (sofort, ohne Gleiten). Neu, Laden und "Center" stellen neu ein.
-float frameExtent()
-{
-	const float ext = std::max(10.f, compositeExtent());
-	if (s_frameExt <= 0.f) { s_frameExt = std::max(40.f, ext * 1.25f); }
-	else if (ext > s_frameExt) { s_frameExt = ext * 1.4f; }
-	return s_frameExt;
-}
-
 glm::mat4 bayBase(const Ctx &c, float &scaleOut)
 {
-	const float ext = frameExtent();
+	const float ext = compositeExtent();
 	const float sc = 155.f * c.S / std::max(10.f, ext) * s_zoom;
 	scaleOut = sc;
 	return glm::translate(glm::mat4(1.f), glm::vec3(0.f, 0.f, BAY_DEPTH))
@@ -1485,7 +1472,7 @@ void buildScreen()
 	addBtn0(parent, 479, ROW_B + 13, 30, 42, FI_VIEW_SIDE, "Side", "Side view", []() { s_yaw = 270.f; s_pitch = 4.f; });
 	addBtn0(parent, 510, ROW_B + 13, 30, 42, FI_VIEW_TOP, "Top", "Top view", []() { s_yaw = 180.f; s_pitch = 85.f; });
 	addBtn0(parent, 541, ROW_B + 13, 30, 42, FI_AUTO, "Spin", "Spin view", []() { s_autoRot = !s_autoRot; }, []() { return s_autoRot; });
-	addBtn0(parent, 572, ROW_B + 13, 30, 42, FI_VIEW_RESET, "Center", "Center view", []() { s_zoom = 1.f; s_panX = 0.f; s_panY = 0.f; s_yaw = 215.f; s_pitch = 24.f; s_frameExt = 0.f; });
+	addBtn0(parent, 572, ROW_B + 13, 30, 42, FI_VIEW_RESET, "Center", "Center view", []() { s_zoom = 1.f; s_panX = 0.f; s_panY = 0.f; s_yaw = 215.f; s_pitch = 24.f; });
 	addBtn0(parent, 603, ROW_B + 13, 32, 42, FI_CLOSE, "Close", "Close [Esc]", []() { requestClose(); });
 
 	// ---- Name
@@ -1617,7 +1604,6 @@ bool open(bool inMenu)
 	}
 	if (s_links.size() != s_def.mounts.size()) { inferLinks(); }
 	if (s_sel >= static_cast<int>(s_def.parts.size())) { s_sel = s_def.parts.empty() ? -1 : 0; }
-	s_frameExt = 0.f;
 	rebuildSources();
 	if (!s_screen) { buildScreen(); }
 	s_open = true;
