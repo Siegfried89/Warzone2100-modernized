@@ -733,6 +733,8 @@ STRUCTURE_STATS *bestArtyEmplacement()
 		STRUCTURE_STATS &s = asStructureStats[i];
 		if (!available(static_cast<int>(i)) || s.type != REF_DEFENSE || s.numWeaps == 0 || s.psWeapStat[0] == nullptr) { continue; }
 		if (s.psWeapStat[0]->movementModel != MM_INDIRECT) { continue; }
+		// (24.11.) nur Stellungen, die in EINE Plan-Kachel passen (die Gruben stehen paarweise dicht beieinander)
+		if (s.baseWidth * TILE_UNITS > DIST_TILE || s.baseBreadth * TILE_UNITS > DIST_TILE) { continue; }
 		const unsigned range = s.psWeapStat[0]->upgrade[selectedPlayer].maxRange;
 		if (best == nullptr || range > bestRange) { best = &s; bestRange = range; }
 	}
@@ -751,53 +753,85 @@ int artyBaseSize(const std::vector<Vector2i> &raw)
 	return r < 2.5 ? 1 : (r < 4.5 ? 2 : 3);
 }
 
-/// Bauplan der Artilleriebasis (Sensor in der Mitte, Stellungen dicht drumherum, Mauerring, davor ein Ring Panzerigel) - fuer den Bau
-/// UND die Vorschau unter der Maus (18.11. 12:14 "beim Klicken auf Arty base kommt das falsche Layout, beim Bestaetigen das richtige")
-/// size 1: 4 Stellungen, Mauer 5 x 5; size 2: 8 Stellungen, Mauer 7 x 7; size 3: 12 Stellungen, Mauer 9 x 9.
-/// (20.11. "sie hat auch nicht mehr Hedgehog-Panzersperren davor"): Igel-Ring ein Feld vor der Mauer, in der Mitte jeder Seite eine Luecke
+/// Bauplan der Artilleriebasis - fuer den Bau UND die Vorschau unter der Maus (18.11. 12:14).
+/// (Wunsch 24.11. 15:33) neues Layout, von innen nach aussen:
+///  - Mitte: der Standard-Sensorturm (nicht die Beton-Variante), sonst der Scav-Ausguck
+///  - Moerser-Stellungen in 2er-Paaren, jede nach aussen zu ihrer Seite gerichtet: Paar oben rechts = eine schaut nach oben, die
+///    eine Kachel rechts-unten daneben nach rechts -> 4 Paare = 8 Gruben, jede Richtung doppelt abgedeckt (mittel: 2 Ringe = 16,
+///    gross: 3 Ringe = 24); die Achsen bleiben frei (Wege von den Toren zur Mitte)
+///  - Mauerring, an jeder Ecke ein Kanonen-Eckturm, in der Mitte jeder Seite ein Tor (oben, rechts, unten, links)
+///  - ein freies Feld, darin direkt hinter den Igeln an jeder Oeffnung links und rechts ein Scav-Flammenturm und daneben (zwei Felder
+///    von der Oeffnung) je ein Scav-Bunker
+///  - Hedgehog-Ring mit einer Oeffnung in der Mitte jeder Seite
+///  - zwei Felder davor eine Reihe Beton-Panzersperren (ebenfalls mit Oeffnungen)
 std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int size)
 {
 	std::vector<modbuild::Placement> out;
 	size = std::clamp(size, 1, 3);
 	STRUCTURE_STATS *arty = bestArtyEmplacement();
-	STRUCTURE_STATS *sensor = firstAvailable({ "Sys-SensoTowerWS", "Sys-SensoTower02", "Sys-SensoTower01", "A0BaBaOutpost" });
+	STRUCTURE_STATS *sensor = firstAvailable({ "Sys-SensoTower01", "A0BaBaLookout", "Sys-SensoTower02", "Sys-SensoTowerWS", "A0BaBaOutpost" });
 	STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall", "CollectiveWall", "NEXUSWall", "A0BaBaSandbagWall" });
-	STRUCTURE_STATS *hedge = firstAvailable({ "A0BaBaHedgehog", "A0TankTrapHeavy", "A0TankTrap" });
-	// (20.11.) in PLAN-Kacheln (DIST_TILE = Original-Kachel) wie der Befestigungsplan und seine Vorschau - in der Viertel-Fassung waren
-	// es Feinfelder: Vorschau an falscher Stelle, Stellungen nur ein Feinfeld auseinander (blockierten sich gegenseitig)
+	STRUCTURE_STATS *gate = firstAvailable({ "A0BaBaGate", "A0HardcreteMk1Gate" });
+	STRUCTURE_STATS *corner = firstAvailable({ "WallTower04", "WallTower03", "WallTower02", "A0CannonTower" });
+	STRUCTURE_STATS *flame = firstAvailable({ "A0BaBaFlameTower", "PillBox5" });
+	STRUCTURE_STATS *bunker = firstAvailable({ "A0BaBaBunker", "PillBox1" });
+	STRUCTURE_STATS *hedge = firstAvailable({ "A0BaBaHedgehog", "A0TankTrap" });   // (24.11.) Beton-Panzersperren sind KEIN Ersatz
+	STRUCTURE_STATS *concrete = firstAvailable({ "A0TankTrapHeavy" });
+	// (20.11.) in PLAN-Kacheln (DIST_TILE = Original-Kachel) wie der Befestigungsplan und seine Vorschau
 	const Vector2i ct(std::max(0, centerWorld.x) / DIST_TILE, std::max(0, centerWorld.y) / DIST_TILE);
-	auto one = [&](STRUCTURE_STATS *st, int tx, int ty) { modbuild::Placement p; p.stats = st; p.tile = Vector2i(tx, ty); p.tile2 = p.tile; out.push_back(p); };
-	auto line = [&](STRUCTURE_STATS *st, int x0, int y0, int x1, int y1) {
-		modbuild::Placement p; p.stats = st; p.tile = Vector2i(x0, y0); p.tile2 = Vector2i(x1, y1); p.line = true; out.push_back(p);
+	// Richtungen wie modbuild (dirOfSide): Norden 0x8000, Osten 0x4000, Sueden 0, Westen 0xC000
+	auto dirOf = [](int dx, int dy) -> unsigned { return dy < 0 ? 0x8000u : (dy > 0 ? 0u : (dx > 0 ? 0x4000u : 0xC000u)); };
+	auto one = [&](STRUCTURE_STATS *st, int tx, int ty, unsigned dir) {
+		if (st == nullptr) { return; }
+		modbuild::Placement p; p.stats = st; p.tile = Vector2i(ct.x + tx, ct.y + ty); p.tile2 = p.tile; p.direction = dir; out.push_back(p);
 	};
-	if (sensor != nullptr) { one(sensor, ct.x, ct.y); }
+	auto line = [&](STRUCTURE_STATS *st, int x0, int y0, int x1, int y1) {
+		if (st == nullptr) { return; }
+		modbuild::Placement p; p.stats = st; p.tile = Vector2i(ct.x + x0, ct.y + y0); p.tile2 = Vector2i(ct.x + x1, ct.y + y1); p.line = true; out.push_back(p);
+	};
+	// ein Ring (Quadrat mit Halbmesser k) als vier Seiten; Oeffnung von gap Feldern Halbbreite in der Mitte jeder Seite (-1 = keine),
+	// Ecken nur wenn withCorners
+	auto ring = [&](STRUCTURE_STATS *st, int k, int gap, bool withCorners) {
+		const int e = withCorners ? k : k - 1;
+		for (int side = 0; side < 4; ++side)
+		{
+			// Seite als Strecke von -e bis +e entlang t, fest bei n = +-k
+			auto at = [&](int t) { switch (side) { case 0: return Vector2i(t, -k); case 1: return Vector2i(k, t); case 2: return Vector2i(-t, k); default: return Vector2i(-k, -t); } };
+			// Ecken nur einmal: jede Seite nimmt ihre Anfangsecke, nicht die Endecke
+			const int t0 = -e, t1 = withCorners ? e - 1 : e;
+			if (gap < 0) { const Vector2i a = at(t0), b = at(t1); line(st, a.x, a.y, b.x, b.y); continue; }
+			if (t0 <= -gap - 1) { const Vector2i a = at(t0), b = at(-gap - 1); line(st, a.x, a.y, b.x, b.y); }
+			if (gap + 1 <= t1) { const Vector2i a = at(gap + 1), b = at(t1); line(st, a.x, a.y, b.x, b.y); }
+		}
+	};
+	one(sensor, 0, 0, 0);
 	if (arty != nullptr)
 	{
-		// (16.11. 22:50 "immer noch zu gross, nicht so viel Platz verschwenden") dicht um den Sensor
-		static const int IN4[4][2] = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } };
-		static const int R2[8][2] = { { -2, -2 }, { 0, -2 }, { 2, -2 }, { 2, 0 }, { 2, 2 }, { 0, 2 }, { -2, 2 }, { -2, 0 } };
-		static const int R3[8][2] = { { -3, -3 }, { 0, -3 }, { 3, -3 }, { 3, 0 }, { 3, 3 }, { 0, 3 }, { -3, 3 }, { -3, 0 } };
-		if (size != 2) { for (const auto &o : IN4) { one(arty, ct.x + o[0], ct.y + o[1]); } }
-		if (size == 2) { for (const auto &o : R2) { one(arty, ct.x + o[0], ct.y + o[1]); } }
-		if (size == 3) { for (const auto &o : R3) { one(arty, ct.x + o[0], ct.y + o[1]); } }
+		for (int a = 1; a <= size; ++a)
+		{
+			for (int sx = -1; sx <= 1; sx += 2)
+			{
+				for (int sy = -1; sy <= 1; sy += 2)
+				{
+					one(arty, sx * a, sy * (a + 1), dirOf(0, sy));   // die aeussere des Paares nach oben/unten
+					one(arty, sx * (a + 1), sy * a, dirOf(sx, 0));   // eine Kachel seitlich-innen daneben nach rechts/links
+				}
+			}
+		}
 	}
-	const int r = size + 1;   // Mauerring direkt um den Stellungsblock
-	if (wall != nullptr)
+	const int r = size + 2;   // Mauerring direkt um den Stellungsblock (Gruben reichen bis size + 1)
+	ring(wall, r, 0, false);   // ohne Ecken (dort die Ecktuerme) und mit einem Feld fuer das Tor in der Mitte
+	one(gate, 0, -r, 0); one(gate, r, 0, 0); one(gate, 0, r, 0); one(gate, -r, 0, 0);
+	one(corner, -r, -r, 0xA000u); one(corner, r, -r, 0x6000u); one(corner, r, r, 0x2000u); one(corner, -r, r, 0xE000u);   // schraeg nach aussen
+	const int h = r + 2;      // Igel-Ring, dazwischen ein freies Feld
+	const int in = h - 1;     // das freie Feld direkt hinter den Igeln
+	for (int s = -1; s <= 1; s += 2)
 	{
-		line(wall, ct.x - r, ct.y - r, ct.x + r, ct.y - r);
-		line(wall, ct.x + r, ct.y - r + 1, ct.x + r, ct.y + r);
-		line(wall, ct.x + r - 1, ct.y + r, ct.x - r, ct.y + r);
-		line(wall, ct.x - r, ct.y + r - 1, ct.x - r, ct.y - r + 1);
+		one(flame, s, -in, dirOf(0, -1)); one(flame, in, s, dirOf(1, 0)); one(flame, -s, in, dirOf(0, 1)); one(flame, -in, -s, dirOf(-1, 0));
+		one(bunker, 2 * s, -in, dirOf(0, -1)); one(bunker, in, 2 * s, dirOf(1, 0)); one(bunker, -2 * s, in, dirOf(0, 1)); one(bunker, -in, -2 * s, dirOf(-1, 0));
 	}
-	if (hedge != nullptr)
-	{
-		const int h = r + 2;   // ein freies Feld zwischen Mauer und Igeln
-		// je Seite zwei Stuecke mit einer Luecke von einem Feld in der Mitte
-		line(hedge, ct.x - h, ct.y - h, ct.x - 1, ct.y - h); line(hedge, ct.x + 1, ct.y - h, ct.x + h, ct.y - h);
-		line(hedge, ct.x + h, ct.y - h + 1, ct.x + h, ct.y - 1); line(hedge, ct.x + h, ct.y + 1, ct.x + h, ct.y + h);
-		line(hedge, ct.x + h - 1, ct.y + h, ct.x + 1, ct.y + h); line(hedge, ct.x - 1, ct.y + h, ct.x - h, ct.y + h);
-		line(hedge, ct.x - h, ct.y + h - 1, ct.x - h, ct.y + 1); line(hedge, ct.x - h, ct.y - 1, ct.x - h, ct.y - h + 1);
-	}
+	ring(hedge, h, 0, true);
+	ring(concrete, h + 2, 0, true);   // "Vor den Hedgehogs 2 Tiles davor eine Reihe Betonpanzersperren"
 	return out;
 }
 
@@ -1758,7 +1792,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		for (const modbuild::Placement &pl : artyBasePlan(c, artyBaseSize(raw)))
 		{
 			if (pl.line) { plan.emplace_back(DORDER_LINEBUILD, pl.stats, worldOf(pl.tile), worldOf(pl.tile2), 0); }
-			else { plan.emplace_back(DORDER_BUILD, pl.stats, worldOf(pl.tile), 0); }
+			else { plan.emplace_back(DORDER_BUILD, pl.stats, worldOf(pl.tile), static_cast<uint16_t>(pl.direction)); }   // (24.11.) Gruben nach aussen
 		}
 		// alle Baufahrzeuge arbeiten denselben Plan ab (sie helfen sich gegenseitig an derselben Baustelle)
 		for (DROID *d : units)

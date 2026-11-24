@@ -1068,7 +1068,7 @@ bool isRoleKind(int kind) { return kind == PK_CONSTRUCT || kind == PK_REPAIR; }
 ///  - WZ-Fraktionen, WZ2120 und die Mod-Reiter: Antriebe und Tuerme des Grundspiels, dazu was der jeweilige Mod selbst einfuehrt
 ///    (MF-Antriebe nur bei MF, Schiffsantrieb/-raketen nur bei Naval, Ernter-Ketten nur bei C&C 3)
 ///  - Custom (eigene Rumpfe aus dem Baukasten): alles, auch die eigenen Teile dieses Mods (Mech-Beine, AMS, Schild ...), die es NUR hier gibt
-bool scavFaction() { return s_ds.faction == "Scavengers"; }
+[[maybe_unused]] bool scavFaction() { return s_ds.faction == "Scavengers"; }
 bool inFaction(const DesignPart &p)
 {
 	const std::string &f = s_ds.faction;

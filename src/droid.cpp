@@ -1299,6 +1299,7 @@ DroidStartBuild droidStartBuild(DROID *psDroid)
 		// MOD (22.11. 20:50): Siedlung - abwechselnde Haeuser (modsettle)
 		Vector2i buildPos(psDroid->order.pos.x, psDroid->order.pos.y);
 		STRUCTURE_STATS *buildStat = modsettle::chooseVariant(psStructStat, psDroid->player, buildPos, psDroid->order.direction);
+		if (psDroid->order.type == DORDER_LINEBUILD) { buildStat = modbuild::trenchVariant(buildStat, psDroid->player, buildPos); }   // MOD (24.11.): ab und zu ueberdacht
 		modruin::clearSite(buildStat, buildPos, psDroid->order.direction);   // MOD (22.11.): auf Ruinen darf gebaut werden
 		psStruct = buildStructureDir(gameWorld, buildStat, buildPos.x, buildPos.y, psDroid->order.direction, psDroid->player, false, id);
 		if (!psStruct)

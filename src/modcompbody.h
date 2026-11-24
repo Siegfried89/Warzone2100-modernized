@@ -37,6 +37,9 @@ struct Part
 	glm::vec3 rot = glm::vec3(0.f);    ///< Drehung in Grad: Gieren (um y), Nicken (um x), Rollen (um z)
 	float scale = 1.f;
 	int flip = 0;                      ///< Spiegelung der Teil-Geometrie: Bit 0 = x, Bit 1 = y, Bit 2 = z (Wunsch 23.11. 02:16 "Flip")
+	/// (Wunsch 24.11. 15:33 "die Ruempfe dicker, duenner, laenger, breiter machen - das Mesh an sich"): Streckung je Achse im Teil-Raum
+	/// (x = Breite, y = Hoehe/Dicke, z = Laenge), zusaetzlich zu scale
+	glm::vec3 stretch = glm::vec3(1.f);
 };
 
 struct Mount

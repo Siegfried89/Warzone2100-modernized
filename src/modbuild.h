@@ -88,6 +88,12 @@ std::vector<Placement> planDefenseNet(unsigned player, const std::vector<Vector2
 /// Hindernisse herum, vorhandene eigene Gleise werden mitbenutzt (nicht neu gebaut). Linienbau-Eintraege (gerade oder schraege Stuecke).
 std::vector<Placement> planRailLine(unsigned player, const std::vector<Vector2i> &strokeWorld);
 
+/// MOD (Wunsch 24.11. 15:33 "Die Trenches sollen sich mit den ueberdachten Trenches ab und zu bei ein paar Stuecken abwechseln (mal 1, 2
+/// oder 3)"): beim Linienbau eines offenen Grabens (A0BaBaTrench / A0BaBaTrenchDeep) wird an dieser Stelle ab und zu die ueberdachte Fassung
+/// gebaut - in etwa jedem Abschnitt von 8 Feldern ein Stueck aus 1 bis 3 ueberdachten Feldern. Nur aus der Lage (kein Zufall, auf allen
+/// Rechnern gleich). Gibt st zurueck, wenn es kein offener Graben ist oder die ueberdachte Fassung nicht verfuegbar ist.
+STRUCTURE_STATS *trenchVariant(STRUCTURE_STATS *st, unsigned player, const Vector2i &worldPos);
+
 /// jeden Spielschritt
 void tick(GameWorld &world);
 /// (Wunsch 22.11. 21:19 "Generals-Baubefehl 'restore' - Kreis zeichnen, in dem alle Krater wiederhergestellt werden und das Terrain wieder
