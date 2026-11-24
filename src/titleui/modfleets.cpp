@@ -631,7 +631,15 @@ void WzFleetTitleUI::build()
 		headLabel(form, ID_HEAD + 4, X + 52, fy, 60, astringf("%d / %d", page + 1, pages), WZCOL_TEXT_MEDIUM, font_regular, 22);
 		wzNamedButton(form, ID_NEXT, X + 112, fy - 2, 36, 24, "wz_right", _("Next page"), IC_RIGHT);
 	}
-	headLabel(form, ID_HEAD + 22, X + 170, fy, RW - 170, _("Click a design: favourite on/off"), WZCOL_TEXT_MEDIUM, font_small, 22);
+	headLabel(form, ID_HEAD + 22, X + 170, fy, RW - 170, _("Click: favourite on/off - double-click: edit"), WZCOL_TEXT_MEDIUM, font_small, 22);
+}
+
+// (Wunsch 24.11. 14:20 "Bei Doppelklick auf ein gespeichertes Design sollte es wieder in den Unit Designer gehen, falls man es noch
+// weiter ausruesten will") - Entwurf in den Designer laden (Definition hinter dem Designer)
+namespace modfleetsedit
+{
+void editDesign(const nlohmann::json &e, int fleet, int designIdx);
+void clearEdit();
 }
 
 TITLECODE WzFleetTitleUI::run()
@@ -661,11 +669,23 @@ TITLECODE WzFleetTitleUI::run()
 	else if (id >= ID_DESIGN && id < ID_DESIGN + 200)
 	{
 		const size_t line = id - ID_DESIGN;
+		static unsigned s_lastClickId = 0;
+		static UDWORD s_lastClickTime = 0;
 		if (!fleets().empty() && line < s_lineToDesign.size())
 		{
 			nlohmann::json &e = fleets()[selected]["designs"][s_lineToDesign[line]];
-			e["modFav"] = !e.value("modFav", false);
+			const bool dbl = id == s_lastClickId && realTime - s_lastClickTime < 500;
+			s_lastClickId = id;
+			s_lastClickTime = realTime;
+			e["modFav"] = !e.value("modFav", false);   // beim Doppelklick schaltet der zweite Klick die Marke wieder zurueck
 			save();
+			if (dbl)
+			{
+				s_lastClickId = 0;
+				modfleetsedit::editDesign(e, selected, static_cast<int>(s_lineToDesign[line]));
+				changeTitleUI(std::make_shared<WzUnitDesignTitleUI>(selected));
+				rebuild = false;
+			}
 		}
 	}
 	else if (id == ID_NEW)
@@ -729,7 +749,7 @@ TITLECODE WzFleetTitleUI::run()
 		s_info = ok ? astringf(_("\"%s\" is now available in every game mode"), fleets()[selected].value("name", std::string()).c_str())
 		            : std::string(_("Could not write the design files"));
 	}
-	else if (id == ID_DESIGNER) { changeTitleUI(std::make_shared<WzUnitDesignTitleUI>(selected)); rebuild = false; }   // (18.11.) direkt im Hauptmenue
+	else if (id == ID_DESIGNER) { modfleetsedit::clearEdit(); changeTitleUI(std::make_shared<WzUnitDesignTitleUI>(selected)); rebuild = false; }   // (18.11.) direkt im Hauptmenue
 	else if (id == ID_FORGE) { changeTitleUI(std::make_shared<WzHullForgeTitleUI>(wzTitleUICurrent)); rebuild = false; }   // (17:55) reines Menue-Werkzeug
 	else if (id == ID_PREV) { --page; }
 	else if (id == ID_NEXT) { ++page; }
@@ -774,10 +794,8 @@ struct DesignPart
 	float lift = 0.f;                   // Verbundrumpf: Hub ueber dem Laufwerk (modcompbody::liftOf)
 	std::string source;                 // Rumpf: Herkunft/Fraktion wie im Rumpf-Baukasten ("Scavengers", "Project", "Metal Fatigue" ...)
 	int sourceRank = 99;                // Reihenfolge der Fraktions-Reiter
-	int group = 0;                      // andere Teile: PG_SHARED, PG_SCAV (nur Scavenger), PG_FACTION (nur WZ-Fraktionen), PG_MF
+	std::string origin = "WZ";          // andere Teile: wer sie einfuehrt - "WZ" (Grundspiel), "Scavengers", "Metal Fatigue", "C&C 3", "Naval", "Custom"
 };
-// (Wunsch 24.11. 02:13 "sauber im Fleet-Designer zwischen Scavenger und anderen Fraktionen trennen"): Teile nach Fraktion
-enum PartGroup { PG_SHARED = 0, PG_SCAV, PG_FACTION, PG_MF };
 std::vector<DesignPart> s_parts;
 std::map<std::string, int> s_powerRatio;
 std::map<std::string, std::string> s_propType;   // alle Antriebe (auch nicht waehlbare): ID -> Art (fuer die Laufwerk-Modelle der Rumpfe)
@@ -796,6 +814,8 @@ struct DesignState
 	int slotPage = 0;              // Seite der Platz-Leiste
 	int tab = 0, page = 0;         // Reiter: 0 Rumpf, 1 Antrieb, 2 Tuerme
 	std::string faction;           // gewaehlte Fraktion (Herkunft der Rumpfe, oben die Reiterleiste)
+	int editFleet = -1, editIdx = -1;   // per Doppelklick geladener Entwurf (Flotte, Platz) - Speichern ersetzt ihn, solange der Name bleibt
+	std::string editId, editName;
 	int sub[3] = {0, 0, 0};   // (18.11. 12:03) Unterreiter je Reiter: Rumpf leicht/mittel/schwer/ueberschwer, Antrieb Land/Wasser/Luft, Turm Waffen/Systeme
 	std::string name;
 	bool edited = false;
@@ -922,16 +942,20 @@ void loadParts()
 			p.sourceRank = bi != nullptr ? bi->sourceRank : 11;
 			continue;
 		}
+		// (Wunsch 24.11. 14:20 "Was nicht im Mod/Version/Fraktion urspruenglich vorhanden ist, kommt jeweils NUR in seinen spezifischen Mod,
+		// der ihn einfuehrt"): Herkunft je Teil
 		auto ends = [&](const char *t) { const size_t n = std::strlen(t); return p.id.size() >= n && p.id.compare(p.id.size() - n, n, t) == 0; };
 		auto starts = [&](const char *t) { return p.id.rfind(t, 0) == 0; };
-		if (ends("-Scav") || ends("-SCAVS") || starts("Baba") || starts("Scav") || starts("scav") || p.id == "Helicopter") { p.group = PG_SCAV; }
-		else if (starts("MF")) { p.group = PG_MF; }
-		else if (p.kind == PK_PROP && s_propType.count(p.id + "-Scav") != 0) { p.group = PG_FACTION; }   // WZ-Original eines Scav-Laufwerks
-		else
+		auto oneOf = [&](std::initializer_list<const char *> l) { for (const char *x : l) { if (p.id == x) { return true; } } return false; };
+		if (ends("-Scav") || ends("-SCAVS") || starts("Baba") || starts("Scav") || starts("scav")
+		    || oneOf({"Helicopter", "WreckBall"})) { p.origin = "Scavengers"; }   // Hubschrauber: Ultimate Scavengers; Abrissbirne am Scav-Bagger
+		else if (oneOf({"MechWalker", "AMS-AssaultGun", "AMS-Laser", "CollectiveLaserGunner", "MineFlail", "NukeTEL", "ShieldEmitterMobile"}))
 		{
-			static const char *const HIDDEN_VANILLA[] = {"Cannon1-VTOL", "MG1-VTOL", "MG2-VTOL", "PlasmaHeavy", "SpyTurret01", "Spade1Mk1"};
-			for (const char *h : HIDDEN_VANILLA) { if (p.id == h) { p.group = PG_FACTION; } }
+			p.origin = "Custom";   // eigene Bauten dieses Mods (Mech-Beine des Mechbauprojekts, AMS, Kollektiv-Schuetze, Minenraeumer, Atomrakete, Schild)
 		}
+		else if (starts("MF") || p.id == "DrillRig") { p.origin = "Metal Fatigue"; }
+		else if (p.id == "HarvesterTracks") { p.origin = "C&C 3"; }
+		else if (oneOf({"Naval", "RocketSuperQuarter"})) { p.origin = "Naval"; }
 	}
 	std::stable_sort(s_parts.begin(), s_parts.end(), [](const DesignPart &a, const DesignPart &b) {
 		if (a.kind != b.kind) { return a.kind < b.kind; }
@@ -989,7 +1013,7 @@ void refreshCompositeParts()
 		p.size = modcompbody::sizeText(t.size);
 		p.propM = modcompbody::partMatrix(d.parts[0]);   // (24.11.) Laufwerk unter dem Fahrgestell wie im Spiel
 		p.lift = modcompbody::liftOf(d);
-		if (const modcompbody::BodyInfo *ci = modcompbody::bodyInfo(d.parts[0].body)) { p.source = ci->source; p.sourceRank = ci->sourceRank; }   // Fraktion des Fahrgestells
+		p.source = "Custom"; p.sourceRank = -1;   // (Wunsch 24.11. 14:20 "Alle eigenen Builds kommen unter einen Custom-Reiter")
 		for (const DesignPart &q : s_parts) { if (q.kind == PK_BODY && q.id == d.parts[0].body) { p.extra = q.extra; break; } }
 		add.push_back(p);
 	}
@@ -1015,19 +1039,19 @@ bool flyOnlyBody() { const DesignPart *b = partAt(s_ds.body); return b != nullpt
 bool isSystemKind(int kind) { return kind >= PK_SENSOR; }
 bool isRoleKind(int kind) { return kind == PK_CONSTRUCT || kind == PK_REPAIR; }
 
-/// (Wunsch 24.11. 02:13) Fraktions-Reiter: Rumpfe nach Herkunft; Scav-Teile (Scav-Laufwerke, Scav-Waffen, Ladeflaechen ...) nur bei den
-/// Scavengern, die WZ-Originale derselben Teile nur bei den Fraktionen, MF-Antriebe bei Metal Fatigue, alles andere ueberall
+/// (Wunsch 24.11. 02:13 / 14:20) Fraktions-Reiter: Rumpfe nach Herkunft. Teile:
+///  - Scavs: nur Scav-Antriebe (keine WZ-Antriebe), Scav-Tuerme und die Tuerme des Grundspiels
+///  - WZ-Fraktionen, WZ2120 und die Mod-Reiter: Antriebe und Tuerme des Grundspiels, dazu was der jeweilige Mod selbst einfuehrt
+///    (MF-Antriebe nur bei MF, Schiffsantrieb/-raketen nur bei Naval, Ernter-Ketten nur bei C&C 3)
+///  - Custom (eigene Rumpfe aus dem Baukasten): alles, auch die eigenen Teile dieses Mods (Mech-Beine, AMS, Schild ...), die es NUR hier gibt
 bool scavFaction() { return s_ds.faction == "Scavengers"; }
 bool inFaction(const DesignPart &p)
 {
-	if (p.kind == PK_BODY) { return p.source == s_ds.faction; }
-	switch (p.group)
-	{
-	case PG_SCAV: return scavFaction();
-	case PG_FACTION: return !scavFaction();
-	case PG_MF: return s_ds.faction == "Metal Fatigue";
-	default: return true;
-	}
+	const std::string &f = s_ds.faction;
+	if (p.kind == PK_BODY) { return p.source == f; }
+	if (f == "Custom") { return true; }
+	if (p.origin == "WZ") { return p.kind != PK_PROP || f != "Scavengers"; }
+	return p.origin == f;
 }
 /// Fraktionen mit Rumpfen, in der Reihenfolge des Rumpf-Baukastens
 std::vector<std::string> factionList()
@@ -1054,6 +1078,7 @@ const char *factionLabel(const std::string &s)
 	if (s == "Scavengers") { return "Scavs"; }
 	if (s == "Metal Fatigue") { return "MF"; }
 	if (s == "Supreme Commander") { return "SupCom"; }
+	if (s == "Custom") { return "Custom"; }
 	return s.c_str();
 }
 
@@ -1544,7 +1569,8 @@ void WzUnitDesignTitleUI::build()
 			{
 				const std::string &f = fl[static_cast<size_t>(k)];
 				const std::string tip = f == "Scavengers" ? std::string(_("Scavengers: scav hulls, scav propulsion and scav turrets"))
-				                                         : astringf(_("%s hulls (with the original WZ parts)"), f.c_str());
+				                        : f == "Custom" ? std::string(_("Custom: your own super hulls from the Hull Forge - every part, also this mod's own parts"))
+				                                        : astringf(_("%s hulls (with the original WZ parts)"), f.c_str());
 				auto b = wzTextButton(form, ID_D_FACTION + static_cast<unsigned>(k), 16 + k * (w + gap), 56, w, 22, factionLabel(f), tip.c_str());
 				if (f == s_ds.faction) { b->setState(WBUT_CLICKLOCK); }
 			}
@@ -1894,10 +1920,26 @@ TITLECODE WzUnitDesignTitleUI::run()
 			fleet = std::clamp(fleet, 0, static_cast<int>(fleets().size()) - 1);
 			nlohmann::json &designs = fleets()[fleet]["designs"];
 			if (!designs.is_array()) { designs = nlohmann::json::array(); }
-			bool dup = false;
-			for (const auto &e : designs) { if (identity(e) == identity(t)) { dup = true; } }
-			if (!dup) { designs.push_back(t); }
+			// per Doppelklick bearbeiteter Entwurf mit unveraendertem Namen: ersetzen (neuer Name = neuer Entwurf)
+			const bool replace = !s_ds.editId.empty() && name == s_ds.editName;
+			bool done = false;
+			if (replace && s_ds.editFleet == fleet && s_ds.editIdx >= 0 && s_ds.editIdx < static_cast<int>(designs.size())
+			    && identity(designs[static_cast<size_t>(s_ds.editIdx)]) == s_ds.editId)
+			{
+				nlohmann::json &old = designs[static_cast<size_t>(s_ds.editIdx)];
+				if (old.value("modFav", false)) { t["modFav"] = true; }
+				old = t;
+				done = true;
+			}
+			if (!done)
+			{
+				bool dup = false;
+				for (const auto &e : designs) { if (identity(e) == identity(t)) { dup = true; } }
+				if (!dup) { designs.push_back(t); }
+			}
 			save();
+			const std::string oldId = replace ? s_ds.editId : std::string();
+			t.erase("modFav");
 			// und in die gespeicherten Entwuerfe aller Spielarten (steht in jeder Fabrik bereit)
 			bool ok = true;
 			for (const char *tag : TAGS)
@@ -1910,7 +1952,11 @@ TITLECODE WzUnitDesignTitleUI::run()
 					if (j.has_value() && j->is_object() && j->contains("templates") && (*j)["templates"].is_array()) { doc = std::move(*j); }
 				}
 				bool have = false;
-				for (const auto &e : doc["templates"]) { if (identity(e) == identity(t)) { have = true; } }
+				for (auto &e : doc["templates"])
+				{
+					if (!oldId.empty() && identity(e) == oldId) { e = t; have = true; }   // bearbeiteter Entwurf: alte Fassung ersetzen
+					else if (identity(e) == identity(t)) { have = true; }
+				}
 				if (!have) { doc["templates"].push_back(t); }
 				PHYSFS_mkdir((std::string("userdata/") + tag).c_str());
 				ok = saveJSONToFile(doc, path.c_str()) && ok;
@@ -1918,6 +1964,7 @@ TITLECODE WzUnitDesignTitleUI::run()
 			s_ds.info = ok ? astringf(_("Saved \"%s\" - in \"%s\" and in every game mode"), name.c_str(), fleets()[fleet].value("name", std::string()).c_str())
 			               : std::string(_("Could not write the design files"));
 			s_ds.edited = false;
+			if (replace) { s_ds.editId = identity(t); }   // weitere Aenderungen ersetzen wieder diesen Entwurf
 		}
 	}
 	else if (id == ID_D_BACK) { s_fleetReturnSelect = fleet; changeTitleUI(std::make_shared<WzFleetTitleUI>()); rebuild = false; }
@@ -1925,6 +1972,68 @@ TITLECODE WzUnitDesignTitleUI::run()
 	else { rebuild = false; }
 	if (rebuild) { build(); }
 	return TITLECODE_CONTINUE;
+}
+
+namespace modfleetsedit
+{
+void clearEdit()
+{
+	s_ds.editFleet = -1; s_ds.editIdx = -1; s_ds.editId.clear(); s_ds.editName.clear();
+}
+
+void editDesign(const nlohmann::json &e, int fleet, int designIdx)
+{
+	loadParts();
+	refreshCompositeParts();
+	auto find = [](const std::string &id, int kind) {
+		if (id.empty()) { return -1; }
+		for (size_t i = 0; i < s_parts.size(); ++i) { if (s_parts[i].kind == kind && s_parts[i].id == id) { return static_cast<int>(i); } }
+		return -1;
+	};
+	const std::string keepFaction = s_ds.faction;
+	s_ds = DesignState();
+	s_ds.body = find(e.value("body", std::string()), PK_BODY);
+	s_ds.prop = find(e.value("propulsion", std::string()), PK_PROP);
+	const nlohmann::json ms = e.contains("modSlots") && e["modSlots"].is_object() ? e["modSlots"] : nlohmann::json::object();
+	// Waffen auf ihren Plaetzen (modSlots.weapConn, sonst der Reihe nach)
+	if (e.contains("weapons") && e["weapons"].is_array())
+	{
+		const nlohmann::json wc = ms.contains("weapConn") && ms["weapConn"].is_array() ? ms["weapConn"] : nlohmann::json::array();
+		for (size_t i = 0; i < e["weapons"].size(); ++i)
+		{
+			if (!e["weapons"][i].is_string()) { continue; }
+			int slot = static_cast<int>(i);
+			if (i < wc.size() && wc[i].is_number_integer() && wc[i].get<int>() >= 0) { slot = wc[i].get<int>(); }
+			if (slot >= 0 && slot < MAX_DSLOTS) { s_ds.slot[slot] = find(e["weapons"][i].get<std::string>(), PK_WEAPON); }
+		}
+	}
+	// Systemtuerme: frei belegt (modSlots.systems) oder der eine Systemturm auf Platz 1
+	auto kindOf = [](const std::string &t) { return t == "ecm" ? PK_ECM : t == "construct" ? PK_CONSTRUCT : t == "repair" ? PK_REPAIR : PK_SENSOR; };
+	if (ms.contains("systems") && ms["systems"].is_array())
+	{
+		for (const auto &sy : ms["systems"])
+		{
+			if (!sy.is_object()) { continue; }
+			const int slot = sy.value("slot", -1);
+			if (slot >= 0 && slot < MAX_DSLOTS) { s_ds.slot[slot] = find(sy.value("id", std::string()), kindOf(sy.value("type", std::string("sensor")))); }
+		}
+	}
+	else if (s_ds.slot[0] < 0)
+	{
+		const std::string type = e.value("type", std::string());
+		const char *key = type == "SENSOR" ? "sensor" : type == "ECM" ? "ecm" : type == "CONSTRUCT" ? "construct" : type == "REPAIR" ? "repair" : nullptr;
+		if (key != nullptr) { s_ds.slot[0] = find(e.value(key, std::string()), kindOf(key)); }
+	}
+	const DesignPart *b = partAt(s_ds.body);
+	s_ds.faction = b != nullptr ? b->source : (keepFaction.empty() ? std::string("Scavengers") : keepFaction);
+	s_ds.name = e.value("name", std::string());
+	s_ds.edited = !s_ds.name.empty();
+	s_ds.editFleet = fleet; s_ds.editIdx = designIdx; s_ds.editId = identity(e); s_ds.editName = s_ds.name;
+	s_ds.tab = 2;
+	for (int k = 0; k < MAX_DSLOTS; ++k) { if (s_ds.slot[k] >= 0) { s_ds.cur = k; break; } }
+	s_ds.sub[0] = subOfCurrent(0); s_ds.sub[1] = subOfCurrent(1); s_ds.sub[2] = subOfCurrent(2);
+	s_ds.info = astringf(_("Editing \"%s\" - Save replaces it (a new name saves a new design)"), s_ds.name.c_str());
+}
 }
 
 void WzUnitDesignTitleUI::render()

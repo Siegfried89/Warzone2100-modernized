@@ -248,7 +248,7 @@ void classify(BodyInfo &b, const std::string &cls, const std::string &model)
 		return;
 	}
 	if (id == "RigBody" || id == "PitbullBody" || id == "MammothBody" || id == "HarvesterBody") { b.source = "C&C 3"; b.sourceRank = 8; b.group = "GDI"; return; }
-	if (startsWith(id, "NTWShip")) { b.source = "Naval"; b.sourceRank = 9; b.group = "Ships"; return; }
+	if (startsWith(id, "NTWShip") || id == "Body101") { b.source = "Naval"; b.sourceRank = 9; b.group = "Ships"; return; }   // (24.11.) Zerstoerer (morefort) zu den Schiffen
 	if (startsWith(id, "UEF")) { b.source = "Supreme Commander"; b.sourceRank = 10; b.group = "UEF transports"; return; }
 	if (cls == "Babas" || endsWith(id, "-Scav") || endsWith(id, "-Ultimate") || startsWith(id, "Scav") || startsWith(id, "B2") || startsWith(id, "B3body")
 	    || startsWith(id, "B4body") || id == "BusBody" || id == "FireBody" || contains(id, "Chopper") || startsWith(id, "Train"))
