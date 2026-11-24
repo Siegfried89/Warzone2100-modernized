@@ -814,6 +814,21 @@ static void HandleDrag()
 			wallDrag.pos2 = mousePos;
 			wallDrag.status = DRAG_DRAGGING;
 		}
+		// MOD (Wunsch 24.11. 16:27 "directional drag soll auch bei Mauern (auch bei Scav-Mauern) schon ab 1 Segment funktionieren.
+		// Zusaetzlich zum Linie ziehen. Also beides gleichzeitig."): Mauern, Sperren, Graeben, Tore und Mauertuerme - solange der Zug
+		// noch EIN Feld lang ist, dreht er das Stueck in die Zugrichtung (wie bei den anderen Gebaeuden); zieht man weiter, wird es eine
+		// Linie (in der gewaehlten Richtung)
+		if ((buildState == BUILD3D_VALID || buildState == BUILD3D_POS) && wallDrag.status != DRAG_INACTIVE && canLineBuild() && !modFieldBuild()
+		    && sBuildDetails.psStats->hasType(STAT_STRUCTURE))
+		{
+			STRUCTURE_STATS *ws = static_cast<STRUCTURE_STATS *>(sBuildDetails.psStats);
+			const bool wallLike = ws->type == REF_WALL || ws->type == REF_WALLCORNER || ws->type == REF_GATE || ws->combinesWithWall;
+			const int wdx = mousePos.x - wallDrag.pos.x, wdy = mousePos.y - wallDrag.pos.y;
+			if (wallLike && wdx * wdx + wdy * wdy > 24 * 24 && calcLineBuild(ws, getBuildingDirection(), wallDrag.pos, mousePos).count <= 1)
+			{
+				sBuildDetails.directionShift = (uint16_t)(iAtan2(wdx, wdy) - playerPos.r.y);   // Cast wrapping intended.
+			}
+		}
 	}
 }
 

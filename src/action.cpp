@@ -1711,6 +1711,14 @@ void actionUpdateDroid(DROID *psDroid)
 					droidCannotBuild = false; // Just to avoid an empty branch
 				}
 				else
+				// MOD (24.11.): Ausbau wie ein Modul (Betonbunker auf den Scav-Bunker) bzw. in die Stellung hineinbauen - das fertige
+				// Grundbauwerk ist kein Hindernis (bisher brach der Bauer hier ab, weil es schon "fertig" war)
+				if (modupgrade::canReplace(desiredStructure, structureAtBuildPosition, psDroid->player)
+				    || modupgrade::combineResult(desiredStructure, structureAtBuildPosition, psDroid->player) != nullptr)
+				{
+					droidCannotBuild = false;
+				}
+				else
 				if ((structureAtBuildPosition->pStructureType != desiredStructure) && // ... it's not the exact same type as the droid was ordered to build
 					(structureAtBuildPosition->pStructureType->type == REF_WALLCORNER && desiredStructure->type != REF_WALL)) // and not a wall corner when the droid wants to build a wall
 				{
@@ -1788,7 +1796,8 @@ void actionUpdateDroid(DROID *psDroid)
 					// structure on the build location - see if it is the same type
 					STRUCTURE *const psStruct = getTileStructure(gameWorld.map, map_coord(pos.x), map_coord(pos.y));
 					if (psStruct->pStructureType == order->psStats ||
-					    (order->psStats->type == REF_WALL && psStruct->pStructureType->type == REF_WALLCORNER))
+					    (order->psStats->type == REF_WALL && psStruct->pStructureType->type == REF_WALLCORNER)
+					    || (psStruct->status != SS_BUILT && modupgrade::combinesInto(order->psStats, psStruct->pStructureType)))   // MOD (24.11.): hineingebauter Bunker
 					{
 						// same type - do a help build
 						syncDebug("Reached build target: do-help");
@@ -1807,9 +1816,10 @@ void actionUpdateDroid(DROID *psDroid)
 							psDroid->action = DACTION_BUILD;
 						}
 					}
-					else if (modupgrade::canReplace(order->psStats, psStruct, psDroid->player))
+					else if (modupgrade::canReplace(order->psStats, psStruct, psDroid->player)
+					         || modupgrade::combineResult(order->psStats, psStruct, psDroid->player) != nullptr)
 					{
-						// MOD (Wunsch 17.11. 18:02): Ausbau wie ein Modul - Betonbunker auf den Scav-Bunker
+						// MOD (Wunsch 17.11. 18:02): Ausbau wie ein Modul - Betonbunker auf den Scav-Bunker (24.11.: auch in die Stellung)
 						if (droidStartBuild(psDroid) == DroidStartBuildSuccess)
 						{
 							syncDebug("Reached build target: upgrade");
@@ -1877,7 +1887,8 @@ void actionUpdateDroid(DROID *psDroid)
 						{
 							setUpBuildModule(psDroid);
 						}
-						else if (modupgrade::canReplace(order->psStats, psStruct, psDroid->player))
+						else if (modupgrade::canReplace(order->psStats, psStruct, psDroid->player)
+						         || modupgrade::combineResult(order->psStats, psStruct, psDroid->player) != nullptr)
 						{
 							if (droidStartBuild(psDroid) == DroidStartBuildSuccess) { psDroid->action = DACTION_BUILD; }   // MOD: Ausbau (Betonbunker)
 						}
