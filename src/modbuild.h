@@ -58,6 +58,8 @@ const std::vector<Placement> *previewPlan();
 
 /// Baukran-Bonus: Baupunkte pro Sekunde eines Baufahrzeugs, das im Umkreis (9 Kacheln) eines fertigen eigenen/verbuendeten Krans (A0BaBaCrane) arbeitet, +25 %
 unsigned craneBoost(const DROID *psDroid, unsigned points);
+/// (24.11. 16:42 "was ist der blaue Kreis um den Kran? ... warum ist der so klein?"): Umkreis (Welt), in dem der Kran schneller bauen laesst
+int craneRadius();
 
 /// nur Anzeige: Arbeitsbewegung des Baggerarms (Schwenken + Nicken) bzw. Pendeln der Abrissbirne, solange das Fahrzeug baut/abreisst/repariert.
 /// Liefert true und Winkel in Grad (um die Hochachse / Querachse). anim = Grafikzeit (Phase der Bewegung).

@@ -1242,6 +1242,11 @@ float ballSwing(const DROID *psDroid, unsigned anim)
 	return (moving ? 9.f : 3.f) * std::sin(t * (6.2831853f / (moving ? 1700.f : 3100.f)));
 }
 
+int craneRadius()
+{
+	return 9 * DIST_TILE;
+}
+
 unsigned craneBoost(const DROID *psDroid, unsigned points)
 {
 	// Kranliste je Spielsekunde neu aufbauen (nur Spielzeit, deshalb auf allen Rechnern gleich)
@@ -1264,7 +1269,7 @@ unsigned craneBoost(const DROID *psDroid, unsigned points)
 			}
 		}
 	}
-	constexpr int R = 9 * DIST_TILE;
+	const int R = craneRadius();
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		if (s_cranes[p].empty() || (p != static_cast<int>(psDroid->player) && !aiCheckAlliances(p, psDroid->player))) { continue; }
