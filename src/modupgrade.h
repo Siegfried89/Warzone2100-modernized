@@ -19,4 +19,15 @@ bool canReplace(const STRUCTURE_STATS *psNew, const STRUCTURE *psOld, unsigned p
 /// (Wunsch 18.11. 12:48 "Modul auf Scav-Bunker bauen soll genauso sein wie beim Kraftwerksmodul"): der fuer diesen Spieler
 /// verfuegbare Ausbau, der auf psOld gesetzt werden kann (nullptr = keiner) - fuer Bau-Zeiger beim Ueberfahren und Klick-Befehl
 STRUCTURE_STATS *upgradeFor(const STRUCTURE *psOld, unsigned player);
+
+/// MOD (Wunsch 24.11. 16:27 "Bunker in Stellungen ... Man muss sie selbst hineinbauen koennen. Evtl. Modulfunktion verwenden"):
+/// stats/structcombine.json { "Grundbauwerk": { "gesetztes Bauwerk": "Ergebnis" } } - das gewoehnliche Bauwerk aus dem Baumenue
+/// (z. B. Betonbunker) wird in ein eigenes, fertiges Grundbauwerk (Sechseck-Stellung) hineingebaut und ergibt das Ergebnis-Bauwerk
+/// (Betonbunker in der Stellung), wie ein Modul. Das Ergebnis selbst steht nicht im Baumenue.
+/// Ergebnis, wenn psPlaced auf psOld gesetzt wird (eigenes, fertiges Grundbauwerk), sonst nullptr
+STRUCTURE_STATS *combineResult(const STRUCTURE_STATS *psPlaced, const STRUCTURE *psOld, unsigned player);
+/// dasselbe fuer die Stelle (Welt), an der gebaut werden soll (das Bauwerk auf diesem Feld)
+STRUCTURE_STATS *combineAt(const STRUCTURE_STATS *psPlaced, int worldX, int worldY, unsigned player);
+/// ergibt psPlaced irgendwo hineingebaut psResult? (weitere Bauer helfen dann an der Baustelle mit)
+bool combinesInto(const STRUCTURE_STATS *psPlaced, const STRUCTURE_STATS *psResult);
 }

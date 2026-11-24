@@ -4827,6 +4827,25 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 	{
 		return false;   // MOD (22:13): NASDA-Satelliten nur auf einer Orbit-Insel bauen (oder als Modul ans Raketensilo)
 	}
+	if (psBuilding != nullptr && TileHasStructure(mapTile(world.map, b.map.x, b.map.y)) && &world == &gameWorld)
+	{
+		// MOD (Wunsch 24.11. 16:27): Bauwerk in ein eigenes Grundbauwerk hineinbauen (Betonbunker in die Sechseck-Stellung) - alle Felder
+		// muessen auf demselben passenden Grundbauwerk liegen
+		const STRUCTURE *psBase = static_cast<const STRUCTURE *>(mapTile(world.map, b.map.x, b.map.y)->psObject);
+		if (modupgrade::combineResult(psBuilding, psBase, player) != nullptr)
+		{
+			bool all = true;
+			for (int j = 0; j < b.size.y && all; ++j)
+			{
+				for (int i = 0; i < b.size.x && all; ++i)
+				{
+					const MAPTILE *psTile = mapTile(world.map, b.map.x + i, b.map.y + j);
+					all = TileHasStructure(psTile) && psTile->psObject == psBase;
+				}
+			}
+			if (all) { return true; }
+		}
+	}
 	if (psBuilding != nullptr && modupgrade::isUpgrade(psBuilding))
 	{
 		// MOD (Wunsch 17.11. 18:02): ein Ausbau (Betonbunker) darf nur genau auf ein eigenes, fertiges Grundbauwerk (Scav-Bunker) gesetzt werden
