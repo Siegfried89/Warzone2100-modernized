@@ -101,6 +101,8 @@ int stationMilli(const STRUCTURE *psStation);
 int stationTake(const STRUCTURE *psStation, int milli);
 /// (Wunsch 18.11. 12:45 "es gibt keinen Ladebalken am Oellagerturm") Faesser im Oellager (roh + veredelt); -1 = kein Oellager. cap = Plaetze
 int storeBarrels(const STRUCTURE *psStructure, int &cap);
+/// (Wunsch 24.11. 17:46 "Lager-Ladebalken beim Kraftwerk") Faesser im Kraftwerk (Reserve, bis zu cap = einige hundert); -1 = kein Kraftwerk der Oel-Wirtschaft
+int generatorStock(const STRUCTURE *psGen, int &cap);
 /// ganze/angebrochene Faesser an der Tankstelle (Anzeige)
 int stationBarrels(const STRUCTURE *psStation);
 /// Faesser-Anzeige (Anzeigemodus 4) und Fass-Fenster der gewaehlten Tankstelle, nach dem 3D-Bild aufrufen

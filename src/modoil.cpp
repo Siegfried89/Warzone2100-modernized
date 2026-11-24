@@ -72,7 +72,9 @@ constexpr int STORE_BONUS = 10;             // Fass ueber das Lager: +10 % Energ
 constexpr int GEN_SECS = 180;               // ein Fass haelt das Kraftwerk / Stromnetz 3 Minuten am Laufen
 constexpr int START_FUEL = 0;               // (20.11.) neues Kraftwerk startet leer
 constexpr int PULL_BELOW = 60;              // das Kraftwerk holt ein Fass aus dem Lager, wenn der Vorrat darunter faellt
-constexpr int HUNGRY_BELOW = 180;           // (20.11. Punkt 7 "etwas frueher") Tanker beliefern ein Kraftwerk mit hoechstens 3 Minuten zuerst
+constexpr int HUNGRY_BELOW = 600;           // (Wunsch 24.11. 17:46 "das Kraftwerk darf keine einzige Sekunde stillstehen und muss VOR Ablauf beliefert
+                                            // werden") Tanker beliefern ein Kraftwerk mit hoechstens 10 Minuten Vorrat zuerst (vorher 3)
+constexpr int GEN_BARREL_CAP = 500;         // (17:46 "muss viele viele Faesser Lagerplatz haben ... einige hundert Faesser anstauen") Faesser im Kraftwerk
 constexpr int STORAGE_CAP = 8;              // Fass-Plaetze im Lager (Oellager / Wasserturm)
 // (Wunsch 22.11. 18:27 "grosses Oellager"): Grosses Oellager "A0BaBaOilStoreBig" (schwarze Lagerhallen, 3x2) fasst 48 Faesser
 constexpr int STORAGE_CAP_BIG = 48;
@@ -141,7 +143,8 @@ std::map<uint32_t, int> s_station;           // (16.11.) Tankstelle -> Vorrat in
 std::map<std::pair<int, int>, int> s_lowered;   // tiefe Graeben: abgesenkte Kachel -> Tiefe (modterrain)
 std::vector<Boom> s_booms;
 std::vector<Replace> s_repl;
-bool s_startChecked[MAX_PLAYERS] = {};       // (24.11. 17:01) Tanker fuer schon stehende Oeltuerme/Raffinerien vergeben
+bool s_startChecked[MAX_PLAYERS] = {};
+int s_freeTankers[MAX_PLAYERS] = {};        // (24.11. 17:46) schon gratis vergebene Tanker (Fabrik-Tanker zaehlen nicht)       // (24.11. 17:01) Tanker fuer schon stehende Oeltuerme/Raffinerien vergeben
 int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwerk-Geschenk, Bit 2 = Raffinerie-Geschenk schon vergeben
 bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
 int s_bank[MAX_PLAYERS] = {};               // (Wunsch 21.11. 20:22) Energie verbrannter Faesser, die noch stetig ins Konto laeuft
@@ -671,6 +674,16 @@ int stationTake(const STRUCTURE *st, int milli)
 	return take;
 }
 
+int generatorStock(const STRUCTURE *g, int &cap)
+{
+	cap = 0;
+	if (g == nullptr || g->pStructureType == nullptr || g->pStructureType->type != REF_POWER_GEN || g->status != SS_BUILT || !manages(static_cast<int>(g->player))) { return -1; }
+	cap = GEN_BARREL_CAP;
+	const auto it = s_fuel.find(g->id);
+	const int fuel = it == s_fuel.end() ? 0 : it->second;
+	return (fuel + GEN_SECS - 1) / GEN_SECS;
+}
+
 int storeBarrels(const STRUCTURE *st, int &cap)
 {
 	cap = STORAGE_CAP;
@@ -702,6 +715,7 @@ bool manages(int player)
 void reset()
 {
 	for (bool &b : s_startChecked) { b = false; }
+	for (int &n : s_freeTankers) { n = 0; }
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		for (int k = 0; k < INC_COUNT; k++) { s_ledger[p][k] = 0; }
@@ -757,6 +771,7 @@ void saveState(std::vector<int64_t> &out)
 		if (s_duty[p]) { out.push_back(11); out.push_back(p); out.push_back(1); }
 		if (s_bank[p] > 0) { out.push_back(12); out.push_back(p); out.push_back(s_bank[p]); }
 	}
+	for (int p = 0; p < MAX_PLAYERS; p++) { if (s_freeTankers[p] > 0) { out.push_back(14); out.push_back(p); out.push_back(s_freeTankers[p]); } }
 	// (24.11. 17:01) geladene Faesser der Tanker (vorher gingen sie beim Speichern verloren): Wert = Anzahl + Inhalt * 65536
 	for (const auto &kv : s_cargo)
 	{
@@ -780,6 +795,7 @@ void loadState(const std::vector<int64_t> &in)
 		case 10: if (id < MAX_PLAYERS) { s_gift[id] = iv; } break;
 		case 11: if (id < MAX_PLAYERS) { s_duty[id] = iv != 0; } break;
 		case 12: if (id < MAX_PLAYERS) { s_bank[id] = iv; } break;
+		case 14: if (id < MAX_PLAYERS) { s_freeTankers[id] = iv; } break;
 		case 13: { CargoState &c = s_cargo[id]; c.n = iv & 0xffff; c.content = (iv >> 16) & 3; if (c.content == 0) { c.content = 2; } } break;
 		case 5: s_storeR[id] += iv; break;
 		case 6: s_refIn[id] = iv; break;
@@ -1119,6 +1135,13 @@ int barrelEnergy(const STRUCTURE *gen, bool fromStore)
 	return static_cast<int>(std::max<int64_t>(1, e));
 }
 
+int genRoom(const STRUCTURE *gen)
+{
+	const auto it = s_fuel.find(gen->id);
+	const int fuel = it == s_fuel.end() ? 0 : it->second;
+	return std::max(0, GEN_BARREL_CAP - (fuel + GEN_SECS - 1) / GEN_SECS);
+}
+
 void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool fromStore)
 {
 	const int e = barrelEnergy(gen, fromStore);
@@ -1418,8 +1441,9 @@ void logistics()
 			const bool idleOrder = d->order.type == DORDER_NONE || d->order.type == DORDER_HOLD || d->order.type == DORDER_STOP
 			                       || (d->order.type == DORDER_GUARD && d->order.psObj == nullptr);
 			// ein Spieler-Befehl der letzten 5 s (auch "Halten"/"Stopp" waehrend der Fahrt) unterbricht den Autopiloten
-			if (c.forced && modcontrol::sincePlayerOrder(d) >= 5000u) { c.forced = false; }
-			const bool freshOrder = !c.forced && modcontrol::sincePlayerOrder(d) < 5000u;
+			// (Wunsch 24.11. 17:46) 4 s statt 5 s
+			if (c.forced && modcontrol::sincePlayerOrder(d) >= 4000u) { c.forced = false; }
+			const bool freshOrder = !c.forced && modcontrol::sincePlayerOrder(d) < 4000u;
 			if (c.mode != 0 && ((!ownMove && !idleOrder) || freshOrder))
 			{
 				c.mode = 0;       // der Spieler hat selbst einen Befehl gegeben: Autopilot wartet, bis der Lkw wieder frei ist
@@ -1431,7 +1455,7 @@ void logistics()
 			// (Wunsch 18.11. 02:44) nach einem Spieler-Befehl nimmt der Lkw/Tanker seine Arbeit nach kurzer Wartezeit (5 s frei) wieder auf
 			if (c.mode == 0 && c.manualWait)
 			{
-				if (++c.idleSec < 5) { continue; }
+				if (++c.idleSec < 4) { continue; }
 				c.manualWait = false;
 				c.idleSec = 0;
 			}
@@ -1497,8 +1521,9 @@ void logistics()
 					}
 					else
 					{
-						deliverToGenerator(p, ts, c.n, false);
-						c.n = 0;
+						const int m = std::min(c.n, genRoom(ts));   // (17:46) Kraftwerk fasst GEN_BARREL_CAP Faesser
+						deliverToGenerator(p, ts, m, false);
+						c.n -= m;
 					}
 					if (c.n <= 0) { c.n = 0; c.content = 0; }
 					// (Wunsch 20.11. 19:06) beim Abliefern haelt der Oeltanker kurz, dazu leises Rueckfahr-Piepen wie in der Stadt
@@ -1580,7 +1605,8 @@ void logistics()
 				// Rohoel zur Raffinerie bringen (nur so viel, wie dort Platz ist); sonst den Rest an veredeltem Oel
 				// veredeltes Oel nur holen, wenn es jemand braucht (laufendes Kraftwerk oder Tankstelle mit Platz) - sonst stuende der Tanker
 				// voll herum und faehre kein Rohoel mehr
-				bool refinedDemand = !activeGens.empty();
+				bool refinedDemand = false;
+				for (STRUCTURE *g : activeGens) { if (genRoom(g) > 0) { refinedDemand = true; break; } }
 				for (STRUCTURE *st : sn.stations) { if (s_station[st->id] < STATION_CAP * 1000) { refinedDemand = true; break; } }
 				STRUCTURE *ref = refinedDemand ? nearestRefinedPickup() : nullptr;
 				STRUCTURE *raw = refRoomTotal > 0 ? nearestRawPickup() : nullptr;
@@ -1643,12 +1669,13 @@ void logistics()
 				}
 				if (bt != nullptr) { go(2, 1, bt->id, bt->pos.x, bt->pos.y); continue; }
 			}
-			// naechstes Kraftwerk, das Oel braucht
+			// naechstes Kraftwerk mit Platz (Reserve - es darf sich viel anstauen)
 			{
 				STRUCTURE *bg = nullptr;
 				int64_t bd = INT64_MAX;
 				for (STRUCTURE *g : activeGens)
 				{
+					if (genRoom(g) <= 0) { continue; }
 					const int64_t dd = d2(d->pos.x, d->pos.y, g->pos.x, g->pos.y);
 					if (dd < bd) { bd = dd; bg = g; }
 				}
@@ -1897,8 +1924,11 @@ int tankerCount(int p)
 }
 void tankerFor(STRUCTURE *s)
 {
+	// (Wunsch 24.11. 17:46 "Es sollen aber zusaetzliche Oeltanker in der Fabrik ausgebildet werden duerfen"): gezaehlt werden nur die
+	// gratis vergebenen Tanker - selbst gebaute zaehlen nicht und nehmen keinem Oelturm seinen Tanker weg
 	const int p = static_cast<int>(s->player);
-	if (tankerCount(p) < tankerQuota(p)) { spawnNear(s, "ScavTanker"); }
+	if (p < 0 || p >= MAX_PLAYERS) { return; }
+	if (s_freeTankers[p] < tankerQuota(p) && spawnNear(s, "ScavTanker")) { s_freeTankers[p]++; }
 }
 
 
@@ -1910,7 +1940,13 @@ void startGifts()
 	{
 		if (s_startChecked[p]) { continue; }
 		s_startChecked[p] = true;
-		if (!manages(p) || gameTime > 10000) { continue; }
+		if (!manages(p)) { continue; }
+		if (gameTime > 10000)
+		{
+			// geladener Spielstand ohne Zaehler: vorhandene Tanker gelten als vergeben (keine Gratis-Tanker beim naechsten Oelturm doppelt)
+			if (s_freeTankers[p] == 0) { s_freeTankers[p] = std::min(tankerCount(p), tankerQuota(p)); }
+			continue;
+		}
 		for (STRUCTURE *s : gameWorld.objects.structures[p])
 		{
 			if (s->died || s->status != SS_BUILT || s->pStructureType == nullptr) { continue; }
@@ -2124,7 +2160,7 @@ void drawOverlay(const glm::mat4 &m)
 			gens.push_back(s);
 			const auto it = s_fuel.find(s->id);
 			const int fuel = it == s_fuel.end() ? START_FUEL : it->second;
-			bar(m, s->pos.x, s->pos.y, s->pos.z + 230, fuel, 2 * GEN_SECS, fuel > HUNGRY_BELOW ? okOn : lowOn, barOff);
+			bar(m, s->pos.x, s->pos.y, s->pos.z + 230, (fuel + GEN_SECS - 1) / GEN_SECS, GEN_BARREL_CAP, fuel > HUNGRY_BELOW ? okOn : lowOn, barOff);   // (17:46) Faesser
 		}
 	}
 	for (const FEATURE *f : gameWorld.objects.features[0])
