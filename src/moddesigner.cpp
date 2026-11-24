@@ -27,6 +27,9 @@
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/screen.h"
 #include "lib/sound/audio.h"
+#include "lib/framework/frameresource.h"
+#include "lib/framework/physfs_ext.h"
+#include "lib/sound/mixer.h"
 #include "lib/widget/button.h"
 #include "lib/widget/form.h"
 #include "lib/widget/widget.h"
@@ -124,8 +127,16 @@ Ctx ctx()
 
 void play(const char *file)
 {
-	const int id = audio_GetTrackID(file);
-	if (id >= 0) { audio_PlayTrack(id); }
+	// MOD (Log 24.11. 00:55 "Unable to find data for mfui_clank.ogg type WAV"): im Titelmenue sind die Klaenge aus audio.wrf noch nicht
+	// geladen (die kommen erst mit den Spieldaten) -> dann die Datei aus audio/mf direkt abspielen statt stumm zu bleiben (und ohne Assert)
+	if (resPresent("WAV", file))
+	{
+		const int id = audio_GetTrackID(file);
+		if (id >= 0) { audio_PlayTrack(id); }
+		return;
+	}
+	const std::string path = std::string("audio/mf/") + file;
+	if (PHYSFS_exists(path.c_str())) { audio_PlayStream(path.c_str(), sound_GetUIVolume(), nullptr, nullptr); }
 }
 
 void setStatus(const std::string &t, bool bad)
