@@ -200,15 +200,15 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 		std::string tip = "\xC3\x96lt\xC3\xBCrme: " + (v.derricks == 0 ? std::string("keiner") : std::to_string(v.derricks) + " | F\xC3\xA4sser " + of(v.derrickBarrels, v.derrickCap));
 		if (v.derricksFull > 0) { tip += " | " + std::to_string(v.derricksFull) + " voll - es wird nichts abgeholt"; }
 		if (v.pipedDerricks > 0) { tip += " | per Pipeline am Kraftwerk: " + std::to_string(v.pipedDerricks) + " (flie\xC3\x9F" "en st\xC3\xA4ndig, keine F\xC3\xA4sser)"; }
-		const std::string prob = v.derricks == 0 ? "Keine \xC3\x96lt\xC3\xBCrme" : std::to_string(v.derricksFull) + " \xC3\x96lturm voll - mehr Pickups";
+		const std::string prob = v.derricks == 0 ? "Keine \xC3\x96lt\xC3\xBCrme" : std::to_string(v.derricksFull) + " \xC3\x96lturm voll - mehr \xC3\x96ltanker";
 		t.push_back({l, OI_DERRICK, std::to_string(v.derricks) + (v.derricksFull > 0 ? "!" : ""), tip, prob, v.derricks == 0 ? 3 : 20});
 	}
 	{
 		const Lamp l = (v.pickups > 0 || v.pipeDerricks > 0) ? L_OK : (v.derricks > 0 ? L_BAD : L_OFF);
-		std::string tip = "Transport (Pickups holen die F\xC3\xA4sser): " + std::to_string(v.pickups);
-		if (v.pickups > 0) { tip += " | geladen " + of(v.pickupBarrels, v.pickupCap); }
+		std::string tip = "Transport (\xC3\x96ltanker holen die F\xC3\xA4sser am \xC3\x96lturm und bringen sie zur Raffinerie): " + std::to_string(v.pickups);
+		if (v.pickups > 0) { tip += " | geladen mit Roh\xC3\xB6l " + std::to_string(v.pickupBarrels); }
 		if (v.pipeDerricks > 0) { tip += " | per Rohr: " + std::to_string(v.pipeDerricks) + " \xC3\x96lt\xC3\xBCrme"; }
-		t.push_back({l, OI_PICKUP, std::to_string(v.pickups), tip, "Keine Pickups f\xC3\xBCr das \xC3\x96l", 4});
+		t.push_back({l, OI_PICKUP, std::to_string(v.pickups), tip, "Kein \xC3\x96ltanker f\xC3\xBCr das Roh\xC3\xB6l", 4});
 	}
 	{
 		const bool full = v.refCap > 0 && v.refIn >= v.refCap;
@@ -220,8 +220,8 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 	}
 	{
 		const Lamp l = v.tankers > 0 ? L_OK : (v.refineries > 0 ? L_BAD : L_OFF);
-		std::string tip = "\xC3\x96ltanker (bringen das Raffinat zu Lager/Kraftwerk): " + std::to_string(v.tankers);
-		if (v.tankers > 0) { tip += " | geladen " + of(v.tankerBarrels, v.tankerCap); }
+		std::string tip = "\xC3\x96ltanker (fahren alles \xC3\x96l: Roh\xC3\xB6l zur Raffinerie, Raffinat zu Kraftwerk/Tankstelle/Lager): " + std::to_string(v.tankers);
+		if (v.tankers > 0) { tip += " | geladen mit Raffinat " + std::to_string(v.tankerBarrels) + " (Pl\xC3\xA4tze " + std::to_string(v.tankerCap) + ")"; }
 		t.push_back({l, OI_TANKER, std::to_string(v.tankers), tip, "Kein \xC3\x96ltanker", 6});
 	}
 	{
@@ -241,17 +241,17 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 	{
 		int fed = 0;
 		const int subs = modgrid::substations(static_cast<int>(selectedPlayer), fed);
-		// (Wunsch 24.11. 15:19) Umspannwerk ist keine Pflicht mehr - die Masten verbinden die Gebaeude mit dem Netz
-		const Lamp l = subs == 0 ? L_OFF : (fed == 0 ? L_BAD : (fed < subs ? L_WARN : L_OK));
-		const std::string tip = "Umspannwerk (nicht n\xC3\xB6tig - Netzknoten mit gro\xC3\x9F" "em Versorgungskreis; die Masten verbinden die Geb\xC3\xA4ude mit dem Netz): "
+		// (Wunsch 24.11. 17:01) Umspannwerk wieder Pflicht fuer das Netz - empfangen wird aber an jedem Mast des Netzes
+		const Lamp l = subs == 0 ? L_BAD : (fed == 0 ? L_BAD : (fed < subs ? L_WARN : L_OK));
+		const std::string tip = "Umspannwerk (Pflicht: ohne Umspannwerk flie\xC3\x9Ft kein Kraftwerks-/Solarstrom im Netz; die Geb\xC3\xA4ude bekommen ihn an jedem Mast des Netzes): "
 		                        + (subs == 0 ? std::string("keins") : std::to_string(subs) + " | davon mit Strom " + std::to_string(fed));
-		const std::string prob = fed == 0 ? "Umspannwerk bekommt keinen Strom" : "Ein Umspannwerk ohne Strom";
-		t.push_back({l, OI_SUBSTATION, subs == 0 ? std::string("-") : of(fed, subs), tip, subs == 0 ? std::string() : prob, subs > 0 && fed == 0 ? 0 : 23});
+		const std::string prob = subs == 0 ? "Kein Umspannwerk" : (fed == 0 ? "Umspannwerk bekommt keinen Strom" : "Ein Umspannwerk ohne Strom");
+		t.push_back({l, OI_SUBSTATION, subs == 0 ? std::string("0") : of(fed, subs), tip, prob, fed == 0 ? 0 : 23});
 	}
 	{
 		const int sp = modgrid::solarPanelsConnected(static_cast<int>(selectedPlayer));
 		const Lamp l = sp > 0 ? L_OK : L_OFF;
-		const std::string tip = "Solar: " + (sp == 0 ? std::string("keine Paneele am Netz (Mast in der N\xC3\xA4he?)") : std::to_string(sp) + " Paneele am Netz | +" + std::to_string(sp * 6 * modoil::INCOME_MULT) + "/min (tags\xC3\xBC" "ber)");
+		const std::string tip = "Solar: " + (sp == 0 ? std::string("keine Paneele am Netz (Mast in der N\xC3\xA4he? Umspannwerk im Netz?)") : std::to_string(sp) + " Paneele am Netz | +" + std::to_string(sp * 6 * modoil::INCOME_MULT) + "/min (tags\xC3\xBC" "ber)");
 		t.push_back({l, OI_SOLAR, std::to_string(sp), tip, "", 99});
 	}
 	{
@@ -268,10 +268,11 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 	}
 	{
 		const Lamp l = v.buildingsDown > 0 ? L_BAD : L_OK;
-		int noGrid = 0, overload = 0;
-		modgrid::downReasons(static_cast<int>(selectedPlayer), noGrid, overload);
+		int noGrid = 0, overload = 0, noSub = 0;
+		modgrid::downReasons(static_cast<int>(selectedPlayer), noGrid, overload, noSub);
 		std::string why;
 		if (noGrid > 0) { why += std::to_string(noGrid) + " ohne Netz (Mast in der N\xC3\xA4he bauen)"; }
+		if (noSub > 0) { why += std::string(why.empty() ? "" : ", ") + std::to_string(noSub) + " Netz ohne Umspannwerk"; }
 		if (overload > 0) { why += std::string(why.empty() ? "" : ", ") + std::to_string(overload) + " Netz \xC3\xBC" "berlastet (mehr Kraftwerke/Solar)"; }
 		if (why.empty()) { why = "fahren gerade hoch"; }
 		const std::string tip = "Geb\xC3\xA4ude ohne Strom: " + (v.buildingsDown == 0 ? std::string("keine") : std::to_string(v.buildingsDown) + " (stehen still: " + why + ")");

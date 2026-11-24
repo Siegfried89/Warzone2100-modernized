@@ -94,7 +94,8 @@ bool s_hasGen[MAX_PLAYERS] = {};                   // PowerDown nur, wenn der Sp
 int s_solarConnected[MAX_PLAYERS] = {};            // (20.11. 19:06) Solarpaneele, die ueber Masten an einem Umspannwerk haengen (geschlossener Kreislauf)
 int s_subCount[MAX_PLAYERS] = {};                  // Umspannwerke
 int s_subFed[MAX_PLAYERS] = {};                    // davon mit Strom
-int s_downNoGrid[MAX_PLAYERS] = {};                // (24.11.) ohne Strom, weil kein Mast/Umspannwerk in Reichweite bzw. Netz ohne Quelle
+int s_downNoGrid[MAX_PLAYERS] = {};
+int s_downNoSub[MAX_PLAYERS] = {};                 // (24.11. 17:01) Netz hat Quellen, aber kein Umspannwerk                // (24.11.) ohne Strom, weil kein Mast/Umspannwerk in Reichweite bzw. Netz ohne Quelle
 int s_downOverload[MAX_PLAYERS] = {};              // (24.11.) ohne Strom, weil das Netz ueberlastet ist
 std::unordered_map<uint32_t, bool> s_held;           // wir haben die Fabrik/Forschung selbst auf Halt gesetzt (nicht der Spieler)
 constexpr int BASE_GEN_RANGE = 9 * 128;              // Fabriken/Forschung: 9 Felder um ein laufendes Kraftwerk
@@ -263,6 +264,7 @@ void update()
 		s_subCount[p] = 0;
 		s_subFed[p] = 0;
 		s_downNoGrid[p] = 0;
+		s_downNoSub[p] = 0;
 		s_downOverload[p] = 0;
 		std::vector<Node> poles, gens, subs, panels, cons;
 		std::vector<int> genCap;
@@ -433,7 +435,7 @@ void update()
 		for (int r = 0; r < total; r++)
 		{
 			if (find(par, r) != r) { continue; }
-			live[r] = subMode ? (solarCap[r] > 0 || genCapC[r] > 0) : hasGenC[r];
+			live[r] = subMode ? (hasSub[r] ? (solarCap[r] > 0 || genCapC[r] > 0) : emergCap[r] > 0) : hasGenC[r];   // (24.11. 17:01) Umspannwerk Pflicht
 		}
 		// Verbraucher einem Netz zuordnen: Versorgungsbereich eines Mastes oder Umspannwerks (ohne Umspannwerk wie bisher auch eines Kraftwerks);
 		// liegen mehrere in Reichweite, gewinnt ein Netz mit Strom, dann das naechste
@@ -496,8 +498,12 @@ void update()
 			if (subMode)
 			{
 				// (20.11. 19:06) keine Bereitschaft: Oel- und Solar-Kreislauf sind unabhaengig, ihre Leistung zaehlt zusammen (mit dem Notstrom
-				// der Kommandozentrale); (24.11.) Umspannwerk nicht mehr noetig
-				capacity[r] = solarCap[r] + genCapC[r];
+				// der Kommandozentrale).
+				// (Wunsch 24.11. 17:01 "Das Umspannwerk ist immer noch Pflicht (damit das ganze Netz funktioniert). Aber eben nicht die zwingende
+				// Stelle fuer den Empfang. Dafuer reichen Masten, die mit dem Netz verbunden sind."): Kraftwerks-, Solar- und Atomstrom fliesst nur
+				// in einem Netz mit mindestens einem Umspannwerk - dort bekommt jedes Gebaeude in Reichweite IRGENDEINES Mastes des Netzes Strom.
+				// Ohne Umspannwerk nur der Notstrom der Kommandozentrale (Wunsch 22.11. 18:27).
+				capacity[r] = hasSub[r] ? solarCap[r] + genCapC[r] : emergCap[r];
 				fed[r] = capacity[r] > 0;
 			}
 			else
@@ -513,8 +519,8 @@ void update()
 		}
 		// (20.11. 19:06) Solar-Kreislauf: nur Paneele am Netz bringen Einnahmen (modlava) - (24.11.) am Netz = ueber einen Mast (oder ein
 		// Umspannwerk) angeschlossen, kein Umspannwerk mehr noetig
+		// (24.11. 17:01) ... und das Netz hat ein Umspannwerk (Pflicht)
 		std::vector<char> gridNode(total, 0);
-		for (int i = 0; i < n; i++) { gridNode[find(par, i)] = 1; }
 		for (int k = 0; k < m; k++) { gridNode[find(par, S0 + k)] = 1; }
 		s_solarConnected[p] = 0;
 		for (int k = 0; k < q; k++)
@@ -571,6 +577,7 @@ void update()
 				if (used[net] + need <= capacity[net]) { used[net] += need; ok = true; }
 				else { s_downOverload[p]++; }
 			}
+			else if (net >= 0 && subMode && !hasSub[net] && (solarCap[net] > 0 || genCapC[net] > 0)) { s_downNoSub[p]++; }   // (24.11. 17:01)
 			else { s_downNoGrid[p]++; }
 			if (s_crewOff.find(c.id) != s_crewOff.end()) { ok = false; }   // Besatzungsmangel: wie ohne Strom abgeschaltet
 			// PowerDown: kehrt die Versorgung zurueck, faehrt das Gebaeude nach Reihenfolge (ein Gebaeude je 1,2 s) wieder hoch
@@ -590,8 +597,9 @@ int solarPanelsConnected(int player)
 	return (player >= 0 && player < MAX_PLAYERS) ? s_solarConnected[player] : 0;
 }
 
-void downReasons(int player, int &noGrid, int &overload)
+void downReasons(int player, int &noGrid, int &overload, int &noSub)
 {
+	noSub = (player >= 0 && player < MAX_PLAYERS) ? s_downNoSub[player] : 0;
 	noGrid = (player >= 0 && player < MAX_PLAYERS) ? s_downNoGrid[player] : 0;
 	overload = (player >= 0 && player < MAX_PLAYERS) ? s_downOverload[player] : 0;
 }

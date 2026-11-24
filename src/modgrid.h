@@ -37,5 +37,6 @@ int solarPanelsConnected(int player);
 /// (20.11. 19:06) Zahl der Umspannwerke; fed = davon mit Strom
 int substations(int player, int &fed);
 /// (24.11.) warum Gebaeude ohne Strom sind: kein Mast/Umspannwerk in Reichweite (bzw. Netz ohne Quelle) / Netz ueberlastet
-void downReasons(int player, int &noGrid, int &overload);
+/// (24.11. 17:01) noSub: Netz mit Kraftwerk/Solar, aber ohne Umspannwerk (Pflicht)
+void downReasons(int player, int &noGrid, int &overload, int &noSub);
 }
