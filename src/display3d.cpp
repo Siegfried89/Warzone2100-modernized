@@ -4213,7 +4213,7 @@ static void queueStructureHealth(STRUCTURE *psStruct, BatchedMultiRectRenderer& 
 		}
 	}
 	// MOD (Wunsch 24.11. 17:46 "Lager-Ladebalken beim Kraftwerk - machen"): Faesser im Kraftwerk (Reserve bis zu einigen hundert, orange,
-	// 10 Abschnitte); rot, solange weniger als 4 Faesser (12 Minuten) da sind
+	// 10 Abschnitte); (17:54) rot, solange weniger als 2 Faesser (6 Minuten) da sind
 	{
 		int gcap = 0;
 		const int gs = (psStruct->player == selectedPlayer) ? modoil::generatorStock(psStruct, gcap) : -1;
@@ -4222,7 +4222,7 @@ static void queueStructureHealth(STRUCTURE *psStruct, BatchedMultiRectRenderer& 
 			const int full = 2 * width;
 			const int fill = std::max(gs > 0 ? 1 : 0, full * std::clamp(gs, 0, gcap) / gcap);
 			const int x0 = scrX - scrR, y0 = scrY + 5;
-			const bool low = gs < 4;
+			const bool low = gs < 2;
 			batchedMultiRectRenderer.addRect(PIERECT_DrawRequest(x0 - 1, y0 - 1, x0 + full + 1, y0 + 3, WZCOL_RELOAD_BACKGROUND), rectGroup);
 			if (fill > 0)
 			{
