@@ -36,7 +36,8 @@
 #include "stats.h"
 #include "structure.h"
 #include "visibility.h"
-#include "modoilui.h"   // MOD (21.11.): Reichweiten beim Platzieren von Stromnetz-Gebaeuden
+#include "modoilui.h"
+#include "modbuild.h"   // MOD (24.11.): Kran-Umkreis   // MOD (21.11.): Reichweiten beim Platzieren von Stromnetz-Gebaeuden
 
 #include "lib/framework/frame.h"
 #include "lib/gamelib/gtime.h"
@@ -347,6 +348,13 @@ void gatherSelected()
 	{
 		if (psStruct == nullptr || !psStruct->selected)
 		{
+			continue;
+		}
+		// MOD (24.11. 16:42): beim Baukran nicht die Reichweite seines Auslegers (1 Feld), sondern das Gebiet, in dem er schneller bauen
+		// laesst (blauer Ring auch ohne Reichweiten-Anzeige, sobald der Kran gewaehlt ist)
+		if (psStruct->pStructureType != nullptr && psStruct->pStructureType->id.startsWith("A0BaBaCrane"))
+		{
+			push(s_sensor, psStruct, static_cast<float>(modbuild::craneRadius()));
 			continue;
 		}
 		if (s_mode & 1) { push(s_sensor, psStruct, static_cast<float>(objSensorRange(psStruct))); }
