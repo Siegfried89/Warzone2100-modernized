@@ -20,6 +20,7 @@
 #include "modlayer.h"
 #include "modweather.h"
 #include "stats.h"
+#include "structure.h"
 #include "terrain.h"
 
 #include <algorithm>
@@ -200,6 +201,53 @@ void draw3D(const glm::mat4 &viewMatrix)
 				}
 			}
 			cands.push_back(c);
+		}
+	}
+	// (Wunsch 26.11.) Scheinwerfertuerme: der Scheinwerfer (Sensor-Turm, dreht sich wie ein Sensor) wirft einen langen Lichtkegel schraeg
+	// nach unten und echtes Licht auf den Boden - in seiner aktuellen Drehrichtung
+	{
+		auto &lightsS = getCurrentLightingData().lights;
+		int nLit = 0;
+		for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+		{
+			for (const STRUCTURE *st : gameWorld.objects.structures[p])
+			{
+				if (st == nullptr || st->died || st->status != SS_BUILT || st->pStructureType == nullptr || st->pStructureType->id != "A0BaBaSearchlight") { continue; }
+				if (st->visibleForLocalDisplay() != UBYTE_MAX || modlayer::layerOf(st) != view) { continue; }
+				const iIMDShape *imd = st->sDisplay.imd != nullptr ? st->sDisplay.imd->displayModel() : nullptr;
+				const Vector3i conn = (imd != nullptr && !imd->connectors.empty()) ? imd->connectors[0] : Vector3i(0, 0, 131);
+				const Rotation tr = structureGetInterpolatedWeaponRotation(st, 0, graphicsTime);
+				glm::vec3 position(static_cast<float>(st->pos.x), static_cast<float>(st->pos.z), static_cast<float>(-st->pos.y));
+				const glm::mat4 M = glm::translate(position) * glm::rotate(UNDEG(-st->rot.direction), glm::vec3(0.f, 1.f, 0.f))
+				                    * glm::translate(glm::vec3(static_cast<float>(conn.x), static_cast<float>(conn.z), static_cast<float>(conn.y)))
+				                    * glm::rotate(UNDEG(tr.direction), glm::vec3(0.f, 1.f, 0.f));
+				const glm::vec3 lamp = glm::vec3(M * glm::vec4(0.f, 10.f, -7.f, 1.f));   // Glasscheibe (modsearchlamp.pie)
+				if (shape != nullptr)
+				{
+					const glm::mat4 bb = glm::translate(glm::mat4(1.f), lamp) * glm::mat4(bill) * glm::scale(glm::mat4(1.f), glm::vec3(0.9f));
+					pie_Draw3DShape(shape, 0, 0, WZCOL_WHITE, pie_ADDITIVE, alpha, bb, viewMatrix, 0.f, true);
+				}
+				constexpr float SL_TILT = 0.42f;   // ca. 24 Grad nach unten: der Kegel trifft etwa 5-6 Felder vor dem Turm den Boden
+				if (beam != nullptr)
+				{
+					const glm::mat4 bm = M * glm::translate(glm::vec3(0.f, 10.f, -7.f)) * glm::rotate(-SL_TILT, glm::vec3(1.f, 0.f, 0.f))
+					                     * glm::scale(glm::vec3(260.f, 260.f, 900.f));
+					pie_Draw3DShape(beam, 0, 0, WZCOL_WHITE, pie_ADDITIVE, std::min(255, beamAlpha + 40), bm, viewMatrix, 0.f, true);
+				}
+				if (nLit < 24)
+				{
+					const glm::vec3 dir = glm::normalize(glm::mat3(M) * glm::vec3(0.f, -std::sin(SL_TILT), -std::cos(SL_TILT)));
+					LIGHT l;
+					l.position = toGame(lamp);
+					l.range = 1500;
+					l.colour = pal_Colour(255, 250, 235);
+					l.intensity = 2.4f * k;
+					l.direction = Vector3f(dir.x, dir.y, -dir.z);
+					l.cosOuter = 0.94f;   // enger Kegel (ca. 20 Grad)
+					lightsS.push_back(l);
+					++nLit;
+				}
+			}
 		}
 	}
 	if (cands.empty())
