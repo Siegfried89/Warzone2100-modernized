@@ -7886,7 +7886,13 @@ bool loadSaveCompList(const char *pFileName)
 			WzString name = list[i];
 			int state = ini.value(name, UNAVAILABLE).toInt();
 			COMPONENT_STATS *psComp = getCompStatsFromName(name);
-			ASSERT_OR_RETURN(false, psComp, "Bad component %s", name.toUtf8().c_str());
+			// MOD (26.11. 22:35 "alte Skripte komplett bereinigen"): ein im Mod entferntes Teil im alten Spielstand ueberspringen statt
+			// den ganzen Spielstand abzulehnen - so koennen ueberholte Teile wirklich geloescht werden
+			if (psComp == nullptr)
+			{
+				debug(LOG_WARNING, "Savegame: component %s no longer exists - skipped", name.toUtf8().c_str());
+				continue;
+			}
 			ASSERT_OR_RETURN(false, psComp->compType >= 0 && psComp->compType != COMP_NUMCOMPONENTS, "Bad type %d", psComp->compType);
 			ASSERT_OR_RETURN(false, isComponentStateValid(state), "Bad state %d for %s", state, name.toUtf8().c_str());
 			apCompLists[player][psComp->compType][psComp->index] = state;
@@ -8010,7 +8016,10 @@ static bool loadSaveStructTypeList(const char *pFileName)
 					break;
 				}
 			}
-			ASSERT_OR_RETURN(false, statInc != numStructureStats, "Did not find structure %s", name.toUtf8().c_str());
+			if (statInc == numStructureStats)   // MOD (26.11.): im Mod entferntes Bauwerk im alten Spielstand ueberspringen
+			{
+				debug(LOG_WARNING, "Savegame: structure %s no longer exists - skipped", name.toUtf8().c_str());
+			}
 		}
 		ini.endGroup();
 	}

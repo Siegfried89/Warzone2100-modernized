@@ -5,6 +5,8 @@
 #include "modlayerdig.h"
 #include "modfort.h"
 #include "feature.h"
+#include "effects.h"
+#include "lib/netplay/sync_debug.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/input.h"
@@ -264,6 +266,7 @@ bool tileOk(unsigned player, STRUCTURE_STATS *st, int tx, int ty, unsigned dir)
 {
 	if (tx < 3 || ty < 3 || tx >= ptMapW() - 3 || ty >= ptMapH() - 3) { return false; }
 	const Vector2i w(ptW(tx), ptW(ty));
+	ObstacleScope obstacleScope(hasExcavator(player));   // (26.11.) mit Bagger nicht um Steine/Baeume herum planen - er raeumt sie weg
 	return validLocation(gameWorld, st, w, static_cast<uint16_t>(dir), player, false);
 }
 
@@ -426,6 +429,59 @@ static void placeDeco(unsigned player, const Vector2i &worldCenter, int tier)
 	}
 }
 
+// MOD (26.11.): ein Vorlagen-Plan am Kartenrand ragte ueber die Karte hinaus - die Vorschau las dabei jedes Bild Kacheln ausserhalb der
+// Karte (Millionen Warnungen im Log, Spiel stockte). Nur baubare Teile behalten (dieselbe Randregel wie validLocation).
+namespace
+{
+bool placeOnMap(const STRUCTURE_STATS *st, const Vector2i &world, uint16_t dir)
+{
+	const StructureBounds b = getStructureBounds(st, world, dir);
+	const WorldScrollLimits &sl = gameWorld.map.scroll;
+	const int minX = std::max(0, sl.minX) + TOO_NEAR_EDGE, minY = std::max(0, sl.minY) + TOO_NEAR_EDGE;
+	const int sMaxX = sl.maxX > 0 ? std::min(gameWorld.map.width, sl.maxX) : gameWorld.map.width;
+	const int sMaxY = sl.maxY > 0 ? std::min(gameWorld.map.height, sl.maxY) : gameWorld.map.height;
+	const int maxX = sMaxX - TOO_NEAR_EDGE, maxY = sMaxY - TOO_NEAR_EDGE;
+	return b.map.x >= minX && b.map.y >= minY && b.map.x + b.size.x <= maxX && b.map.y + b.size.y <= maxY;
+}
+}
+
+void clipToMap(std::vector<Placement> &plan, int unit)
+{
+	if (gameWorld.map.tiles == nullptr || unit <= 0) { plan.clear(); return; }
+	auto world = [unit](const Vector2i &t) { return Vector2i(t.x * unit + unit / 2, t.y * unit + unit / 2); };
+	std::vector<Placement> out;
+	out.reserve(plan.size());
+	for (Placement p : plan)
+	{
+		if (p.stats == nullptr) { continue; }
+		if (!p.line)
+		{
+			if (placeOnMap(p.stats, world(p.tile), static_cast<uint16_t>(p.direction))) { out.push_back(p); }
+			continue;
+		}
+		// Linie: baubares Stueck zwischen dem ersten und letzten baubaren Feld (die Karte ist konvex, ausserhalb liegen nur die Enden)
+		const Vector2i d = p.tile2 - p.tile;
+		const int n = std::max(std::abs(d.x), std::abs(d.y));
+		int first = -1, last = -1;
+		for (int i = 0; i <= n; ++i)
+		{
+			const Vector2i t = n == 0 ? p.tile : Vector2i(p.tile.x + d.x * i / n, p.tile.y + d.y * i / n);
+			if (placeOnMap(p.stats, world(t), static_cast<uint16_t>(p.direction)))
+			{
+				if (first < 0) { first = i; }
+				last = i;
+			}
+		}
+		if (first < 0) { continue; }
+		const Vector2i a = n == 0 ? p.tile : Vector2i(p.tile.x + d.x * first / n, p.tile.y + d.y * first / n);
+		const Vector2i b = n == 0 ? p.tile : Vector2i(p.tile.x + d.x * last / n, p.tile.y + d.y * last / n);
+		p.tile = a;
+		p.tile2 = b;
+		out.push_back(p);
+	}
+	plan.swap(out);
+}
+
 std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int tier)
 {
 	std::vector<Placement> out;
@@ -570,6 +626,7 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 		}
 		if (static_cast<int>(out.size()) >= MAX_PLACEMENTS) { break; }
 	}
+	clipToMap(out, DIST_TILE);   // (26.11.) nichts ausserhalb der baubaren Karte (Plan-Kacheln)
 	return out;
 }
 
@@ -1487,6 +1544,87 @@ bool armWork(const DROID *psDroid, unsigned anim, float &yawDeg, float &pitchDeg
 		pitchDeg = ramp * 6.f * std::sin(t * (6.2831853f / 1300.f) + 0.8f);
 	}
 	return true;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// MOD (Wunsch 26.11. 22:19): Bagger raeumen kleine Hindernisse vom Bauplatz (Steine, Truemmer, Baeume) - Vorlagen und Plaene muessen
+// nicht mehr um sie herum bauen. Krater (nur von Spielern verursachte Mulden) schuettet jeder Bau ohnehin zu (structure.cpp).
+namespace { bool s_ignoreObstacles = false; }
+
+bool isExcavator(const DROID *psDroid)
+{
+	if (psDroid == nullptr || (psDroid->droidType != DROID_CONSTRUCT && psDroid->droidType != DROID_CYBORG_CONSTRUCT)) { return false; }
+	const CONSTRUCT_STATS *cs = psDroid->getConstructStats();
+	return cs != nullptr && cs->id.startsWith("scavCrane");
+}
+
+bool hasExcavator(unsigned player)
+{
+	if (player >= MAX_PLAYERS) { return false; }
+	for (const DROID *d : gameWorld.objects.droids[player])
+	{
+		if (d->died == 0 && isExcavator(d)) { return true; }
+	}
+	return false;
+}
+
+bool selectedExcavator(unsigned player)
+{
+	if (player >= MAX_PLAYERS) { return false; }
+	for (const DROID *d : gameWorld.objects.droids[player])
+	{
+		if (d->died == 0 && d->selected && isExcavator(d)) { return true; }
+	}
+	return false;
+}
+
+bool isClearableObstacle(const MAPTILE *t)
+{
+	if (t == nullptr || t->psObject == nullptr || t->psObject->type != OBJ_FEATURE) { return false; }
+	const FEATURE_STATS *fs = static_cast<const FEATURE *>(t->psObject)->psStats;
+	if (fs == nullptr || fs->baseWidth > 1 || fs->baseBreadth > 1) { return false; }
+	if (fs->subType == FEAT_TREE) { return true; }
+	return fs->subType == FEAT_BOULDER && !fs->id.startsWith("A0LavaField");
+}
+
+ObstacleScope::ObstacleScope(bool on) : prev_(s_ignoreObstacles)
+{
+	if (on) { s_ignoreObstacles = true; }
+}
+
+ObstacleScope::~ObstacleScope()
+{
+	s_ignoreObstacles = prev_;
+}
+
+bool obstaclesIgnored()
+{
+	return s_ignoreObstacles;
+}
+
+void clearObstacles(const STRUCTURE_STATS *psStats, Vector2i pos, uint16_t direction)
+{
+	if (psStats == nullptr) { return; }
+	const StructureBounds b = getStructureBounds(psStats, pos, direction);
+	std::vector<FEATURE *> gone;
+	for (int j = 0; j < b.size.y; ++j)
+	{
+		for (int i = 0; i < b.size.x; ++i)
+		{
+			if (!tileOnMap(gameWorld.map, b.map.x + i, b.map.y + j)) { continue; }
+			MAPTILE *t = mapTile(gameWorld.map, b.map.x + i, b.map.y + j);
+			if (!isClearableObstacle(t)) { continue; }
+			FEATURE *f = static_cast<FEATURE *>(t->psObject);
+			if (std::find(gone.begin(), gone.end(), f) == gone.end()) { gone.push_back(f); }
+		}
+	}
+	for (FEATURE *f : gone)
+	{
+		Vector3i dust(f->pos.x, f->pos.z + 16, f->pos.y);
+		addEffect(&dust, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING, false, nullptr, 0, gameTime - deltaGameTime / 2 + 1);
+		syncDebug("modbuild: Bagger raeumt %s bei %d,%d", getStatsName(f->psStats), f->pos.x, f->pos.y);
+		removeFeature(f, gameWorld);
+	}
 }
 
 int demolishFactor(const DROID *psDroid, const STRUCTURE *psTarget)

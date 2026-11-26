@@ -2179,7 +2179,9 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 	{
 		auto worldOf = [](const Vector2i &t) { return Vector2i(t.x * DIST_TILE + DIST_TILE / 2, t.y * DIST_TILE + DIST_TILE / 2); };   // Plan-Kacheln
 		std::vector<DroidOrder> plan;
-		for (const modbuild::Placement &pl : (m == M_BASE ? templatePlan(templateFor(raw), c) : artyBasePlan(c, artyBaseSize(raw))))
+		std::vector<modbuild::Placement> placed = m == M_BASE ? templatePlan(templateFor(raw), c) : artyBasePlan(c, artyBaseSize(raw));
+		modbuild::clipToMap(placed, DIST_TILE);   // (26.11.) nichts ausserhalb der baubaren Karte
+		for (const modbuild::Placement &pl : placed)
 		{
 			if (pl.line) { plan.emplace_back(DORDER_LINEBUILD, pl.stats, worldOf(pl.tile), worldOf(pl.tile2), 0); }
 			else { plan.emplace_back(DORDER_BUILD, pl.stats, worldOf(pl.tile), static_cast<uint16_t>(pl.direction)); }   // (24.11.) Gruben nach aussen
@@ -3927,6 +3929,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 		const Vector2i at = s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos;
 		if (s_mode == M_BASE) { s_artyPreview = templatePlan(s_drawing ? templateFor(s_cur) : s_tpl, at); }
 		else { s_artyPreview = artyBasePlan(at, s_drawing ? artyBaseSize(s_cur) : s_baseSize); }
+		modbuild::clipToMap(s_artyPreview, DIST_TILE);   // (26.11.) am Kartenrand nur der baubare Teil (sonst Fehlerflut im Log)
 		modbuild::setExternalPreview(&s_artyPreview);
 	}
 	else if (s_mode == M_RAIL && s_drawing && s_cur.size() >= 2 && selectedPlayer < MAX_PLAYERS)

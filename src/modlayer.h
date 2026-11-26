@@ -65,6 +65,14 @@ bool hiddenInView(const BASE_OBJECT *obj);
 PROPULSION_TYPE effectivePropulsion(const DROID *psDroid, PROPULSION_TYPE realType);
 /// steht auf diesem Feld ein fertiger, fuer diesen Spieler nutzbarer Schacht?
 bool isPortalTile(int player, int tileX, int tileY);
+/// (26.11.) ist dieses Objekt ein fertiger Schacht, den der Spieler benutzen darf? (prueft das Objekt selbst, nicht die Kachel der
+/// gerade aktiven Karte - im Untergrund liegt der Schacht nicht in der Untergrund-Karte, ist dort aber zu sehen und anklickbar)
+bool isUsableShaft(const BASE_OBJECT *obj, int player);
+/// (26.11.) kann diese Einheit ueberhaupt durch einen Schacht? (kein VTOL/Transporter/Fracht-Lkw, nicht im Orbit)
+bool canUseShaft(const DROID *psDroid);
+/// (26.11.) aus orderDroidBase (Spiellogik, auf jedem Rechner gleich): ein Fahrbefehl zu einem Schacht wird gemerkt - die Einheit wechselt
+/// die Ebene auch dann, wenn sie wegen anderer Einheiten am Schacht ein Stueck davor stehen bleibt; jeder andere Befehl verwirft ihn
+void noteOrder(const DROID *psDroid, int orderType, const Vector2i &pos);   // orderType: DROID_ORDER
 /// jeden Spielschritt aus der Spielschleife: Einheiten, die einen Schacht erreichen, wechseln die Ebene
 void gameTick();
 /// Ebenen-Knopf gedrueckt: die ausgewaehlten Flieger (Hoverjets, Drohnen, VTOLs) steigen in den Orbit bzw. kehren zur Oberflaeche zurueck

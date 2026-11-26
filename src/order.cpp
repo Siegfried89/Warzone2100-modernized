@@ -1485,6 +1485,7 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 	syncDebug("%d ordered %s", psDroid->id, getDroidOrderName(psOrder->type));
 
 	objTrace(psDroid->id, "base set order to %s (was %s)", getDroidOrderName(psOrder->type), getDroidOrderName(psDroid->order.type));
+	modlayer::noteOrder(psDroid, static_cast<int>(psOrder->type), psOrder->pos);   // MOD (26.11.): Fahrbefehl zum Schacht merken (Ebenenwechsel auch aus der Warteschlange)
 
 	// MOD (22.11.): Tunnel (Nydus) - Bohrer graebt / Einheit im Gang (Befehl wird nach dem Austritt ausgefuehrt) / Tunnel-Bauauftrag
 	if (modtunnel::onOrder(psDroid, psOrder)) { return; }
@@ -3324,10 +3325,10 @@ void orderSelectedObjAdd(UDWORD player, BASE_OBJECT *psObj, bool add)
 				continue;
 			}
 
-			// MOD: Schacht angeklickt -> hinfahren (dort wechselt die Einheit die Ebene)
-			if (psObj->type == OBJ_STRUCTURE && !psCurr->isVtol() && !psCurr->isTransporter()
-			    && modlayer::isPortalTile(psCurr->player, map_coord(psObj->pos.x), map_coord(psObj->pos.y))
-			    && !(psCurr->isConstructionDroid() && (intDemolishSelectMode() || castStructure(psObj)->body < castStructure(psObj)->structureBody())))   // Baumeister: Abriss/Reparatur geht vor
+			// MOD: Schacht angeklickt -> hinfahren (dort wechselt die Einheit die Ebene); (26.11.) das Objekt selbst pruefen - im Untergrund
+			// liegt der Schacht nicht in der Karte der angezeigten Ebene (vorher: dort nur "Bewachen")
+			if (modlayer::canUseShaft(psCurr) && modlayer::isUsableShaft(psObj, psCurr->player)
+			    && !(psCurr->isConstructionDroid() && (intDemolishSelectMode() || modCtrlDemolishHover(psObj) || castStructure(psObj)->body < castStructure(psObj)->structureBody())))   // Baumeister: Abriss (auch Strg) / Reparatur geht vor
 			{
 				orderDroidLocAdd(psCurr, DORDER_MOVE, psObj->pos.x, psObj->pos.y, add);
 				continue;

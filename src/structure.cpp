@@ -45,6 +45,7 @@
 #include "structure.h"
 #include "modbridge.h"
 #include "modruin.h"
+#include "modbuild.h"
 #include "modicbm.h"
 #include "modupgrade.h"
 #include "modgroundfire.h"   // MOD
@@ -5008,7 +5009,8 @@ bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t
 					for (int i = 0; i < b.size.x; ++i)
 					{
 						MAPTILE const *psTile = mapTile(world.map, b.map.x + i, b.map.y + j);
-						if (TileIsKnownOccupied(psTile, player) && !modruin::isRuinTile(psTile))   // MOD (22.11.): Ruinen werden beim Bauen weggeraeumt
+						if (TileIsKnownOccupied(psTile, player) && !modruin::isRuinTile(psTile)   // MOD (22.11.): Ruinen werden beim Bauen weggeraeumt
+						    && !(modbuild::obstaclesIgnored() && modbuild::isClearableObstacle(psTile)))   // MOD (26.11.): Bagger raeumen Steine/Baeume weg
 						{
 							if (TileHasWall(psTile) && (psBuilding->type == REF_DEFENSE || psBuilding->type == REF_GATE || psBuilding->type == REF_WALL))
 							{

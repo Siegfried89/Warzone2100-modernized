@@ -2274,6 +2274,7 @@ static void drawLineBuild(uint8_t player, STRUCTURE_STATS const *psStats, Vector
 			}
 		// MOD (23.11. 18:38): beim Platzieren jeden Platz einzeln pruefen - nur blockierte Plaetze rot, die anderen gruen (werden gebaut)
 		STRUCT_STATES st = state;
+		modbuild::ObstacleScope obstacleScope(perTile && modbuild::selectedExcavator(player));   // MOD (26.11.): Bagger raeumen Steine/Baeume weg
 		if (perTile && state == SS_BLUEPRINT_VALID && !validLocation(gameWorld, const_cast<STRUCTURE_STATS *>(psStats), cur, direction, player, true)) { st = SS_BLUEPRINT_INVALID; }
 		Blueprint blueprint(psStats, Vector3i(cur, z), snapDirection(direction), 0, st, player); // snapDirection may be unnecessary here
 		blueprints.push_back(blueprint);
