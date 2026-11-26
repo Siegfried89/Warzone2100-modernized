@@ -486,6 +486,18 @@ void drawWorldIcons(const glm::mat4 &m)
 	}
 }
 
+bool screenRect(int &x0, int &y0, int &x1, int &y1)
+{
+	if (!s_screen || !s_toggle || !s_toggle->visible()) { return false; }
+	x0 = s_toggle->x(); y0 = s_toggle->y(); x1 = s_toggle->x() + s_toggle->width(); y1 = s_toggle->y() + s_toggle->height();
+	if (s_panel && s_panel->visible())
+	{
+		x0 = std::min(x0, s_panel->x()); y0 = std::min(y0, s_panel->y());
+		x1 = std::max(x1, s_panel->x() + s_panel->width()); y1 = std::max(y1, s_panel->y() + s_panel->height());
+	}
+	return true;
+}
+
 void tick()
 {
 	const bool want = selectedPlayer < MAX_PLAYERS && modoil::manages(static_cast<int>(selectedPlayer)) && !moddesigner::isOpen() && intMode != INT_DESIGN;

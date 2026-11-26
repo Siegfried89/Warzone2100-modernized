@@ -370,6 +370,13 @@ int reservedRight()
 	return (s_root && s_root->visible()) ? s_root->width() + 8 : 0;
 }
 
+bool screenRect(int &x0, int &y0, int &x1, int &y1)
+{
+	if (!s_root || !s_root->visible()) { return false; }
+	x0 = s_root->x(); y0 = s_root->y(); x1 = s_root->x() + s_root->width(); y1 = s_root->y() + s_root->height();
+	return true;
+}
+
 void request(Layer target)
 {
 	if (s_busy || target == s_current) { return; }

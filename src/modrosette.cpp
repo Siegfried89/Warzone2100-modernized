@@ -448,13 +448,30 @@ void ensureScreen()
 	s_bar = bar;
 }
 
+void layoutBar(int x, int y, int fw, int fh);
+
 void layout()
 {
 	const float s = modui::uiScale();
-	const int fw = static_cast<int>(FORM_W * s), fh = static_cast<int>(FORM_H * s);
-	int x = static_cast<int>(screenWidth) - fw - 4;
-	// (18.11. 12:10 "die Menues ueberlappen sich immer noch extrem") ohne Minikarte: ueber der Knopfzeile Map/Symbol und dem Schlachtplan
-	int y = modpaint::stackTop() - static_cast<int>(21 * s) - fh - static_cast<int>(6 * s);
+	int x, y, fw, fh;
+	formRect(x, y, fw, fh);
+	s_root->setGeometry(x, y, fw, fh);
+	for (int p = 0; p < H_COUNT; ++p)
+	{
+		s_hex[static_cast<size_t>(p)]->setGeometry(static_cast<int>(kHexPos[p].x * s), static_cast<int>(kHexPos[p].y * s), static_cast<int>(HEX_W * s), static_cast<int>(HEX_H * s));
+	}
+	layoutBar(x, y, fw, fh);
+}
+} // namespace
+
+void formRect(int &x, int &y, int &fw, int &fh)
+{
+	const float s = modui::uiScale();
+	fw = static_cast<int>(FORM_W * s); fh = static_cast<int>(FORM_H * s);
+	x = static_cast<int>(screenWidth) - fw - 4;
+	// (18.11. 12:10) ohne Minikarte: ueber der Knopfzeile Map/Symbol; (Wunsch 26.11. 19:32 "Das Befehlsmenue soll nicht die Rosette
+	// hochschieben, sondern darueber erscheinen. Die Rosette bleibt, wo sie ist.") - der Schlachtplan verschiebt sie nicht mehr
+	y = modpaint::stackTop() - static_cast<int>(21 * s) - fh - static_cast<int>(6 * s);
 	const std::shared_ptr<WIDGET> radar = getRadarWidget();
 	if (radar && radar->visible() && radar->height() > 0)
 	{
@@ -465,11 +482,13 @@ void layout()
 		y = radar->y() - m - row - fh - static_cast<int>(4 * s);
 	}
 	x = std::max(4, x); y = std::max(40, y);
-	s_root->setGeometry(x, y, fw, fh);
-	for (int p = 0; p < H_COUNT; ++p)
-	{
-		s_hex[static_cast<size_t>(p)]->setGeometry(static_cast<int>(kHexPos[p].x * s), static_cast<int>(kHexPos[p].y * s), static_cast<int>(HEX_W * s), static_cast<int>(HEX_H * s));
-	}
+}
+
+namespace
+{
+void layoutBar(int x, int y, int fw, int fh)
+{
+	const float s = modui::uiScale();
 	// Leiste links neben der Rosette, auf Hoehe der Mitte; bei vielen Knoepfen zwei Reihen
 	const int n = static_cast<int>(s_cmd.size());
 	const bool show = n > 0 && !s_hiddenAll;
@@ -478,8 +497,15 @@ void layout()
 	const int cols = n > 4 ? (n + 1) / 2 : n, rows = n > 4 ? 2 : 1;
 	const int bw = static_cast<int>((2 * BAR_PAD + cols * CMD_W + (cols - 1) * CMD_GAP) * s);
 	const int bh = static_cast<int>((2 * BAR_PAD + BAR_TITLE + rows * CMD_H + (rows - 1) * CMD_GAP) * s);
-	const int bx = std::max(4, x - bw - static_cast<int>(2 * s));
-	const int by = std::max(40, y + fh / 2 - bh / 2);
+	int bx = std::max(4, x - bw - static_cast<int>(2 * s));
+	int by = std::max(40, y + fh / 2 - bh / 2);
+	// (26.11.) liegt dort der Schlachtplan (links neben der Rosette), kommt die Leiste ueber die Rosette
+	int px0 = 0, py0 = 0, px1 = 0, py1 = 0;
+	if (modpaint::planRect(px0, py0, px1, py1) && bx < px1 && bx + bw > px0 && by < py1 && by + bh > py0)
+	{
+		bx = std::max(4, x + fw - bw);
+		by = std::max(40, y - bh - static_cast<int>(4 * s));
+	}
 	s_bar->setGeometry(bx, by, bw, bh);
 	for (int i = 0; i < n; ++i)
 	{
