@@ -1334,7 +1334,7 @@ bool validTarget(BASE_OBJECT const *psObject, BASE_OBJECT const *psTarget, int w
 		{
 			bTargetInAir = false;
 		}
-		if (((const DROID *)psTarget)->getPropulsionStats()->alwaysFlying)   // MOD: Balldrohne schwebt immer, auch im Stand
+		if (((const DROID *)psTarget)->getPropulsionStats()->alwaysFlying)   // MOD: Schwebe-Antrieb (MF-Hoverjet) fliegt immer, auch im Stand
 		{
 			bTargetInAir = true;
 		}

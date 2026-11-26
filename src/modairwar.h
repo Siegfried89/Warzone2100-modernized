@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // MOD (Antwort 18.11. 17:52 auf die Frage zum Transporter-Flug: "so dass die Dogfights von Flugeinheiten gegenseitig moeglich sind, das fast
 // senkrechte Aufsteigen von Flugeinheiten in den Orbit"): Luftkampf zwischen allen Fliegern.
-//  - Flieger in der Luft (VTOLs, Hubschrauber, schwebende Drohnen, Transporter mit Bordwaffe) schiessen auf feindliche Flieger, die sie
+//  - Flieger in der Luft (VTOLs, Hubschrauber, MF-Hoverjets, Transporter mit Bordwaffe) schiessen auf feindliche Flieger, die sie
 //    erfassen koennen, auch waehrend sie unterwegs sind: feste Bordwaffen, sobald der Gegner vor der Nase ist (Begegnung im Gegenkurs,
 //    Verfolgung), drehbare Bordwaffen ringsum. Der Flieger weicht dafuer nicht von seinem Kurs ab.
 //  - Untaetige Flieger in der Luft (kein Befehl oder Wache) greifen feindliche Flieger in Reichweite selbst an - auch die des Spielers

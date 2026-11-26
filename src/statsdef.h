@@ -350,7 +350,7 @@ struct PROPULSION_STATS : public COMPONENT_STATS
 	PROPULSION_TYPE propulsionType = PROPULSION_TYPE_NUM;
 	int shieldMech = 0;             ///< MOD (MF): Schild der Beine gegen mechanischen Schaden (Prozent, wird zu dem des Rumpfs addiert)
 	int shieldEnergy = 0;           ///< MOD (MF): Schild der Beine gegen Energieschaden
-	bool alwaysFlying = false;      ///< MOD: Schwebe-Antrieb (Balldrohne): gilt immer als Lufteinheit (Landwaffen koennen sie nicht anvisieren), bewegt sich wie ein Flieger
+	bool alwaysFlying = false;      ///< MOD: Schwebe-Antrieb (MF-Hoverjet): gilt immer als Lufteinheit (Landwaffen koennen sie nicht anvisieren), bewegt sich wie ein Flieger
 	int hoverHeight = 0;            ///< MOD: Schwebehoehe ueber dem Boden (nur mit alwaysFlying)
 	iIMDBaseShape *walkerIMD = nullptr;   ///< MOD (23.11. 01:35): Lauf-Beine (z.B. Mech-Beine mit Huehnergang) - der Rumpf sitzt auf ihrem Anschluss 1 (Huefte)
 	int gaitStride = 0;             ///< MOD (23.11.): Weg je Schrittzyklus der Lauf-Beine

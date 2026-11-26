@@ -446,6 +446,145 @@ void moveTurnDroid(DROID *psDroid, UDWORD x, UDWORD y)
 	}
 }
 
+// MOD (17.11.): Wegschieben abgeschaltet (siehe Aufruf in moveCalcDroidCollision); als Funktion, damit kein Compiler "konstante Bedingung" meldet
+// (Nutzer 26.11. 23:17: bleibt drin - wenn die Wegfindung versagt, kann es fuer Infanterie in engen Schuetzengraeben und fuer leichte
+// Fahrzeuge noetig werden. Idee fuer spaeter: schwerere Fahrzeuge schieben leichtere, nicht umgekehrt; Scav-Einheiten dabei nicht anfassen.)
+static bool modAllowShuffle()
+{
+	static volatile bool s_allow = false;
+	return s_allow;
+}
+
+// Tell a droid to move out the way for a shuffle
+static void moveShuffleDroid(DROID *psDroid, Vector2i s)
+{
+	SDWORD  mx, my;
+	bool	frontClear = true, leftClear = true, rightClear = true;
+	SDWORD	lvx, lvy, rvx, rvy, svx, svy;
+	SDWORD	shuffleMove;
+
+	ASSERT_OR_RETURN(, psDroid != nullptr, "Bad droid pointer");
+	CHECK_DROID(psDroid);
+
+	uint16_t shuffleDir = iAtan2(s);
+	int32_t shuffleMag = iHypot(s);
+
+	if (shuffleMag == 0)
+	{
+		return;
+	}
+
+	shuffleMove = SHUFFLE_MOVE;
+
+	// calculate the possible movement vectors
+	svx = s.x * shuffleMove / shuffleMag;  // Straight in the direction of s.
+	svy = s.y * shuffleMove / shuffleMag;
+
+	// iAtan2 maps the vector (sin a, cos a) to the angle a, so left lies at shuffleDir - 90°, and a
+	// neighbor on that side reads as angleDelta(shuffleDir - droidDir) = +90°.
+	lvx = -svy;  // shuffleDir - 90°
+	lvy = svx;
+
+	rvx = svy;   // shuffleDir + 90°
+	rvy = -svx;
+
+	const auto droidPropType = modlayer::effectivePropulsion(psDroid, psDroid->getPropulsionStats()->propulsionType);   // MOD: Ebenen
+	// check for blocking tiles
+	if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + lvx),
+	                      map_coord((SDWORD)psDroid->pos.y + lvy), droidPropType))
+	{
+		leftClear = false;
+	}
+	if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + rvx),
+	                      map_coord((SDWORD)psDroid->pos.y + rvy), droidPropType))
+	{
+		rightClear = false;
+	}
+	if (fpathBlockingTile(gameWorld.map, map_coord((SDWORD)psDroid->pos.x + svx),
+	                      map_coord((SDWORD)psDroid->pos.y + svy), droidPropType))
+	{
+		frontClear = false;
+	}
+
+	// find any droids that could block the shuffle
+	for (BASE_OBJECT *gridObj : gridStartIterate(psDroid->pos.x, psDroid->pos.y, SHUFFLE_DIST))
+	{
+		DROID *psCurr = castDroid(gridObj);
+		if (psCurr == nullptr || psCurr->died || psCurr == psDroid || !modlayer::canInteract(psDroid, psCurr))
+		{
+			continue;
+		}
+
+		uint16_t droidDir = iAtan2((psCurr->pos - psDroid->pos).xy());
+		int diff = angleDelta(shuffleDir - droidDir);
+		if (diff > DEG(45) && diff < DEG(135))
+		{
+			leftClear = false;
+		}
+		else if (diff > -DEG(135) && diff < -DEG(45))
+		{
+			rightClear = false;
+		}
+	}
+
+	// calculate a target
+	if (leftClear)
+	{
+		mx = lvx;
+		my = lvy;
+	}
+	else if (rightClear)
+	{
+		mx = rvx;
+		my = rvy;
+	}
+	else if (frontClear)
+	{
+		mx = svx;
+		my = svy;
+	}
+	else
+	{
+		// nowhere to shuffle to, quit
+		if (g_moveMetrics)
+		{
+			g_moveMetrics->shufflesNowhere++;
+		}
+		return;
+	}
+
+	// check the location for vtols
+	Vector2i tar = psDroid->pos.xy() + Vector2i(mx, my);
+	if (psDroid->isVtol())
+	{
+		actionVTOLLandingPos(psDroid, &tar);
+	}
+
+
+	// set up the move state
+	if (psDroid->sMove.Status != MOVESHUFFLE)
+	{
+		psDroid->sMove.shuffleStart = gameTime;
+		if (g_moveMetrics)
+		{
+			g_moveMetrics->shuffles++;
+		}
+	}
+	psDroid->sMove.Status = MOVESHUFFLE;
+	psDroid->sMove.src = psDroid->pos.xy();
+	psDroid->sMove.target = tar;
+	psDroid->sMove.clearRoute();
+
+	if (psDroid->sMove.psFormation != nullptr)
+	{
+		formationLeave(psDroid->sMove.psFormation, psDroid);
+		psDroid->sMove.psFormation = nullptr;
+	}
+
+	CHECK_DROID(psDroid);
+}
+
+
 /** Stop a droid from moving.
  */
 void moveStopDroid(DROID *psDroid)
@@ -1487,8 +1626,22 @@ static void moveCalcDroidSlide(DROID *psDroid, int *pmx, int *pmy)
 					}
 				}
 
-				// MOD (Wunsch 17.11. 15:46): kein Wegschieben - stehende Einheiten (auch bewegungsunfaehige Panzer) bleiben, wo sie sind, und
-				// koennen eine Strasse blockieren ("Das ist der Sinn der Sache. Es soll Blockierung moeglich sein."); das Vanilla-Wegschieben ist entfernt
+				// tell inactive droids to get out the way
+				if (psObst && psObst->type == OBJ_DROID)
+				{
+					DROID *psShuffleDroid = (DROID *)psObst;
+
+					const bool sameSide = psObst->player == psDroid->player || aiCheckAlliances(psObst->player, psDroid->player);
+
+					// MOD (Wunsch 17.11. 15:46): kein Wegschieben mehr - stehende Einheiten (auch bewegungsunfaehige Panzer) bleiben, wo sie
+					// sind, und koennen eine Strasse blockieren ("Das ist der Sinn der Sache. Es soll Blockierung moeglich sein.")
+					if (modAllowShuffle() && sameSide
+					    && psShuffleDroid->action != DACTION_WAITDURINGREARM
+					    && psShuffleDroid->sMove.Status == MOVEINACTIVE)
+					{
+						moveShuffleDroid(psShuffleDroid, psDroid->sMove.target - psDroid->pos.xy());
+					}
+				}
 			}
 		}
 	}
@@ -3140,7 +3293,7 @@ void moveUpdateDroid(DROID *psDroid)
 		if (modicbm::telHalted(psDroid)) { moveSpeed = 0; psDroid->sMove.speed = 0; }   // MOD (18.11.): Atomraketen-Werfer steht auf Stuetzen
 		if (modmines::flailing(psDroid)) { moveSpeed = moveSpeed * 7 / 10; }   // MOD (17.11. 20:06): mit drehender Walze nur langsam
 		if (!modEngineStarting) { moveUpdateGroundModel(psDroid, moveSpeed, moveDir); }   // MOD: waehrend des Anlassens steht er still
-		if (!modEngineStarting && psPropStats->hoverHeight > 0) { psDroid->pos.z += psPropStats->hoverHeight; }   // MOD: Balldrohne schwebt ueber dem Boden
+		if (!modEngineStarting && psPropStats->hoverHeight > 0) { psDroid->pos.z += psPropStats->hoverHeight; }   // MOD: Schwebe-Antrieb (MF-Hoverjet) schwebt ueber dem Boden
 		if (psPropStats->propulsionType == PROPULSION_TYPE_LEGGED) { modduel::updateLeggedAnimation(psDroid, moveSpeed); } // MOD
 	}
 
