@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// MOD: Die drei Ebenen von Metal Fatigue (Orbit / Oberflaeche / Untergrund) als Knoepfe mit weichem Wechsel.
-// Vorerst nur die Bedienoberflaeche und der Zustand: ein Wechsel blendet weich ueber, danach liegt ein leichter Farbton
-// ueber dem Bild. Die eigentliche Spielmechanik (getrennte Karten-Ebenen, Schacht, Orbit) kommt spaeter und liest current().
+// MOD: Die drei Ebenen von Metal Fatigue (Orbit / Oberflaeche / Untergrund): Knoepfe mit weichem Wechsel der Anzeige (current()),
+// jede Ebene mit eigener Karte (modlayermap), Schaechte zwischen Oberflaeche und Untergrund, Flieger in den Orbit.
 //
 // Spielzustand (Ebene je Objekt, deterministisch aus der Spielschleife): Einheiten und Bauwerke liegen auf der Oberflaeche (Standard), im
-// Untergrund oder im Orbit. Objekte auf verschiedenen Ebenen sehen, beschiessen und stoeren sich nicht. Untergrund-Einheiten laufen wie
-// "Geister" unter allen Bauwerken und Haengen hindurch (Wegfindung wie Lufteinheiten). Zwischen Oberflaeche und Untergrund wechselt eine
+// Untergrund oder im Orbit. Objekte auf verschiedenen Ebenen sehen, beschiessen und stoeren sich nicht. In jeder Ebene fahren Einheiten
+// auf deren eigener Karte mit ihrem echten Antrieb (im Untergrund blockiert Fels; Gaenge bohrt das Bohrfahrzeug). Zwischen Oberflaeche und Untergrund wechselt eine
 // Einheit, indem sie zu einem eigenen Schacht (A0LayerShaft) faehrt. Ohne Objekte ausserhalb der Oberflaeche aendert sich im Spiel nichts.
 #pragma once
 
@@ -61,7 +60,7 @@ bool projectileCanHit(const PROJECTILE *proj, const SIMPLE_OBJECT *target);
 Layer projectileLayer(const PROJECTILE *proj);
 /// Anzeige: soll dieses Objekt in der gerade angezeigten Ebene verborgen sein? (Schaechte sieht man in jeder Ebene)
 bool hiddenInView(const BASE_OBJECT *obj);
-/// Wegfindung / Blockierung: Untergrund-Einheiten verhalten sich wie Lufteinheiten (nichts versperrt den Weg)
+/// Wegfindung / Blockierung: echter Antrieb, ausser Combots (wie Radfahrzeuge), Sprung-Combots und Schwebedrohnen (wie Flieger)
 PROPULSION_TYPE effectivePropulsion(const DROID *psDroid, PROPULSION_TYPE realType);
 /// steht auf diesem Feld ein fertiger, fuer diesen Spieler nutzbarer Schacht?
 bool isPortalTile(int player, int tileX, int tileY);

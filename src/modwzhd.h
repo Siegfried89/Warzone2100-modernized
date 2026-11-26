@@ -25,7 +25,4 @@ bool drawNamed(const char *base, int x, int y, int w, int h, bool glow = false, 
 /// Knopf im WZ-Stil ohne Bild (Rahmen + Flaeche in den WZ-Farben, Text mittig) - fuer Reiter mit Beschriftung
 void textButton(int x0, int y0, int w, int h, const std::string &label, bool selected, bool hover, bool down);
 
-/// Originalgroesse eines WZ-Bildes (Breite/Hoehe in Bildpunkten); 0, wenn unbekannt
-int intfacWidth(unsigned intfacId);
-int intfacHeight(unsigned intfacId);
 }

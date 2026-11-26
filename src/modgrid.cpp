@@ -539,13 +539,6 @@ void update()
 		{
 			if (fed[find(par, S0 + k)]) { s_subFed[p]++; }
 		}
-		// (20.11.) Strompflicht beginnt, sobald eine echte Quelle ein Netz speist (Notstrom der Kommandozentrale zaehlt nicht)
-		for (int r = 0; r < total; r++)
-		{
-			if (find(par, r) != r || !fed[r]) { continue; }
-			const bool real = realSrc[r] || genCapC[r] > 0 || (subMode && solarCap[r] - emergCap[r] > 0);
-			if (real) { modoil::noteDuty(p); break; }
-		}
 		s_standbyNet.clear();
 
 		const bool show = p == static_cast<int>(selectedPlayer) || aiCheckAlliances(p, static_cast<int>(selectedPlayer));

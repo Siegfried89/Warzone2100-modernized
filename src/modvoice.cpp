@@ -288,11 +288,6 @@ bool shout(const DROID *psDroid, const char *cat)
 	return true;
 }
 
-const char *classPrefix(const DROID *psDroid)
-{
-	return psDroid ? clsPrefix(classOf(psDroid)) : "inf";
-}
-
 void onPlayerOrder(const DROID *psDroid, int order)
 {
 	if (psDroid == nullptr || psDroid->player != selectedPlayer || psDroid->isVtol() || isSilent(psDroid)) { return; }

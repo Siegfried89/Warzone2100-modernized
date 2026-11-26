@@ -26,8 +26,6 @@ void tick(GameWorld &world);
 /// Verstaerker eines Spielers (0..5): jeder +6 % Schaden (die Schadensformel liest ihn ueber enhancerPercent)
 int enhancer(unsigned player);
 int enhancerPercent(unsigned player);
-/// laeuft gerade eine Bohrung dieses Fahrzeugs? (0..100 = Fortschritt, sonst -1)
-int boreProgress(const DROID *psDroid);
 /// neues Spiel
 void reset();
 }

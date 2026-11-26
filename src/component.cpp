@@ -1247,7 +1247,6 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	{
 		glm::mat4 hoverMat(1.f);
 		if (!bButton && modrecoil::hover(psDroid, graphicsTime, hoverMat)) { modifiedModelMatrix *= hoverMat; }
-		if (!bButton && modrecoil::duck(psDroid, graphicsTime, hoverMat)) { modifiedModelMatrix *= hoverMat; }   // MOD: Infanterie unter Beschuss geduckt
 		if (!bButton && modparts::slump(psDroid, hoverMat)) { modifiedModelMatrix *= hoverMat; }   // MOD: Laufwerk zerstoert - Fahrzeug sackt ab
 	}
 	// MOD: Rueckstoss-Wackeln - Ketten/Beine und Rumpf (mit Turm und Waffen) schwingen nach jedem Schuss getrennt nach

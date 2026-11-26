@@ -53,7 +53,6 @@ namespace
 {
 constexpr int SINK_EDGE = 14;          // Uebergangsbreite je Kachelseite (Weltmasseinheiten; Kachel = 128) -> fast senkrechte Kante
 constexpr int MAX_CRATER_SINK = 64;    // tiefer werden Krater auch bei vielen Treffern nicht
-constexpr int MAX_SINK = 120;          // absolute Grenze (Graeben)
 constexpr int COVER_DEPTH = 10;        // ab dieser Tiefe gibt die Mulde Deckung
 constexpr int CRATER_DEPTH = 26;       // (17.11.) ein Krater = ein Schuetzenloch tief; weitere Treffer vertiefen nicht
 constexpr int VEHICLE_BLOCK_DEPTH = 8;  // ab dieser Tiefe kommt kein Fahrzeug mehr durch
@@ -871,22 +870,6 @@ void craterDecals(std::vector<CraterDecal> &out)
 		d.alpha = std::clamp(static_cast<float>(age) / 200.f, 0.f, 1.f);
 		out.push_back(d);
 	}
-}
-
-void setStructureSink(int tileX, int tileY, int depth)
-{
-	const uint64_t k = keyOf(layerTag(), tileX, tileY);
-	depth = std::clamp(depth, 0, MAX_SINK);
-	auto it = s_cells.find(k);
-	if (it == s_cells.end())
-	{
-		if (depth <= 0) { return; }
-		it = s_cells.emplace(k, Cell()).first;
-	}
-	if (it->second.fixed == depth) { return; }
-	it->second.fixed = static_cast<int16_t>(depth);
-	dirtyAround(tileX, tileY);
-	tidy(k, tileX, tileY);
 }
 
 void setTrenchSinks(std::vector<TrenchSink> list)

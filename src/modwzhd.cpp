@@ -108,18 +108,6 @@ void shutdown()
 	s_text.clear();
 }
 
-int intfacWidth(unsigned intfacId)
-{
-	IMAGEFILE *f = intfac();
-	return (f != nullptr && intfacId < f->imageDefs.size()) ? static_cast<int>(f->imageDefs[intfacId].Width) : 0;
-}
-
-int intfacHeight(unsigned intfacId)
-{
-	IMAGEFILE *f = intfac();
-	return (f != nullptr && intfacId < f->imageDefs.size()) ? static_cast<int>(f->imageDefs[intfacId].Height) : 0;
-}
-
 bool drawIntfacHd(unsigned intfacId, int x, int y, int w, int h, bool glow, unsigned char alpha)
 {
 	if (hd() == nullptr) { return false; }

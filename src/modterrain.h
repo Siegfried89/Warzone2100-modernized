@@ -61,8 +61,6 @@ int sinkAtCorner(const WorldMapState &mapState, int x, int y);
 int centerSink(const WorldMapState &mapState, int x, int y);
 /// (17.11.) Krater/Schuetzenloch auf diesem Feld: fuer alle Fahrzeuge (Raeder, Ketten, Halbketten, Luftkissen) unbefahrbar
 bool blocksVehicles(const WorldMapState &mapState, int x, int y);
-/// Absenkung durch ein Bauwerk (tiefer Graben) setzen; 0 = aufheben (alt: ganze Kachel - seit 24.11. ungenutzt, siehe TrenchSink)
-void setStructureSink(int tileX, int tileY, int depth);
 
 /// MOD (Wunsch 24.11. 15:33 "Die Graeben sind keine, und die tiefen Graeben versinken nicht richtig"): Graben-Bauwerke senken das
 /// Gelaende nicht mehr als ganze Kachel (Kasten, in dem das schmale Grabenmodell schwebte), sondern nur entlang ihres Grabens: eine Rinne

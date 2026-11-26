@@ -392,11 +392,6 @@ int radiusOfTier(int tier)
 	}
 }
 
-int currentTier()
-{
-	return s_tier;
-}
-
 /// MOD (16.11.): Deko im Niemandsland zwischen den Ringen (Steine, Wracks, Absperrungen) - wie im Wunsch-Layout "dazwischen immer Deko".
 /// Wird beim Start des Befestigungsbaus einmal gesetzt (Spielschritt, feste Reihenfolge, Zufall nur aus den Kachelkoordinaten).
 static void placeDeco(unsigned player, const Vector2i &worldCenter, int tier)

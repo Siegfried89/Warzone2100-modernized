@@ -57,8 +57,6 @@ bool keysForFortify();
 void updatePreview(bool wanted, const Vector2i &worldPos);
 /// Beschriftung am Mauszeiger, solange der Kreis zu sehen ist (sonst nullptr), z. B. "Fortify: medium (mouse wheel changes size)"
 const char *activeLabel();
-/// aktuell gewaehlte Groesse (1..3)
-int currentTier();
 /// Anzeige (16.11. 19:54): Bauplan-Vorschau am Mauszeiger, solange der Kreis zu sehen ist (gruen gezeichnet), sonst nullptr
 const std::vector<Placement> *previewPlan();
 /// Weltpunkt (Mitte) einer Plan-Kachel (Placement::tile) - der Plan rechnet in Original-Kacheln, auch auf dem feinen Raster

@@ -847,8 +847,6 @@ Totals totals(const Def &d)
 	return t;
 }
 
-const BODY_STATS *bodyById(const std::string &id) { return bodyByIdMutable(id); }
-
 std::vector<Mount> defaultMounts(const Part &chassis)
 {
 	std::vector<Mount> out;

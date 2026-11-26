@@ -18,8 +18,6 @@ namespace modconcrete
 /// Ersatz-Texturwert (Kachelnummer + Drehbits) fuer Feld (x, y) der Karte oder -1 (keiner). classic: Grafikstufe "Klassisch".
 int overrideTexture(WorldMapState &m, int x, int y, bool classic);
 
-/// Ist der Ersatzwert eine Randkachel (und nicht der volle Beton)?
-bool isEdgeTile(int tex);
 
 /// Bekommt dieses Gebaeude Beton?
 bool wants(const STRUCTURE *psStruct);

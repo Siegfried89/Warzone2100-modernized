@@ -40,8 +40,6 @@ constexpr int INCOME_MULT = 3;
 void noteIncome(int player, int kind, int amount);
 /// (17.11. 20:35) Gebaeude fertig gebaut: Kraftwerk -> ein Oeltanker und ein Fracht-Lkw stehen sofort daneben, Raffinerie -> ein Fracht-Lkw
 void onBuilt(STRUCTURE *psStruct);
-/// aus power.cpp: Oelpumpe foerdert (amountFP Energie in Festkomma mit fpOne = 1,0) -> wird zu Fass-Fortschritt am Turm
-void extract(const STRUCTURE *psDerrick, int64_t amountFP, int64_t fpOne);
 /// jeden Spielschritt aus der Spielschleife (Explosionen sofort, Logistik einmal je Spielsekunde)
 void tick();
 /// laeuft das Kraftwerk (hat es Brennstoff oder einen Oelturm per Pipeline)? Immer wahr fuer Spieler ohne Fass-Wirtschaft.
@@ -107,10 +105,6 @@ int generatorStock(const STRUCTURE *psGen, int &cap);
 int stationBarrels(const STRUCTURE *psStation);
 /// Faesser-Anzeige (Anzeigemodus 4) und Fass-Fenster der gewaehlten Tankstelle, nach dem 3D-Bild aufrufen
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
-/// (20.11.) Strompflicht: erst ab dem ersten Fass, das ein Kraftwerk dieses Spielers bekommen hat (vorher laeuft alles ohne Strom)
-bool dutyStarted(int player);
-/// (20.11.) eine echte Stromquelle (Kraftwerk mit Oel, Atomkraftwerk, Solar am Umspannwerk) hat das Netz gespeist -> Strompflicht beginnt
-void noteDuty(int player);
 /// (20.11.) Fracht-Lkw oder Oeltanker (Fahrzeug mit Ladeflaeche/Tank fuer Faesser)?
 bool isCargoVehicle(const DROID *psDroid);
 /// (20.11. 19:06) Fortschritt des laufenden Fasses in der Raffinerie 1..1000; 0 = arbeitet gerade nicht; -1 = keine Raffinerie

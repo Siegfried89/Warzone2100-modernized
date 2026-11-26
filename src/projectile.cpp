@@ -71,7 +71,6 @@
 #include "perfcounters.h"
 #include "modlayer.h"
 #include "modlayermap.h"
-#include "modrailbeam.h"
 #include "modterrain.h"
 
 #include <algorithm>
@@ -720,7 +719,6 @@ bool proj_SendProjectile(WEAPON *psWeap, SIMPLE_OBJECT *psAttacker, int player, 
 	{
 		return false;
 	}
-	modrailbeam::onFire(p);   // MOD (19.11.): blauer Strahl der C&C3-Railguns (nur Anzeige)
 	proj_AddActiveProjectile(p);
 	return true;
 }
@@ -732,7 +730,6 @@ bool proj_SendProjectileAngled(WEAPON* psWeap, SIMPLE_OBJECT* psAttacker, int pl
 	{
 		return false;
 	}
-	modrailbeam::onFire(p);   // MOD (19.11.): blauer Strahl der C&C3-Railguns (nur Anzeige)
 	proj_AddActiveProjectile(p);
 	return true;
 }
