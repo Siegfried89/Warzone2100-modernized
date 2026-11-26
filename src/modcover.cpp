@@ -87,6 +87,14 @@ Vector2i slotPos(const Slot &s, int k)
 			if ((sd & 0x10) != 0 && !ns && !ew) { off = std::min(off, 12); }   // einzelnes Loch ohne Gaenge
 		}
 	}
+	if (s.kind == Kind::CRATER)
+	{
+		// (Wunsch 26.11. "Infanterie ist nicht in der Mitte von Kratern beim Deckung nehmen, eher am Rand"): in die tiefste Stelle des
+		// Kraters, zwei Mann dicht nebeneinander
+		const Vector2i c = modterrain::craterCenter(s.tx, s.ty);
+		cx = c.x; cy = c.y;
+		off = 7;
+	}
 	if (k >= 2) { off = off / 2; alongY = !alongY; }
 	const int d = (k & 1) ? off : -off;
 	return alongY ? Vector2i(cx, cy + d) : Vector2i(cx + d, cy);

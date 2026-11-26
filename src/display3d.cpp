@@ -3046,6 +3046,14 @@ void	renderFeature(FEATURE *psFeature, const glm::mat4 &viewMatrix, const glm::m
 		/* Translate the feature  - N.B. We can also do rotations here should we require
 		buildings to face different ways - Don't know if this is necessary - should be IMO */
 		pie_Draw3DShape(strImd, 0, 0, brightness, pieFlags, 0, modelMatrix, viewMatrix, stretchDepth);
+		// MOD (26.11.): die grossen Landfills haben mehrere Ebenen (je Ebene hoechstens 8192 Flaechen) - alle zeichnen
+		if (strImd != nullptr && strImd->next && psFeature->psStats != nullptr && psFeature->psStats->id.startsWith("Landfill"))
+		{
+			for (const iIMDShape *lvl = strImd->next.get(); lvl != nullptr; lvl = lvl->next.get())
+			{
+				pie_Draw3DShape(lvl, 0, 0, brightness, pieFlags, 0, modelMatrix, viewMatrix, stretchDepth);
+			}
+		}
 		}
 	}
 

@@ -31,6 +31,7 @@
 #include "lighting.h"
 #include "random.h"
 #include "ai.h"
+#include "geometry.h"
 
 #include <algorithm>
 #include <string>
@@ -1047,6 +1048,233 @@ const char *activeLabel()
 	}
 }
 
+
+// ===================================================================================================================================
+// MOD (Wunsch 26.11.): Baugruppen teilen sich auf.
+//  "Bagger arbeiten bisher immer erst ein Bauprojekt nach dem anderen in der Gruppe ab. Jeder soll sich jetzt immer sein eigenes suchen,
+//   es sei denn, er wird extra von Hand dazubeordert. Die Baugruppe soll sich aufteilen nach Naehe."
+//  "Bagger sollen immer zuerst an die Arbeit gehen, anstatt zuerst ihren Bewegungsbefehl abzuarbeiten."
+// Alle 250 ms je menschlichem Spieler, nur aus dem Spielzustand (auf allen Rechnern gleich), nur synchrone Warteschlangen-Eintraege:
+//  1. Fahrbefehl vorn, Bauauftrag dahinter in der Warteschlange: der Fahrbefehl entfaellt, der Bau beginnt sofort.
+//  2. Ein Bauer, dessen naechstes Bau-Feld schon ein anderer Bauer bearbeitet (der baut schon oder ist naeher dran), nimmt sich den
+//     naechstgelegenen freien Auftrag aus seiner Warteschlange (den belegten stellt er nach vorn zurueck).
+//  3. Gibt es keinen freien mehr und ist es eine Linie (Mauer, Graben, Sandsaecke ...): er teilt sich die Linie mit dem Bauer, der am
+//     meisten davon uebrig hat - der behaelt die vordere Haelfte, dieser baut die hintere Haelfte vom Ende her.
+//  4. Fertig gebaute Auftraege vorn in der Warteschlange werden uebersprungen (kein Hinfahren zu fertigen Baustellen).
+// Ausdrueckliches Helfen (Klick auf eine Baustelle = DORDER_HELPBUILD) bleibt unangetastet.
+// ===================================================================================================================================
+namespace
+{
+uint32_t s_nextOrganize = 0;
+
+bool lineOrder(DROID_ORDER o) { return o == DORDER_BUILD || o == DORDER_LINEBUILD; }
+
+/// verbleibende Felder eines Bau-/Linienauftrags (fuer BUILD genau eines)
+LineBuild tilesOf(const DroidOrder &o)
+{
+	if (o.type == DORDER_LINEBUILD && o.psStats != nullptr) { return calcLineBuild(o.psStats, o.direction, o.pos, o.pos2); }
+	LineBuild lb;
+	lb.begin = o.pos;
+	lb.count = 1;
+	return lb;
+}
+
+bool lineHasTile(const LineBuild &lb, const Vector2i &tile)
+{
+	for (int i = 0; i < lb.count; ++i) { if (map_coord(lb[i]) == tile) { return true; } }
+	return false;
+}
+
+bool lineOverlaps(const LineBuild &a, const LineBuild &b)
+{
+	for (int i = 0; i < a.count; ++i) { if (lineHasTile(b, map_coord(a[i]))) { return true; } }
+	return false;
+}
+
+/// fertig: an der Stelle steht das Bauwerk schon fertig (BUILD) bzw. alle Felder der Linie sind fertig
+bool orderDone(const DroidOrder &o)
+{
+	if (!lineOrder(o.type) || o.psStats == nullptr) { return false; }
+	const LineBuild lb = tilesOf(o);
+	if (lb.count <= 0) { return true; }
+	for (int i = 0; i < lb.count; ++i)
+	{
+		const STRUCTURE *st = getTileStructure(gameWorld.map, map_coord(lb[i].x), map_coord(lb[i].y));
+		if (st == nullptr || st->status != SS_BUILT || st->pStructureType != o.psStats) { return false; }
+	}
+	return true;
+}
+
+bool organizable(const DROID *d)
+{
+	return d != nullptr && !d->died && d->isConstructionDroid() && s_restore.count(d->id) == 0 && s_jobs.count(d->id) == 0
+	       && !modlayerdig::isDrill(d);
+}
+
+/// arbeitet ein ANDERER Bauer schon an diesem Feld (sein aktuelles Bau-Feld) und hat Vorrang vor d?
+const DROID *claimant(const std::vector<DROID *> &workers, const DROID *d, const STRUCTURE_STATS *st, const Vector2i &tile)
+{
+	const Vector2i tc = world_coord(tile) + Vector2i(TILE_UNITS / 2, TILE_UNITS / 2);
+	const bool dActive = d->action == DACTION_BUILD && d->order.psStats == st && map_coord(d->actionPos) == tile;
+	const int64_t dd = static_cast<int64_t>(iHypot(d->pos.xy() - tc));
+	for (const DROID *u : workers)
+	{
+		if (u == d || !lineOrder(u->order.type) || u->order.psStats != st || map_coord(u->order.pos) != tile) { continue; }
+		const bool uActive = u->action == DACTION_BUILD;
+		if (uActive && !dActive) { return u; }
+		if (dActive && !uActive) { continue; }
+		const int64_t ud = static_cast<int64_t>(iHypot(u->pos.xy() - tc));
+		if (ud < dd || (ud == dd && u->id < d->id)) { return u; }
+	}
+	return nullptr;
+}
+
+/// ist der Auftrag frei (kein anderer Bauer hat sein erstes Feld als aktuelles Bau-Feld oder in seiner Linie)?
+bool orderFree(const std::vector<DROID *> &workers, const DROID *d, const DroidOrder &o)
+{
+	if (!lineOrder(o.type) || o.psStats == nullptr || orderDone(o)) { return false; }
+	const LineBuild mine = tilesOf(o);
+	for (const DROID *u : workers)
+	{
+		if (u == d || !lineOrder(u->order.type) || u->order.psStats != o.psStats) { continue; }
+		if (lineOverlaps(mine, tilesOf(u->order))) { return false; }
+	}
+	return true;
+}
+
+void startOrder(DROID *d, DroidOrder o)
+{
+	o.psObj = nullptr;
+	orderDroidBase(d, &o);
+}
+
+/// Warteschlange: fertige Auftraege vorn entfernen
+void pruneDone(DROID *d)
+{
+	while (d->listSize > 0 && orderDone(d->asOrderList[0]))
+	{
+		orderDroidListEraseRange(d, 0, 1);
+	}
+}
+
+/// nimmt sich d einen freien Auftrag aus der eigenen Warteschlange (den naechstgelegenen)? Der aktuelle kommt nach vorn zurueck.
+bool takeOwnFree(const std::vector<DROID *> &workers, DROID *d)
+{
+	int bestK = -1;
+	int64_t bestD = INT64_MAX;
+	for (unsigned k = 0; k < d->listSize && k < d->asOrderList.size(); ++k)
+	{
+		const DroidOrder &o = d->asOrderList[k];
+		if (!orderFree(workers, d, o)) { continue; }
+		const int64_t dd = static_cast<int64_t>(iHypot(o.pos - d->pos.xy()));
+		if (dd < bestD) { bestD = dd; bestK = static_cast<int>(k); }
+	}
+	if (bestK < 0) { return false; }
+	DroidOrder chosen = d->asOrderList[static_cast<size_t>(bestK)];
+	DroidOrder cur = d->order;
+	cur.psObj = nullptr;
+	orderDroidListEraseRange(d, static_cast<unsigned>(bestK), static_cast<unsigned>(bestK) + 1);
+	if (lineOrder(cur.type) && cur.psStats != nullptr)
+	{
+		d->asOrderList.insert(d->asOrderList.begin(), cur);
+		d->listSize++;
+		d->listPendingBegin++;
+	}
+	startOrder(d, chosen);
+	return true;
+}
+
+/// Linie teilen: d uebernimmt die hintere Haelfte (vom Ende her) der Linie des Bauers mit dem meisten Rest, die sich mit d's Auftrag ueberschneidet
+bool splitLine(const std::vector<DROID *> &workers, DROID *d)
+{
+	const LineBuild mine = tilesOf(d->order);
+	DROID *best = nullptr;
+	LineBuild bestLb;
+	for (DROID *u : workers)
+	{
+		if (u == d || u->order.type != DORDER_LINEBUILD || u->order.psStats != d->order.psStats) { continue; }
+		const LineBuild lb = tilesOf(u->order);
+		if (lb.count < 2 || !lineOverlaps(mine, lb)) { continue; }
+		if (u->action != DACTION_BUILD && claimant(workers, u, u->order.psStats, map_coord(u->order.pos)) != nullptr) { continue; }   // selbst nur Doppel
+		if (best == nullptr || lb.count > bestLb.count || (lb.count == bestLb.count && u->id < best->id)) { best = u; bestLb = lb; }
+	}
+	if (best == nullptr) { return false; }
+	const int h = (bestLb.count + 1) / 2;                 // u behaelt [0, h-1]
+	best->order.pos2 = bestLb[h - 1];
+	DroidOrder mineNew = best->order;
+	mineNew.type = (bestLb.count - h == 1) ? DORDER_BUILD : DORDER_LINEBUILD;
+	mineNew.pos = bestLb[bestLb.count - 1];               // vom Ende her
+	mineNew.pos2 = bestLb[h];
+	startOrder(d, mineNew);
+	return true;
+}
+
+void organize(GameWorld &world)
+{
+	if (gameTime < s_nextOrganize) { return; }
+	s_nextOrganize = gameTime + 250;
+	for (unsigned p = 0; p < MAX_PLAYERS; ++p)
+	{
+		if (!isHumanPlayer(p)) { continue; }
+		std::vector<DROID *> workers;
+		for (DROID *d : world.objects.droids[p]) { if (organizable(d)) { workers.push_back(d); } }
+		if (workers.empty()) { continue; }
+		for (DROID *d : workers)
+		{
+			if (d->died) { continue; }
+			pruneDone(d);
+			// 1. Arbeit vor Fahrt
+			if ((d->order.type == DORDER_MOVE || d->order.type == DORDER_SCOUT) && d->listSize > 0)
+			{
+				unsigned first = d->listSize;
+				for (unsigned k = 0; k < d->listSize && k < d->asOrderList.size(); ++k)
+				{
+					const DROID_ORDER t = d->asOrderList[k].type;
+					if (lineOrder(t) || t == DORDER_HELPBUILD || t == DORDER_BUILDMODULE) { first = k; break; }
+				}
+				if (first < d->listSize)
+				{
+					if (first > 0) { orderDroidListEraseRange(d, 0, first); }
+					orderDroidList(d);
+					continue;
+				}
+			}
+			// 2./3. Aufteilen (nur solange er noch nicht selbst baut)
+			if (!lineOrder(d->order.type) || d->order.psStats == nullptr || d->action == DACTION_BUILD) { continue; }
+			const DROID *u = claimant(workers, d, d->order.psStats, map_coord(d->order.pos));
+			if (u == nullptr) { continue; }
+			if (takeOwnFree(workers, d)) { continue; }
+			if (d->order.type == DORDER_LINEBUILD || u->order.type == DORDER_LINEBUILD) { splitLine(workers, d); }
+			// sonst: einzelnes Bauwerk ohne freie Auftraege - er hilft mit (wie bisher)
+		}
+	}
+}
+
+/// (fuer autoHelp) ein untaetiger Bauer uebernimmt einen freien, noch nicht begonnenen Auftrag aus der Warteschlange eines anderen Bauers
+bool takeFreeJob(GameWorld &world, DROID *d)
+{
+	if (!organizable(d)) { return false; }
+	std::vector<DROID *> workers;
+	for (DROID *w : world.objects.droids[d->player]) { if (organizable(w)) { workers.push_back(w); } }
+	const DroidOrder *best = nullptr;
+	int64_t bestD = static_cast<int64_t>(24 * DIST_TILE);
+	for (DROID *w : workers)
+	{
+		if (w == d) { continue; }
+		for (unsigned k = 0; k < w->listSize && k < w->asOrderList.size(); ++k)
+		{
+			const DroidOrder &o = w->asOrderList[k];
+			if (!orderFree(workers, d, o)) { continue; }
+			const int64_t dd = static_cast<int64_t>(iHypot(o.pos - d->pos.xy()));
+			if (dd < bestD) { bestD = dd; best = &o; }
+		}
+	}
+	if (best == nullptr) { return false; }
+	startOrder(d, *best);
+	return true;
+}
+} // namespace
+
 // MOD (Wunsch 20.11. 16:42 "Die 3 Baubagger sollen mehr eigenstaendig arbeiten ..."): ein Baufahrzeug, das gerade seinen Bau beendet hat
 // (und nichts mehr in der Warteschlange), hilft nach einer Sekunde von selbst beim naechsten eigenen Bau in der Naehe (12 Felder) mit -
 // nicht, wenn der Spieler es zuletzt woandershin geschickt hat (dann bleibt es dort). Abrissbaustellen zaehlen nicht. Spiellogik im
@@ -1060,8 +1288,9 @@ struct Helper
 };
 std::map<uint32_t, Helper> s_helpers;
 uint32_t s_nextHelp = 0, s_nextHelperCleanup = 0;
-constexpr unsigned HELP_TICK_MS = 500, HELP_IDLE_MS = 1000;
-constexpr int HELP_RADIUS = 12 * DIST_TILE;
+// (Wunsch 26.11. "warten sehr lange - sollen sofort weitersuchen"): sofort (naechster Takt) und weiter im Umkreis suchen
+constexpr unsigned HELP_TICK_MS = 250, HELP_IDLE_MS = 0;
+constexpr int HELP_RADIUS = 24 * DIST_TILE;
 
 bool buildOrder(DROID_ORDER o)
 {
@@ -1092,19 +1321,35 @@ void autoHelp(GameWorld &world)
 				{
 					h.wasBuilding = false;   // einmal suchen; findet es nichts, bleibt es stehen
 					h.idleSince = 0;
+					// (26.11. "jeder soll sich sein eigenes suchen"): zuerst eine Baustelle, an der noch niemand arbeitet (je Bauer dort
+					// zaehlt sie 8 Felder weiter weg), dann einen noch nicht begonnenen Auftrag aus der Warteschlange eines anderen Bauers
 					STRUCTURE *best = nullptr;
 					int64_t bestD = static_cast<int64_t>(HELP_RADIUS) * HELP_RADIUS;
 					for (STRUCTURE *s : world.objects.structures[p])
 					{
 						if (s->died || s->status != SS_BEING_BUILT || modlayer::layerOf(s) != modlayer::layerOf(d)) { continue; }
 						if (checkDroidsDemolishing(s)) { continue; }
-						const int64_t dx = s->pos.x - d->pos.x, dy = s->pos.y - d->pos.y, dd = dx * dx + dy * dy;
+						const int64_t dx = s->pos.x - d->pos.x, dy = s->pos.y - d->pos.y;
+						const int64_t dd0 = dx * dx + dy * dy;
+						if (dd0 >= static_cast<int64_t>(HELP_RADIUS) * HELP_RADIUS) { continue; }
+						int64_t dist = static_cast<int64_t>(std::sqrt(static_cast<double>(dd0)));
+						for (const DROID *w2 : world.objects.droids[p])
+						{
+							if (w2 != d && !w2->died && w2->order.psObj == s) { dist += 8 * DIST_TILE; }
+							else if (w2 != d && !w2->died && (w2->order.type == DORDER_BUILD || w2->order.type == DORDER_LINEBUILD)
+							         && map_coord(w2->order.pos) == map_coord(s->pos.xy())) { dist += 8 * DIST_TILE; }
+						}
+						const int64_t dd = dist * dist;
 						if (dd < bestD) { bestD = dd; best = s; }
 					}
 					if (best != nullptr)
 					{
 						orderDroidObj(d, DORDER_HELPBUILD, best, ModeImmediate);
 						h.wasBuilding = true;   // nach dem Helfen wieder suchen (naechste Baustelle)
+					}
+					else if (takeFreeJob(world, d))
+					{
+						h.wasBuilding = true;
 					}
 				}
 			}
@@ -1146,6 +1391,7 @@ STRUCTURE_STATS *trenchVariant(STRUCTURE_STATS *st, unsigned player, const Vecto
 
 void tick(GameWorld &world)
 {
+	organize(world);   // (26.11.) Baugruppen teilen sich auf, Arbeit vor Fahrt
 	autoHelp(world);   // (20.11.) Baufahrzeuge helfen nach ihrem Bau in der Naehe mit
 	restoreTick();     // (22.11. 21:19) Battle-Plan "Restore"
 	if (s_jobs.empty()) { return; }

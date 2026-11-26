@@ -14,6 +14,9 @@ namespace modfacing
 {
 /// display.cpp processMouseClickInput: true = die Maus gehoert gerade dem Ausrichten (kein Auswahlrahmen, kein Klick)
 bool processMouse(bool overUi, const Vector2i &world);
+/// (Wunsch 26.11.) Rechtsklick-Befehle: rechte Taste auf freiem Boden druecken und ziehen = Fahrbefehl zum Druckpunkt, danach drehen sich
+/// die Einheiten in die Ziehrichtung; true = die Maus gehoert gerade diesem Ziehen
+bool processRightDrag(bool overUi, bool rightClickOrders, const Vector2i &world);
 /// display3d.cpp: Richtungspfeile waehrend des Ziehens
 void draw();
 /// Taste "Ausrichten": gewaehlte Einheiten schauen zum Punkt unter der Maus

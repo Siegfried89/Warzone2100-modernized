@@ -63,7 +63,9 @@ bool groundVehicle(const DROID *d)
 	if (d == nullptr || d->isVtol() || d->isTransporter()) { return false; }
 	switch (d->droidType)
 	{
-	case DROID_WEAPON: case DROID_CYBORG: case DROID_CYBORG_SUPER: case DROID_COMMAND: case DROID_PERSON:
+	// (Wunsch 26.11. "Steilfeuermodus sollte NUR fuer Panzer mit grosser Kanone und alle Raketenartillerie sein"): nur noch Fahrzeuge
+	// (Panzer, Battle Mechs, Kommandeure) - keine Cyborgs und keine Infanterie; welche Waffen, entscheidet arty.py
+	case DROID_WEAPON: case DROID_COMMAND:
 		return true;
 	default:
 		return false;

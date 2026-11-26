@@ -1023,6 +1023,11 @@ void processMouseClickInput()
 		{
 			return;
 		}
+		// MOD (Wunsch 26.11.): Rechtsklick gedrueckt halten und ziehen = Blickrichtung nach der Ankunft
+		if (!gestureActive && buildState == BUILD3D_NONE && modfacing::processRightDrag(overUi, bEffectiveRightClickOrders, mousePos))
+		{
+			return;
+		}
 	}
 
 	if (gestureActive)
@@ -1625,15 +1630,22 @@ static void handleCameraScrolling()
 			scrollDirUpDown--;
 			wzSetCursor(CURSOR_DARROW);
 		}
+		// MOD (Wunsch 26.11. "Wenn der Mauszeiger den linken oder rechten Rand beruehrt, soll sich die Kamera nur drehen, statt nach links oder
+		// rechts zu schieben"): linker Rand dreht den Blick nach links, rechter nach rechts (90 Grad je Sekunde); oben/unten schiebt weiter
+		int edgeTurn = 0;
 		if (mouseX() < BOUNDARY_X)
 		{
 			wzSetCursor(CURSOR_LARROW);
-			scrollDirLeftRight--;
+			edgeTurn++;
 		}
 		if (mouseX() >= (pie_GetVideoBufferWidth() - BOUNDARY_X))
 		{
 			wzSetCursor(CURSOR_RARROW);
-			scrollDirLeftRight++;
+			edgeTurn--;
+		}
+		if (edgeTurn != 0)
+		{
+			cameraRotate(edgeTurn * static_cast<int>(realTimeAdjustedIncrement(MAP_SPIN_RATE / 2)), 0);   // 90 Grad je Sekunde
 		}
 	}
 	camtrace::applyAutoPan(scrollDirLeftRight, scrollDirUpDown); // debug-only: --cameraautopan

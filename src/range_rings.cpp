@@ -37,6 +37,7 @@
 #include "structure.h"
 #include "visibility.h"
 #include "modoilui.h"
+#include "modgrid.h"    // MOD (26.11.): Versorgungsringe im Anzeigemodus Stromnetz
 #include "modbuild.h"   // MOD (24.11.): Kran-Umkreis   // MOD (21.11.): Reichweiten beim Platzieren von Stromnetz-Gebaeuden
 
 #include "lib/framework/frame.h"
@@ -364,6 +365,16 @@ void gatherSelected()
 	if (s_debugRadius > 0.f)
 	{
 		push(s_weapon, s_debugX, s_debugY, s_debugRadius);
+	}
+
+	// MOD (Wunsch 26.11. "warum sind das wieder diese duennen, nicht leuchtenden Kreise"): Anzeigemodus Stromnetz - Versorgungsbereiche
+	// der Masten als leuchtende Ringe (gespeist blau, ohne Strom rot) statt der alten duennen Linien
+	if (s_mode == 4)
+	{
+		std::vector<glm::vec3> fed, unfed;
+		modgrid::supplyRings(fed, unfed);
+		for (const glm::vec3 &r : fed) { push(s_sensor, r.x, r.y, r.z); }
+		for (const glm::vec3 &r : unfed) { push(s_weapon, r.x, r.y, r.z); }
 	}
 
 	// MOD (Wunsch 21.11. 19:25 "so schoen leuchtend blau wie die anderen Ringe"): Platzieren von Strommast/Umspannwerk/Kraftwerk/Solar/

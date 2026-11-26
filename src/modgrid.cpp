@@ -20,6 +20,7 @@
 #include "research.h"
 #include "game_world.h"
 #include "map.h"
+#include "power.h"   // (26.11.) Strom von der Bank
 #include "range_rings.h"
 #include "structure.h"
 
@@ -82,6 +83,7 @@ struct Marker
 	int x, y, z;
 	bool powered;
 	bool isPole;
+	int range = SUPPLY_RANGE;   // (26.11.) Versorgungsradius fuer die leuchtenden Ringe
 };
 
 std::unordered_map<uint32_t, bool> s_powered;
@@ -320,6 +322,10 @@ void update()
 		// (und alle mit Umspannwerk): Gebaeude bekommen Strom ueber Masten (oder ein Umspannwerk) aus jedem Netz mit einer Quelle - laufendes
 		// Kraftwerk, Solarfeld, Atomkraftwerk, Notstrom der Kommandozentrale. Ein Umspannwerk ist nur noch ein Knoten mit grossem Versorgungskreis.
 		const bool subMode = !subs.empty() || modoil::manages(p);
+		// (Wunsch 26.11. "Solange es + Power auf der Bank gibt, kann die Fabrik produzieren und die Gebaeude haben Strom, solange sie ans Netz
+		// angeschlossen sind - z. B. nachts, wenn es schon sehr viel Solar gibt und alles angeschlossen ist, aber trotzdem alles abschaltet"):
+		// solange der Spieler Strom gespeichert hat, liefert die Bank in jedes Netz mit Umspannwerk unbegrenzt Leistung
+		const bool bank = getPower(static_cast<unsigned>(p)) > 0;
 
 		const int n = static_cast<int>(poles.size());
 		const int g = static_cast<int>(gens.size());
@@ -435,7 +441,7 @@ void update()
 		for (int r = 0; r < total; r++)
 		{
 			if (find(par, r) != r) { continue; }
-			live[r] = subMode ? (hasSub[r] ? (solarCap[r] > 0 || genCapC[r] > 0) : emergCap[r] > 0) : hasGenC[r];   // (24.11. 17:01) Umspannwerk Pflicht
+			live[r] = subMode ? (hasSub[r] ? (bank || solarCap[r] > 0 || genCapC[r] > 0) : emergCap[r] > 0) : hasGenC[r];   // (24.11. 17:01) Umspannwerk Pflicht
 		}
 		// Verbraucher einem Netz zuordnen: Versorgungsbereich eines Mastes oder Umspannwerks (ohne Umspannwerk wie bisher auch eines Kraftwerks);
 		// liegen mehrere in Reichweite, gewinnt ein Netz mit Strom, dann das naechste
@@ -503,7 +509,7 @@ void update()
 				// Stelle fuer den Empfang. Dafuer reichen Masten, die mit dem Netz verbunden sind."): Kraftwerks-, Solar- und Atomstrom fliesst nur
 				// in einem Netz mit mindestens einem Umspannwerk - dort bekommt jedes Gebaeude in Reichweite IRGENDEINES Mastes des Netzes Strom.
 				// Ohne Umspannwerk nur der Notstrom der Kommandozentrale (Wunsch 22.11. 18:27).
-				capacity[r] = hasSub[r] ? solarCap[r] + genCapC[r] : emergCap[r];
+				capacity[r] = hasSub[r] ? (bank ? INT32_MAX / 4 : solarCap[r] + genCapC[r]) : emergCap[r];   // (26.11.) Bank
 				fed[r] = capacity[r] > 0;
 			}
 			else
@@ -560,7 +566,7 @@ void update()
 			}
 			for (int k = 0; k < m; k++)
 			{
-				s_markers.push_back({p, subs[k].x, subs[k].y, subs[k].z, fed[find(par, S0 + k)] != 0, true});
+				s_markers.push_back({p, subs[k].x, subs[k].y, subs[k].z, fed[find(par, S0 + k)] != 0, true, SUB_SUPPLY_RANGE});
 			}
 		}
 
@@ -733,38 +739,31 @@ void drawOverlay(const glm::mat4 &m)
 	if (!grey.empty()) { iV_Lines(grey, pal_RGBA(70, 70, 76, 255)); }
 
 	if (range_rings::getMode() != 4) { return; }
-	// Anzeigemodus "Stromnetz": Versorgungskreise (gruen = gespeist, rot = ohne Strom), Verbraucher als Kreuz
+	// Anzeigemodus "Stromnetz": Verbraucher als Kreuz (gruen = gespeist, rot = ohne Strom). (Wunsch 26.11.) Die Versorgungskreise der
+	// Masten zeichnet nicht mehr diese duenne Linie, sondern range_rings als leuchtende Ringe (supplyRings)
 	std::vector<glm::ivec4> green, red;
 	for (const Marker &mk : s_markers)
 	{
+		if (mk.isPole || mk.player != static_cast<int>(selectedPlayer)) { continue; }
 		auto &dst = mk.powered ? green : red;
-		if (mk.isPole)
+		Vector2i s(0, 0);
+		if (project(Vector3i(mk.x, mk.y, mk.z + 220), m, s))
 		{
-			Vector2i prev(0, 0);
-			bool havePrev = false;
-			for (int k = 0; k <= 32; k++)
-			{
-				const double a = k * 6.283185307 / 32.0;
-				const int wx = static_cast<int>(mk.x + std::cos(a) * SUPPLY_RANGE), wy = static_cast<int>(mk.y + std::sin(a) * SUPPLY_RANGE);
-				Vector2i s(0, 0);
-				const bool ok = project(Vector3i(wx, wy, map_Height(gameWorld.map, std::clamp(wx, 0, world_coord(gameWorld.map.width) - 1), std::clamp(wy, 0, world_coord(gameWorld.map.height) - 1)) + 4), m, s);   // (20.11.) Kartenrand
-				if (ok && havePrev) { dst.emplace_back(prev.x, prev.y, s.x, s.y); }
-				prev = s;
-				havePrev = ok;
-			}
-		}
-		else
-		{
-			Vector2i s(0, 0);
-			if (project(Vector3i(mk.x, mk.y, mk.z + 220), m, s))
-			{
-				dst.emplace_back(s.x - 7, s.y - 7, s.x + 7, s.y + 7);
-				dst.emplace_back(s.x - 7, s.y + 7, s.x + 7, s.y - 7);
-			}
+			addThick(dst, Vector2i(s.x - 7, s.y - 7), Vector2i(s.x + 7, s.y + 7));
+			addThick(dst, Vector2i(s.x - 7, s.y + 7), Vector2i(s.x + 7, s.y - 7));
 		}
 	}
 	if (!green.empty()) { iV_Lines(green, pal_RGBA(70, 255, 90, 255)); }
 	if (!red.empty()) { iV_Lines(red, pal_RGBA(255, 60, 50, 255)); }
+}
+
+void supplyRings(std::vector<glm::vec3> &powered, std::vector<glm::vec3> &unpowered)
+{
+	for (const Marker &mk : s_markers)
+	{
+		if (!mk.isPole || mk.player != static_cast<int>(selectedPlayer)) { continue; }
+		(mk.powered ? powered : unpowered).emplace_back(static_cast<float>(mk.x), static_cast<float>(mk.y), static_cast<float>(mk.range));
+	}
 }
 
 } // namespace modgrid

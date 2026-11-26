@@ -102,6 +102,12 @@ size_t pie_NumberOfPages()
 }
 
 // Add a new texture page to the list
+// MOD (Wunsch 26.11.): Glanzkarte "*_glint*" = Glanz nur fuer Sonnenreflexe, das Modell bleibt klassisch (hell, ohne gerichtetes Licht)
+bool pie_TexPageIsGlint(size_t page)
+{
+	return page < _TEX_PAGE.size() && _TEX_PAGE[page].filename.find("_glint") != std::string::npos;
+}
+
 size_t pie_ReserveTexture(const char *filename, const size_t& width, const size_t& height)
 {
 	iTexPage tex;

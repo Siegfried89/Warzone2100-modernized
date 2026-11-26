@@ -2186,7 +2186,7 @@ static bool modIsBagger(const DROID *psDroid)
 
 static int modReversePercent(const PROPULSION_STATS *psPropStats, bool bagger = false)
 {
-	if (bagger) { return 92; }
+	if (bagger) { return 100; }   // (Wunsch 26.11. "Rueckwaertsgang der Bagger schneller, sofort Maximalgeschwindigkeit")
 	switch (psPropStats->propulsionType)
 	{
 	case PROPULSION_TYPE_TRACKED: return 55;
@@ -2234,7 +2234,7 @@ static bool modDecideReverse(DROID *psDroid, uint16_t direction)
 	else
 	{
 		// nur aus langsamer Fahrt heraus in den Rueckwaertsgang (erst bremsen, dann zurueck)
-		const bool slow = abs(mv.speed) <= std::max<int>(psDroid->baseSpeed / 3, 1);
+		const bool slow = modIsBagger(psDroid) || abs(mv.speed) <= std::max<int>(psDroid->baseSpeed / 3, 1);   // (26.11.) Bagger sofort
 		mv.modReverse = slow && dNext > DEG(115) && dDest > DEG(115) && dist <= limit && left <= maxLeft;
 	}
 	return mv.modReverse;
@@ -2319,8 +2319,10 @@ static void moveUpdateGroundModel(DROID *psDroid, SDWORD speed, uint16_t directi
 	}
 
 	// MOD (17.11. 19:45): Traegheit - mittlere Panzer beschleunigen/bremsen etwas, schwere deutlich langsamer
-	const SDWORD modAccel = std::max<SDWORD>(1, psPropStats->acceleration * modinertia::accelPercent(psDroid) / 100 * (modBagger ? 3 : 1));
-	const SDWORD modDecel = std::max<SDWORD>(1, psPropStats->deceleration * modinertia::decelPercent(psDroid) / 100 * (modBagger ? 3 : 1));
+	// (Wunsch 26.11.) Bagger: sofort volle Fahrt - vorwaerts fast ohne Anlauf, rueckwaerts ohne jeden Anlauf
+	const int modBaggerK = modBagger ? (modRev ? 60 : 12) : 1;
+	const SDWORD modAccel = std::max<SDWORD>(1, psPropStats->acceleration * modinertia::accelPercent(psDroid) / 100 * modBaggerK);
+	const SDWORD modDecel = std::max<SDWORD>(1, psPropStats->deceleration * modinertia::decelPercent(psDroid) / 100 * (modBagger ? 6 : 1));
 	fNormalSpeed = moveCalcNormalSpeed(psDroid, speed, iDroidDir, modAccel, modDecel);
 	fPerpSpeed   = moveCalcPerpSpeed(psDroid, iDroidDir, psPropStats->skidDeceleration);
 

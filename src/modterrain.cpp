@@ -457,6 +457,34 @@ float sinkStandF(const WorldMapState &mapState, float worldX, float worldY)
 	{
 		return 0.f;
 	}
+	// (Wunsch 26.11. "Infanterie in Kratern ... sinkt durch den Boden"): das Gelaendenetz (Unterteilung 2-4 je Feld) zeigt einen Krater als
+	// Gerade zwischen seinen Netzpunkten - die Standhoehe folgte aber der exakten, fast senkrechten Kraterkante und lag am Kraterrand bis zu
+	// einem Drittel der Kratertiefe UNTER dem sichtbaren Boden. In reinen Krater-Mulden (kein Graben, keine Stellung) steht die Einheit
+	// jetzt genau auf dem gezeichneten Netz (gleiche Netzpunkte, bilinear).
+	const int sub = getTerrainMeshSubdivision();
+	if (sub > 1)
+	{
+		const int layer = layerTag();
+		const int tx = static_cast<int>(std::floor(worldX / TILE_UNITS)), ty = static_cast<int>(std::floor(worldY / TILE_UNITS));
+		bool crater = false, fixedNear = false;
+		for (int dy = -1; dy <= 1 && !fixedNear; ++dy)
+		{
+			for (int dx = -1; dx <= 1; ++dx)
+			{
+				if (cellFixed(layer, tx + dx, ty + dy) > 0) { fixedNear = true; break; }
+				if (cellDyn(layer, tx + dx, ty + dy) > 0) { crater = true; }
+			}
+		}
+		if (crater && !fixedNear && trenchDepthF(layer, worldX, worldY, false) <= 0.f)
+		{
+			const float step = static_cast<float>(TILE_UNITS) / static_cast<float>(sub);
+			const float gx = std::floor(worldX / step) * step, gy = std::floor(worldY / step) * step;
+			const float fx = (worldX - gx) / step, fy = (worldY - gy) / step;
+			const float s00 = sinkWeighted(gx, gy, true), s10 = sinkWeighted(gx + step, gy, true);
+			const float s01 = sinkWeighted(gx, gy + step, true), s11 = sinkWeighted(gx + step, gy + step, true);
+			return (s00 * (1.f - fx) + s10 * fx) * (1.f - fy) + (s01 * (1.f - fx) + s11 * fx) * fy;
+		}
+	}
 	return sinkWeighted(worldX, worldY, false);
 }
 
@@ -499,6 +527,23 @@ int sinkAtCorner(const WorldMapState &mapState, int x, int y)
 	// Feinraster zusaetzlich den gemeinsamen Mittel-Eckpunkt eines 2 x 2-Kraters
 	const int layer = layerTag();
 	return std::max(cornerTotal(layer, x, y), trenchVisI(layer, world_coord(x), world_coord(y)));   // (24.11.) Graben-Rinne
+}
+
+Vector2i craterCenter(int tileX, int tileY)
+{
+	const Vector2i mid(world_coord(tileX) + TILE_UNITS / 2, world_coord(tileY) + TILE_UNITS / 2);
+	constexpr int NB = DIST_TILE / TILE_UNITS;
+	if (NB <= 1) { return mid; }
+	// Feinraster: ein Krater belegt 2 x 2 Feinfelder, seine Mitte ist die gemeinsame Ecke
+	const int layer = layerTag();
+	for (int cy = tileY; cy <= tileY + 1; ++cy)
+	{
+		for (int cx = tileX; cx <= tileX + 1; ++cx)
+		{
+			if (craterCorner(layer, cx, cy) > 0) { return Vector2i(world_coord(cx), world_coord(cy)); }
+		}
+	}
+	return mid;
 }
 
 int centerSink(const WorldMapState &mapState, int x, int y)

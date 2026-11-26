@@ -929,23 +929,27 @@ static void addMuzzleFlashLight(const glm::mat4& muzzleModelMatrix, const iIMDSh
 
 void drawMuzzleFlash(WEAPON sWeap, const iIMDShape *weaponImd, const iIMDShape *flashImd, PIELIGHT buildingBrightness, int pieFlag, int iPieData, glm::mat4 modelMatrix, const glm::mat4 &viewMatrix, float heightAboveTerrain, UBYTE colour)
 {
-	if (!weaponImd || !flashImd || weaponImd->connectors.empty() || sWeap.lastFired == 0 || graphicsTime < sWeap.lastFired)
+	// MOD (26.11.): weaponImd == nullptr = eingebaute Waffe ohne Modell, das Feuer sitzt direkt am Anschluss (modelMatrix)
+	if (!flashImd || (weaponImd != nullptr && weaponImd->connectors.empty()) || sWeap.lastFired == 0 || graphicsTime < sWeap.lastFired)
 	{
 		return;
 	}
 
-	int connector_num = 0;
-
-	// which barrel is firing if model have multiple muzzle connectors?
-	if (sWeap.shotsFired && (weaponImd->connectors.size() > 1))
+	if (weaponImd != nullptr)
 	{
-		// shoot first, draw later - substract one shot to get correct results
-		connector_num = (sWeap.shotsFired - 1) % (static_cast<uint32_t>(weaponImd->connectors.size()));
-	}
+		int connector_num = 0;
 
-	/* Now we need to move to the end of the firing barrel */
-	modelMatrix *= glm::translate(glm::vec3(weaponImd->connectors[connector_num].xzy()));
-	heightAboveTerrain += weaponImd->connectors[connector_num].z;
+		// which barrel is firing if model have multiple muzzle connectors?
+		if (sWeap.shotsFired && (weaponImd->connectors.size() > 1))
+		{
+			// shoot first, draw later - substract one shot to get correct results
+			connector_num = (sWeap.shotsFired - 1) % (static_cast<uint32_t>(weaponImd->connectors.size()));
+		}
+
+		/* Now we need to move to the end of the firing barrel */
+		modelMatrix *= glm::translate(glm::vec3(weaponImd->connectors[connector_num].xzy()));
+		heightAboveTerrain += weaponImd->connectors[connector_num].z;
+	}
 
 	// assume no clan colours for muzzle effects
 	if (flashImd->numFrames == 0 || flashImd->animInterval <= 0)
@@ -1602,6 +1606,17 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 						auto flashBaseModel = MUZZLE_FLASH_PIE(psDroid, i);
 						const iIMDShape *pMuzzleFlash = (flashBaseModel) ? flashBaseModel->displayModel() : nullptr;
 						drawMuzzleFlash(psDroid->asWeaps[i], psShape, pMuzzleFlash, brightness, pieFlag, iPieData, localModelMatrix, viewMatrix, localHeightAboveTerrain);
+					}
+					else if (!bButton && psDroid->droidType == DROID_WEAPON && !psDroid->isVtol() && !modcombot::isModular(psDroid)
+					         && asWeaponStats[psDroid->asWeaps[i].nStat].weaponSubClass != WSC_BOMB
+					         && asWeaponStats[psDroid->asWeaps[i].nStat].weaponSubClass != WSC_EMP)
+					{
+						// MOD (Wunsch 26.11. "Es gibt bei manchen Scav-Einheiten - Trike zum Beispiel - kein sichtbares Muendungsfeuer"): eingebaute
+						// Waffen ohne eigenes Modell (Trike, Buggy, Jeep, Van, Schienenbus ...) - das Muendungsfeuer sitzt am Anschluss des Rumpfes
+						// (scavflash.py legt ihn an die Laufmuendung)
+						auto flashBaseModel = MUZZLE_FLASH_PIE(psDroid, i);
+						const iIMDShape *pMuzzleFlash = (flashBaseModel) ? flashBaseModel->displayModel() : nullptr;
+						drawMuzzleFlash(psDroid->asWeaps[i], nullptr, pMuzzleFlash, brightness, pieFlag, iPieData, localModelMatrix, viewMatrix, localHeightAboveTerrain);
 					}
 				}
 			}

@@ -358,7 +358,7 @@ void pie_Draw3DButton(const iIMDShape *shape, PIELIGHT teamcolour, const glm::ma
 	};
 
 	gfx_api::Draw3DShapePerMeshUniforms meshUniforms {
-		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr, shape->buffers[VBO_TANGENT] != nullptr,
+		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr ? (pie_TexPageIsGlint(textures.specularpage) ? 2 : 1) : 0, shape->buffers[VBO_TANGENT] != nullptr,
 		static_cast<int>(gfx_api::ForwardFogOutput::Disabled),
 		// Buttons skip the tonemap, so the shader encodes them itself
 		gfx_api::context::get().linearLightingEnabled() ? 1 : 0,
@@ -482,7 +482,7 @@ static void draw3dShapeTemplated(const templatedState &lastState, ShaderOnce& gl
 	auto* specularmap = textures.specularpage != iV_TEX_INVALID ? &pie_Texture(textures.specularpage) : nullptr;
 
 	gfx_api::Draw3DShapePerMeshUniforms meshUniforms {
-		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr, shape->buffers[VBO_TANGENT] != nullptr,
+		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr ? (pie_TexPageIsGlint(textures.specularpage) ? 2 : 1) : 0, shape->buffers[VBO_TANGENT] != nullptr,
 		static_cast<int>(forwardFogOutputForFlags(pieFlag)),
 		0, // in scene, so the tonemap encodes it
 		gfx_api::context::get().linearLightingEnabled() ? 1 : 0
@@ -1798,7 +1798,7 @@ static void drawInstanced3dShapeTemplated_Inner(ShaderOnce& globalsOnce, const g
 	auto* specularmap = textures.specularpage != iV_TEX_INVALID ? &pie_Texture(textures.specularpage) : nullptr;
 
 	gfx_api::Draw3DShapeInstancedPerMeshUniforms meshUniforms {
-		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr, shape->buffers[VBO_TANGENT] != nullptr,
+		tcmask ? 1 : 0, normalmap != nullptr, specularmap != nullptr ? (pie_TexPageIsGlint(textures.specularpage) ? 2 : 1) : 0, shape->buffers[VBO_TANGENT] != nullptr,
 		shieldEffect ? 1 : 0, static_cast<int>(fogOutput),
 		gfx_api::context::get().linearLightingEnabled() ? 1 : 0
 	};

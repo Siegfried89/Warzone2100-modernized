@@ -72,6 +72,7 @@ enum Mode
 	M_MOVE = 0, M_RALLY, M_ATTACK, M_DEFEND, M_ARTYBASE, M_ARTY, M_AIR, M_COMBOT, M_SPREAD, M_RECOVER, M_COVER, M_TRAPS, M_MINES, M_OFFENSE, M_CLEARMINES, M_DEMOLISH, M_DEFNET, M_RAIL,
 	M_STAGING, M_FERRY, M_BRIDGEHEAD, M_GO, M_CLEARPLAN, M_TUNNEL,   // (22.11.) Angriffsplaner + Tunnel; M_GO/M_CLEARPLAN = Sofort-Befehle
 	M_RESTORE,   // (22.11. 21:19) Krater zuschuetten
+	M_BASE,      // (26.11.) komplette Basis (Bauplan)
 	M_COUNT   // M_SPREAD, M_COVER = Sofort-Befehle (kein Zeichnen)
 };
 
@@ -93,7 +94,7 @@ const ModeInfo kModes[M_COUNT] = {
 	// MOD (Wunsch 21.11. 00:21): "Die Defensive Line ist weiterhin nur zur Formation fuer Fahrzeuge, um sie an eine Frontlinie zu schicken
 	// wie bisher, ohne Bauwerke" - gebaut wird nur noch ueber den eigenen Knopf (M_DEFNET)
 	{ "Defensive Line", "Units hold this line", "Draw the line to hold (right click cancels)", 60, 130, 255, false },
-	{ "Firebase", "Builders set up an artillery base", "Circle size = base size (right click cancels)", 170, 120, 60, true },
+	{ "Firebase", "Builders set up an artillery base", "Click: place (Ctrl + mouse wheel: size) or draw a circle (right click cancels)", 170, 120, 60, true },
 	{ "Barrage", "Artillery bombards this area", "Mark the target area (right click cancels)", 240, 200, 90, true },
 	{ "Air Cover", "Aircraft patrol this area", "Mark the patrol area (right click cancels)", 255, 235, 50, true },
 	{ "Combot Hunt", "Combots hunt in this area", "Mark the hunting area (right click cancels)", 190, 90, 255, true },
@@ -123,6 +124,9 @@ const ModeInfo kModes[M_COUNT] = {
 	// MOD (Wunsch 22.11. 21:19 "ein neuer Generals Baubefehl 'restore' - Kreis zeichnen, in dem alle Krater wiederhergestellt werden und das
 	// Terrain wieder auf Missionsbeginn ... (mit Ausnahme von Tunneln und Durchbruechen)")
 	{ "Restore", "Builders fill craters", "Circle the craters (right click cancels)", 150, 205, 110, true },
+	// (Wunsch 26.11.) komplette Basis als Bauplan (wie die Feuerbasis): Hauptquartier, Fabriken, Forschung, Kraftwerk, Umspannwerk,
+	// Mauerring mit Toren und MG-Plattformtuermen, Bunkerring, Sandsack-Graben, Igel, Erdgraben mit Bastionen - nach allen Seiten gleich
+	{ "Base", "Builders set up a complete base", "Click: place (Ctrl + mouse wheel: medium/large) (right click cancels)", 150, 160, 90, true },
 };
 
 // MOD (Wunsch 21.11. 17:59 "Die Befehlsbuttons besser nach Kategorie sortieren (aehnliches zu aehnlichem), ausserdem Icons zu jedem dazu"):
@@ -145,7 +149,7 @@ constexpr Group kGroups[] = {
 	// (22.11.) Angriffsplaner: Zonen, Leuchtfeuer, Brueckenkopf, Angriffslinie, Vektoren, Tunnel, Angriff, Plan loeschen
 	{ "Attack plan", 8, { M_STAGING, M_FERRY, M_BRIDGEHEAD, M_OFFENSE, M_ATTACK, M_TUNNEL, M_GO, M_CLEARPLAN } },
 	{ "Combat",  4, { M_DEFEND, M_ARTY, M_AIR, M_COMBOT, 0, 0, 0, 0 } },
-	{ "Build",   7, { M_DEFNET, M_ARTYBASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH, M_RESTORE, 0 } },
+	{ "Build",   8, { M_DEFNET, M_ARTYBASE, M_BASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH, M_RESTORE } },
 	{ "Support", 2, { M_CLEARMINES, M_RECOVER, 0, 0, 0, 0, 0, 0 } },
 };
 constexpr int NGROUPS = static_cast<int>(sizeof(kGroups) / sizeof(kGroups[0]));
@@ -329,6 +333,11 @@ void drawIcon(int m, const Pen &p)
 	case M_ARTYBASE:   // Ring mit Stellungen
 		p.circ(0.f, 0.f, 0.8f); p.dot(0.f, 0.f, 0.2f);
 		for (int k = 0; k < 4; ++k) { const float a = kPi * 0.25f + k * kPi * 0.5f; p.dot(0.8f * std::cos(a), 0.8f * std::sin(a), 0.16f); }
+		break;
+	case M_BASE:   // (26.11.) Basis: zwei Mauerquadrate, Gebaeude in der Mitte
+		p.l(-0.9f, -0.9f, 0.9f, -0.9f); p.l(0.9f, -0.9f, 0.9f, 0.9f); p.l(0.9f, 0.9f, -0.9f, 0.9f); p.l(-0.9f, 0.9f, -0.9f, -0.9f);
+		p.l(-0.5f, -0.5f, -0.1f, -0.5f); p.l(0.1f, -0.5f, 0.5f, -0.5f); p.l(0.5f, -0.5f, 0.5f, 0.5f); p.l(0.5f, 0.5f, -0.5f, 0.5f); p.l(-0.5f, 0.5f, -0.5f, -0.5f);
+		p.dot(0.f, 0.f, 0.2f);
 		break;
 	case M_TRAPS:   // Panzersperre (Igel)
 		p.l(-0.75f, 0.8f, 0.75f, -0.6f); p.l(0.75f, 0.8f, -0.75f, -0.6f); p.l(0.f, -0.9f, 0.f, 0.9f); p.l(-0.9f, 0.8f, 0.9f, 0.8f);
@@ -658,6 +667,7 @@ bool fits(Mode m, const DROID *d)
 	case M_DEFNET: return isBuilder(d);
 	case M_RAIL: return isBuilder(d);
 	case M_ARTYBASE: return isTruck(d) && !isAir(d);
+	case M_BASE: return isTruck(d) && !isAir(d);
 	case M_ARTY: return isArty(d);
 	case M_AIR: return isAir(d) && hasWeapon(d);
 	case M_COMBOT: return modcombot::isModular(d);
@@ -743,9 +753,17 @@ STRUCTURE_STATS *bestArtyEmplacement()
 
 /// Groesse der Artilleriebasis aus dem gezogenen Kreis (Wunsch 20.11. 02:13 "Die Arty base ist gut. Aber jetzt gibt es nur noch eine
 /// Groesse"): mittlerer Abstand der Strichpunkte zur Mitte - klein (bis 2,5 Felder), mittel (bis 4,5), gross
+int s_baseSize = 1;   // (Wunsch 26.11. "wie genau? Muss ich mauscrollen oder per Maus ziehen?"): Strg + Mausrad waehlt die Groesse
 int artyBaseSize(const std::vector<Vector2i> &raw)
 {
-	if (raw.size() < 3) { return 1; }
+	if (raw.size() < 3) { return s_baseSize; }
+	{
+		// ein Klick (kurzer Strich) setzt die mit Strg + Mausrad gewaehlte Groesse
+		const Vector2i c0 = centroid(raw);
+		double mx = 0.0;
+		for (const Vector2i &q : raw) { mx = std::max(mx, std::sqrt(static_cast<double>(dist2(q, c0)))); }
+		if (mx < DIST_TILE * 0.8) { return s_baseSize; }
+	}
 	const Vector2i c = centroid(raw);
 	double sum = 0.0;
 	for (const Vector2i &q : raw) { sum += std::sqrt(static_cast<double>(dist2(q, c))); }
@@ -754,16 +772,15 @@ int artyBaseSize(const std::vector<Vector2i> &raw)
 }
 
 /// Bauplan der Artilleriebasis - fuer den Bau UND die Vorschau unter der Maus (18.11. 12:14).
-/// (Wunsch 24.11. 15:33) neues Layout, von innen nach aussen:
+/// (Wunsch 26.11. "mach das teilweise rueckgaengig - die Moerser-Gruben wie vorher"; "die Bunker sind immer ein Feld von der Oeffnung weit
+/// zur Seite versetzt"; "3 Groessenvarianten, ordentlicher"), von innen nach aussen:
 ///  - Mitte: der Standard-Sensorturm (nicht die Beton-Variante), sonst der Scav-Ausguck
-///  - Moerser-Stellungen in 2er-Paaren, jede nach aussen zu ihrer Seite gerichtet: Paar oben rechts = eine schaut nach oben, die
-///    eine Kachel rechts-unten daneben nach rechts -> 4 Paare = 8 Gruben, jede Richtung doppelt abgedeckt (mittel: 2 Ringe = 16,
-///    gross: 3 Ringe = 24); die Achsen bleiben frei (Wege von den Toren zur Mitte)
-///  - Mauerring, an jeder Ecke ein Kanonen-Eckturm, in der Mitte jeder Seite ein Tor (oben, rechts, unten, links)
-///  - ein freies Feld, darin direkt hinter den Igeln an jeder Oeffnung links und rechts ein Scav-Flammenturm und daneben (zwei Felder
-///    von der Oeffnung) je ein Scav-Bunker
-///  - Hedgehog-Ring mit einer Oeffnung in der Mitte jeder Seite
-///  - zwei Felder davor eine Reihe Beton-Panzersperren (ebenfalls mit Oeffnungen)
+///  - Moerser-Gruben wie bis 24.11. dicht um den Sensor, jede nach aussen gerichtet: klein 4 (schraeg), mittel 8 (Ring 2), gross 12
+///    (4 schraeg + Ring 3)
+///  - Mauerring direkt um die Gruben, an jeder Ecke ein Kanonen-Eckturm, je Seite ein Tor; damit die Gruben den Weg nicht versperren,
+///    liegt das Tor (und mit ihm alle Oeffnungen) bei mittel/gross ein Feld aus der Mitte - reihum gleich gedreht (Windrad)
+///  - ein freies Feld; darin direkt neben jeder Oeffnung links und rechts ein Scav-Bunker, daneben je ein Flammenturm
+///  - Hedgehog-Ring mit der Oeffnung vor dem Tor, zwei Felder davor eine Reihe Beton-Panzersperren (ebenfalls mit Oeffnung)
 std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int size)
 {
 	std::vector<modbuild::Placement> out;
@@ -789,49 +806,146 @@ std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int s
 		if (st == nullptr) { return; }
 		modbuild::Placement p; p.stats = st; p.tile = Vector2i(ct.x + x0, ct.y + y0); p.tile2 = Vector2i(ct.x + x1, ct.y + y1); p.line = true; out.push_back(p);
 	};
-	// ein Ring (Quadrat mit Halbmesser k) als vier Seiten; Oeffnung von gap Feldern Halbbreite in der Mitte jeder Seite (-1 = keine),
-	// Ecken nur wenn withCorners
-	auto ring = [&](STRUCTURE_STATS *st, int k, int gap, bool withCorners) {
+	// Punkt t auf Seite side eines Quadrats mit Halbmesser k (oben, rechts, unten, links; reihum gleich gedreht)
+	auto at = [](int side, int k, int t) {
+		switch (side) { case 0: return Vector2i(t, -k); case 1: return Vector2i(k, t); case 2: return Vector2i(-t, k); default: return Vector2i(-k, -t); }
+	};
+	const int off = size == 1 ? 0 : 1;   // Lage der Oeffnung auf jeder Seite (siehe oben)
+	// ein Ring als vier Seiten mit einer Oeffnung von einem Feld bei t = off (gap < 0: keine), Ecken nur wenn withCorners
+	auto ring = [&](STRUCTURE_STATS *st, int k, bool gap, bool withCorners) {
 		const int e = withCorners ? k : k - 1;
 		for (int side = 0; side < 4; ++side)
 		{
-			// Seite als Strecke von -e bis +e entlang t, fest bei n = +-k
-			auto at = [&](int t) { switch (side) { case 0: return Vector2i(t, -k); case 1: return Vector2i(k, t); case 2: return Vector2i(-t, k); default: return Vector2i(-k, -t); } };
 			// Ecken nur einmal: jede Seite nimmt ihre Anfangsecke, nicht die Endecke
 			const int t0 = -e, t1 = withCorners ? e - 1 : e;
-			if (gap < 0) { const Vector2i a = at(t0), b = at(t1); line(st, a.x, a.y, b.x, b.y); continue; }
-			if (t0 <= -gap - 1) { const Vector2i a = at(t0), b = at(-gap - 1); line(st, a.x, a.y, b.x, b.y); }
-			if (gap + 1 <= t1) { const Vector2i a = at(gap + 1), b = at(t1); line(st, a.x, a.y, b.x, b.y); }
+			if (!gap) { const Vector2i a = at(side, k, t0), b = at(side, k, t1); line(st, a.x, a.y, b.x, b.y); continue; }
+			if (t0 <= off - 1) { const Vector2i a = at(side, k, t0), b = at(side, k, off - 1); line(st, a.x, a.y, b.x, b.y); }
+			if (off + 1 <= t1) { const Vector2i a = at(side, k, off + 1), b = at(side, k, t1); line(st, a.x, a.y, b.x, b.y); }
 		}
 	};
 	one(sensor, 0, 0, 0);
 	if (arty != nullptr)
 	{
-		for (int a = 1; a <= size; ++a)
-		{
-			for (int sx = -1; sx <= 1; sx += 2)
-			{
-				for (int sy = -1; sy <= 1; sy += 2)
-				{
-					one(arty, sx * a, sy * (a + 1), dirOf(0, sy));   // die aeussere des Paares nach oben/unten
-					one(arty, sx * (a + 1), sy * a, dirOf(sx, 0));   // eine Kachel seitlich-innen daneben nach rechts/links
-				}
-			}
-		}
+		// wie bis 24.11.: dicht um den Sensor, jede Grube nach aussen
+		static const int IN4[4][2] = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } };
+		static const int R2[8][2] = { { -2, -2 }, { 0, -2 }, { 2, -2 }, { 2, 0 }, { 2, 2 }, { 0, 2 }, { -2, 2 }, { -2, 0 } };
+		static const int R3[8][2] = { { -3, -3 }, { 0, -3 }, { 3, -3 }, { 3, 0 }, { 3, 3 }, { 0, 3 }, { -3, 3 }, { -3, 0 } };
+		auto pit = [&](int x, int y) { one(arty, x, y, std::abs(y) >= std::abs(x) ? dirOf(0, y) : dirOf(x, 0)); };
+		if (size != 2) { for (const auto &o : IN4) { pit(o[0], o[1]); } }
+		if (size == 2) { for (const auto &o : R2) { pit(o[0], o[1]); } }
+		if (size == 3) { for (const auto &o : R3) { pit(o[0], o[1]); } }
 	}
-	const int r = size + 2;   // Mauerring direkt um den Stellungsblock (Gruben reichen bis size + 1)
-	ring(wall, r, 0, false);   // ohne Ecken (dort die Ecktuerme) und mit einem Feld fuer das Tor in der Mitte
-	one(gate, 0, -r, 0); one(gate, r, 0, 0); one(gate, 0, r, 0); one(gate, -r, 0, 0);
+	const int r = size + 1;   // Mauerring direkt um die Gruben
+	ring(wall, r, true, false);   // ohne Ecken (dort die Ecktuerme), mit einem Feld fuer das Tor
+	for (int side = 0; side < 4; ++side) { const Vector2i g = at(side, r, off); one(gate, g.x, g.y, 0); }
 	one(corner, -r, -r, 0xA000u); one(corner, r, -r, 0x6000u); one(corner, r, r, 0x2000u); one(corner, -r, r, 0xE000u);   // schraeg nach aussen
 	const int h = r + 2;      // Igel-Ring, dazwischen ein freies Feld
 	const int in = h - 1;     // das freie Feld direkt hinter den Igeln
-	for (int s = -1; s <= 1; s += 2)
+	const Vector2i outward[4] = { Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0) };
+	for (int side = 0; side < 4; ++side)
 	{
-		one(flame, s, -in, dirOf(0, -1)); one(flame, in, s, dirOf(1, 0)); one(flame, -s, in, dirOf(0, 1)); one(flame, -in, -s, dirOf(-1, 0));
-		one(bunker, 2 * s, -in, dirOf(0, -1)); one(bunker, in, 2 * s, dirOf(1, 0)); one(bunker, -2 * s, in, dirOf(0, 1)); one(bunker, -in, -2 * s, dirOf(-1, 0));
+		const unsigned d = dirOf(outward[side].x, outward[side].y);
+		for (int s = -1; s <= 1; s += 2)
+		{
+			const Vector2i b = at(side, in, off + s), f = at(side, in, off + 2 * s);
+			one(bunker, b.x, b.y, d);   // direkt neben der Oeffnung
+			one(flame, f.x, f.y, d);
+		}
 	}
-	ring(hedge, h, 0, true);
-	ring(concrete, h + 2, 0, true);   // "Vor den Hedgehogs 2 Tiles davor eine Reihe Betonpanzersperren"
+	ring(hedge, h, true, true);
+	ring(concrete, h + 2, true, true);   // "Vor den Hedgehogs 2 Tiles davor eine Reihe Betonpanzersperren"
+	return out;
+}
+
+/// (Wunsch 26.11. "ein oder zwei Vorlagen fuer solche kompletten Basen zusaetzlich, in aehnlichem Layout wie in den Screenshots, nur etwas
+/// ordentlicher und gleichmaessiger - nach allen Seiten gleich"): Bauplan einer ganzen Basis, size 1 = mittel, 2 = gross. Von innen:
+///  - Mitte Hauptquartier; auf den Achsen Fabrik (Norden), Kraftwerk (Sueden), Forschung (Osten), Cyborg-Fabrik/Kaserne (Westen);
+///    Umspannwerk und Strommasten dazwischen. Gross: auf den Diagonalen zweite Fabrik, zweite Forschung, Reparatur, Oellager
+///  - Mauerring mit einem Tor je Seite, an den Ecken MG-Plattformtuerme (sonst Mauertuerme)
+///  - zwei Felder davor ein Bunkerring (alle drei Felder ein Bunker, das Tor bleibt frei)
+///  - Sandsack-Graben, Igel-Ring und aussen ein Erdgraben mit einer Bastion vor jedem Tor (U-foermig nach aussen)
+std::vector<modbuild::Placement> basePlan(const Vector2i &centerWorld, int size)
+{
+	std::vector<modbuild::Placement> out;
+	size = std::clamp(size, 1, 2);
+	STRUCTURE_STATS *hq = firstAvailable({ "A0CommandCentre", "A0CommandCentreNP", "A0CommandCentreCO", "A0CommandCentreNE" });
+	STRUCTURE_STATS *fac = firstAvailable({ "A0BaBaFactory", "A0LightFactory" });
+	STRUCTURE_STATS *cyb = firstAvailable({ "A0CryoFarm", "A0CyborgFactory" });
+	STRUCTURE_STATS *res = firstAvailable({ "A0ResearchFacility" });
+	STRUCTURE_STATS *pow = firstAvailable({ "A0BaBaPowerGenerator", "A0PowerGenerator" });
+	STRUCTURE_STATS *sub = firstAvailable({ "A0Substation" });
+	STRUCTURE_STATS *pole = firstAvailable({ "A0PowerPole" });
+	STRUCTURE_STATS *rep = firstAvailable({ "A0BaBaGantry", "ScavRepairCentre", "A0RepairCentre3" });
+	STRUCTURE_STATS *store = firstAvailable({ "A0BaBaOilStore" });
+	STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall", "CollectiveWall", "NEXUSWall" });
+	STRUCTURE_STATS *gate = firstAvailable({ "A0BaBaGate", "A0HardcreteMk1Gate" });
+	STRUCTURE_STATS *corner = firstAvailable({ "A0BaBaWalkTower", "WallTower04", "WallTower03", "WallTower02", "A0CannonTower" });
+	STRUCTURE_STATS *bunker = firstAvailable({ "A0BaBaBunker", "PillBox1" });
+	STRUCTURE_STATS *sand = firstAvailable({ "A0BaBaTrench", "A0BaBaSandbagWall" });
+	STRUCTURE_STATS *hedge = firstAvailable({ "A0BaBaHedgehog", "A0TankTrap" });
+	STRUCTURE_STATS *earth = firstAvailable({ "A0BaBaTrenchEarth", "A0BaBaTrench" });
+	const Vector2i ct(std::max(0, centerWorld.x) / DIST_TILE, std::max(0, centerWorld.y) / DIST_TILE);
+	auto dirOf = [](int dx, int dy) -> unsigned { return dy < 0 ? 0x8000u : (dy > 0 ? 0u : (dx > 0 ? 0x4000u : 0xC000u)); };
+	auto one = [&](STRUCTURE_STATS *st, int tx, int ty, unsigned dir) {
+		if (st == nullptr) { return; }
+		modbuild::Placement p; p.stats = st; p.tile = Vector2i(ct.x + tx, ct.y + ty); p.tile2 = p.tile; p.direction = dir; out.push_back(p);
+	};
+	auto line = [&](STRUCTURE_STATS *st, int x0, int y0, int x1, int y1) {
+		if (st == nullptr) { return; }
+		modbuild::Placement p; p.stats = st; p.tile = Vector2i(ct.x + x0, ct.y + y0); p.tile2 = Vector2i(ct.x + x1, ct.y + y1); p.line = true; out.push_back(p);
+	};
+	auto at = [](int side, int k, int t) {
+		switch (side) { case 0: return Vector2i(t, -k); case 1: return Vector2i(k, t); case 2: return Vector2i(-t, k); default: return Vector2i(-k, -t); }
+	};
+	// Ring mit Halbmesser k, Oeffnung der Halbbreite gap in der Mitte jeder Seite (gap < 0: keine), Ecken wenn withCorners
+	auto ring = [&](STRUCTURE_STATS *st, int k, int gap, bool withCorners) {
+		const int e = withCorners ? k : k - 1;
+		for (int side = 0; side < 4; ++side)
+		{
+			const int t0 = -e, t1 = withCorners ? e - 1 : e;
+			if (gap < 0) { const Vector2i a = at(side, k, t0), b = at(side, k, t1); line(st, a.x, a.y, b.x, b.y); continue; }
+			if (t0 <= -gap - 1) { const Vector2i a = at(side, k, t0), b = at(side, k, -gap - 1); line(st, a.x, a.y, b.x, b.y); }
+			if (gap + 1 <= t1) { const Vector2i a = at(side, k, gap + 1), b = at(side, k, t1); line(st, a.x, a.y, b.x, b.y); }
+		}
+	};
+	// --- Kern
+	one(hq, 0, 0, 0);
+	one(fac, 0, -4, 0); one(pow, 0, 4, 0); one(res, 4, 0, 0); one(cyb, -4, 0, 0);
+	one(sub, 2, 2, 0);
+	one(pole, -2, -2, 0); one(pole, 2, -2, 0); one(pole, -2, 2, 0);
+	if (size == 2)
+	{
+		one(fac, -4, -4, 0); one(res, 4, -4, 0); one(rep, -4, 4, 0); one(store, 4, 4, 0);
+		one(pole, -5, 0, 0); one(pole, 5, 0, 0); one(pole, 0, -6, 0); one(pole, 0, 6, 0);
+	}
+	// --- Mauerring, Tore, Ecktuerme
+	const int r = size == 1 ? 7 : 9;
+	ring(wall, r, 0, false);
+	for (int side = 0; side < 4; ++side) { const Vector2i g = at(side, r, 0); one(gate, g.x, g.y, 0); }
+	one(corner, -r, -r, 0xA000u); one(corner, r, -r, 0x6000u); one(corner, r, r, 0x2000u); one(corner, -r, r, 0xE000u);
+	// --- Bunkerring zwei Felder vor der Mauer, alle drei Felder, nach aussen
+	const int rb = r + 2;
+	const Vector2i outward[4] = { Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0) };
+	for (int side = 0; side < 4; ++side)
+	{
+		const unsigned d = dirOf(outward[side].x, outward[side].y);
+		for (int t = 3; t <= rb - 1; t += 3)
+		{
+			const Vector2i a = at(side, rb, t), b = at(side, rb, -t);
+			one(bunker, a.x, a.y, d); one(bunker, b.x, b.y, d);
+		}
+	}
+	// --- Sandsack-Graben, Igel, Erdgraben mit Bastionen
+	const int rs = rb + 2, rh = rs + 2, re = rh + 2;
+	ring(sand, rs, 1, true);
+	ring(hedge, rh, 1, true);
+	ring(earth, re, 2, true);
+	for (int side = 0; side < 4; ++side)
+	{
+		// Bastion: U nach aussen vor dem Tor (Breite 5, Tiefe 3), offen zur Basis hin ueber die Luecke im Erdgraben
+		const Vector2i a = at(side, re, -2), b = at(side, re + 3, -2), c = at(side, re + 3, 2), d = at(side, re, 2);
+		line(earth, a.x, a.y, b.x, b.y); line(earth, b.x, b.y, c.x, c.y); line(earth, c.x, c.y, d.x, d.y);
+	}
 	return out;
 }
 
@@ -1786,10 +1900,11 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 		break;
 	}
 	case M_ARTYBASE:
+	case M_BASE:
 	{
 		auto worldOf = [](const Vector2i &t) { return Vector2i(t.x * DIST_TILE + DIST_TILE / 2, t.y * DIST_TILE + DIST_TILE / 2); };   // Plan-Kacheln
 		std::vector<DroidOrder> plan;
-		for (const modbuild::Placement &pl : artyBasePlan(c, artyBaseSize(raw)))
+		for (const modbuild::Placement &pl : (m == M_BASE ? basePlan(c, std::min(2, artyBaseSize(raw))) : artyBasePlan(c, artyBaseSize(raw))))
 		{
 			if (pl.line) { plan.emplace_back(DORDER_LINEBUILD, pl.stats, worldOf(pl.tile), worldOf(pl.tile2), 0); }
 			else { plan.emplace_back(DORDER_BUILD, pl.stats, worldOf(pl.tile), static_cast<uint16_t>(pl.direction)); }   // (24.11.) Gruben nach aussen
@@ -3520,10 +3635,20 @@ void tick()
 bool processMouse(bool overUi, const Vector2i &worldPos)
 {
 	// (18.11. 12:14) Artilleriebasis: der echte Bauplan folgt der Maus (beim Ziehen: Mitte der Zeichnung) - statt der Befestigungs-Vorschau
-	if (s_mode == M_ARTYBASE && (!overUi || s_drawing))
+	if ((s_mode == M_ARTYBASE || s_mode == M_BASE) && (!overUi || s_drawing))
 	{
+		// (26.11.) Strg + Mausrad waehlt die Groesse (Feuerbasis klein/mittel/gross, Basis mittel/gross), ein Klick setzt sie
+		const int maxSize = s_mode == M_BASE ? 2 : 3;
+		if (modbuild::keysForFortify())
+		{
+			if (mousePressed(MOUSE_WUP)) { s_baseSize = std::min(maxSize, s_baseSize + 1); }
+			if (mousePressed(MOUSE_WDN)) { s_baseSize = std::max(1, s_baseSize - 1); }
+		}
+		s_baseSize = std::clamp(s_baseSize, 1, maxSize);
 		static std::vector<modbuild::Placement> s_artyPreview;
-		s_artyPreview = artyBasePlan(s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos, s_drawing ? artyBaseSize(s_cur) : 1);
+		const Vector2i at = s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos;
+		const int sz = s_drawing ? artyBaseSize(s_cur) : s_baseSize;
+		s_artyPreview = s_mode == M_BASE ? basePlan(at, sz) : artyBasePlan(at, sz);
 		modbuild::setExternalPreview(&s_artyPreview);
 	}
 	else if (s_mode == M_RAIL && s_drawing && s_cur.size() >= 2 && selectedPlayer < MAX_PLAYERS)
@@ -3599,7 +3724,7 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	// (Wunsch 18.11. 13:06 "wenn man sich verklickt, ist immer noch der Befehl ausgewaehlt, den man geben will"): ein blosses Antippen
 	// (Strich kuerzer als eine halbe Kachel) gilt als Verklicken - nichts wird befohlen, der gewaehlte Befehl bleibt aktiv.
 	// Ausnahme: Artilleriebasis und Sammelpunkt duerfen mit einem Klick gesetzt werden.
-	if (m != M_ARTYBASE && m != M_RALLY && m != M_FERRY && m != M_STAGING && m != M_BRIDGEHEAD)
+	if (m != M_ARTYBASE && m != M_BASE && m != M_RALLY && m != M_FERRY && m != M_STAGING && m != M_BRIDGEHEAD)
 	{
 		int64_t len = 0;
 		for (size_t i = 1; i < s_cur.size(); ++i) { len += static_cast<int64_t>(std::sqrt(static_cast<double>(dist2(s_cur[i], s_cur[i - 1])))); }

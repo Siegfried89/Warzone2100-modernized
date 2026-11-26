@@ -46,6 +46,8 @@ using nonstd::nullopt;
 gfx_api::texture& pie_Texture(size_t page);
 size_t pie_NumberOfPages();
 size_t pie_ReserveTexture(const char *name, const size_t& width, const size_t& height);
+/// MOD (26.11.): Glanzkarte nur fuer Reflexe (Dateiname enthaelt "_glint") - Shader-Modus 2
+bool pie_TexPageIsGlint(size_t page);
 void pie_AssignTexture(size_t page, gfx_api::texture* texture);
 
 //*************************************************************************

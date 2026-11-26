@@ -470,7 +470,16 @@ bool actionTargetTurret(BASE_OBJECT *psAttacker, BASE_OBJECT *psTarget, WEAPON *
 		const int frac = clip(dxy * 100 / range, 0, 100);
 		const uint16_t targetPitch = modarty::isArtyWeapon(psWeapon->nStat) ? modarty::aimPitch((const DROID *)psAttacker, dxy, range)
 		                                                                   : static_cast<uint16_t>(DEG(62) - DEG(16) * frac / 100);
-		tPitch += clip(angleDelta(targetPitch - tPitch), -pitchRate, pitchRate);  // Addition wrapping intended.
+		// (Wunsch 26.11. "Die Steilfeuer-Animation ist beim Fatboy extrem schnell, fast instant ... frueher viel langsamer und cooler"):
+		// mit Ziel richtete sich das Rohr mit 90 Grad/s auf (und beim ersten Schuss sprang es auf den Abschusswinkel). Panzer heben das Rohr
+		// jetzt auch mit Ziel nur mit 20 Grad/s (wie ohne Ziel) und feuern erst, wenn es oben ist. Battle Mechs bleiben wie sie sind.
+		const bool modSlowRaise = modarty::isArtyWeapon(psWeapon->nStat) && !modarty::isMech((const DROID *)psAttacker);
+		const int modRate = modSlowRaise ? std::max(1, gameTimeAdjustedIncrement(DEG(20))) : pitchRate;
+		tPitch += clip(angleDelta(targetPitch - tPitch), -modRate, modRate);  // Addition wrapping intended.
+		if (modSlowRaise)
+		{
+			onTarget = onTarget && abs(angleDelta(targetPitch - tPitch)) <= DEG(4);
+		}
 	}
 
 	psWeapon->rot.direction = tRotation;
@@ -636,7 +645,71 @@ bool actionReachedBuildPos(DROID const *psDroid, int x, int y, uint16_t dir, BAS
 	// the droid moves to within half a tile of the target
 	// NOT ANY MORE - JOHN
 	Vector2i delta = map_coord(psDroid->pos.xy()) - b.map;
-	return delta.x >= -1 && delta.x <= b.size.x && delta.y >= -1 && delta.y <= b.size.y;
+	// MOD (Wunsch 26.11. "Pathfinding der Baueinheiten komplett ueberarbeiten"): Baufahrzeuge bauen schon aus zwei Feldern Abstand (ihr Arm
+	// reicht so weit) - sie muessen sich nicht mehr bis an die Baustelle draengen; Infanterie und Cyborgs wie bisher aus einem Feld.
+	// Gemessen in Spielfeldern (DIST_TILE), auch im Feinraster.
+	const int r = std::max(1, DIST_TILE / TILE_UNITS) * ((psDroid->droidType == DROID_PERSON || psDroid->isCyborg()) ? 1 : 2);
+	return delta.x >= -r && delta.x < b.size.x + r && delta.y >= -r && delta.y < b.size.y + r;
+}
+
+// MOD (Wunsch 26.11.): Anfahrpunkt fuer eine Baustelle - statt in die Mitte der Baustelle (oft von anderen Bauern oder dem eigenen
+// Bauplatz versperrt, die Bauer draengten sich dort und warteten) faehrt das Baufahrzeug zum naechsten freien Feld am Rand der Baustelle
+// auf seiner Seite; Felder, die schon ein anderer eigener Bauer ansteuert, sind teurer - so verteilen sich mehrere Bauer rund um die
+// Baustelle. Nur Spielzustand (auf allen Rechnern gleich).
+static Vector2i modBuildApproach(const DROID *psDroid, Vector2i site, uint16_t dir, const BASE_STATS *psStats)
+{
+	if (psStats == nullptr || psDroid == nullptr)
+	{
+		return site;
+	}
+	const PROPULSION_STATS *psProp = psDroid->getPropulsionStats();
+	if (psProp == nullptr)
+	{
+		return site;
+	}
+	const StructureBounds b = getStructureBounds(psStats, site, dir);
+	const int r = std::max(1, DIST_TILE / TILE_UNITS);
+	const Vector2i me = psDroid->pos.xy();
+	int64_t best = INT64_MAX;
+	Vector2i bestPos = site;
+	for (int ty = b.map.y - r; ty < b.map.y + b.size.y + r; ++ty)
+	{
+		for (int tx = b.map.x - r; tx < b.map.x + b.size.x + r; ++tx)
+		{
+			if (tx >= b.map.x && tx < b.map.x + b.size.x && ty >= b.map.y && ty < b.map.y + b.size.y)
+			{
+				continue;   // innerhalb der Baustelle
+			}
+			if (tx < 1 || ty < 1 || tx >= gameWorld.map.width - 1 || ty >= gameWorld.map.height - 1)
+			{
+				continue;
+			}
+			if (fpathBlockingTile(gameWorld.map, tx, ty, psProp->propulsionType) || TileHasStructure(mapTile(gameWorld.map, tx, ty)))
+			{
+				continue;
+			}
+			const Vector2i c = world_coord(Vector2i(tx, ty)) + Vector2i(TILE_UNITS / 2, TILE_UNITS / 2);
+			int64_t score = static_cast<int64_t>(iHypot(c - me));
+			for (const DROID *o : gameWorld.objects.droids[psDroid->player])
+			{
+				if (o == psDroid || o->died || (o->action != DACTION_MOVETOBUILD && o->action != DACTION_BUILD))
+				{
+					continue;
+				}
+				const Vector2i ot = map_coord(o->action == DACTION_BUILD ? o->pos.xy() : o->sMove.destination);
+				if (abs(ot.x - tx) <= r / 2 && abs(ot.y - ty) <= r / 2)
+				{
+					score += 2 * DIST_TILE;   // schon besetzt / angesteuert
+				}
+			}
+			if (score < best)
+			{
+				best = score;
+				bestPos = c;
+			}
+		}
+	}
+	return bestPos;
 }
 
 // How long a truck may be blocked on its way to a build site before it may build from where it is
@@ -1945,7 +2018,8 @@ void actionUpdateDroid(DROID *psDroid)
 		else if (DROID_STOPPED(psDroid))
 		{
 			objTrace(psDroid->id, "DACTION_MOVETOBUILD: Starting to drive toward construction site - move status was %d", (int)psDroid->sMove.Status);
-			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
+			const Vector2i ap = modBuildApproach(psDroid, psDroid->actionPos, order->direction, order->psStats);   // MOD (26.11.)
+			moveDroidToNoFormation(psDroid, ap.x, ap.y);
 		}
 		break;
 	case DACTION_BUILD:
@@ -1966,7 +2040,8 @@ void actionUpdateDroid(DROID *psDroid)
 		    !actionCanBuildFromHere(psDroid, psDroid->actionPos.x, psDroid->actionPos.y, order->direction, order->psStats))
 		{
 			objTrace(psDroid->id, "DACTION_BUILD: Starting to drive toward construction site");
-			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
+			const Vector2i ap = modBuildApproach(psDroid, psDroid->actionPos, order->direction, order->psStats);   // MOD (26.11.)
+			moveDroidToNoFormation(psDroid, ap.x, ap.y);
 		}
 		else if (!DROID_STOPPED(psDroid) &&
 		         psDroid->sMove.Status != MOVETURNTOTARGET &&
@@ -2738,7 +2813,16 @@ static void actionDroidBase(DROID *psDroid, DROID_ACTION_DATA *psAction)
 		}
 		else
 		{
-			moveDroidToNoFormation(psDroid, psDroid->actionPos.x, psDroid->actionPos.y);
+			// MOD (26.11.): steht der Bauer schon in Reichweite (und nicht auf dem Bauplatz), faehrt er nicht erst los - er baut sofort;
+			// sonst zum naechsten freien Randfeld der Baustelle statt in ihre Mitte
+			const StructureBounds sb = getStructureBounds(order->psStats, psDroid->actionPos, order->direction);
+			const Vector2i dt = map_coord(psDroid->pos.xy()) - sb.map;
+			const bool onSite = dt.x >= 0 && dt.x < sb.size.x && dt.y >= 0 && dt.y < sb.size.y;
+			if (onSite || !actionReachedBuildPos(psDroid, psDroid->actionPos.x, psDroid->actionPos.y, order->direction, order->psStats))
+			{
+				const Vector2i ap = onSite ? psDroid->actionPos : modBuildApproach(psDroid, psDroid->actionPos, order->direction, order->psStats);
+				moveDroidToNoFormation(psDroid, ap.x, ap.y);
+			}
 		}
 		break;
 	case DACTION_DEMOLISH:

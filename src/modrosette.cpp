@@ -70,7 +70,11 @@ const Pos kHexPos[H_COUNT] = {
 	{13, 33},   // oben links: Formationen
 };
 // Position -> Knopfart
-const int kHexOf[H_COUNT] = { H_CENTER, H_PLAN, H_FIRE, H_RINGS, H_LAYERS, H_INFANTRY, H_FORMATION };
+// (Wunsch 26.11. "dieses zusaetzliche kleine Befehlsfenster ist ueberfluessig oder besser in das existierende integriert - von Duplikaten
+// wegkommen"): Feuermodus (gleich dem WZ-Befehlsfenster) und "Orders" (jetzt eine Zeile im WZ-Befehlsfenster) sind aus der Rosette
+// heraus (verborgen, unten rechts/links); Reichweitenringe oben rechts
+const int kHexOf[H_COUNT] = { H_CENTER, H_PLAN, H_RINGS, H_FIRE, H_LAYERS, H_INFANTRY, H_FORMATION };
+bool hexHidden(int h) { return h == H_FIRE || h == H_INFANTRY; }
 
 constexpr int CMD_W = 44, CMD_H = 32, CMD_GAP = 4, BAR_PAD = 5, BAR_TITLE = 12;
 
@@ -197,24 +201,7 @@ std::vector<Item> itemsFor(int hex)
 			intShowWidget(RETBUT_BUILD);
 		};
 		v.push_back(spade);
-		Item arty; arty.img = C_ARTY; arty.tip = _("Artillery mode on/off");
-		arty.action = []() {
-			const std::vector<DROID *> sel = selection();
-			bool any = false, allOn = true;
-			for (DROID *d : sel)
-			{
-				if (!modarty::supported(d)) { continue; }
-				any = true;
-				if (secondaryGetState(d, DSO_ARTILLERY) != DSS_ARTY_SET) { allOn = false; }
-			}
-			if (!any) { addConsoleMessage(_("Artillery mode: select tanks with a normal cannon"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE); return; }
-			for (DROID *d : sel)
-			{
-				if (modarty::supported(d)) { secondarySetState(d, gameWorld.objects, DSO_ARTILLERY, allOn ? static_cast<SECONDARY_STATE>(0) : DSS_ARTY_SET); }
-			}
-		};
-		arty.isOn = []() { return allSelected(DSO_ARTILLERY, DSS_ARTY_SET); };
-		v.push_back(arty);
+		// (26.11.) Artillerie-Modus: nur noch im WZ-Befehlsfenster (war doppelt)
 		// (Wunsch 17.11. 15:46) "Fully autonomous": die gewaehlten Einheiten suchen sich selbst Gegner und ziehen sich bei Schaden zurueck
 		Item aut; aut.img = C_AUTO; aut.tip = _("Fully autonomous on/off");
 		aut.action = []() {
@@ -443,6 +430,7 @@ void ensureScreen()
 		b->setTip(gettext(hexTip(h)));
 		b->addOnClickHandler([h](W_BUTTON &) { widgScheduleTask([h]() { hexClicked(h); }); });
 		// Trefferflaeche wie bei der WZ-Rosette: Ellipse statt Rechteck (Knoepfe liegen versetzt aneinander)
+		if (hexHidden(h)) { b->hide(); }
 		b->setCustomHitTest([](const WIDGET *psWidget, int x, int y) -> bool {
 			const float cx = psWidget->x() + psWidget->width() / 2.f, cy = psWidget->y() + psWidget->height() / 2.f;
 			const float ax = psWidget->width() / 2.f, ay = psWidget->height() / 2.f;
@@ -501,6 +489,75 @@ void layout()
 	}
 }
 } // namespace
+
+namespace
+{
+/// (26.11.) Mod-Befehle im WZ-Befehlsfenster: nur die, die zur Auswahl passen
+std::vector<Item> s_orderItems;
+
+bool anyOf(const std::function<bool(const DROID *)> &f)
+{
+	for (const DROID *d : selection()) { if (f(d)) { return true; } }
+	return false;
+}
+
+void drawOrderCmd(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	const size_t i = static_cast<size_t>(psWidget->UserData);
+	if (i >= s_orderItems.size()) { return; }
+	const Item &it = s_orderItems[i];
+	const W_BUTTON *b = static_cast<const W_BUTTON *>(psWidget);
+	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
+	const bool down = (b->getState() & WBUT_DOWN) != 0 || (it.isOn && it.isOn());
+	drawImg(cmdImg(it.img, down), x0, y0, psWidget->width(), psWidget->height());
+	if ((b->getState() & WBUT_HIGHLIGHT) != 0) { iV_Box(x0, y0, x0 + psWidget->width() - 1, y0 + psWidget->height() - 1, WZCOL_FORM_HILITE); }
+}
+} // namespace
+
+int addOrderButtons(const std::shared_ptr<WIDGET> &form, int x, int y, int width)
+{
+	s_orderItems.clear();
+	if (!imagesReady() || form == nullptr) { return 0; }
+	const std::vector<Item> all = itemsFor(H_INFANTRY);
+	const bool infantry = anyOf([](const DROID *d) { return d->droidType == DROID_PERSON || d->isCyborg(); });
+	for (const Item &it : all)
+	{
+		bool fits = true;
+		switch (it.img)
+		{
+		case C_COVER: case C_LEAVE: fits = infantry; break;
+		case C_SPADE: fits = infantryBuilderSelected(); break;
+		case C_AUTO: fits = anyOf([](const DROID *d) { return modauto::supported(d); }); break;
+		case C_MINES: fits = anyOf([](const DROID *d) { return modmines::isFlail(d) || d->droidType == DROID_PERSON || d->isCyborg(); }); break;
+		case C_UNLOAD: fits = anyOf([](const DROID *d) { return modapc::isApc(d) || modrail::isLoco(d) || modrail::isWagon(d); }); break;
+		case C_EJECT: fits = anyOf([](const DROID *d) { return modcombot::isModular(d) && !modcrew::crewless(d); }); break;
+		default: break;   // Ausschwaermen, Bergen, Teile bergen: fuer jede Auswahl
+		}
+		if (fits) { s_orderItems.push_back(it); }
+	}
+	if (s_orderItems.empty()) { return 0; }
+	constexpr int BW = 40, BH = 29, GAP = 4;
+	const int cols = std::max(1, (width + GAP) / (BW + GAP));
+	const int n = static_cast<int>(s_orderItems.size());
+	const int rows = (n + cols - 1) / cols;
+	for (int i = 0; i < n; ++i)
+	{
+		const int c = i % cols, r = i / cols;
+		const int inRow = std::min(cols, n - r * cols);
+		const int rowX = x + (width - (inRow * BW + (inRow - 1) * GAP)) / 2;
+		auto b = std::make_shared<W_BUTTON>();
+		form->attach(b);
+		b->displayFunction = drawOrderCmd;
+		b->UserData = static_cast<UDWORD>(i);
+		b->setTip(s_orderItems[static_cast<size_t>(i)].tip);
+		b->setGeometry(rowX + c * (BW + GAP), y + r * (BH + GAP), BW, BH);
+		const size_t idx = static_cast<size_t>(i);
+		b->addOnClickHandler([idx](W_BUTTON &) { widgScheduleTask([idx]() {
+			if (idx < s_orderItems.size() && s_orderItems[idx].action) { s_orderItems[idx].action(); }
+		}); });
+	}
+	return rows * (BH + GAP);
+}
 
 void tick()
 {
