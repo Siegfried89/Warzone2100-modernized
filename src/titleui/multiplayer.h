@@ -68,7 +68,6 @@ public:
 	void openTeamChooser(uint32_t playerIndex);
 	void closeTeamChooser();
 
-	void openColourChooser(uint32_t playerIndex);
 	void closeColourChooser();
 
 	void openMapChooser();

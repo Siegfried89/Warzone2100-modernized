@@ -112,7 +112,8 @@ void prepareStart()
 	}
 	for (unsigned i = 0; i < game.maxPlayers && i < MAX_PLAYERS; ++i)
 	{
-		if (!used[i] || NetPlay.players[i].faction == FACTION_NORMAL)
+		// (26.11. 20:54) Menschen behalten die Farbe aus dem Hauptmenue (die Auswahl im Gefechts-Menue gibt es nicht mehr)
+		if (!used[i] || NetPlay.players[i].allocated || NetPlay.players[i].faction == FACTION_NORMAL)
 		{
 			continue;
 		}
