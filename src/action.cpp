@@ -53,6 +53,7 @@
 #include "cmddroid.h"
 #include "game_world.h"
 #include "modgroundfire.h"
+#include "modbuild.h"
 #include "pathfinding_backend.h"
 
 /* attack run distance */
@@ -1851,6 +1852,7 @@ void actionUpdateDroid(DROID *psDroid)
 			uint16_t dir = order->direction;
 			moveStopDroid(psDroid);
 			objTrace(psDroid->id, "Halted in our tracks - at construction site");
+			modbuild::ObstacleScope obstacleScope(modbuild::isExcavator(psDroid));   // MOD (26.11.): Bagger raeumen Steine/Baeume vom Bauplatz
 			if (order->type == DORDER_BUILD && order->psObj == nullptr)
 			{
 				// Starting a new structure

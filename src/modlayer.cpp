@@ -116,10 +116,18 @@ float progress()
 std::unordered_map<uint32_t, Layer> s_layerOf;
 std::unordered_map<uint32_t, UDWORD> s_cool;
 std::unordered_set<uint32_t> s_openedShafts;   // Schaechte, deren Untergrund-Kammer schon freigelegt ist
+// (26.11.) Fahrbefehle zu einem Schacht: Einheit -> Schacht (Ort, Zeitpunkt). Bleibt eine Einheit vor dem Schacht stehen (andere stehen
+// davor), wechselt sie trotzdem die Ebene; jeder neue Befehl ausser "angekommen" verwirft den Eintrag.
+struct ShaftReq { Vector2i pos; UDWORD since; };
+std::unordered_map<uint32_t, ShaftReq> s_shaftReq;
+struct ShaftPos { Vector2i pos; int player; };
+std::vector<ShaftPos> s_shaftPos;   // fertige Schaechte (jeden Spielschritt neu gesammelt)
 
 constexpr int PORTAL_ORDER_RANGE = 192;   // Zielpunkt des Marschbefehls liegt am Schacht
 constexpr int PORTAL_REACH = 240;         // so nah muss die Einheit am Schacht sein (Weg endet neben dem blockierten Feld)
 constexpr UDWORD PORTAL_COOLDOWN = 4000;  // ms bis die Einheit wieder wechseln darf
+constexpr int PORTAL_QUEUE_REACH = 448;   // (26.11.) zum Schacht geschickt und davor stehen geblieben: so weit darf sie entfernt sein
+constexpr UDWORD SHAFT_REQ_MS = 60000;    // so lange gilt ein Fahrbefehl zum Schacht nach dem Anhalten
 
 bool isShaft(const STRUCTURE_STATS *st)
 {
@@ -508,6 +516,35 @@ bool isPortalTile(int player, int tileX, int tileY)
 	return s->status == SS_BUILT && isShaft(s->pStructureType) && aiCheckAlliances(s->player, player);
 }
 
+bool isUsableShaft(const BASE_OBJECT *obj, int player)
+{
+	if (obj == nullptr || obj->type != OBJ_STRUCTURE || obj->died != 0 || player < 0 || player >= MAX_PLAYERS) { return false; }
+	const STRUCTURE *s = static_cast<const STRUCTURE *>(obj);
+	return s->status == SS_BUILT && isShaft(s->pStructureType) && aiCheckAlliances(s->player, player);
+}
+
+bool canUseShaft(const DROID *d)
+{
+	return d != nullptr && !d->isVtol() && !d->isTransporter() && !modoil::isCargo(d->id) && layerOfId(d->id) != ORBIT;
+}
+
+void noteOrder(const DROID *d, int orderType, const Vector2i &pos)
+{
+	if (d == nullptr) { return; }
+	if (orderType == static_cast<int>(DORDER_MOVE) && canUseShaft(d))
+	{
+		for (const ShaftPos &sp : s_shaftPos)
+		{
+			if (aiCheckAlliances(sp.player, d->player) && iHypot(pos - sp.pos) <= PORTAL_ORDER_RANGE)
+			{
+				s_shaftReq[d->id] = ShaftReq{sp.pos, gameTime};
+				return;
+			}
+		}
+	}
+	if (!s_shaftReq.empty()) { s_shaftReq.erase(d->id); }
+}
+
 void gameTick()
 {
 	if (!modlayermap::worldsExist()) { return; }
@@ -523,7 +560,9 @@ void gameTick()
 			if (s->died == 0 && s->status == SS_BUILT && isShaft(s->pStructureType)) { shafts.push_back(s); }
 		}
 	}
-	if (shafts.empty()) { return; }
+	s_shaftPos.clear();
+	for (const STRUCTURE *s : shafts) { s_shaftPos.push_back(ShaftPos{s->pos.xy(), s->player}); }
+	if (shafts.empty()) { s_shaftReq.clear(); return; }
 
 	// fertiger Schacht: im Untergrund eine kleine Kammer freilegen (MF: Aufzugskammer 10x10 Whixel, ohne Gangnetz-Anbindung; weiter nur durch Bohren)
 	for (const STRUCTURE *s : shafts)
@@ -538,7 +577,23 @@ void gameTick()
 	{
 		for (DROID *d : gameWorld.objects.droids[p])
 		{
-			if (d->died != 0 || d->order.type != DORDER_MOVE) { continue; }
+			if (d->died != 0) { continue; }
+			// Fahrbefehl zum Schacht: unterwegs (order = MOVE) oder (26.11.) schon angehalten, aber mit gemerktem Schacht-Befehl
+			Vector2i target = d->order.pos;
+			int reach = PORTAL_REACH;
+			if (d->order.type == DORDER_MOVE)
+			{
+				const auto rq = s_shaftReq.find(d->id);
+				if (rq != s_shaftReq.end()) { rq->second.since = gameTime; }   // unterwegs: die Frist laeuft erst ab dem Anhalten
+			}
+			else
+			{
+				const auto rq = s_shaftReq.find(d->id);
+				if (rq == s_shaftReq.end() || d->order.type != DORDER_NONE) { continue; }
+				if (gameTime - rq->second.since > SHAFT_REQ_MS) { s_shaftReq.erase(rq); continue; }
+				target = rq->second.pos;
+				reach = layerOfId(d->id) == SURFACE ? PORTAL_QUEUE_REACH : PORTAL_REACH;   // unten ist die Kammer klein - dort ohnehin nah dran
+			}
 			if (d->isVtol() || d->isTransporter() || modoil::isCargo(d->id) || layerOfId(d->id) == ORBIT) { continue; }   // Orbit: Schaechte sind nur Oberflaeche <-> Untergrund
 			const auto cool = s_cool.find(d->id);
 			if (cool != s_cool.end())
@@ -549,9 +604,18 @@ void gameTick()
 			for (const STRUCTURE *s : shafts)
 			{
 				if (!aiCheckAlliances(s->player, d->player)) { continue; }
-				if (iHypot(d->order.pos - s->pos.xy()) > PORTAL_ORDER_RANGE) { continue; }
-				if (iHypot(d->pos.xy() - s->pos.xy()) > PORTAL_REACH) { continue; }
+				if (iHypot(target - s->pos.xy()) > PORTAL_ORDER_RANGE) { continue; }
+				const int dist = iHypot(d->pos.xy() - s->pos.xy());
+				if (dist > reach) { continue; }
 				const Layer next = layerOfId(d->id) == SURFACE ? UNDERGROUND : SURFACE;
+				// (26.11.) aus der Warteschlange vor dem Schacht: unten erst in der Aufzugskammer am Schacht wieder auftauchen
+				if (next == UNDERGROUND && dist > 160)
+				{
+					const Vector2i off = d->pos.xy() - s->pos.xy();
+					d->pos.x = s->pos.x + off.x * 150 / dist;
+					d->pos.y = s->pos.y + off.y * 150 / dist;
+				}
+				s_shaftReq.erase(d->id);
 				applyLayer(d, next);
 				s_cool[d->id] = gameTime + PORTAL_COOLDOWN;
 				orderDroid(d, DORDER_STOP, ModeImmediate);
@@ -671,6 +735,7 @@ void inheritFromBuilder(const STRUCTURE *psStruct, const DROID *psBuilder)
 void forget(uint32_t id)
 {
 	s_trans.erase(id);
+	s_shaftReq.erase(id);
 	if (s_layerOf.empty() && s_cool.empty()) { return; }
 	s_layerOf.erase(id);
 	s_cool.erase(id);
@@ -763,6 +828,8 @@ void resetState()
 	s_flyReq.clear();
 	s_trans.clear();
 	s_openedShafts.clear();
+	s_shaftReq.clear();
+	s_shaftPos.clear();
 	s_loadObjs.clear(); s_loadDrills.clear(); s_loadPending = false;   // (17.11.) Spielstand
 	modlayermap::reset();
 	s_current = s_target = SURFACE;

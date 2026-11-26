@@ -1373,6 +1373,13 @@ void processMouseClickInput()
 			{
 				wzSetCursor(CURSOR_EMBARK);   // MOD: Graben/Grube "hier bemannen"
 			}
+			// MOD (Wunsch 26.11. 22:19 "es kommt nur das Schild (bewachen) Symbol"): eigener/verbuendeter fertiger Schacht = hineinfahren
+			else if (psDominantSelected != nullptr && modlayer::canUseShaft(psDominantSelected) && modlayer::isUsableShaft(ObjUnderMouse, psDominantSelected->player)
+			         && !(psDominantSelected->isConstructionDroid() && (intDemolishSelectMode() || modCtrlDemolishHover(ObjUnderMouse)
+			                                                            || buildingDamaged(static_cast<STRUCTURE *>(ObjUnderMouse)))))
+			{
+				wzSetCursor(CURSOR_EMBARK);
+			}
 			else
 			{
 				wzSetCursor(arnMPointers[item][selection]);

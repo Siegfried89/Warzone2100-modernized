@@ -35,6 +35,7 @@ Alex McLean, Pumpkin Studios, EIDOS Interactive, 1997
 #include "display.h"
 #include "hci.h"
 #include "game_world.h"
+#include "modbuild.h"
 
 /*
 Definition of a tile to highlight - presently more than is required
@@ -227,6 +228,7 @@ bool process3DBuilding()
 			// (Wunsch 23.11. 18:38 "Die Solarfelder und alle Felder sollen nicht durch die Blockierung eines einzelnen ihrer Gebaeude das ganze
 			// Feld blockieren"): baubar, sobald mindestens ein Platz frei ist - blockierte Plaetze zeigt die Vorschau rot, beim Bauen werden sie
 			// uebersprungen (der Bauer geht zum naechsten Platz der Reihe)
+			modbuild::ObstacleScope obstacleScope(modbuild::selectedExcavator(selectedPlayer));   // MOD (26.11.): Bagger raeumen Steine/Baeume weg
 			bool anyValid = false;
 			for (const auto &row : rows)
 			{
@@ -241,6 +243,7 @@ bool process3DBuilding()
 		}
 		else
 		{
+			modbuild::ObstacleScope obstacleScope(modbuild::selectedExcavator(selectedPlayer));   // MOD (26.11.): Bagger raeumen Steine/Baeume weg
 			isValid = validLocation(gameWorld, sBuildDetails.psStats, bv, getBuildingDirection(), selectedPlayer, true);
 		}
 

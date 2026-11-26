@@ -19,6 +19,8 @@ struct GameWorld;
 struct STRUCTURE_STATS;
 struct STRUCTURE;
 
+struct MAPTILE;
+
 namespace modbuild
 {
 struct Placement
@@ -32,6 +34,10 @@ struct Placement
 
 /// (18.11.) fremder Bauplan als Vorschau (z. B. Artilleriebasis aus dem Schlachtplan); nullptr = keiner. Der Zeiger muss gueltig bleiben.
 void setExternalPreview(const std::vector<Placement> *plan);
+
+/// (26.11.) Teile eines Bauplans ausserhalb der baubaren Karte entfernen (Kartenrand/Scroll-Grenzen + TOO_NEAR_EDGE wie validLocation);
+/// Mauerlinien werden auf ihr baubares Stueck gekuerzt. unit = Weltlaenge einer Plan-Kachel (TILE_UNITS bzw. DIST_TILE des Schlachtplans).
+void clipToMap(std::vector<Placement> &plan, int unit);
 
 /// Radius (Kacheln) der Groesse 1..3
 int radiusOfTier(int tier);
@@ -71,6 +77,31 @@ bool isInfantryBuilder(const DROID *psDroid);
 void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued);
 /// darf dieses Fahrzeug dieses Bauwerk bauen? (Kampf-Infanterie nur Graeben/Gruben/Sandsack/MG-Nester; alle anderen Baufahrzeuge alles)
 bool mayBuild(const DROID *psDroid, const STRUCTURE_STATS *psStats);
+/// (Wunsch 26.11. 22:19 "Bagger koennen Hindernisse wie Steine entfernen ... das herumbauen um Hindernisse bei templates soll minimiert
+/// werden") Bagger = Baufahrzeug mit Kran-/Baggerarm (scavCrane*)
+bool isExcavator(const DROID *psDroid);
+/// besitzt der Spieler mindestens einen Bagger?
+bool hasExcavator(unsigned player);
+/// Anzeige/Bedienung: ist unter den gewaehlten Fahrzeugen des Spielers ein Bagger?
+bool selectedExcavator(unsigned player);
+/// kleines Hindernis auf der Kachel, das ein Bagger wegraeumt: Steine/Truemmer/Panzersperren-Reste (1x1 BOULDER) und Baeume/Buesche;
+/// NICHT: Lavafelder, Riesen-Felsen (2x2/3x3), Ruinen, Wracks, Oel
+bool isClearableObstacle(const MAPTILE *psTile);
+/// solange ein Scope mit on=true lebt, zaehlen raeumbare Hindernisse in validLocation nicht als belegt (Plaene, Bagger am Bauplatz)
+class ObstacleScope
+{
+public:
+	explicit ObstacleScope(bool on);
+	~ObstacleScope();
+	ObstacleScope(const ObstacleScope &) = delete;
+	ObstacleScope &operator=(const ObstacleScope &) = delete;
+private:
+	bool prev_;
+};
+bool obstaclesIgnored();
+/// Bagger beginnt zu bauen: raeumbare Hindernisse auf dem Bauplatz entfernen (Staubwolke). Krater unter dem Bauplatz schuettet ohnehin
+/// jeder Bau zu (nur von Spielern verursachte Mulden - natuerliche Unebenheiten der Karte bleiben, siehe modterrain).
+void clearObstacles(const STRUCTURE_STATS *psStats, Vector2i pos, uint16_t direction);
 /// Abrissfaktor des Fahrzeugs (Abrissbirne reisst 4x so schnell ab, sonst 1)
 int demolishFactor(const DROID *psDroid, const STRUCTURE *psTarget = nullptr);
 /// (18.11.) Pendelwinkel der Abrissbirne in Grad (nur Anzeige)

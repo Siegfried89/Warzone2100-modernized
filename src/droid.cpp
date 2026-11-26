@@ -156,6 +156,7 @@ void cancelBuild(DROID *psDroid)
 	if (psDroid->order.type == DORDER_LINEBUILD && psDroid->order.psStats != nullptr)
 	{
 		const LineBuild lb = calcLineBuild(psDroid->order.psStats, psDroid->order.direction, psDroid->order.pos, psDroid->order.pos2);
+		modbuild::ObstacleScope obstacleScope(modbuild::isExcavator(psDroid));   // MOD (26.11.): Bagger raeumen Steine/Baeume weg
 		for (int k = 1; k < lb.count; ++k)
 		{
 			if (!validLocation(gameWorld, psDroid->order.psStats, lb[k], psDroid->order.direction, psDroid->player, false))
@@ -1304,6 +1305,7 @@ DroidStartBuild droidStartBuild(DROID *psDroid)
 		// MOD (Wunsch 24.11. 16:27): in eine eigene Stellung hineingebaut -> das Ergebnis-Bauwerk (ersetzt die Stellung beim Baubeginn)
 		if (STRUCTURE_STATS *cmb = modupgrade::combineAt(buildStat, buildPos.x, buildPos.y, psDroid->player)) { buildStat = cmb; }
 		modruin::clearSite(buildStat, buildPos, psDroid->order.direction);   // MOD (22.11.): auf Ruinen darf gebaut werden
+		if (modbuild::isExcavator(psDroid)) { modbuild::clearObstacles(buildStat, buildPos, psDroid->order.direction); }   // MOD (26.11.): Bagger raeumt Steine/Baeume weg
 		psStruct = buildStructureDir(gameWorld, buildStat, buildPos.x, buildPos.y, psDroid->order.direction, psDroid->player, false, id);
 		if (!psStruct)
 		{
