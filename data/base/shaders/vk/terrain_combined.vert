@@ -13,6 +13,7 @@ layout(location = 7) in vec4 groundWeights;	// ground weights for splatting
 layout(location = 0) out FragData frag;
 layout(location = 10) out flat FragFlatData fragf;
 layout(location = 12) out mat3 ModelTangentMatrix;
+layout(location = 15) out flat ivec4 fdiag;   // MOD (26.11.): Klassik - diagonale Nachbarkacheln (in der Tangente kodiert, siehe terrain.cpp)
 
 void main()
 {
@@ -23,6 +24,7 @@ void main()
 	frag.uvDecal = vertexTexCoord;
 
 	fragf.grounds = grounds;
+	fdiag = ivec4(floor(vertexTangent + vec4(0.5)));
 	if (groundWeights == vec4(0)) {
 		frag.groundWeights = vec4(0.25);
 	} else {
