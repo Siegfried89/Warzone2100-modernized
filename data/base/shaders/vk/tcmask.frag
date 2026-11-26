@@ -86,7 +86,7 @@ void main()
 	vec3 L = normalize(lightDir);
 	float lambertTerm = max(dot(N, L), 0.0); //diffuse light
 	// ambient light maxed for classic models to keep results similar to original
-	float ambientBoost = 1.0 + (1.0 - float(specularmap));
+	float ambientBoost = (specularmap == 1) ? 1.0 : 2.0; // MOD (26.11.): Glanzkarte "_glint" (2) bleibt hell wie ein klassisches Modell
 
 	float specularMapValue = 0.f;
 	float gaussianTerm = 0.f;
@@ -110,7 +110,7 @@ void main()
 		// werden Solarzellen ueber ~20 Grad Blickwinkel ganz weiss; so blitzen einzelne Zellen (Funkeln), der Rest bleibt blau
 		gaussianTerm *= 1.0 - 0.75 * mirror;
 
-		vanillaFactor = 1.0; // Neutralize factor for spec map
+		vanillaFactor = (specularmap == 1) ? 1.0 : 0.0; // Neutralize factor for spec map (MOD 26.11.: nicht bei "_glint")
 	}
 
 	// Calculate and combine final lighting

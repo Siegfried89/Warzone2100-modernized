@@ -115,12 +115,12 @@ void main()
 	float diffuseFactor = lambertTerm(N, L); //diffuse light
 	float visibility = getShadowVisibility(posModelSpace, posViewSpace, diffuseFactor, 0.0002f);
 	diffuseFactor = min(diffuseFactor, visibility*diffuseFactor);
-	visibility = mix(visibility, 1.0, min(float(specularmap), 1.0)); // check to exclude double multiply for hq models
+	visibility = mix(visibility, 1.0, (specularmap == 1) ? 1.0 : 0.0); // MOD (26.11.): 2 = Glanz nur fuer Reflexe (klassisch beleuchtet) // check to exclude double multiply for hq models
 	vec4 lightmap_vec4 = texture(lightmap_tex, uvLightmap.xy, 0.f);
 	float distanceAboveTerrain = uvLightmap.z;
 	float lightmapFactor = 1.0f - (clamp(distanceAboveTerrain, 0.f, 300.f) / 300.f);
 	// ambient light maxed for classic models to keep results similar to original
-	float ambientBoost = 1.0 + (1.0 - float(specularmap));
+	float ambientBoost = (specularmap == 1) ? 1.0 : 2.0; // MOD (26.11.): Glanzkarte "_glint" (2) bleibt hell wie ein klassisches Modell
 
 	float specularMapValue = 0.f;
 	float gaussianTerm = 0.f;
@@ -144,7 +144,7 @@ void main()
 		// werden Solarzellen ueber ~20 Grad Blickwinkel ganz weiss; so blitzen einzelne Zellen (Funkeln), der Rest bleibt blau
 		gaussianTerm *= 1.0 - 0.75 * mirror;
 
-		vanillaFactor = 1.0; // Neutralize factor for spec map
+		vanillaFactor = (specularmap == 1) ? 1.0 : 0.0; // Neutralize factor for spec map (MOD 26.11.: nicht bei "_glint")
 	}
 
 	// Calculate and combine final lighting
