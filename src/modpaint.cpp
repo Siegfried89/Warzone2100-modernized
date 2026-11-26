@@ -127,7 +127,8 @@ const ModeInfo kModes[M_COUNT] = {
 	{ "Restore", "Builders fill craters", "Circle the craters (right click cancels)", 150, 205, 110, true },
 	// (Wunsch 26.11.) komplette Basis als Bauplan (wie die Feuerbasis): Hauptquartier, Fabriken, Forschung, Kraftwerk, Umspannwerk,
 	// Mauerring mit Toren und MG-Plattformtuermen, Bunkerring, Sandsack-Graben, Igel, Erdgraben mit Bastionen - nach allen Seiten gleich
-	{ "Base", "Builders set up a complete base", "Click: place (Ctrl + mouse wheel: medium/large) (right click cancels)", 150, 160, 90, true },
+	// (Wunsch 26.11. 20:16 "Alle diese Vorlagen uebrigens unter einem Button unterbringen"): Feuerbasis, Basis und Scav-Lager als Vorlagen
+	{ "Templates", "Builders set up a base from a template", "Click: place (Ctrl + mouse wheel: next template) (right click cancels)", 150, 160, 90, true },
 };
 
 // MOD (Wunsch 21.11. 17:59 "Die Befehlsbuttons besser nach Kategorie sortieren (aehnliches zu aehnlichem), ausserdem Icons zu jedem dazu"):
@@ -150,10 +151,16 @@ constexpr Group kGroups[] = {
 	// (22.11.) Angriffsplaner: Zonen, Leuchtfeuer, Brueckenkopf, Angriffslinie, Vektoren, Tunnel, Angriff, Plan loeschen
 	{ "Attack plan", 8, { M_STAGING, M_FERRY, M_BRIDGEHEAD, M_OFFENSE, M_ATTACK, M_TUNNEL, M_GO, M_CLEARPLAN } },
 	{ "Combat",  4, { M_DEFEND, M_ARTY, M_AIR, M_COMBOT, 0, 0, 0, 0 } },
-	{ "Build",   8, { M_DEFNET, M_ARTYBASE, M_BASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH, M_RESTORE } },
+	{ "Build",   7, { M_DEFNET, M_BASE, M_TRAPS, M_MINES, M_RAIL, M_DEMOLISH, M_RESTORE, 0 } },   // (26.11. 20:16) Feuerbasis jetzt unter "Templates"
 	{ "Support", 2, { M_CLEARMINES, M_RECOVER, 0, 0, 0, 0, 0, 0 } },
 };
 constexpr int NGROUPS = static_cast<int>(sizeof(kGroups) / sizeof(kGroups[0]));
+// (Wunsch 26.11. 20:16) Vorlagen unter dem Knopf "Templates": Liste neben dem Schlachtplan, solange der Modus aktiv ist
+constexpr int NTPL = 8;
+const char *const kTplNames[NTPL] = { N_("Firebase small"), N_("Firebase medium"), N_("Firebase large"), N_("Base medium"), N_("Base large"),
+                                      N_("Scav camp: box"), N_("Scav camp: notch"), N_("Scav camp: bastion") };
+int s_tpl = 0;
+constexpr int TPL_W = 132;
 constexpr int groupRows(int n) { return (n + COLS - 1) / COLS; }
 constexpr int groupsHeight()
 {
@@ -179,6 +186,8 @@ struct Stroke
 std::shared_ptr<W_SCREEN> s_screen;
 std::shared_ptr<W_CLICKFORM> s_root;
 std::vector<std::shared_ptr<W_BUTTON>> s_buttons;
+std::shared_ptr<W_CLICKFORM> s_tplForm;               // (26.11. 20:16) Vorlagen-Liste
+std::vector<std::shared_ptr<W_BUTTON>> s_tplButtons;
 int s_mode = -1;                 // aktiver Zeichenmodus (-1 = keiner)
 bool s_drawing = false;
 std::vector<Vector2i> s_cur;     // Linie, die gerade gezeichnet wird
@@ -427,6 +436,40 @@ void drawButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	}
 }
 
+// (26.11. 20:16) Vorlagen-Liste: Rahmen mit Titel, je Vorlage ein Knopf (gewaehlte hervorgehoben)
+void drawTplForm(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	const float s = modui::uiScale();
+	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
+	modui::wzPanel(x0, y0, x0 + psWidget->width(), y0 + psWidget->height(), _("Templates"), modui::sizeClassFor(s));
+}
+
+void drawTplButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	const float s = modui::uiScale();
+	const int i = static_cast<int>(psWidget->UserData);
+	const W_BUTTON *b = static_cast<const W_BUTTON *>(psWidget);
+	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
+	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0, down = (b->getState() & WBUT_DOWN) != 0;
+	const int sc = modui::sizeClassFor(s);
+	modui::wzButton(x0, y0, psWidget->width(), psWidget->height(), "", i == s_tpl, hl, down, sc, nullptr);
+	const int fh = (sc <= 0) ? 9 : (sc == 1 ? 12 : 16);
+	// kleines Sinnbild: Feuerbasis-Ring, Basis-Quadrate oder Lager-Rechteck
+	const float ir = (psWidget->height() - 6.f * s) * 0.5f;
+	const ModeInfo &mi = kModes[i <= 2 ? M_ARTYBASE : M_BASE];
+	const PIELIGHT col = (i == s_tpl || hl) ? pal_RGBA(255, 230, 150, 255) : pal_RGBA(mi.r, mi.g, mi.b, 245);
+	const Pen pen{ x0 + 4.f * s + ir, y0 + psWidget->height() * 0.5f, ir, col, ir >= 7.f };
+	if (i <= 2) { drawIcon(M_ARTYBASE, pen); }
+	else if (i <= 4) { drawIcon(M_BASE, pen); }
+	else
+	{
+		pen.l(-0.9f, -0.6f, 0.9f, -0.6f); pen.l(0.9f, -0.6f, 0.9f, 0.6f); pen.l(-0.9f, -0.6f, -0.9f, 0.6f);
+		pen.l(-0.9f, 0.6f, -0.25f, 0.6f); pen.l(0.25f, 0.6f, 0.9f, 0.6f); pen.dot(-0.9f, 0.6f, 0.16f); pen.dot(0.9f, 0.6f, 0.16f);
+	}
+	const int tx = x0 + static_cast<int>(8.f * s + 2.f * ir) + static_cast<int>(3 * s);
+	modui::text(gettext(kTplNames[i]), tx, y0 + (psWidget->height() - fh) / 2 - 1, modui::buttonText(i == s_tpl || hl), sc);
+}
+
 void ensureScreen()
 {
 	if (s_screen) { return; }
@@ -492,6 +535,23 @@ void ensureScreen()
 		}); });
 		s_buttons.push_back(b);
 	}
+	// (26.11. 20:16) Vorlagen-Liste (eigenes Formular neben dem Schlachtplan)
+	auto tpl = std::make_shared<W_CLICKFORM>();
+	screen->psForm->attach(tpl);
+	tpl->displayFunction = drawTplForm;
+	tpl->hide();
+	s_tplButtons.clear();
+	for (int i = 0; i < NTPL; ++i)
+	{
+		auto b = std::make_shared<W_BUTTON>();
+		tpl->attach(b);
+		b->displayFunction = drawTplButton;
+		b->UserData = static_cast<UDWORD>(i);
+		b->setTip(gettext(kTplNames[i]));
+		b->addOnClickHandler([i](W_BUTTON &) { widgScheduleTask([i]() { s_tpl = i; s_mode = M_BASE; s_drawing = false; s_cur.clear(); }); });
+		s_tplButtons.push_back(b);
+	}
+	s_tplForm = tpl;
 	widgRegisterOverlayScreenOnTopOfScreen(screen, psWScreen);
 	s_screen = screen;
 	s_root = root;
@@ -613,6 +673,22 @@ void layout()
 		if (!buttonPos(static_cast<int>(i), bx, by)) { s_buttons[i]->hide(); continue; }
 		s_buttons[i]->show();
 		s_buttons[i]->setGeometry(static_cast<int>(bx * s), static_cast<int>(by * s), static_cast<int>(BTN_W * s), static_cast<int>(BTN_H * s));
+	}
+	if (s_tplForm)
+	{
+		// (26.11. 20:16) Vorlagen-Liste links neben dem Schlachtplan (passt es dort nicht: rechts daneben), auf Hoehe des Knopfes
+		const int pw = static_cast<int>(TPL_W * s), ph = static_cast<int>((2 * PAD + TITLE_H + NTPL * (BTN_H + GAP) - GAP) * s);
+		int bx = 0, by = 0;
+		buttonPos(M_BASE, bx, by);
+		int px = x - pw - static_cast<int>(4 * s);
+		if (px < 4) { px = x + w + static_cast<int>(4 * s); }
+		int py = y + static_cast<int>(by * s) - static_cast<int>((PAD + TITLE_H) * s);
+		py = std::clamp(py, 4, std::max(4, static_cast<int>(screenHeight) - ph - 4));
+		s_tplForm->setGeometry(px, py, pw, ph);
+		for (size_t i = 0; i < s_tplButtons.size(); ++i)
+		{
+			s_tplButtons[i]->setGeometry(static_cast<int>(PAD * s), static_cast<int>((PAD + TITLE_H + static_cast<int>(i) * (BTN_H + GAP)) * s), pw - static_cast<int>(2 * PAD * s), static_cast<int>(BTN_H * s));
+		}
 	}
 }
 
@@ -807,20 +883,51 @@ int artyBaseSize(const std::vector<Vector2i> &raw)
 ///  - Mitte: der Standard-Sensorturm (nicht die Beton-Variante), sonst der Scav-Ausguck
 ///  - Moerser-Gruben wie bis 24.11. dicht um den Sensor, jede nach aussen gerichtet: klein 4 (schraeg), mittel 8 (Ring 2), gross 12
 ///    (4 schraeg + Ring 3)
-///  - Mauerring direkt um die Gruben, an jeder Ecke ein Kanonen-Eckturm, je Seite ein Tor; damit die Gruben den Weg nicht versperren,
-///    liegt das Tor (und mit ihm alle Oeffnungen) bei mittel/gross ein Feld aus der Mitte - reihum gleich gedreht (Windrad)
-///  - ein freies Feld; darin direkt neben jeder Oeffnung links und rechts ein Scav-Bunker, daneben je ein Flammenturm
+///  - Mauerring direkt um die Gruben, an jeder Ecke ein Scav-Mauer-Eckturm (mit Mauerstummeln), je Seite ein Tor IN DER MITTE
+///    (26.11. 20:16); die Achsen-Gruben ruecken dafuer ein Feld zur Seite. Gross: Ripple-Raketenstellungen statt Gruben (wenn verfuegbar)
+///  - ein freies Feld; darin ein Feld seitlich neben jeder Oeffnung links und rechts ein Scav-Bunker, daneben je ein Flammenturm
+///    (klein ohne Flammentuerme)
 ///  - Hedgehog-Ring mit der Oeffnung vor dem Tor, zwei Felder davor eine Reihe Beton-Panzersperren (ebenfalls mit Oeffnung)
+/// Richtung (0, 0x4000, 0x8000, 0xC000) fuer Scav-Mauertuerme mit Mauerstummeln (Wunsch 26.11. 20:16 "Diese Kanonentuerme gibt es aber
+/// bereits als Eckversionen anschliessend an die Scav-Mauern. Die benutzen."): das Eckmodell (A0BaBaGunTower, BLBRBTW1) hat bei Richtung 0
+/// Stummel nach Westen und Sueden, das Endmodell (A0BaBaGunTowerEND, BLBRBTW2) einen nach Westen; jede Vierteldrehung bringt die Stummel
+/// W -> S -> O -> N (wie in den Kampagnenkarten: Ecke oben links 90 Grad, oben rechts 0, unten links 180, unten rechts 270).
+/// Richtungen als Vektor (Kachel x, y; y nach Sueden).
+unsigned stubTurns(Vector2i d)
+{
+	unsigned k = 0;
+	Vector2i w(-1, 0);
+	while (k < 4 && w != d) { w = Vector2i(w.y, -w.x); ++k; }
+	return k < 4 ? k : 0;
+}
+unsigned cornerTowerDir(Vector2i a, Vector2i b)
+{
+	// gesucht: Drehung k mit {W, S} -> {a, b}
+	for (unsigned k = 0; k < 4; ++k)
+	{
+		Vector2i w(-1, 0), s(0, 1);
+		for (unsigned i = 0; i < k; ++i) { w = Vector2i(w.y, -w.x); s = Vector2i(s.y, -s.x); }
+		if ((w == a && s == b) || (w == b && s == a)) { return k * 0x4000u; }
+	}
+	return 0;
+}
+unsigned endTowerDir(Vector2i a) { return stubTurns(a) * 0x4000u; }
+
 std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int size)
 {
 	std::vector<modbuild::Placement> out;
 	size = std::clamp(size, 1, 3);
 	STRUCTURE_STATS *arty = bestArtyEmplacement();
+	// (Wunsch 26.11. 20:16 "Bei der grossen Artybase Ripple-Raketenstellungen benutzen")
+	if (size == 3) { if (STRUCTURE_STATS *ripple = firstAvailable({ "Emplacement-Rocket06-IDF" })) { arty = ripple; } }
 	STRUCTURE_STATS *sensor = firstAvailable({ "Sys-SensoTower01", "A0BaBaLookout", "Sys-SensoTower02", "Sys-SensoTowerWS", "A0BaBaOutpost" });
 	STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall", "CollectiveWall", "NEXUSWall", "A0BaBaSandbagWall" });
 	STRUCTURE_STATS *gate = firstAvailable({ "A0BaBaGate", "A0HardcreteMk1Gate" });
-	STRUCTURE_STATS *corner = firstAvailable({ "WallTower04", "WallTower03", "WallTower02", "A0CannonTower" });
-	STRUCTURE_STATS *flame = firstAvailable({ "A0BaBaFlameTower", "PillBox5" });
+	// (Wunsch 26.11. 20:16) Ecktuerme: der Scav-Mauer-Eckturm mit Mauerstummeln (schliesst an die Mauern an) statt des alleinstehenden
+	// Kanonenturms; ohne Scav-Mauer die Mauer-Hardpoints, notfalls der Kanonenturm
+	STRUCTURE_STATS *corner = (wall != nullptr && wall == firstAvailable({ "A0BaBaHorizontalWall" })) ? firstAvailable({ "A0BaBaGunTower" }) : nullptr;
+	if (corner == nullptr) { corner = firstAvailable({ "WallTower04", "WallTower03", "WallTower02", "A0BaBaGunTower", "A0CannonTower" }); }
+	STRUCTURE_STATS *flame = size == 1 ? nullptr : firstAvailable({ "A0BaBaFlameTower", "PillBox5" });   // (26.11. 20:16) klein ohne Flammentuerme
 	STRUCTURE_STATS *bunker = firstAvailable({ "A0BaBaBunker", "PillBox1" });
 	STRUCTURE_STATS *hedge = firstAvailable({ "A0BaBaHedgehog", "A0TankTrap" });   // (24.11.) Beton-Panzersperren sind KEIN Ersatz
 	STRUCTURE_STATS *concrete = firstAvailable({ "A0TankTrapHeavy" });
@@ -840,7 +947,9 @@ std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int s
 	auto at = [](int side, int k, int t) {
 		switch (side) { case 0: return Vector2i(t, -k); case 1: return Vector2i(k, t); case 2: return Vector2i(-t, k); default: return Vector2i(-k, -t); }
 	};
-	const int off = size == 1 ? 0 : 1;   // Lage der Oeffnung auf jeder Seite (siehe oben)
+	// (Wunsch 26.11. 20:16 "Den Ausgang auch immer in die Mitte"): Tor und alle Oeffnungen in der Mitte jeder Seite; dafuer ruecken die
+	// Gruben, die auf der Achse direkt hinter dem Tor laegen, ein Feld zur Seite (reihum gleich gedreht)
+	const int off = 0;
 	// ein Ring als vier Seiten mit einer Oeffnung von einem Feld bei t = off (gap < 0: keine), Ecken nur wenn withCorners
 	auto ring = [&](STRUCTURE_STATS *st, int k, bool gap, bool withCorners) {
 		const int e = withCorners ? k : k - 1;
@@ -858,8 +967,9 @@ std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int s
 	{
 		// wie bis 24.11.: dicht um den Sensor, jede Grube nach aussen
 		static const int IN4[4][2] = { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } };
-		static const int R2[8][2] = { { -2, -2 }, { 0, -2 }, { 2, -2 }, { 2, 0 }, { 2, 2 }, { 0, 2 }, { -2, 2 }, { -2, 0 } };
-		static const int R3[8][2] = { { -3, -3 }, { 0, -3 }, { 3, -3 }, { 3, 0 }, { 3, 3 }, { 0, 3 }, { -3, 3 }, { -3, 0 } };
+		// (26.11. 20:16) Achsen-Gruben ein Feld zur Seite, damit der Weg vom Tor in der Mitte zum Sensor frei bleibt
+		static const int R2[8][2] = { { -2, -2 }, { 1, -2 }, { 2, -2 }, { 2, 1 }, { 2, 2 }, { -1, 2 }, { -2, 2 }, { -2, -1 } };
+		static const int R3[8][2] = { { -3, -3 }, { 1, -3 }, { 3, -3 }, { 3, 1 }, { 3, 3 }, { -1, 3 }, { -3, 3 }, { -3, -1 } };
 		auto pit = [&](int x, int y) { one(arty, x, y, std::abs(y) >= std::abs(x) ? dirOf(0, y) : dirOf(x, 0)); };
 		if (size != 2) { for (const auto &o : IN4) { pit(o[0], o[1]); } }
 		if (size == 2) { for (const auto &o : R2) { pit(o[0], o[1]); } }
@@ -868,7 +978,9 @@ std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int s
 	const int r = size + 1;   // Mauerring direkt um die Gruben
 	ring(wall, r, true, false);   // ohne Ecken (dort die Ecktuerme), mit einem Feld fuer das Tor
 	for (int side = 0; side < 4; ++side) { const Vector2i g = at(side, r, off); one(gate, g.x, g.y, 0); }
-	one(corner, -r, -r, 0xA000u); one(corner, r, -r, 0x6000u); one(corner, r, r, 0x2000u); one(corner, -r, r, 0xE000u);   // schraeg nach aussen
+	// Ecktuerme mit den Mauerstummeln entlang der beiden Mauerseiten
+	const Vector2i E(1, 0), W(-1, 0), N(0, -1), S(0, 1);
+	one(corner, -r, -r, cornerTowerDir(E, S)); one(corner, r, -r, cornerTowerDir(W, S)); one(corner, r, r, cornerTowerDir(W, N)); one(corner, -r, r, cornerTowerDir(E, N));
 	const int h = r + 2;      // Igel-Ring, dazwischen ein freies Feld
 	const int in = h - 1;     // das freie Feld direkt hinter den Igeln
 	const Vector2i outward[4] = { Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0) };
@@ -983,6 +1095,133 @@ std::vector<modbuild::Placement> basePlan(const Vector2i &centerWorld, int size)
 		line(earth, a.x, a.y, b.x, b.y); line(earth, b.x, b.y, c.x, c.y); line(earth, c.x, c.y, d.x, d.y);
 	}
 	return out;
+}
+
+/// (Wunsch 26.11. 20:16 "3 typische kleine Scavengerbasis-Fertiglayouts machen. Mehr oder weniger rechteckige Layouts, mit einer
+/// Verkleinerung, Vergroesserung, Abzweigung ... Schau dir an, wie die in der Projekt-Kampagne alle aufgebaut sind. Rechteck mit einem,
+/// zwei Ecktuermen, einer Fabrik darin, einem Kraftwerk. Ein Flammenturm darin, ein, zwei Scav-Raketenstellungen davor."):
+/// wie die Scav-Lager in cam1a/cam1b/sub1-2 - Scav-Mauer, Eckturm mit Mauerstummeln (A0BaBaGunTower) an einer oder zwei Ecken, die
+/// Oeffnung zwischen zwei Endtuermen (A0BaBaGunTowerEND, Stummel zur Mauer hin), Fabrik und Kraftwerk innen, ein Flammenturm hinter der
+/// Oeffnung, Raketenstellungen davor. Vorderseite (Oeffnung) nach Sueden. variant 0 = Rechteck, 1 = mit Kerbe (Verkleinerung, Turm in der
+/// Kerbe), 2 = mit Bastion (Vergroesserung nach Norden) und abzweigender Mauer nach Osten.
+std::vector<modbuild::Placement> campPlan(const Vector2i &centerWorld, int variant)
+{
+	std::vector<modbuild::Placement> out;
+	STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall" });
+	STRUCTURE_STATS *tower = firstAvailable({ "A0BaBaGunTower", "WallTower01" });
+	STRUCTURE_STATS *endTower = firstAvailable({ "A0BaBaGunTowerEND", "A0BaBaGunTower", "WallTower01" });
+	STRUCTURE_STATS *fac = firstAvailable({ "A0BaBaFactory", "A0LightFactory" });
+	STRUCTURE_STATS *pow = firstAvailable({ "A0BaBaPowerGenerator", "A0PowerGenerator" });
+	STRUCTURE_STATS *flame = firstAvailable({ "A0BaBaFlameTower", "PillBox5" });
+	STRUCTURE_STATS *rocket = firstAvailable({ "A0BaBaRocketPit", "A0BaBaRocketPitAT", "Emplacement-MRL-pit" });
+	const Vector2i ct(std::max(0, centerWorld.x) / DIST_TILE, std::max(0, centerWorld.y) / DIST_TILE);
+	auto one = [&](STRUCTURE_STATS *st, int tx, int ty, unsigned dir) {
+		if (st == nullptr) { return; }
+		modbuild::Placement p; p.stats = st; p.tile = Vector2i(ct.x + tx, ct.y + ty); p.tile2 = p.tile; p.direction = dir; out.push_back(p);
+	};
+	auto line = [&](int x0, int y0, int x1, int y1) {
+		if (wall == nullptr) { return; }
+		modbuild::Placement p; p.stats = wall; p.tile = Vector2i(ct.x + x0, ct.y + y0); p.tile2 = Vector2i(ct.x + x1, ct.y + y1); p.line = true; out.push_back(p);
+	};
+	const Vector2i E(1, 0), W(-1, 0), N(0, -1), S(0, 1);
+	auto T = [&](int x, int y, Vector2i a, Vector2i b) { one(tower, x, y, cornerTowerDir(a, b)); };   // Eckturm, Stummel nach a und b
+	auto End = [&](int x, int y, Vector2i a) { one(endTower, x, y, endTowerDir(a)); };               // Endturm, Stummel nach a
+	switch (std::clamp(variant, 0, 2))
+	{
+	case 0:
+		// Rechteck 7 x 5, zwei Ecktuerme vorn, Oeffnung in der Mitte der Vorderseite
+		//   + # # # # # +
+		//   # . F F . P #
+		//   # . . . . . #
+		//   # . . . f . #
+		//   T # E . E # T
+		//
+		//     r       r
+		line(-3, -2, 3, -2); line(-3, -1, -3, 1); line(3, -1, 3, 1);
+		T(-3, 2, N, E); T(3, 2, N, W);
+		line(-2, 2, -2, 2); line(2, 2, 2, 2);
+		End(-1, 2, W); End(1, 2, E);
+		one(fac, 0, -1, 0);   // 2 x 1: Kacheln -1..0
+		one(pow, 2, -1, 0);
+		one(flame, 1, 1, 0);
+		one(rocket, -2, 4, 0); one(rocket, 2, 4, 0);
+		break;
+	case 1:
+		// Verkleinerung: vorn rechts eine Kerbe mit Turm in der Innenecke, ein Eckturm hinten links, Raketenstellung in der Kerbe
+		//   T # # # # # # +
+		//   # . F F . P . #
+		//   # . . . . . . #
+		//   # . . . . T # +
+		//   # . . . f # r
+		//   + # E . E +
+		//
+		//     r
+		T(-4, -3, E, S);
+		line(-3, -3, 3, -3); line(3, -2, 3, 0); line(2, 0, 2, 0);
+		T(1, 0, E, S);
+		line(1, 1, 1, 2);
+		End(0, 2, E); End(-2, 2, W);
+		line(-3, 2, -4, 2); line(-4, 1, -4, -2);
+		one(fac, -1, -2, 0);  // Kacheln -2..-1
+		one(pow, 1, -2, 0);
+		one(flame, 0, 1, 0);
+		one(rocket, 2, 1, 0); one(rocket, -3, 4, 0);
+		break;
+	default:
+		// Vergroesserung: Bastion nach Norden (zwei Ecktuerme, Raketenstellung darin), Abzweigung nach Osten mit Endturm
+		//       T # T
+		//       # r #
+		//   + # + . + # +
+		//   # . . . . P #
+		//   # F F . . . # # # E
+		//   # . . . f . #
+		//   + # E . E # T
+		//
+		//     r
+		line(-3, -2, -1, -2); line(-1, -3, -1, -3);
+		T(-1, -4, E, S); line(0, -4, 0, -4); T(1, -4, W, S);
+		line(1, -3, 1, -2); line(2, -2, 3, -2); line(3, -1, 3, 1);
+		T(3, 2, N, W);
+		line(2, 2, 2, 2); End(1, 2, E); End(-1, 2, W); line(-2, 2, -3, 2);
+		line(-3, 1, -3, -1);
+		line(4, 0, 5, 0); End(6, 0, W);
+		one(fac, -1, 0, 0);   // Kacheln -2..-1
+		one(pow, 2, -1, 0);
+		one(flame, 1, 1, 0);
+		one(rocket, 0, -3, 0x8000u); one(rocket, -2, 4, 0);
+		break;
+	}
+	return out;
+}
+
+// ------------------------------------------------------------------------------------------------- Vorlagen
+// (Wunsch 26.11. 20:16 "Alle diese Vorlagen uebrigens unter einem Button unterbringen"): ein Knopf "Templates" im Schlachtplan; daneben
+// klappt die Liste auf (Feuerbasis klein/mittel/gross, Basis mittel/gross, drei Scav-Lager), Strg + Mausrad blaettert, ein Klick setzt.
+// (Namen und gewaehlte Vorlage: kTplNames / s_tpl oben bei den Knoepfen)
+
+std::vector<modbuild::Placement> templatePlan(int tpl, const Vector2i &c)
+{
+	tpl = std::clamp(tpl, 0, NTPL - 1);
+	if (tpl <= 2) { return artyBasePlan(c, tpl + 1); }
+	if (tpl <= 4) { return basePlan(c, tpl - 2); }
+	return campPlan(c, tpl - 5);
+}
+
+/// Vorlage fuer eine Zeichnung: ein Klick nimmt die gewaehlte Vorlage; ein gezogener Kreis bei einer Feuerbasis waehlt deren Groesse
+int templateFor(const std::vector<Vector2i> &raw)
+{
+	if (s_tpl <= 2 && raw.size() >= 3)
+	{
+		const Vector2i c0 = centroid(raw);
+		double mx = 0.0, sum = 0.0;
+		for (const Vector2i &q : raw) { const double d = std::sqrt(static_cast<double>(dist2(q, c0))); mx = std::max(mx, d); sum += d; }
+		if (mx >= DIST_TILE * 0.8)
+		{
+			const double r = sum / static_cast<double>(raw.size()) / DIST_TILE;
+			return r < 2.5 ? 0 : (r < 4.5 ? 1 : 2);
+		}
+	}
+	return s_tpl;
 }
 
 // ------------------------------------------------------------------------------------------------- Bergetrupp (Wunsch 14.11. Punkt 25)
@@ -1940,7 +2179,7 @@ void applyStroke(Mode m, const std::vector<Vector2i> &raw)
 	{
 		auto worldOf = [](const Vector2i &t) { return Vector2i(t.x * DIST_TILE + DIST_TILE / 2, t.y * DIST_TILE + DIST_TILE / 2); };   // Plan-Kacheln
 		std::vector<DroidOrder> plan;
-		for (const modbuild::Placement &pl : (m == M_BASE ? basePlan(c, std::min(2, artyBaseSize(raw))) : artyBasePlan(c, artyBaseSize(raw))))
+		for (const modbuild::Placement &pl : (m == M_BASE ? templatePlan(templateFor(raw), c) : artyBasePlan(c, artyBaseSize(raw))))
 		{
 			if (pl.line) { plan.emplace_back(DORDER_LINEBUILD, pl.stats, worldOf(pl.tile), worldOf(pl.tile2), 0); }
 			else { plan.emplace_back(DORDER_BUILD, pl.stats, worldOf(pl.tile), static_cast<uint16_t>(pl.direction)); }   // (24.11.) Gruben nach aussen
@@ -3659,6 +3898,7 @@ void tick()
 	if (want) { layout(); }
 	if (!want) { s_mode = -1; s_drawing = false; s_cur.clear(); }
 	if (s_mode >= 0 && keyPressed(KEY_ESC)) { s_mode = -1; s_drawing = false; s_cur.clear(); }
+	if (s_tplForm) { s_tplForm->show(want && s_mode == M_BASE); }   // (26.11. 20:16) Vorlagen-Liste nur, solange "Templates" aktiv ist
 	opTick();   // Bergetrupp (laeuft auch, wenn die Knoepfe verborgen sind)
 	planTick(); // Oberbefehle wieder aufnehmen
 	faceTick(); // Verteidigungslinie: am Platz zur Feindseite drehen
@@ -3673,18 +3913,20 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	// (18.11. 12:14) Artilleriebasis: der echte Bauplan folgt der Maus (beim Ziehen: Mitte der Zeichnung) - statt der Befestigungs-Vorschau
 	if ((s_mode == M_ARTYBASE || s_mode == M_BASE) && (!overUi || s_drawing))
 	{
-		// (26.11.) Strg + Mausrad waehlt die Groesse (Feuerbasis klein/mittel/gross, Basis mittel/gross), ein Klick setzt sie
-		const int maxSize = s_mode == M_BASE ? 2 : 3;
+		// (26.11.) Strg + Mausrad waehlt die Groesse (Feuerbasis klein/mittel/gross), ein Klick setzt sie; (26.11. 20:16) bei den Vorlagen
+		// blaettert Strg + Mausrad durch alle Vorlagen (reihum)
+		const int maxSize = 3;
 		if (modbuild::keysForFortify())
 		{
-			if (mousePressed(MOUSE_WUP)) { s_baseSize = std::min(maxSize, s_baseSize + 1); }
-			if (mousePressed(MOUSE_WDN)) { s_baseSize = std::max(1, s_baseSize - 1); }
+			const bool up = mousePressed(MOUSE_WUP), dn = mousePressed(MOUSE_WDN);
+			if (s_mode == M_BASE) { if (up) { s_tpl = (s_tpl + 1) % NTPL; } if (dn) { s_tpl = (s_tpl + NTPL - 1) % NTPL; } }
+			else { if (up) { s_baseSize = std::min(maxSize, s_baseSize + 1); } if (dn) { s_baseSize = std::max(1, s_baseSize - 1); } }
 		}
 		s_baseSize = std::clamp(s_baseSize, 1, maxSize);
 		static std::vector<modbuild::Placement> s_artyPreview;
 		const Vector2i at = s_drawing && !s_cur.empty() ? centroid(s_cur) : worldPos;
-		const int sz = s_drawing ? artyBaseSize(s_cur) : s_baseSize;
-		s_artyPreview = s_mode == M_BASE ? basePlan(at, sz) : artyBasePlan(at, sz);
+		if (s_mode == M_BASE) { s_artyPreview = templatePlan(s_drawing ? templateFor(s_cur) : s_tpl, at); }
+		else { s_artyPreview = artyBasePlan(at, s_drawing ? artyBaseSize(s_cur) : s_baseSize); }
 		modbuild::setExternalPreview(&s_artyPreview);
 	}
 	else if (s_mode == M_RAIL && s_drawing && s_cur.size() >= 2 && selectedPlayer < MAX_PLAYERS)
@@ -3856,6 +4098,13 @@ void drawOnMap(const std::function<bool(const Vector2i &, Vector2i &)> &toScreen
 
 const char *activeLabel()
 {
+	if (s_mode == M_BASE)
+	{
+		// (26.11. 20:16) Vorlagen: Name der gewaehlten Vorlage am Mauszeiger
+		static std::string s_lbl;
+		s_lbl = std::string(gettext(kTplNames[std::clamp(s_tpl, 0, NTPL - 1)])) + ": " + kModes[M_BASE].cursor;
+		return s_lbl.c_str();
+	}
 	return s_mode >= 0 ? kModes[s_mode].cursor : nullptr;
 }
 
@@ -3875,6 +4124,8 @@ void shutdown()
 	s_screen = nullptr;
 	s_root = nullptr;
 	s_buttons.clear();
+	s_tplForm = nullptr;
+	s_tplButtons.clear();
 	s_mode = -1;
 	s_drawing = false;
 	s_cur.clear();

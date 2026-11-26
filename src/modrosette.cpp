@@ -42,6 +42,7 @@
 #include "range_rings.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <string>
@@ -402,12 +403,18 @@ void hexClicked(int h)
 		s_hiddenAll = !s_hiddenAll;
 		return;
 	}
+	// (Wunsch 26.11. 20:16 "Man muss immer zweimal auf die Rosette fuer die Befehle klicken.. warum??"): die Mitte blendet alles aus, laesst
+	// den Schlachtplan aber "offen" (verborgen). Der naechste Klick auf den Generalsstern hob das Ausblenden auf UND schaltete den Plan
+	// um - also zu; erst der zweite Klick oeffnete ihn. Jetzt: war alles ausgeblendet, zeigt der Klick das gewaehlte Feld (immer offen).
+	const bool wasHidden = s_hiddenAll;
 	s_hiddenAll = false;
 	switch (h)
 	{
-	case H_PLAN: s_planOpen = !s_planOpen; break;
+	case H_PLAN: s_planOpen = wasHidden ? true : !s_planOpen; break;
 	case H_RINGS: kf_ToggleSensorDisplay(); break;
-	default: openBar(h); break;
+	default:
+		if (!(wasHidden && s_open == h)) { openBar(h); }   // verborgen offene Leiste nur wieder zeigen
+		break;
 	}
 }
 
@@ -429,13 +436,14 @@ void ensureScreen()
 		b->UserData = static_cast<UDWORD>(h);
 		b->setTip(gettext(hexTip(h)));
 		b->addOnClickHandler([h](W_BUTTON &) { widgScheduleTask([h]() { hexClicked(h); }); });
-		// Trefferflaeche wie bei der WZ-Rosette: Ellipse statt Rechteck (Knoepfe liegen versetzt aneinander)
+		// Trefferflaeche: (26.11. 20:16) das Sechseck des Bildes (Spitzen links/rechts, flach oben/unten) statt der Ellipse - die Ellipse
+		// liess die Ecken oben und unten aus; ein Klick dorthin traf nur den Rosetten-Grund und tat nichts
 		if (hexHidden(h)) { b->hide(); }
 		b->setCustomHitTest([](const WIDGET *psWidget, int x, int y) -> bool {
 			const float cx = psWidget->x() + psWidget->width() / 2.f, cy = psWidget->y() + psWidget->height() / 2.f;
 			const float ax = psWidget->width() / 2.f, ay = psWidget->height() / 2.f;
-			const float px = (static_cast<float>(x) - cx) / ax, py = (static_cast<float>(y) - cy) / ay;
-			return px * px + py * py <= 1.f;
+			const float px = std::abs((static_cast<float>(x) - cx) / ax), py = std::abs((static_cast<float>(y) - cy) / ay);
+			return py <= 1.f && px + 0.5f * py <= 1.f;
 		});
 		s_hex.push_back(b);
 	}
@@ -602,6 +610,7 @@ void shutdown()
 	s_screen = nullptr; s_root = nullptr; s_bar = nullptr;
 	s_hex.clear(); s_cmd.clear(); s_items.clear();
 	s_open = -1;
+	s_hiddenAll = false;   // (26.11. 20:16) neues Spiel: nichts verborgen
 	if (s_img != nullptr) { iV_FreeImageFile(s_img); s_img = nullptr; }
 	s_tried = false;
 }
