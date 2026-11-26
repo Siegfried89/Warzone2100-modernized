@@ -6,6 +6,7 @@
 
 #include "lib/framework/vector.h"   // muss vor jedem glm-Header kommen (GLM_FORCE_SWIZZLE)
 #include <glm/fwd.hpp>
+#include <vector>
 
 struct STRUCTURE;
 struct STRUCTURE_STATS;
@@ -25,6 +26,9 @@ bool powerDownGate(STRUCTURE *psStruct);
 bool isPoweredDown(const STRUCTURE *psStruct);
 /// zeichnet Kabel und (im Anzeigemodus 4 "Stromnetz") Versorgungskreise; nach dem 3D-Bild aufrufen
 void drawOverlay(const glm::mat4 &perspectiveViewMatrix);
+/// (Wunsch 26.11.) Anzeigemodus Stromnetz: Versorgungsbereiche der Masten/Umspannwerke des eigenen Spielers (x, y, Radius) fuer die
+/// leuchtenden Ringe (range_rings) - gespeist blau, ohne Strom rot
+void supplyRings(std::vector<glm::vec3> &powered, std::vector<glm::vec3> &unpowered);
 /// beim Spielende / Ladevorgang
 void reset();
 /// (Wunsch 17.11. 20:35) Umspannwerk (Kennung beginnt mit "A0Substation"): zentraler Knoten - gespeist von Solarpaneelen und/oder

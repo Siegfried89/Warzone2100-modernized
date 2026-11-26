@@ -24,6 +24,7 @@
 #include "hci.h"
 #include "intdisplay.h"
 #include "intorder.h"
+#include "modrosette.h"   // MOD (26.11.): Mod-Befehle im Befehlsfenster
 #include "uiobjectrefs.h"
 #include "objects.h"
 #include "order.h"
@@ -881,6 +882,12 @@ bool intAddOrder(BASE_OBJECT *psObj)
 			Height = (UWORD)(Height + sButInit.height + ORDER_BUTGAP);
 		}
 		NumDisplayedOrders ++;
+	}
+
+	// MOD (Wunsch 26.11.): die Mod-Befehle (frueher eigenes Fenster "Orders" an der Mod-Rosette) als eigene Knopfzeile hier
+	if (psStructure == nullptr && !SelectedDroids.empty())
+	{
+		Height = static_cast<UWORD>(Height + modrosette::addOrderButtons(orderForm, ORDER_BUTX, sButInit.y, orderForm->width() - 2 * ORDER_BUTX));
 	}
 
 	// Now we know how many orders there are we can resize the form accordingly.

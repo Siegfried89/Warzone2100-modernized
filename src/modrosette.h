@@ -17,8 +17,15 @@
 // Ein Klick auf einen Knopf oeffnet links daneben eine Leiste mit Befehlsknoepfen im Stil der WZ-Befehlsknoepfe (mit Tooltip).
 #pragma once
 
+#include <memory>
+
+class WIDGET;
+
 namespace modrosette
 {
+/// (Wunsch 26.11.) die Mod-Befehle (frueher eigenes Fenster "Orders": Deckung, Ausschwaermen, Bergen, Infanterie baut, voll autonom,
+/// Minen raeumen, Absitzen, Aussteigen) als Knopfzeile im WZ-Befehlsfenster - nur die, die zur Auswahl passen. Liefert die Hoehe.
+int addOrderButtons(const std::shared_ptr<WIDGET> &form, int x, int y, int width);
 /// jeden Frame aus intRunWidgets (wie modpaint::tick)
 void tick();
 void shutdown();

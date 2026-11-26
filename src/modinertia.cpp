@@ -20,6 +20,8 @@ std::unordered_map<unsigned, unsigned> s_until;   // Einheit -> Spielzeit, ab de
 int weightClass(const DROID *d, bool tracksOnly)
 {
 	if (d == nullptr || d->droidType == DROID_PERSON || d->isCyborg() || d->isTransporter() || d->isVtol()) { return 0; }
+	// (Wunsch 26.11. "Bagger stoppen sehr oft ... warten sehr lange, bevor sie zum Befehl gehen"): Baufahrzeuge ohne Anlassen und Traegheit
+	if (d->droidType == DROID_CONSTRUCT || d->droidType == DROID_CYBORG_CONSTRUCT) { return 0; }
 	const PROPULSION_STATS *ps = d->getPropulsionStats();
 	const BODY_STATS *bs = d->getBodyStats();
 	if (ps == nullptr || bs == nullptr || bs->size < SIZE_MEDIUM || bs->size >= SIZE_NUM) { return 0; }

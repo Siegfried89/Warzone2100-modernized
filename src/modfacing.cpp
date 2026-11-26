@@ -10,6 +10,8 @@
 #include "lib/gamelib/gtime.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piepalette.h"
+#include "lib/sound/audio.h"
+#include "lib/sound/audio_id.h"
 
 #include "baseobject.h"
 #include "console.h"
@@ -45,6 +47,8 @@ struct Pending
 	int vx = 0, vy = 0;
 	DROID_ORDER orderType = DORDER_NONE;    // Befehl beim Ausrichten (faehrt die Einheit, dreht sie erst nach der Ankunft)
 	Vector2i orderPos = Vector2i(0, 0);
+	bool awaitMove = false;                 // (26.11.) Rechtsklick-Ziehen: der Fahrbefehl kommt erst mit dem naechsten Spieltakt an
+	UDWORD since = 0;
 };
 std::unordered_map<uint32_t, Pending> s_pending;
 
@@ -53,6 +57,11 @@ bool s_armed = false;                       // linke Taste auf einer gewaehlten 
 bool s_active = false;                      // weit genug gezogen: es wird ausgerichtet
 int s_pressX = 0, s_pressY = 0;
 Vector2i s_anchor(0, 0), s_world(0, 0);
+
+// (Wunsch 26.11.) Rechtsklick-Ziehen: Fahrbefehl zum Druckpunkt, Ziehrichtung = Blickrichtung nach der Ankunft
+bool s_rArmed = false, s_rActive = false;
+int s_rPressX = 0, s_rPressY = 0;
+Vector2i s_rWorld(0, 0), s_rCur(0, 0);
 
 // Fahren
 bool s_driving = false;
@@ -248,8 +257,85 @@ bool processMouse(bool overUi, const Vector2i &world)
 	return true;
 }
 
+bool processRightDrag(bool overUi, bool rightClickOrders, const Vector2i &world)
+{
+	if (!s_rArmed)
+	{
+		if (!rightClickOrders || !mousePressed(MOUSE_RMB) || overUi || ctrlShiftDown() || mouseTarget() != nullptr)
+		{
+			return false;
+		}
+		bool any = false;
+		forSelected([&](DROID *d) { if (canTurn(d)) { any = true; } });
+		if (!any)
+		{
+			return false;
+		}
+		s_rArmed = true;
+		s_rActive = false;
+		s_rPressX = mouseX();
+		s_rPressY = mouseY();
+		s_rWorld = world;
+		s_rCur = world;
+		return false;   // noch ein gewoehnlicher Rechtsklick, bis gezogen wird
+	}
+	if (mouseDown(MOUSE_LMB))
+	{
+		// linke Taste bricht ab
+		s_rArmed = false;
+		s_rActive = false;
+		return true;
+	}
+	const int dx = mouseX() - s_rPressX, dy = mouseY() - s_rPressY;
+	if (!s_rActive && dx * dx + dy * dy >= DRAG_PX * DRAG_PX)
+	{
+		s_rActive = true;
+	}
+	if (s_rActive)
+	{
+		s_rCur = world;
+	}
+	if (mouseReleased(MOUSE_RMB) || !mouseDown(MOUSE_RMB))
+	{
+		const bool wasActive = s_rActive;
+		s_rArmed = false;
+		s_rActive = false;
+		if (!wasActive)
+		{
+			return false;   // nur ein Klick: WZ gibt den Befehl wie gewohnt
+		}
+		// Fahrbefehl zum Druckpunkt, danach in Ziehrichtung drehen
+		orderSelectedLoc(selectedPlayer, static_cast<UDWORD>(std::max(0, s_rWorld.x)), static_cast<UDWORD>(std::max(0, s_rWorld.y)), false);
+		const int vx = s_rCur.x - s_rWorld.x, vy = s_rCur.y - s_rWorld.y;
+		const double len = std::sqrt(static_cast<double>(vx) * vx + static_cast<double>(vy) * vy);
+		if (len >= 24.0)
+		{
+			const int nx = static_cast<int>(std::lround(vx * 512.0 / len)), ny = static_cast<int>(std::lround(vy * 512.0 / len));
+			forSelected([&](DROID *d) {
+				if (!canTurn(d)) { return; }
+				request(d, false, nx, ny);
+				auto it = s_pending.find(d->id);
+				if (it != s_pending.end()) { it->second.awaitMove = true; it->second.since = gameTime; }
+			});
+		}
+		assignDestTarget();
+		audio_PlayTrack(ID_SOUND_SELECT);
+		return true;
+	}
+	return s_rActive;   // beim Ziehen keine anderen Klicks (kein Auswahlrahmen)
+}
+
 void draw()
 {
+	if (s_rArmed && s_rActive)
+	{
+		// (26.11.) Rechtsklick-Ziehen: Pfeil vom Zielpunkt in die Blickrichtung
+		const PIELIGHT c = pal_RGBA(120, 255, 150, 235);
+		const PIELIGHT shadow = pal_RGBA(0, 0, 0, 160);
+		arrow(s_rPressX + 1, s_rPressY + 2, mouseX() + 1, mouseY() + 2, shadow);
+		arrow(s_rPressX, s_rPressY, mouseX(), mouseY(), c);
+		return;
+	}
 	if (!s_armed || !s_active)
 	{
 		return;
@@ -330,6 +416,25 @@ void tick()
 			it = s_pending.erase(it);
 			continue;
 		}
+		// (26.11.) Rechtsklick-Ziehen: auf den eigenen Fahrbefehl warten (hoechstens 3 s), dann gilt er als "der" Befehl
+		if (p.awaitMove)
+		{
+			if (d->order.type == DORDER_MOVE || d->order.type == DORDER_SCOUT)
+			{
+				it->second.awaitMove = false;
+				it->second.orderType = d->order.type;
+				it->second.orderPos = d->order.pos;
+			}
+			else if (gameTime - p.since < 3000)
+			{
+				++it;
+				continue;
+			}
+			else
+			{
+				it->second.awaitMove = false;
+			}
+		}
 		// neuer Befehl seit dem Ausrichten (nicht nur "angekommen") -> Ausrichten verworfen
 		if (!idleOrder(d->order.type) && (d->order.type != p.orderType || d->order.pos != p.orderPos))
 		{
@@ -363,6 +468,7 @@ void reset()
 {
 	s_pending.clear();
 	s_armed = s_active = false;
+	s_rArmed = s_rActive = false;
 	s_driving = false;
 }
 }
