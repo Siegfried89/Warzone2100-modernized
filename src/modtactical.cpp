@@ -268,7 +268,6 @@ Sym classify(const DROID *d)
 }
 
 bool enabled() { return s_on; }
-void setEnabled(bool on) { s_on = on; }
 void toggle() { s_on = !s_on; }
 
 bool active()

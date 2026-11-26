@@ -192,11 +192,6 @@ int classicDecal(WorldMapState &m, int x, int y, int decalNo, bool waterOnly)
 	return BASE * (2 + fine + 2 * layer) + 4096 * mask + (decalNo >= 0 ? decalNo : 4095);
 }
 
-bool isEdgeTile(int tex)
-{
-	return s_first >= 0 && tex >= 0 && static_cast<int>(TileNumber_tile(static_cast<unsigned short>(tex))) != s_first;
-}
-
 void footprintChanged(const STRUCTURE *psStruct, int tileX, int tileY, int sizeX, int sizeY)
 {
 	if (!wants(psStruct)) { return; }

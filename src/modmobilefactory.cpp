@@ -137,16 +137,6 @@ STRUCTURE *coreOf(const DROID *psDroid)
 	return nullptr;
 }
 
-DROID *hostOf(const STRUCTURE *psCore)
-{
-	if (psCore == nullptr || !psCore->isMobileCore() || psCore->modHostId == 0 || psCore->player >= MAX_PLAYERS)
-	{
-		return nullptr;
-	}
-	DROID *d = IdToDroid(gameWorld.objects, psCore->modHostId, psCore->player);
-	return (d != nullptr && !d->died) ? d : nullptr;
-}
-
 void update()
 {
 	for (unsigned p = 0; p < MAX_PLAYERS; ++p)

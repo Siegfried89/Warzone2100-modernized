@@ -59,7 +59,6 @@ const void *towedWreckStats(const DROID *psDroid);
 
 /// Anzeige: Waffe fuer ein liegendes Turm-Teil (0 = keins)
 unsigned partWeapon(const FEATURE *psFeature);
-bool isPartStats(const void *psFeatureStats);
 /// Anzeige: Reparaturstation repariert gerade (Funken, Zischen, Arm wackelt). Gibt den Wackel-Winkel (Neigung, Richtung) zurueck.
 void repairEffects(const STRUCTURE *psStructure, const DROID *psTarget, int &pitchWobble, int &dirWobble);
 }

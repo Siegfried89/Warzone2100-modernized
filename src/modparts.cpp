@@ -248,18 +248,6 @@ bool slump(const DROID *d, glm::mat4 &out)
 	return true;
 }
 
-int partPercent(const DROID *d, bool turret)
-{
-	if (d == nullptr || !applies(d)) { return -1; }
-	if (turret && !hasTurret(d) && !turretGone(d)) { return -1; }
-	const auto it = s_state.find(d->id);
-	if (it == s_state.end()) { return 100; }
-	const State &s = it->second;
-	const int hp = turret ? s.turretHp : s.trackHp;
-	const int mx = turret ? s.turretMax : s.trackMax;
-	return std::max(0, std::min(100, hp * 100 / std::max(1, mx)));
-}
-
 void tick(GameWorld &world)
 {
 	if (gameTime < s_nextTick) { return; }

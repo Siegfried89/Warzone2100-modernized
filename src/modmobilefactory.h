@@ -16,7 +16,6 @@ namespace modmobilefactory
 {
 bool isHost(const DROID *psDroid);                 ///< Rumpf mit Fabrik-Kern?
 STRUCTURE *coreOf(const DROID *psDroid);           ///< Fabrik-Kern dieses Fahrzeugs (oder nullptr)
-DROID *hostOf(const STRUCTURE *psCore);            ///< Fahrzeug zu diesem Kern (oder nullptr)
 void update();                                     ///< je Spieltakt (auf allen Rechnern gleich): Kerne anlegen, mitfuehren, entfernen
 void onDroidClicked(DROID *psDroid);               ///< Bedienung: Klick auf den eigenen Fatboy oeffnet seine Bauliste
 void reset();                                      ///< neues Spiel / Laden

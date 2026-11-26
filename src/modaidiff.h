@@ -10,10 +10,6 @@
 
 namespace modaidiff
 {
-/// Ist dieser Spieler ein KI-Spieler, dessen Werte skaliert werden?
-bool isScaled(unsigned player);
-/// Schaden / Kosten / Produktionstempo in Prozent (100 = unveraendert; 100 fuer Menschen)
-int damagePercent(unsigned player);
 int costPercent(unsigned player);
 int productionPercent(unsigned player);
 /// Hilfsfunktionen

@@ -183,15 +183,6 @@ void tick(GameWorld &world)
 int enhancer(unsigned player) { return player < MAX_PLAYERS ? s_enhancer[player] : 0; }
 int enhancerPercent(unsigned player) { return enhancer(player) * 6; }
 
-int boreProgress(const DROID *psDroid)
-{
-	if (psDroid == nullptr) { return -1; }
-	const auto it = s_bores.find(psDroid->id);
-	if (it == s_bores.end() || it->second.until <= it->second.from) { return -1; }
-	const unsigned span = it->second.until - it->second.from;
-	return static_cast<int>(std::min(100u, (gameTime - it->second.from) * 100u / span));
-}
-
 void reset()
 {
 	s_bores.clear();

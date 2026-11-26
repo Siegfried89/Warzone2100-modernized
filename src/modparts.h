@@ -31,8 +31,6 @@ bool immobile(const DROID *psDroid);
 bool turretGone(const DROID *psDroid);
 /// Anzeige: Fahrzeug mit zerstoertem Laufwerk sackt ab und neigt sich (true = out ist gesetzt)
 bool slump(const DROID *psDroid, glm::mat4 &out);
-/// Lebenspunkte des Teils in Prozent (0-100); -1 = Fahrzeug hat das Teil nicht
-int partPercent(const DROID *psDroid, bool turret);
 /// jeden Spielschritt aus der Spielschleife (Ausfuehrung der Zerstoerung, Qualm, Heilung; rechnet selbst nur alle 250 ms)
 void tick(GameWorld &world);
 /// beim Spielende / Ladevorgang

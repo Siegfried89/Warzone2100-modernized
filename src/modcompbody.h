@@ -130,8 +130,6 @@ float liftOf(const Def &d);
 /// gespiegelte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
 const iIMDShape *flippedShape(const std::string &bodyId, int flipMask);
 Totals totals(const Def &d);
-/// Rumpf zu einer ID (nullptr = unbekannt)
-const BODY_STATS *bodyById(const std::string &id);
 /// speichern (Datei im Benutzerordner) und - im Spiel - sofort als Rumpf anmelden bzw. aktualisieren; d.id wird bei neuen Entwuerfen vergeben
 bool save(Def &d, std::string &err);
 /// loeschen (Datei weg, Rumpf nicht mehr baubar)

@@ -202,51 +202,6 @@ struct Grid
 
 constexpr int MARGIN = 3;
 
-void carveDisc(Grid &g, int cx, int cy, int rad)
-{
-	for (int dy = -rad; dy <= rad; ++dy)
-	{
-		for (int dx = -rad; dx <= rad; ++dx)
-		{
-			if (dx * dx + dy * dy > rad * rad + rad / 2) { continue; }
-			const int x = cx + dx, y = cy + dy;
-			if (x < MARGIN || y < MARGIN || x >= g.W - MARGIN || y >= g.H - MARGIN) { continue; }
-			g.set(x, y);
-		}
-	}
-}
-
-int sgn(int v) { return v < 0 ? -1 : (v > 0 ? 1 : 0); }
-
-// Gang zwischen zwei Punkten: ueberwiegend geradeaus, ab und zu ein Schlenker; Breite 3 Felder
-void carveTunnel(Grid &g, Rng &r, Pt a, Pt b, int rad)
-{
-	int x = a.x, y = a.y;
-	int guard = 6 * (g.W + g.H);
-	while ((x != b.x || y != b.y) && guard-- > 0)
-	{
-		carveDisc(g, x, y, rad);
-		const int dx = b.x - x, dy = b.y - y;
-		bool horiz;
-		if (dx == 0) { horiz = false; }
-		else if (dy == 0) { horiz = true; }
-		else if (std::abs(dx) > std::abs(dy)) { horiz = r.range(10) < 8; }
-		else { horiz = r.range(10) < 2; }
-		if (horiz) { x += sgn(dx); } else { y += sgn(dy); }
-		if (r.range(9) == 0)   // Schlenker
-		{
-			const int s = r.range(2) ? 1 : -1;
-			if (horiz) { y = std::clamp(y + s, MARGIN, g.H - MARGIN - 1); } else { x = std::clamp(x + s, MARGIN, g.W - MARGIN - 1); }
-		}
-	}
-	carveDisc(g, b.x, b.y, rad);
-}
-
-// MF-treu: der Untergrund beginnt als massiver Fels. Gaenge entstehen nur durch Bohren; eine kleine Kammer legt der Schacht frei
-// (openSite). Der fruehere Zufalls-Hoehlengenerator ist entfernt (Nutzer 13.11.: "es soll MF treu sein").
-void genUndergroundGrid(Grid &, Rng &)
-{
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Originale MF-Inseln (mf/islands.txt, Texturen texpages/modisland-*/): Form + Kachelnummer je Feld
@@ -592,7 +547,9 @@ bool buildLayer(Layer layer, const Palette &pal, uint32_t seed)
 	const int W = s_w, H = s_h;
 	Rng r(seed ^ (layer == modlayer::UNDERGROUND ? 0xA5A5A5A5u : 0x5A5A5A5Au));
 	Grid g(W, H);
-	if (layer == modlayer::UNDERGROUND) { genUndergroundGrid(g, r); } else { genOrbitGrid(g, r); computeOrbitFloor(); }
+	// MF-treu: der Untergrund beginnt als massiver Fels (leeres Raster); Gaenge entstehen nur durch Bohren, eine kleine Kammer legt der
+	// Schacht frei (openSite). Der fruehere Zufalls-Hoehlengenerator und die automatische Gang-Anbindung sind entfernt.
+	if (layer != modlayer::UNDERGROUND) { genOrbitGrid(g, r); computeOrbitFloor(); }
 
 	WorldMapState tmp;
 	tmp.width = W;
@@ -812,32 +769,10 @@ void openSite(int tileX, int tileY, int player, int rad, int revealRad)
 			carved.push_back({ tileX + dx, tileY + dy });
 		}
 	}
-	// naechstes schon offenes Feld ausserhalb der Kammer suchen und per Gang anbinden
-	Pt best{ -1, -1 };
-	long bestD = -1;
-	bool alreadyConnected = false;
-	for (int y = MARGIN; y < H - MARGIN; ++y)
-	{
-		for (int x = MARGIN; x < W - MARGIN; ++x)
-		{
-			if (!isOpen(x, y)) { continue; }
-			const long dx = x - tileX, dy = y - tileY;
-			const long d = dx * dx + dy * dy;
-			if (d <= static_cast<long>(rad * rad + rad / 2)) { alreadyConnected = true; continue; }
-			if (bestD < 0 || d < bestD) { bestD = d; best = { x, y }; }
-		}
-	}
-
 	Grid g(W, H);
 	for (int y = 0; y < H; ++y) { for (int x = 0; x < W; ++x) { if (isOpen(x, y)) { g.set(x, y); } } }
 	for (const Pt &p : carved) { if (p.x >= MARGIN && p.y >= MARGIN && p.x < W - MARGIN && p.y < H - MARGIN) { g.set(p.x, p.y); } }
-	// MF-treu: Gaenge entstehen nur durch Bohren (Bohrfahrzeug), nie von selbst. Die fruehere automatische Anbindung bleibt abschaltbar erhalten.
-	constexpr bool kAutoConnect = false;
-	if (kAutoConnect && !alreadyConnected && best.x >= 0)
-	{
-		Rng r(s_seed ^ static_cast<uint32_t>(tileX * 31 + tileY * 17));
-		carveTunnel(g, r, { tileX, tileY }, best, 1);
-	}
+	// MF-treu: Gaenge entstehen nur durch Bohren (Bohrfahrzeug), nie von selbst.
 
 	// Kacheln neu setzen (Hoehen nach der Eckpunkt-Regel)
 	const uint32_t salt = s_seed ^ (static_cast<uint32_t>(modlayer::UNDERGROUND) * 977u);

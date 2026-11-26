@@ -26,8 +26,6 @@ bool isMiner(const DROID *psDroid);
 bool orderSelected(unsigned player, FEATURE *psLava);
 /// verbleibender Vorrat (MJ) oder -1
 int remaining(const FEATURE *psLava);
-/// Obergrenze des Spielers in MJ (0 = unbegrenzt)
-int energyCap(unsigned player);
 /// jeden Spielschritt aus der Spielschleife
 void tick(GameWorld &world);
 /// neues Spiel

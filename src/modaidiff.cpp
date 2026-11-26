@@ -60,17 +60,6 @@ const Row *rowFor(unsigned player)
 }
 }
 
-bool isScaled(unsigned player)
-{
-	return rowFor(player) != nullptr;
-}
-
-int damagePercent(unsigned player)
-{
-	const Row *r = rowFor(player);
-	return r ? r->damage : 100;
-}
-
 int costPercent(unsigned player)
 {
 	const Row *r = rowFor(player);

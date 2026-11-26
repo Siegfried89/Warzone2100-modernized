@@ -25,7 +25,6 @@ namespace modtactical
 /// ab dieser Kamera-Entfernung erscheinen die Symbole (mittlere Zoomstufe)
 constexpr float SYMBOL_DIST = 3000.f;
 bool enabled();
-void setEnabled(bool on);
 void toggle();
 /// eingeschaltet und weit genug herausgezoomt: Modelle durch Symbole ersetzen
 bool active();

@@ -155,41 +155,6 @@ bool shake(const DROID *d, unsigned renderTime, glm::mat4 &hull, glm::mat4 &prop
 	return true;
 }
 
-bool duck(const DROID *d, unsigned renderTime, glm::mat4 &out)
-{
-	// (Wunsch 26.11. 19:32 "Die nach vorne gebeugte Animation sieht schlecht aus. Das ganze Modell lehnt sich stark nach vorne, statt nur der
-	// Oberkoerper und Kopf. Die Beinbewegung ist eigentlich ok, aber ohne das Lehnen unten."): die ganze Figur wird nicht mehr gekippt - das
-	// Ducken steckt jetzt in den Laufanimationen selbst (Paket: crouchrun.py neigt nur Rumpf, Kopf, Arme und Waffe, die Beine bleiben).
-	static const bool kWholeBodyDuck = false;
-	if (!kWholeBodyDuck || d == nullptr || d->droidType != DROID_PERSON) { return false; }
-	// (Wunsch 26.11. "Die Laufanimation der Infanterie soll nur noch die geduckte Variante sein"): wer laeuft, laeuft geduckt - weich
-	// hinein (0,25 s) und nach dem Anhalten wieder aufrichten (0,5 s)
-	static std::unordered_map<uint32_t, std::pair<float, unsigned>> s_move;
-	if (s_move.size() > 4000) { s_move.clear(); }
-	auto &mv = s_move[d->id];
-	const bool moving = d->sMove.Status != MOVEINACTIVE && d->sMove.Status != MOVEWAITROUTE && std::abs(d->sMove.speed) > 0;
-	const float dt = mv.second == 0 ? 0.f : static_cast<float>(std::min(500u, renderTime - std::min(renderTime, mv.second)));
-	mv.second = renderTime;
-	mv.first = moving ? std::min(1.f, mv.first + dt / 250.f) : std::max(0.f, mv.first - dt / 500.f);
-	float k = mv.first;
-	// timeLastHit steht in Spielzeit, renderTime in Bildzeit: beide laufen gleich, die Bildzeit kann der Spielzeit knapp voraus sein
-	const int since = d->timeLastHit == 0 ? -1 : static_cast<int>(renderTime) - static_cast<int>(d->timeLastHit);
-	if (since >= 0 && since <= 4200)
-	{
-		// Kopf runter wie beim Rennen in Deckung: schnell hinein (0,25 s), halten bis 3 s, dann langsam aufrichten
-		float kh;
-		if (since < 250) { kh = static_cast<float>(since) / 250.f; }
-		else if (since < 3000) { kh = 1.f; }
-		else { kh = 1.f - static_cast<float>(since - 3000) / 1200.f; }
-		k = std::max(k, kh);
-	}
-	k = std::clamp(k, 0.f, 1.f);
-	if (k <= 0.f) { return false; }
-	const float lean = -26.f * k;                      // negatives Nicken = Oberkoerper nach vorn
-	out = glm::scale(glm::vec3(1.f, 1.f - 0.10f * k, 1.f)) * glm::rotate(glm::radians(lean), glm::vec3(1.f, 0.f, 0.f));
-	return true;
-}
-
 bool hover(const DROID *d, unsigned renderTime, glm::mat4 &out)
 {
 	if (d == nullptr || (d->droidType != DROID_WEAPON && d->droidType != DROID_DEFAULT && d->droidType != DROID_CONSTRUCT && d->droidType != DROID_REPAIR && d->droidType != DROID_SENSOR && d->droidType != DROID_ECM && d->droidType != DROID_CYBORG_CONSTRUCT)) { return false; }

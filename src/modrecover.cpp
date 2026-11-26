@@ -488,11 +488,6 @@ unsigned partWeapon(const FEATURE *f)
 	return it == s_parts.end() ? 0 : it->second.weapon;
 }
 
-bool isPartStats(const void *psFeatureStats)
-{
-	return psFeatureStats != nullptr && psFeatureStats == partStats();
-}
-
 void repairEffects(const STRUCTURE *s, const DROID *target, int &pitchWobble, int &dirWobble)
 {
 	pitchWobble = 0;

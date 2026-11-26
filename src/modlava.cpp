@@ -414,11 +414,6 @@ int remaining(const FEATURE *f)
 	return it == s_left.end() ? FIELD_URANIUM : it->second;
 }
 
-int energyCap(unsigned player)
-{
-	return player < MAX_PLAYERS ? s_cap[player] : 0;
-}
-
 void tick(GameWorld &world)
 {
 	if (&world != &gameWorld) { return; }

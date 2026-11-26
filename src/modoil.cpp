@@ -146,7 +146,6 @@ std::vector<Replace> s_repl;
 bool s_startChecked[MAX_PLAYERS] = {};
 int s_freeTankers[MAX_PLAYERS] = {};        // (24.11. 17:46) schon gratis vergebene Tanker (Fabrik-Tanker zaehlen nicht)       // (24.11. 17:01) Tanker fuer schon stehende Oeltuerme/Raffinerien vergeben
 int s_gift[MAX_PLAYERS] = {};               // (20.11. Punkt 4) Bit 1 = Kraftwerk-Geschenk, Bit 2 = Raffinerie-Geschenk schon vergeben
-bool s_duty[MAX_PLAYERS] = {};              // (20.11.) Strompflicht: erst ab dem ersten Fass in einem Kraftwerk
 int s_bank[MAX_PLAYERS] = {};               // (Wunsch 21.11. 20:22) Energie verbrannter Faesser, die noch stetig ins Konto laeuft
 int s_payRate[MAX_PLAYERS] = {};            // (Wunsch 23.11. 19:29 "gleichmaessig statt schubweise") feste Auszahlung je Sekunde bis zur naechsten Lieferung
 // (23.11. 20:22) abgebrochene Rohrstuecke, die spaeter wieder beauftragt werden
@@ -740,7 +739,7 @@ void reset()
 	s_station.clear();
 	s_booms.clear();
 	s_repl.clear();
-	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_duty[p] = false; s_bank[p] = 0; s_payRate[p] = 0; s_oilFP[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
+	for (int p = 0; p < MAX_PLAYERS; p++) { s_gift[p] = 0; s_bank[p] = 0; s_payRate[p] = 0; s_oilFP[p] = 0; s_lastIncome[p] = 0; s_lastWaste[p] = 0; s_wasteMark[p] = 0; }
 	s_tankRespawn.clear();
 	s_have = false;
 }
@@ -768,7 +767,6 @@ void saveState(std::vector<int64_t> &out)
 	for (int p = 0; p < MAX_PLAYERS; p++)
 	{
 		if (s_gift[p] != 0) { out.push_back(10); out.push_back(p); out.push_back(s_gift[p]); }
-		if (s_duty[p]) { out.push_back(11); out.push_back(p); out.push_back(1); }
 		if (s_bank[p] > 0) { out.push_back(12); out.push_back(p); out.push_back(s_bank[p]); }
 	}
 	for (int p = 0; p < MAX_PLAYERS; p++) { if (s_freeTankers[p] > 0) { out.push_back(14); out.push_back(p); out.push_back(s_freeTankers[p]); } }
@@ -793,7 +791,7 @@ void loadState(const std::vector<int64_t> &in)
 		case 3: s_fuel[id] = iv; break;
 		case 4: s_storeR[id] += iv; break;   // (20.11.) Lager hat nur noch veredelte Faesser
 		case 10: if (id < MAX_PLAYERS) { s_gift[id] = iv; } break;
-		case 11: if (id < MAX_PLAYERS) { s_duty[id] = iv != 0; } break;
+		case 11: break;   // (26.11.) frueher Strompflicht-Merker (nie ausgewertet, entfernt) - in alten Spielstaenden ueberspringen
 		case 12: if (id < MAX_PLAYERS) { s_bank[id] = iv; } break;
 		case 14: if (id < MAX_PLAYERS) { s_freeTankers[id] = iv; } break;
 		case 13: { CargoState &c = s_cargo[id]; c.n = iv & 0xffff; c.content = (iv >> 16) & 3; if (c.content == 0) { c.content = 2; } } break;
@@ -805,21 +803,6 @@ void loadState(const std::vector<int64_t> &in)
 		default: break;
 		}
 	}
-}
-
-void extract(const STRUCTURE *, int64_t, int64_t)
-{
-	// (20.11.) nicht mehr benutzt: jeder Oelturm foerdert gleich schnell, unabhaengig vom Kraftwerk (siehe logistics)
-}
-
-bool dutyStarted(int player)
-{
-	return player >= 0 && player < MAX_PLAYERS && s_duty[player];
-}
-
-void noteDuty(int player)
-{
-	if (player >= 0 && player < MAX_PLAYERS) { s_duty[player] = true; }
 }
 
 bool isCargoVehicle(const DROID *d)
@@ -1153,7 +1136,6 @@ void deliverToGenerator(int player, STRUCTURE *gen, int barrels, bool fromStore)
 	}
 	if (barrels > 0 && player >= 0 && player < MAX_PLAYERS)
 	{
-		s_duty[player] = true;
 		s_payRate[player] = std::max(1, (s_bank[player] + GEN_SECS - 1) / GEN_SECS);
 	}
 }
