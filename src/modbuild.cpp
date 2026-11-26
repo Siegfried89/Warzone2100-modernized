@@ -607,7 +607,7 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 		}
 		if (static_cast<int>(out.size()) >= MAX_PLACEMENTS) { break; }
 	}
-	clipToMap(out, TILE_UNITS);   // (26.11.) nichts ausserhalb der baubaren Karte
+	clipToMap(out, DIST_TILE);   // (26.11.) nichts ausserhalb der baubaren Karte (Plan-Kacheln)
 	return out;
 }
 
