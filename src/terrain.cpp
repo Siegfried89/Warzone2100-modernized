@@ -513,6 +513,8 @@ struct TileDecalInfo
 	Vector2f centerUv;
 	int decalNo;
 	uint32_t grounds;
+	bool classicNb = false;      // MOD (26.11.): Klassik - grounds/nbCode (als groundWeights) tragen Nachbarkacheln und Lage (gepixelte Uebergaenge)
+	uint8_t nbCode[4] = {0, 0, 0, 0};
 };
 
 static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
@@ -553,6 +555,66 @@ static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
 	for (int k = 0; k < 4; k++)
 	{
 		groundsBytes[k] = mapTile(mapState, i + dxdy[k][0], j + dxdy[k][1])->ground;
+	}
+	// MOD (Wunsch 26.11. "fehlende Transitions, harte Schnitte bei den Tiles - fuer alles Uebergaenge, aber NICHT blurry, sondern schoen
+	// pixelig und stark"): die Klassik-Grafik nutzt keine Boden-Mischung - dort tragen die vier "grounds"-Bytes stattdessen die Kachel der
+	// vier Nachbarn (Nord, Ost, Sued, West; 255 = kein Uebergang: gleiche Kachel, Kartenrand, Klippe oder Wasser). Der Klassik-Shader
+	// streut an jeder Kante pixelweise (grobe Bloecke) Bildpunkte der Nachbarkachel ein (terrain_combined_classic.frag modtApply).
+	if (terrainShaderQuality == TerrainShaderQuality::CLASSIC)
+	{
+		info.classicNb = true;
+		const int own = static_cast<int>(TileNumber_tile(texValue));
+		const unsigned char ownType = terrainType(tile);
+		const bool ownHard = concreteTex >= 0 || ownType == TER_CLIFFFACE || ownType == TER_WATER;
+		static const int nb[4][2] = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
+		for (int k = 0; k < 4; k++)
+		{
+			const int ni = i + nb[k][0], nj = j + nb[k][1];
+			uint8_t v = 255;
+			uint8_t code = 0;
+			if (!ownHard && ni >= 0 && nj >= 0 && ni < mapState.width && nj < mapState.height)
+			{
+				const MAPTILE *nt = mapTile(mapState, ni, nj);
+				const int layer = static_cast<int>(TileNumber_tile(nt->texture));
+				const unsigned char nType = terrainType(nt);
+				const bool hard = nType == TER_CLIFFFACE || nType == TER_WATER || modconcrete::overrideTexture(mapState, ni, nj, true) >= 0;
+				if (!hard && layer != own && layer >= 0 && layer < 255)
+				{
+					v = static_cast<uint8_t>(layer);
+					// Lage der Nachbarkachel (Drehung/Spiegelung): Ursprung der UV an ihrer Ecke (0,0) und ob die Achsen getauscht sind
+					Vector2f nuv[2][2];
+					getTileTexArrCoords(*nuv, nt->texture);
+					const int ox = nuv[0][0].x > 0.5f ? 1 : 0;
+					const int oy = nuv[0][0].y > 0.5f ? 1 : 0;
+					const int swap = std::fabs(nuv[1][0].x - nuv[0][0].x) < 0.5f ? 1 : 0;
+					const int same = nType == ownType ? 1 : 0;
+					code = static_cast<uint8_t>(ox | (oy << 1) | (swap << 2) | (same << 3));
+				}
+			}
+			groundsBytes[k] = v;
+			info.nbCode[k] = static_cast<uint8_t>(128 | code);   // Bit 7: nie 0 (0 = Sonderwert der Mitte im Shader)
+		}
+		// Lage der eigenen Kachel (Byte 0, Bits 4-6): daraus bestimmt der Shader die genaue Lage im Feld aus der Kachel-UV
+		const int sox = info.uv[0][0].x > 0.5f ? 1 : 0;
+		const int soy = info.uv[0][0].y > 0.5f ? 1 : 0;
+		const int sswap = std::fabs(info.uv[1][0].x - info.uv[0][0].x) < 0.5f ? 1 : 0;
+		info.nbCode[0] = static_cast<uint8_t>(info.nbCode[0] | ((sox | (soy << 1) | (sswap << 2)) << 4));
+	}
+	// MOD (26.11.): Normal/Remastered - Decal-Kacheln (Strassen, Krater, ...) enden an Feldern ohne Decal nicht mehr mit hartem Schnitt,
+	// sondern laufen gepixelt aus: Bits 24-27 der Decal-Nummer = Kanten N, O, S, W, an denen das Nachbarfeld kein Decal hat (Shader:
+	// terrain_combined_medium/high.frag modtDecalKeep). Kachel 256 (Orbit-Leere) und hoeher bleiben unveraendert.
+	else if (info.decalNo >= 0 && info.decalNo < 256 && concreteTex < 0 && terrainType(tile) != TER_CLIFFFACE && terrainType(tile) != TER_WATER)
+	{
+		static const int nb[4][2] = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
+		int flags = 0;
+		for (int k = 0; k < 4; k++)
+		{
+			const int ni = i + nb[k][0], nj = j + nb[k][1];
+			if (ni < 0 || nj < 0 || ni >= mapState.width || nj >= mapState.height) { continue; }
+			const MAPTILE *nt = mapTile(mapState, ni, nj);
+			if (!TILE_HAS_DECAL(nt) && modconcrete::overrideTexture(mapState, ni, nj, false) < 0) { flags |= 1 << k; }
+		}
+		info.decalNo |= flags << 24;
 	}
 	PIELIGHT grounds;
 	grounds.fromRGBA(groundsBytes[0], groundsBytes[1], groundsBytes[2], groundsBytes[3]);
@@ -712,6 +774,10 @@ static void setTileDecalVertex_Subdivided(WorldMapState& mapState, int i, int j,
 			}
 			wb[wMax] += 255 - wSum; // keep the weights summing to exactly 1
 			v.groundWeights = {static_cast<uint8_t>(wb[0]), static_cast<uint8_t>(wb[1]), static_cast<uint8_t>(wb[2]), static_cast<uint8_t>(wb[3])};
+			if (info.classicNb)
+			{
+				v.groundWeights = {info.nbCode[0], info.nbCode[1], info.nbCode[2], info.nbCode[3]};   // MOD (26.11.): Klassik-Uebergaenge
+			}
 		}
 	}
 
@@ -782,6 +848,10 @@ static void setSectorDecalVertex_SinglePass(WorldMapState& mapState, int x, int 
 			vs[4].normal = getGridNormal(mapState, i, j, true);
 			vs[4].decalNo = info.decalNo;
 			vs[4].groundWeights = {0, 0, 0, 0}; // special value for shader.
+			if (info.classicNb)   // MOD (26.11.): Klassik nutzt keine Boden-Mischung - hier Lage der Nachbarkacheln (Uebergaenge)
+			{
+				for (int k = 0; k < 5; k++) { vs[k].groundWeights = {info.nbCode[0], info.nbCode[1], info.nbCode[2], info.nbCode[3]}; }
+			}
 			for (int k = 0; k < 5; k++) vs[k].grounds = info.grounds;
 
 			// vertices are shared between the tile's 4 triangles (fanned from the center vertex vs[4])

@@ -142,13 +142,67 @@ vec4 modcApply(vec4 decal, int t, vec3 P)
 	return vec4(mix(decal.rgb, c.rgb, a), max(decal.a, a));
 }
 
+
+// MOD (Wunsch 26.11. "fehlende Transitions, harte Schnitte bei den Tiles - fuer alles Uebergaenge, aber NICHT blurry, sondern schoen pixelig
+// und stark, sodass es den Pixel-Look nicht verliert"): an jeder Kante zu einer anderen Kachel streut die Kachel grobe Bildpunkt-Bloecke
+// (16 je Kachel, also etwa 4 Original-Pixel) der Nachbarkachel ein: direkt an der Kante jeder zweite Block, nach innen immer weniger -
+// beide Seiten tun das, so verzahnen sich die Kacheln zu einem gepixelten Uebergang (kein Weichzeichnen). Die Nachbarkachel wird an der
+// Kante gespiegelt gelesen (mit ihrer Drehung), so passen die Bildpunkte an der Kante zusammen. Andere Bodenart: Saum 0,45 Kachel,
+// gleiche Bodenart (andere Kachel): 0,22. Klippen, Wasser und Betonflaechen bleiben scharf.
+// Daten (terrain.cpp getTileDecalInfo): grounds = Kachel der Nachbarn N, O, S, W (255 = kein Uebergang), groundWeights = deren Lage
+// (Bit 0/1: Ursprung u/v gespiegelt, Bit 2: Achsen getauscht, Bit 3: gleiche Bodenart; Byte 0 Bits 4-6: Lage der eigenen Kachel; Bit 7 immer).
+uint modtHash(ivec2 p)
+{
+	uint h = uint(p.x) * 73856093u ^ uint(p.y) * 19349663u;
+	h ^= h >> 13u; h *= 0x5bd1e995u; h ^= h >> 15u;
+	return h;
+}
+vec4 modtApply(vec4 decal, vec2 gx, vec2 gy)   // gx/gy: Ableitungen der Kachel-UV (vor jeder Verzweigung gebildet)
+{
+	uvec4 nbs = fragf.grounds;
+	if (nbs == uvec4(255u)) { return decal; }
+	// Lage im Feld genau aus der Kachel-UV (eigene Drehung in Byte 0, Bits 4-6) - die Weltlage ist an den Feldkanten nicht genau genug
+	ivec4 code = ivec4(floor(frag.groundWeights * 255.0 + 0.5));
+	int own = (code.x >> 4) & 7;
+	vec2 ab0 = vec2((own & 1) != 0 ? 1.0 - frag.uvDecal.x : frag.uvDecal.x, (own & 2) != 0 ? 1.0 - frag.uvDecal.y : frag.uvDecal.y);
+	vec2 f = clamp((own & 4) != 0 ? ab0.yx : ab0, 0.0, 1.0);
+	vec2 tc = frag.uvLightmap * vec2(textureSize(lightmap_tex, 0)) - 0.5;   // Weltlage in Feldern (ein Lichtkarten-Texel ist ein Feld)
+	ivec2 tileO = ivec2(floor(tc - f + 0.5));
+	float best = 2.0;
+	int k = -1;
+	if (nbs.x != 255u && f.y < best) { best = f.y; k = 0; }
+	if (nbs.y != 255u && 1.0 - f.x < best) { best = 1.0 - f.x; k = 1; }
+	if (nbs.z != 255u && 1.0 - f.y < best) { best = 1.0 - f.y; k = 2; }
+	if (nbs.w != 255u && f.x < best) { best = f.x; k = 3; }
+	if (k < 0) { return decal; }
+	int c = k == 0 ? code.x : (k == 1 ? code.y : (k == 2 ? code.z : code.w));
+	uint layer = k == 0 ? nbs.x : (k == 1 ? nbs.y : (k == 2 ? nbs.z : nbs.w));
+	c &= 15;
+	float band = (c & 8) != 0 ? 0.22 : 0.45;
+	if (best >= band) { return decal; }
+	ivec2 blk = tileO * 16 + ivec2(min(floor(f * 16.0), vec2(15.0)));
+	float q = (floor(best * 16.0) + 0.5) / 16.0;                                   // Abstand in ganzen Bloecken
+	float wob = (float(modtHash(ivec2(floor(tc * 3.0)) + 911) & 255u) / 255.0 - 0.5) * 0.3 * band;   // Saum nicht gleichmaessig
+	float p = clamp(0.5 * (1.0 - (q + wob) / band), 0.0, 0.6);
+	if (float(modtHash(blk) & 65535u) / 65535.0 >= p) { return decal; }
+	// Spiegelpunkt in der Nachbarkachel (Nord/Sued: v gespiegelt, Ost/West: u gespiegelt), dann ihre Drehung
+	vec2 m = (k == 0 || k == 2) ? vec2(f.x, 1.0 - f.y) : vec2(1.0 - f.x, f.y);
+	vec2 ab = (c & 4) != 0 ? m.yx : m;
+	vec2 uv = vec2((c & 1) != 0 ? 1.0 - ab.x : ab.x, (c & 2) != 0 ? 1.0 - ab.y : ab.y);
+	float g = exp2(WZ_MIP_LOAD_BIAS);
+	vec4 n = textureGrad(decalTex, vec3(uv, float(layer)), gx * g, gy * g);
+	return vec4(n.rgb, decal.a);
+}
+
 vec3 blendAddEffectLighting(vec3 a, vec3 b) {
 	return min(a + b, vec3(1.0));
 }
 
 vec4 main_classic() {
 	int modcBaseTile = modcLayer(fragf.tileNo);
+	vec2 modtGx = dFdx(frag.uvDecal), modtGy = dFdy(frag.uvDecal);
 	vec4 decal = modcBaseTile >= 0 ? texture(decalTex, vec3(frag.uvDecal, modcBaseTile), WZ_MIP_LOAD_BIAS) : vec4(0);
+	if (modcBaseTile >= 0) { decal = modtApply(decal, modtGx, modtGy); }   // MOD (26.11.): gepixelte Kachel-Uebergaenge
 	decal = modcApply(decal, fragf.tileNo, frag.posModelSpace);   // MOD (17.11.): weicher Betonrand / Wasserflaeche
 
 	vec3 L = normalize(frag.groundLightDir);

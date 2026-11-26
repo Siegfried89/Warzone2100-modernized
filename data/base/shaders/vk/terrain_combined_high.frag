@@ -82,6 +82,59 @@ vec3 modvColor(vec3 P)
 }
 #include "pointlights.glsl"
 
+// MOD (Wunsch 26.11. "fehlende Transitions, harte Schnitte bei den Tiles - fuer alles Uebergaenge, aber NICHT blurry, sondern schoen pixelig
+// und stark, sodass es den Pixel-Look nicht verliert"):
+//  - Boden: statt weicher Mischung der vier Ecken-Boeden zeigt jeder Block (16 je Feld) genau EINEN Boden - gewaehlt nach dem Ecken-Gewicht
+//    mit kraeftigem Zufall je Block: die Boeden verzahnen sich gepixelt statt zu verschwimmen.
+//  - Decals (Strassen, Krater, ...): an Feldern ohne Decal (Bits 24-27 der Decal-Nummer, terrain.cpp) laufen sie blockweise aus.
+uint modtHash(ivec2 p)
+{
+	uint h = uint(p.x) * 73856093u ^ uint(p.y) * 19349663u;
+	h ^= h >> 13u; h *= 0x5bd1e995u; h ^= h >> 15u;
+	return h;
+}
+vec4 modtW = vec4(0.25);   // Boden-Gewichte (ein Boden je Block)
+vec2 modtF = vec2(0.5);    // Lage im Feld (0..1), genau aus den Ecken-Gewichten
+ivec2 modtBlk = ivec2(0);  // Weltblock (16 je Feld)
+void modtSetup()
+{
+	vec4 w = frag.groundWeights;
+	modtF = clamp(vec2(w.z + w.w, w.y + w.z), 0.0, 1.0);
+	vec2 tc = frag.uvLightmap * vec2(textureSize(lightmap_tex, 0)) - 0.5;   // Weltlage in Feldern
+	ivec2 tileO = ivec2(floor(tc - modtF + 0.5));
+	vec2 bq = min(floor(modtF * 16.0), vec2(15.0));
+	modtBlk = tileO * 16 + ivec2(bq);
+	vec2 c = (bq + 0.5) / 16.0;
+	vec4 wc = vec4((1.0 - c.x) * (1.0 - c.y), (1.0 - c.x) * c.y, c.x * c.y, c.x * (1.0 - c.y));
+	uvec4 g = fragf.grounds;
+	float bestS = -10.0;
+	int bi = 0;
+	for (int i = 0; i < 4; i++)
+	{
+		float tot = 0.0;
+		for (int j = 0; j < 4; j++) { if (g[j] == g[i]) { tot += wc[j]; } }
+		float n = float(modtHash(modtBlk + ivec2(int(g[i]) * 7919, int(g[i]) * 3571)) & 65535u) / 65535.0;
+		float sc = tot + (n - 0.5) * 0.7;
+		if (sc > bestS) { bestS = sc; bi = i; }
+	}
+	modtW = vec4(0.0);
+	modtW[bi] = 1.0;
+}
+float modtDecalKeep(int flags)   // 1 = Decal zeigen, 0 = an dieser Stelle Boden (gepixelter Rand zu Feldern ohne Decal)
+{
+	if (flags == 0) { return 1.0; }
+	float d = 2.0;
+	if ((flags & 1) != 0) { d = min(d, modtF.y); }
+	if ((flags & 2) != 0) { d = min(d, 1.0 - modtF.x); }
+	if ((flags & 4) != 0) { d = min(d, 1.0 - modtF.y); }
+	if ((flags & 8) != 0) { d = min(d, modtF.x); }
+	const float BAND = 0.4;
+	if (d >= BAND) { return 1.0; }
+	float q = (floor(d * 16.0) + 0.5) / 16.0;
+	float p = clamp(0.55 * (1.0 - q / BAND), 0.0, 0.6);
+	return float(modtHash(modtBlk + ivec2(1777, 9029)) & 65535u) / 65535.0 < p ? 0.0 : 1.0;
+}
+
 vec3 getGroundUv(int i) {
 	uint groundNo = fragf.grounds[i];
 	return vec3(frag.uvGround * groundScale[groundNo/4u][groundNo%4u], groundNo);
@@ -95,7 +148,7 @@ struct BumpData {
 
 void getGroundBM(int i, inout BumpData res) {
 	vec3 uv = getGroundUv(i);
-	float w = frag.groundWeights[i];
+	float w = modtW[i];   // MOD (26.11.): ein Boden je Block
 	vec4 color = texture(groundTex, uv, WZ_MIP_LOAD_BIAS);
 	if (linearLighting != 0)
 	{
@@ -190,14 +243,16 @@ vec4 main_bumpMapping() {
 	bump.color = vec4(0);
 	bump.N = vec3(0);
 	bump.gloss = 0;
+	modtSetup();
 	getGroundBM(0, bump);
 	getGroundBM(1, bump);
 	getGroundBM(2, bump);
 	getGroundBM(3, bump);
 
 	if (fragf.tileNo >= 0) {
-		vec3 uv = vec3(frag.uvDecal, fragf.tileNo);
+		vec3 uv = vec3(frag.uvDecal, fragf.tileNo & 0xFFFFFF);   // MOD (26.11.): Bits 24-27 = Kanten ohne Decal-Nachbar
 		vec4 decalColor = texture(decalTex, uv, WZ_MIP_LOAD_BIAS);
+		decalColor.a *= modtDecalKeep((fragf.tileNo >> 24) & 15);
 		if (linearLighting != 0)
 		{
 			// The decal mixes over the layers in display space as well
