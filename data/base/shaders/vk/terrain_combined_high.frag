@@ -83,28 +83,80 @@ vec3 modvColor(vec3 P)
 #include "pointlights.glsl"
 
 // MOD (Wunsch 26.11. "fehlende Transitions, harte Schnitte bei den Tiles - fuer alles Uebergaenge, aber NICHT blurry, sondern schoen pixelig
-// und stark, sodass es den Pixel-Look nicht verliert"):
-//  - Boden: statt weicher Mischung der vier Ecken-Boeden zeigt jeder Block (16 je Feld) genau EINEN Boden - gewaehlt nach dem Ecken-Gewicht
-//    mit kraeftigem Zufall je Block: die Boeden verzahnen sich gepixelt statt zu verschwimmen.
-//  - Decals (Strassen, Krater, ...): an Feldern ohne Decal (Bits 24-27 der Decal-Nummer, terrain.cpp) laufen sie blockweise aus.
+// und stark, sodass es den Pixel-Look nicht verliert"; 17:31 "auch einzelne Pixel - fein auslaufen"):
+//  - Boden: statt weicher Mischung der vier Ecken-Boeden zeigt jeder Texel (Bildpunkt in Kachel-Aufloesung) genau EINEN Boden - gewaehlt
+//    nach dem Ecken-Gewicht plus einer Zufallsschwelle aus 8er-, 4er-, 2er- und 1er-Texel-Bloecken: grobe Klumpen, die zu einzelnen
+//    Pixeln ausfransen.
+//  - Decals (Strassen, Krater, Klippen, Beton ...): an Feldern ohne Decal oder mit Decal einer anderen Bodenart loesen sie sich zur Kante hin
+//    gepixelt auf (Kanten N, O, S, W = Bits 24-27, Ecken NO, SO, SW, NW = Bits 16-19 der Decal-Nummer, terrain.cpp).
 uint modtHash(ivec2 p)
 {
 	uint h = uint(p.x) * 73856093u ^ uint(p.y) * 19349663u;
 	h ^= h >> 13u; h *= 0x5bd1e995u; h ^= h >> 15u;
 	return h;
 }
-vec4 modtW = vec4(0.25);   // Boden-Gewichte (ein Boden je Block)
-vec2 modtF = vec2(0.5);    // Lage im Feld (0..1), genau aus den Ecken-Gewichten
-ivec2 modtBlk = ivec2(0);  // Weltblock (16 je Feld)
+float modtRand(ivec2 p, int salt)
+{
+	return float(modtHash(p + ivec2(salt * 7919, salt * 15401)) & 65535u) / 65535.0;
+}
+float modtThresh(ivec2 tx, int lvMin, int salt)
+{
+	float t = 0.10 * modtRand(tx >> max(0, lvMin), salt * 4);
+	t += 0.15 * modtRand(tx >> max(1, lvMin), salt * 4 + 1);
+	t += 0.25 * modtRand(tx >> max(2, lvMin), salt * 4 + 2);
+	t += 0.50 * modtRand(tx >> max(3, lvMin), salt * 4 + 3);
+	return t;
+}
+float modtDist(vec2 f, int k)
+{
+	if (k == 0) { return f.y; }
+	if (k == 1) { return 1.0 - f.x; }
+	if (k == 2) { return 1.0 - f.y; }
+	if (k == 3) { return f.x; }
+	if (k == 4) { return length(vec2(1.0 - f.x, f.y)); }
+	if (k == 5) { return length(vec2(1.0 - f.x, 1.0 - f.y)); }
+	if (k == 6) { return length(vec2(f.x, 1.0 - f.y)); }
+	return length(f);
+}
+int modtLevel(vec2 gx, vec2 gy, float texN)
+{
+	float texelsPerPixel = max(max(length(gx), length(gy)) * texN, 1e-4);
+	return clamp(int(ceil(log2(texelsPerPixel) - 0.25)), 0, 7);
+}
+// (26.11.) halbdurchsichtige Stellen einer Kachel (Ufer, Krater, Gleise, Decals) nicht weich, sondern gepixelt: je Texelblock ganz oder gar
+// nicht, Wahrscheinlichkeit = Deckkraft in der Blockmitte
+vec4 modtAlpha(vec4 decal, float layer, vec2 uv, vec2 gx, vec2 gy)
+{
+	float texN = float(textureSize(decalTex, 0).x);
+	int lv = modtLevel(gx, gy, texN);
+	float bn = texN / exp2(float(lv));
+	vec2 bq = floor(uv * bn);
+	float a = textureGrad(decalTex, vec3((bq + 0.5) / bn, layer), gx, gy).a;
+	if (a <= 0.004) { return vec4(decal.rgb, 0.0); }
+	if (a >= 0.996) { return vec4(decal.rgb, 1.0); }
+	float T = modtThresh((ivec2(bq) << lv) + ivec2(int(layer) * 1031, 0), lv, 3);
+	return vec4(decal.rgb, T < a ? 1.0 : 0.0);
+}
+vec4 modtW = vec4(0.25);   // Boden-Gewichte (ein Boden je Texel)
+vec2 modtF = vec2(0.5);    // Mitte des Texel-Blocks im Feld (0..1)
+ivec2 modtTx = ivec2(0);   // Welt-Texel
+int modtLv = 0;            // feinste Stufe (Texel-Block nicht kleiner als ein Bildschirmpixel)
+vec2 modtGx = vec2(0.0), modtGy = vec2(0.0);   // Ableitungen der Decal-UV (in modtSetup, ausserhalb jeder Verzweigung)
 void modtSetup()
 {
+	modtGx = dFdx(frag.uvDecal); modtGy = dFdy(frag.uvDecal);
 	vec4 w = frag.groundWeights;
-	modtF = clamp(vec2(w.z + w.w, w.y + w.z), 0.0, 1.0);
+	vec2 f = clamp(vec2(w.z + w.w, w.y + w.z), 0.0, 1.0);   // Lage im Feld, genau aus den Ecken-Gewichten
 	vec2 tc = frag.uvLightmap * vec2(textureSize(lightmap_tex, 0)) - 0.5;   // Weltlage in Feldern
-	ivec2 tileO = ivec2(floor(tc - modtF + 0.5));
-	vec2 bq = min(floor(modtF * 16.0), vec2(15.0));
-	modtBlk = tileO * 16 + ivec2(bq);
-	vec2 c = (bq + 0.5) / 16.0;
+	ivec2 tileO = ivec2(floor(tc - f + 0.5));
+	float texN = float(textureSize(decalTex, 0).x);
+	vec2 dfx = dFdx(tc), dfy = dFdy(tc);
+	modtLv = clamp(int(ceil(log2(max(max(length(dfx), length(dfy)) * texN, 1e-4)) - 0.25)), 0, 7);
+	float bn = texN / exp2(float(modtLv));
+	vec2 bq = min(floor(f * bn), vec2(bn - 1.0));
+	modtF = (bq + 0.5) / bn;
+	modtTx = tileO * int(texN) + ivec2(bq) * (1 << modtLv);
+	vec2 c = modtF;
 	vec4 wc = vec4((1.0 - c.x) * (1.0 - c.y), (1.0 - c.x) * c.y, c.x * c.y, c.x * (1.0 - c.y));
 	uvec4 g = fragf.grounds;
 	float bestS = -10.0;
@@ -113,26 +165,23 @@ void modtSetup()
 	{
 		float tot = 0.0;
 		for (int j = 0; j < 4; j++) { if (g[j] == g[i]) { tot += wc[j]; } }
-		float n = float(modtHash(modtBlk + ivec2(int(g[i]) * 7919, int(g[i]) * 3571)) & 65535u) / 65535.0;
-		float sc = tot + (n - 0.5) * 0.7;
+		float sc = tot + (modtThresh(modtTx, modtLv, 20 + int(g[i])) - 0.5) * 1.1;
 		if (sc > bestS) { bestS = sc; bi = i; }
 	}
 	modtW = vec4(0.0);
 	modtW[bi] = 1.0;
 }
-float modtDecalKeep(int flags)   // 1 = Decal zeigen, 0 = an dieser Stelle Boden (gepixelter Rand zu Feldern ohne Decal)
+float modtDecalKeep(int tileNo)   // 1 = Decal zeigen, 0 = hier Boden (gepixelte Aufloesung zu Feldern ohne passendes Decal)
 {
+	int flags = ((tileNo >> 24) & 15) | (((tileNo >> 16) & 15) << 4);
 	if (flags == 0) { return 1.0; }
-	float d = 2.0;
-	if ((flags & 1) != 0) { d = min(d, modtF.y); }
-	if ((flags & 2) != 0) { d = min(d, 1.0 - modtF.x); }
-	if ((flags & 4) != 0) { d = min(d, 1.0 - modtF.y); }
-	if ((flags & 8) != 0) { d = min(d, modtF.x); }
-	const float BAND = 0.4;
+	float d = 9.0;
+	for (int k = 0; k < 8; k++) { if ((flags & (1 << k)) != 0) { d = min(d, modtDist(modtF, k)); } }
+	const float BAND = 0.45;
 	if (d >= BAND) { return 1.0; }
-	float q = (floor(d * 16.0) + 0.5) / 16.0;
-	float p = clamp(0.55 * (1.0 - q / BAND), 0.0, 0.6);
-	return float(modtHash(modtBlk + ivec2(1777, 9029)) & 65535u) / 65535.0 < p ? 0.0 : 1.0;
+	float wob = (modtRand(ivec2(floor(vec2(modtTx) / 42.0)), 3) - 0.5) * 0.2;
+	float p = 1.0 - d / BAND - wob;   // an der Kante fast alles Boden, nach innen immer mehr Decal
+	return modtThresh(modtTx, modtLv, 7) < p ? 0.0 : 1.0;
 }
 
 vec3 getGroundUv(int i) {
@@ -250,9 +299,10 @@ vec4 main_bumpMapping() {
 	getGroundBM(3, bump);
 
 	if (fragf.tileNo >= 0) {
-		vec3 uv = vec3(frag.uvDecal, fragf.tileNo & 0xFFFFFF);   // MOD (26.11.): Bits 24-27 = Kanten ohne Decal-Nachbar
+		vec3 uv = vec3(frag.uvDecal, fragf.tileNo & 0xFFFF);   // MOD (26.11.): Bits 16-27 = Kanten/Ecken ohne passendes Decal
 		vec4 decalColor = texture(decalTex, uv, WZ_MIP_LOAD_BIAS);
-		decalColor.a *= modtDecalKeep((fragf.tileNo >> 24) & 15);
+		decalColor = modtAlpha(decalColor, uv.z, uv.xy, modtGx, modtGy);   // (26.11.) gepixelte Deckkraft
+		decalColor.a *= modtDecalKeep(fragf.tileNo);
 		if (linearLighting != 0)
 		{
 			// The decal mixes over the layers in display space as well

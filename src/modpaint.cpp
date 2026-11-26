@@ -860,7 +860,9 @@ std::vector<modbuild::Placement> artyBasePlan(const Vector2i &centerWorld, int s
 /// (Wunsch 26.11. "ein oder zwei Vorlagen fuer solche kompletten Basen zusaetzlich, in aehnlichem Layout wie in den Screenshots, nur etwas
 /// ordentlicher und gleichmaessiger - nach allen Seiten gleich"): Bauplan einer ganzen Basis, size 1 = mittel, 2 = gross. Von innen:
 ///  - Mitte Hauptquartier; auf den Achsen Fabrik (Norden), Kraftwerk (Sueden), Forschung (Osten), Cyborg-Fabrik/Kaserne (Westen);
-///    Umspannwerk und Strommasten dazwischen. Gross: auf den Diagonalen zweite Fabrik, zweite Forschung, Reparatur, Oellager
+///    Umspannwerk und Strommasten dazwischen. Gross (Wunsch 26.11. 17:31 "Forschung wegnehmen, eine zweite Fabrik braucht es auch nicht,
+///    eher ein Munitionsdepot, ein Aussenposten, ein Sensorturm - nicht nur der Scav-Spaehturm"): auf den Diagonalen Munitionsdepot (NW),
+///    Aussenposten (NO), Reparatur (SW), Oellager (SO); dahinter auf der Nordost-Diagonale ein Sensorturm (richtiger Sensorturm zuerst)
 ///  - Mauerring mit einem Tor je Seite, an den Ecken MG-Plattformtuerme (sonst Mauertuerme)
 ///  - zwei Felder davor ein Bunkerring (alle drei Felder ein Bunker, das Tor bleibt frei)
 ///  - Sandsack-Graben, Igel-Ring und aussen ein Erdgraben mit einer Bastion vor jedem Tor (U-foermig nach aussen)
@@ -877,6 +879,9 @@ std::vector<modbuild::Placement> basePlan(const Vector2i &centerWorld, int size)
 	STRUCTURE_STATS *pole = firstAvailable({ "A0PowerPole" });
 	STRUCTURE_STATS *rep = firstAvailable({ "A0BaBaGantry", "ScavRepairCentre", "A0RepairCentre3" });
 	STRUCTURE_STATS *store = firstAvailable({ "A0BaBaOilStore" });
+	STRUCTURE_STATS *ammo = firstAvailable({ "A0BaBaAmmoDepot" });
+	STRUCTURE_STATS *outpost = firstAvailable({ "A0BaBaOutpost" });
+	STRUCTURE_STATS *sensor = firstAvailable({ "Sys-SensoTower02", "Sys-SensoTower01", "Sys-SensoTowerWS", "A0BaBaLookout" });
 	STRUCTURE_STATS *wall = firstAvailable({ "A0BaBaHorizontalWall", "A0HardcreteMk1Wall", "CollectiveWall", "NEXUSWall" });
 	STRUCTURE_STATS *gate = firstAvailable({ "A0BaBaGate", "A0HardcreteMk1Gate" });
 	STRUCTURE_STATS *corner = firstAvailable({ "A0BaBaWalkTower", "WallTower04", "WallTower03", "WallTower02", "A0CannonTower" });
@@ -915,7 +920,8 @@ std::vector<modbuild::Placement> basePlan(const Vector2i &centerWorld, int size)
 	one(pole, -2, -2, 0); one(pole, 2, -2, 0); one(pole, -2, 2, 0);
 	if (size == 2)
 	{
-		one(fac, -4, -4, 0); one(res, 4, -4, 0); one(rep, -4, 4, 0); one(store, 4, 4, 0);
+		one(ammo, -4, -4, 0); one(outpost, 4, -4, 0); one(rep, -4, 4, 0); one(store, 4, 4, 0);
+		one(sensor, 6, -6, 0);
 		one(pole, -5, 0, 0); one(pole, 5, 0, 0); one(pole, 0, -6, 0); one(pole, 0, 6, 0);
 	}
 	// --- Mauerring, Tore, Ecktuerme

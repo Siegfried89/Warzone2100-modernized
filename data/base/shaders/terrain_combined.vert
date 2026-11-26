@@ -24,6 +24,7 @@ out vec2 uvGround;
 out vec2 uvDecal;
 flat out int tile;
 flat out uvec4 fgrounds;
+flat out ivec4 fdiag;   // MOD (26.11.): Klassik - diagonale Nachbarkacheln (in der Tangente kodiert, siehe terrain.cpp)
 out vec4 fgroundWeights;
 // In tangent space
 out vec3 groundLightDir;
@@ -44,6 +45,7 @@ void main()
 	uvDecal = vertexTexCoord;
 
 	fgrounds = grounds;
+	fdiag = ivec4(floor(vertexTangent + vec4(0.5)));
 	fgroundWeights = groundWeights;
 	if (fgroundWeights == vec4(0)) {
 		fgroundWeights = vec4(0.25);
