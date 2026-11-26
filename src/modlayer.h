@@ -74,7 +74,7 @@ bool canUseShaft(const DROID *psDroid);
 void noteOrder(const DROID *psDroid, int orderType, const Vector2i &pos);   // orderType: DROID_ORDER
 /// jeden Spielschritt aus der Spielschleife: Einheiten, die einen Schacht erreichen, wechseln die Ebene
 void gameTick();
-/// Ebenen-Knopf gedrueckt: die ausgewaehlten Flieger (Hoverjets, Drohnen, VTOLs) steigen in den Orbit bzw. kehren zur Oberflaeche zurueck
+/// Ebenen-Knopf gedrueckt: die ausgewaehlten Flieger (Hoverjets, VTOLs, Sprung-Combots) steigen in den Orbit bzw. kehren zur Oberflaeche zurueck
 /// (der Wechsel selbst geschieht im naechsten Spielschritt; in den Untergrund koennen Flieger nicht)
 void sendSelectedFliers(Layer target);
 /// Flieger? (Hoverjets, VTOLs, Transporter mit Luftantrieb und Combots mit Sprungduesen/Jetpack)

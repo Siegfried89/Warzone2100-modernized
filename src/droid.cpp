@@ -3323,7 +3323,7 @@ bool DROID::isVtol() const
 bool DROID::isFlying() const
 {
 	return (getPropulsionStats()->propulsionType == PROPULSION_TYPE_LIFT && sMove.Status != MOVEINACTIVE)
-	       || getPropulsionStats()->alwaysFlying;   // MOD: Balldrohne schwebt immer
+	       || getPropulsionStats()->alwaysFlying;   // MOD: Schwebe-Antrieb (MF-Hoverjet) fliegt immer
 }
 
 // true if a droid is retreating for repair

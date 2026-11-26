@@ -105,13 +105,6 @@ Cls classOf(const DROID *d)
 
 const char *clsPrefix(Cls c) { return c == CLS_INF ? "inf" : (c == CLS_TNK ? "tnk" : (c == CLS_TRN ? "trn" : "pil")); }
 
-/// Drohnen (Balldrohne) sind Maschinen und schweigen; schwebende Antriebe der Hoverjets (MFJet) haben Piloten
-bool isSilent(const DROID *d)
-{
-	const PROPULSION_STATS *ps = d->getPropulsionStats();
-	return ps->alwaysFlying && ps->id.toStdString().rfind("MFJet", 0) != 0;
-}
-
 bool nearAndVisible(int x, int y, const Vector2i &cam)
 {
 	const int64_t dx = x - cam.x, dy = y - cam.y;
@@ -275,7 +268,7 @@ void onHelpCall(const DROID *psDroid)
 
 bool shout(const DROID *psDroid, const char *cat)
 {
-	if (psDroid == nullptr || cat == nullptr || psDroid->died || isSilent(psDroid)) { return false; }
+	if (psDroid == nullptr || cat == nullptr || psDroid->died) { return false; }
 	static unsigned s_nextShout = 0;
 	if (realTime < s_nextShout) { return false; }
 	const Vector2i cam = getPlayerPos();
@@ -290,7 +283,7 @@ bool shout(const DROID *psDroid, const char *cat)
 
 void onPlayerOrder(const DROID *psDroid, int order)
 {
-	if (psDroid == nullptr || psDroid->player != selectedPlayer || psDroid->isVtol() || isSilent(psDroid)) { return; }
+	if (psDroid == nullptr || psDroid->player != selectedPlayer || psDroid->isVtol()) { return; }
 	if (realTime < s_nextAck) { return; }     // eine Einheit der Auswahl antwortet, nicht alle zugleich
 	if (psDroid->isTransporter())
 	{
@@ -359,7 +352,7 @@ void tick(GameWorld &world)
 	{
 		for (DROID *d : world.objects.droids[p])
 		{
-			if (d == nullptr || d->died || d->isVtol() || isSilent(d)) { continue; }
+			if (d == nullptr || d->died || d->isVtol()) { continue; }
 			if (!nearAndVisible(d->pos.x, d->pos.y, cam)) { continue; }
 			auto sit = s_state.find(d->id);
 			// Einheiten ohne Eintrag brauchen nur dann einen, wenn sie kaempfen oder Befehle ausfuehren
