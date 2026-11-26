@@ -47,7 +47,6 @@ private:
 	std::weak_ptr<WzMultiplayerOptionsTitleUI> parentTitleUI;
 	unsigned playerIdx = 0;
 	std::shared_ptr<W_BUTTON> teamButton;
-	std::shared_ptr<W_BUTTON> colorButton;
 	std::shared_ptr<W_BUTTON> playerInfo;
 	std::shared_ptr<WIDGET> readyButtonContainer;
 	std::shared_ptr<W_BUTTON> difficultyChooserButton;

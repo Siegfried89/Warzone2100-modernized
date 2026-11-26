@@ -2416,9 +2416,9 @@ static void handleJoinSuccess(const JoinConnectionDescription& connection, const
 	loadMultiOptionPrefValues(sPlayer, selectedPlayer);
 	sendPlayerMultiOptPreferencesBuiltin();
 
-	if (selectedPlayer < MAX_PLAYERS && war_getMPcolour() >= 0)
+	if (selectedPlayer < MAX_PLAYERS && war_GetSPcolor() >= 0)	// MOD (26.11. 20:54): Farbe aus dem Hauptmenue
 	{
-		SendColourRequest(selectedPlayer, war_getMPcolour());
+		SendColourRequest(selectedPlayer, static_cast<UBYTE>(war_GetSPcolor()));
 	}
 	if (selectedPlayer < MAX_PLAYERS)
 	{

@@ -4936,10 +4936,10 @@ bool NEThostGame(const char *SessionName, const char *PlayerName, const EcKey& p
 		NetPlay.players[0].difficulty	= AIDifficulty::HUMAN;
 		NetPlay.playercount		= 1;
 		debug(LOG_NET, "Hosting but no comms");
-		// Now switch player color of the host to what they normally use for MP games
-		if (war_getMPcolour() >= 0)
+		// MOD (26.11. 20:54): Farbe aus dem Hauptmenue (die Farbwahl im Gefechts-Menue gibt es nicht mehr)
+		if (war_GetSPcolor() >= 0)
 		{
-			changeColour(NetPlay.hostPlayer, war_getMPcolour(), realSelectedPlayer);
+			changeColour(NetPlay.hostPlayer, static_cast<int>(war_GetSPcolor()), realSelectedPlayer);
 		}
 		changeFaction(NetPlay.hostPlayer, static_cast<FactionID>(war_getPlayerFaction()), realSelectedPlayer);	// MOD: the faction chosen in the main menu
 		return true;
@@ -5003,9 +5003,9 @@ bool NEThostGame(const char *SessionName, const char *PlayerName, const EcKey& p
 	MultiPlayerJoin(selectedPlayer, nullopt);
 
 	// Now switch player color of the host to what they normally use for SP games
-	if (NetPlay.hostPlayer < MAX_PLAYERS && war_getMPcolour() >= 0)
+	if (NetPlay.hostPlayer < MAX_PLAYERS && war_GetSPcolor() >= 0)	// MOD (26.11.): Farbe aus dem Hauptmenue
 	{
-		changeColour(NetPlay.hostPlayer, war_getMPcolour(), realSelectedPlayer);
+		changeColour(NetPlay.hostPlayer, static_cast<int>(war_GetSPcolor()), realSelectedPlayer);
 	}
 	if (NetPlay.hostPlayer < MAX_PLAYERS)
 	{

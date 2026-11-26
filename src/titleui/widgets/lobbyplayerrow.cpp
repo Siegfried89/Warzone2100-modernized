@@ -136,35 +136,9 @@ void ReadyBoxContainerWidget::display(int xOffset, int yOffset)
 	}
 }
 
-static int factionIcon(FactionID faction)
-{
-	switch (faction)
-	{
-	case 0: return IMAGE_FACTION_NORMAL;
-	case 1: return IMAGE_FACTION_NEXUS;
-	case 2: return IMAGE_FACTION_COLLECTIVE;
-	case 3: return IMAGE_FACTION_NEWPARADIGM;
-	case 4: return IMAGE_FACTION_PROJECT;   // MOD
-	default: return IMAGE_NO;	/// what??
-	}
-}
-
-static void displayColour(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
-{
-	const int x = xOffset + psWidget->x();
-	const int y = yOffset + psWidget->y();
-	const int j = psWidget->UserData;
-
-	drawBoxForPlayerInfoSegment(j, x, y, psWidget->width(), psWidget->height());
-	if (!NetPlay.players[j].fileSendInProgress() && (isHumanPlayer(j) || NetPlay.players[j].difficulty != AIDifficulty::DISABLED) && !NetPlay.players[j].isSpectator)
-	{
-		int player = getPlayerColour(j);
-		STATIC_ASSERT(MAX_PLAYERS <= 16);
-		iV_DrawImageTc(FrontImages, IMAGE_PLAYERN, IMAGE_PLAYERN_TC, x + 3, y + 9, pal_GetTeamColour(player));
-		FactionID faction = NetPlay.players[j].faction;
-		iV_DrawImageFileAnisotropic(FrontImages, factionIcon(faction), x, y, Vector2f(11, 9));
-	}
-}
+// MOD (Wunsch 26.11. 20:54 "Die Auswahl von Fraktion und Farbe im Skirmish komplett entfernen. Da dies schon im Hauptmenue gemacht wird."):
+// keine Farb-/Fraktionsspalte mehr in den Spielerzeilen - Fraktion und Farbe kommen aus dem Hauptmenue, die KI bekommt beim Start eine
+// zufaellige Fraktion und deren Farbe (modfactech::prepareStart)
 
 void displayTeamChooser(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
@@ -543,26 +517,6 @@ std::shared_ptr<WzPlayerRow> WzPlayerRow::make(uint32_t playerIdx, const std::sh
 		}
 	});
 
-	// add player colour
-	widget->colorButton = std::make_shared<W_BUTTON>();
-	widget->colorButton->setGeometry(MULTIOP_TEAMSWIDTH, 0, MULTIOP_COLOUR_WIDTH, MULTIOP_PLAYERHEIGHT);
-	widget->colorButton->UserData = playerIdx;
-	widget->colorButton->displayFunction = displayColour;
-	widget->attach(widget->colorButton);
-	widget->colorButton->addOnClickHandler([playerIdx, titleUI](W_BUTTON& button){
-		auto strongTitleUI = titleUI.lock();
-		ASSERT_OR_RETURN(, strongTitleUI != nullptr, "Title UI is gone?");
-		if (playerIdx == selectedPlayer || isHostOrAdmin())
-		{
-			if (!NetPlay.players[playerIdx].isSpectator) // not a spectator
-			{
-				widgScheduleTask([strongTitleUI, playerIdx] {
-					strongTitleUI->openColourChooser(playerIdx);
-				});
-			}
-		}
-	});
-
 	// add ready button
 	widget->updateReadyButton();
 
@@ -581,7 +535,7 @@ std::shared_ptr<WzPlayerRow> WzPlayerRow::make(uint32_t playerIdx, const std::sh
 	widget->playerInfo->setCalcLayout([](WIDGET *psWidget) {
 		auto psParent = std::dynamic_pointer_cast<WzPlayerRow>(psWidget->parent());
 		ASSERT_OR_RETURN(, psParent != nullptr, "Null parent");
-		int x0 = MULTIOP_TEAMSWIDTH + MULTIOP_COLOUR_WIDTH;
+		int x0 = MULTIOP_TEAMSWIDTH;   // MOD (26.11.): ohne Farb-/Fraktionsspalte
 		int width = psParent->readyButtonContainer->x() - x0;
 		psWidget->setGeometry(x0, 0, width, psParent->height());
 	});
@@ -705,16 +659,6 @@ void WzPlayerRow::updateState()
 	else
 	{
 		teamButton->show();
-	}
-
-	// update color tooltip
-	if ((selectedPlayer == playerIdx || NetPlay.isHost) && (!NetPlay.players[playerIdx].isSpectator))
-	{
-		colorButton->setTip(_("Click to change player colour"));
-	}
-	else
-	{
-		colorButton->setTip(nullptr);
 	}
 
 	// update player info box tooltip

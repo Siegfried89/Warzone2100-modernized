@@ -1399,12 +1399,6 @@ static bool shouldInformOfAdminAction(uint32_t targetPlayerIdx, uint32_t respons
 // ////////////////////////////////////////////////////////////////////////////
 // Colour functions
 
-static bool safeToUseColour(unsigned player, unsigned otherPlayer)
-{
-	// Player wants to take the colour from otherPlayer. May not take from a human otherPlayer, unless we're the host/admin.
-	return player == otherPlayer || isHostOrAdmin() || !isHumanPlayer(otherPlayer);
-}
-
 static int getPlayerTeam(int i)
 {
 	return alliancesSetTeamsBeforeGame(game.alliance) ? NetPlay.players[i].team : i;
@@ -2346,95 +2340,6 @@ void WzMultiplayerOptionsTitleUI::openTeamChooser(uint32_t player)
 			ASSERT(psButton != nullptr, "Null button??");
 			psButton->drawBlueBorder = false; // HACK: to disable the other hack in WzMultiButton::display() for IMAGE_EDIT_PLAYER (sigh...)
 		}
-	}
-
-	inlineChooserUp = player;
-}
-
-void WzMultiplayerOptionsTitleUI::openColourChooser(uint32_t player)
-{
-	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "Invalid player number");
-	initInlineChooser(player);
-
-	// add form.
-	auto psParentForm = (W_FORM *)widgGetFromID(psWScreen, MULTIOP_PLAYERS);
-	auto psInlineChooserForm = addInlineChooserBlueForm(psInlineChooserOverlayScreen, psParentForm, MULTIOP_COLCHOOSER_FORM, "",
-		PLAYERBOX_X0, std::max(playerRowY0(player), 0),
-		MULTIOP_ROW_WIDTH, MULTIOP_PLAYERHEIGHT*2-8);
-	ASSERT(psInlineChooserForm != nullptr, "Failed to create form");
-
-	// add the flags
-	int flagW = iV_GetImageWidth(FrontImages, IMAGE_PLAYERN);
-	int flagH = iV_GetImageHeight(FrontImages, IMAGE_PLAYERN);
-	int space = MULTIOP_ROW_WIDTH - 0 - flagW * MAX_PLAYERS_IN_GUI;
-	int spaceDiv = MAX_PLAYERS_IN_GUI;
-	space = std::min(space, 5 * spaceDiv);
-
-	auto psWeakTitleUI = std::weak_ptr<WzMultiplayerOptionsTitleUI>(std::dynamic_pointer_cast<WzMultiplayerOptionsTitleUI>(shared_from_this()));
-
-	for (unsigned i = 0; i < MAX_PLAYERS_IN_GUI; i++)
-	{
-		auto onClickHandler = [player, psWeakTitleUI](W_BUTTON &button) {
-			UDWORD id = button.id;
-			auto pStrongPtr = psWeakTitleUI.lock();
-			ASSERT_OR_RETURN(, pStrongPtr.operator bool(), "WzMultiplayerOptionsTitleUI no longer exists");
-
-			STATIC_ASSERT(MULTIOP_COLCHOOSER + MAX_PLAYERS - 1 <= MULTIOP_COLCHOOSER_END);
-			if (id >= MULTIOP_COLCHOOSER && id < MULTIOP_COLCHOOSER + MAX_PLAYERS - 1)  // chose a new colour.
-			{
-				resetReadyStatus(false, true);		// will reset only locally if not a host
-				SendColourRequest(player, id - MULTIOP_COLCHOOSER);
-				widgScheduleTask([pStrongPtr] {
-					pStrongPtr->closeColourChooser();
-					pStrongPtr->addPlayerBox(true);
-				});
-			}
-		};
-
-		addMultiButWithClickHandler(psInlineChooserForm, MULTIOP_COLCHOOSER + getPlayerColour(i),
-			i * (flagW * spaceDiv + space) / spaceDiv + 4, 4, // x, y
-			flagW, flagH,  // w, h
-			getPlayerColourName(i), IMAGE_PLAYERN, IMAGE_PLAYERN_HI, IMAGE_PLAYERN_HI, onClickHandler, getPlayerColour(i)
-		);
-
-		if (!safeToUseColour(selectedPlayer, i))
-		{
-			widgSetButtonState(psInlineChooserOverlayScreen, MULTIOP_COLCHOOSER + getPlayerColour(i), WBUT_DISABLE);
-		}
-	}
-
-	int facW = iV_GetImageWidth(FrontImages, IMAGE_FACTION_NORMAL) + 4;
-	int facH = iV_GetImageHeight(FrontImages, IMAGE_PLAYERN)-4;
-	space = MULTIOP_ROW_WIDTH - 0 - facW * NUM_FACTIONS;
-	spaceDiv = NUM_FACTIONS;
-	space = std::min(space, 5 * spaceDiv);
-
-	for (unsigned int i = 0; i < NUM_FACTIONS; i++)
-	{
-		auto onClickHandler = [player, psWeakTitleUI](W_BUTTON &button) {
-			UDWORD id = button.id;
-			auto pStrongPtr = psWeakTitleUI.lock();
-			ASSERT_OR_RETURN(, pStrongPtr.operator bool(), "WzMultiplayerOptionsTitleUI no longer exists");
-
-			STATIC_ASSERT(MULTIOP_FACCHOOSER + NUM_FACTIONS - 1 <= MULTIOP_FACCHOOSER_END);
-			if (id >= MULTIOP_FACCHOOSER && id <= MULTIOP_FACCHOOSER + NUM_FACTIONS -1)
-			{
-				resetReadyStatus(false, true);
-				uint8_t idx = id - MULTIOP_FACCHOOSER;
-				SendFactionRequest(player, idx);
-				widgScheduleTask([pStrongPtr] {
-					pStrongPtr->closeColourChooser();
-					pStrongPtr->addPlayerBox(true);
-				});
-			}
-		};
-
-		addMultiButWithClickHandler(psInlineChooserForm, MULTIOP_FACCHOOSER + i,
-			i * (facW * spaceDiv + space) / spaceDiv + PLAYERBOX_X0,  MULTIOP_PLAYERHEIGHT, // x, y
-			facW, facH,  // w, h
-			to_localized_string(static_cast<FactionID>(i)),
-			(i < 4) ? IMAGE_FACTION_NORMAL+i : IMAGE_FACTION_PROJECT, (i < 4) ? IMAGE_FACTION_NORMAL_HI+i : IMAGE_FACTION_PROJECT_HI, (i < 4) ? IMAGE_FACTION_NORMAL_HI+i : IMAGE_FACTION_PROJECT_HI, onClickHandler
-		);
 	}
 
 	inlineChooserUp = player;
@@ -3605,9 +3510,9 @@ static SwapPlayerIndexesResult recvSwapPlayerIndexes(NETQUEUE queue, const std::
 		setMultiStats(selectedPlayer, playerStats, false);
 		setMultiStats(selectedPlayer, playerStats, true);
 
-		if (selectedPlayer < MAX_PLAYERS && war_getMPcolour() >= 0)
+		if (selectedPlayer < MAX_PLAYERS && war_GetSPcolor() >= 0)
 		{
-			SendColourRequest(selectedPlayer, war_getMPcolour());
+			SendColourRequest(selectedPlayer, static_cast<UBYTE>(war_GetSPcolor()));	// MOD (26.11.): die Farbe aus dem Hauptmenue
 		}
 		if (selectedPlayer < MAX_PLAYERS)
 		{
@@ -5412,7 +5317,7 @@ static void resetPlayerConfiguration(const bool bShouldResetLocal = false)
 	{
 		for (unsigned playerIndex = 0; playerIndex < MAX_PLAYERS; playerIndex++)
 		{
-			if (getPlayerColour(playerIndex) == war_getMPcolour())
+			if (static_cast<int>(getPlayerColour(playerIndex)) == static_cast<int>(war_GetSPcolor()))	// MOD (26.11.): Farbe aus dem Hauptmenue
 			{
 				swapPlayerColours(selectedPlayer, playerIndex);
 				break;

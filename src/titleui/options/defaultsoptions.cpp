@@ -365,29 +365,7 @@ std::shared_ptr<OptionsForm> makeDefaultsOptionsForm()
 
 	// Multiplayer:
 	result->addSection(OptionsSection(N_("Multiplayer"), ""), true);
-	{
-		auto optionInfo = OptionInfo("defaults.multiplayer.unitColor", N_("Unit Color"), "");
-		auto valueChanger = PlayerColorOptionsSelector::make(
-			[]() -> optional<unsigned> {
-				auto currValue = war_getMPcolour();
-				if (currValue < 0)
-				{
-					return nullopt;
-				}
-				return static_cast<unsigned>(currValue);
-			},
-			[](optional<unsigned> tc) -> bool {
-				war_setMPcolour(tc.value_or(-1));
-				return true;
-			}
-		);
-		valueChanger->addColor(nullopt);
-		for (unsigned tc = 0; tc < MAX_PLAYERS_IN_GUI; ++tc)
-		{
-			valueChanger->addColor(tc);
-		}
-		result->addOption(optionInfo, valueChanger, true);
-	}
+	// MOD (26.11. 20:54): keine eigene Mehrspieler-Farbe mehr - es gilt die Farbe aus dem Hauptmenue
 	{
 		auto optionInfo = OptionInfo("defaults.multiplayer.defaultAI", N_("Default AI"), "");
 		optionInfo.setRequiresRestart(true);
