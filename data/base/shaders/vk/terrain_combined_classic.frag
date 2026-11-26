@@ -148,7 +148,7 @@ vec4 modcApply(vec4 decal, int t, vec3 P)
 // (16 je Kachel, also etwa 4 Original-Pixel) der Nachbarkachel ein: direkt an der Kante jeder zweite Block, nach innen immer weniger -
 // beide Seiten tun das, so verzahnen sich die Kacheln zu einem gepixelten Uebergang (kein Weichzeichnen). Die Nachbarkachel wird an der
 // Kante gespiegelt gelesen (mit ihrer Drehung), so passen die Bildpunkte an der Kante zusammen. Andere Bodenart: Saum 0,45 Kachel,
-// gleiche Bodenart (andere Kachel): 0,22. Klippen, Wasser und Betonflaechen bleiben scharf.
+// gleiche Bodenart (andere Kachel) sowie Strassen/Beton: 0,22 (Strassen bleiben Strassen). Klippen, Wasser und Betonflaechen bleiben scharf.
 // Daten (terrain.cpp getTileDecalInfo): grounds = Kachel der Nachbarn N, O, S, W (255 = kein Uebergang), groundWeights = deren Lage
 // (Bit 0/1: Ursprung u/v gespiegelt, Bit 2: Achsen getauscht, Bit 3: gleiche Bodenart; Byte 0 Bits 4-6: Lage der eigenen Kachel; Bit 7 immer).
 uint modtHash(ivec2 p)
@@ -191,6 +191,7 @@ vec4 modtApply(vec4 decal, vec2 gx, vec2 gy)   // gx/gy: Ableitungen der Kachel-
 	vec2 uv = vec2((c & 1) != 0 ? 1.0 - ab.x : ab.x, (c & 2) != 0 ? 1.0 - ab.y : ab.y);
 	float g = exp2(WZ_MIP_LOAD_BIAS);
 	vec4 n = textureGrad(decalTex, vec3(uv, float(layer)), gx * g, gy * g);
+	if (n.a < 0.5 || decal.a < 0.5) { return decal; }   // durchsichtige Stellen (Ufer, Krater, Gleise) nicht einstreuen
 	return vec4(n.rgb, decal.a);
 }
 

@@ -587,7 +587,7 @@ static TileDecalInfo getTileDecalInfo(WorldMapState& mapState, int i, int j)
 					const int ox = nuv[0][0].x > 0.5f ? 1 : 0;
 					const int oy = nuv[0][0].y > 0.5f ? 1 : 0;
 					const int swap = std::fabs(nuv[1][0].x - nuv[0][0].x) < 0.5f ? 1 : 0;
-					const int same = nType == ownType ? 1 : 0;
+					const int same = (nType == ownType || nType == TER_ROAD || ownType == TER_ROAD) ? 1 : 0;   // schmaler Saum: gleiche Bodenart, Strassen/Beton
 					code = static_cast<uint8_t>(ox | (oy << 1) | (swap << 2) | (same << 3));
 				}
 			}
