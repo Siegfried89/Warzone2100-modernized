@@ -31,6 +31,8 @@ void tick();
 void shutdown();
 /// Schlachtplan-Leiste gewuenscht? (modpaint fragt das ab)
 bool planOpen();
+/// (26.11.) Lage der Rosette (unten rechts, unabhaengig vom Schlachtplan)
+void formRect(int &x, int &y, int &w, int &h);
 /// gibt es die Rosette (dann zeigt modlayer keine eigenen Knoepfe mehr oben rechts)?
 bool active();
 }

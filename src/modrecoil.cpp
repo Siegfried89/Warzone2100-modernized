@@ -157,7 +157,11 @@ bool shake(const DROID *d, unsigned renderTime, glm::mat4 &hull, glm::mat4 &prop
 
 bool duck(const DROID *d, unsigned renderTime, glm::mat4 &out)
 {
-	if (d == nullptr || d->droidType != DROID_PERSON) { return false; }
+	// (Wunsch 26.11. 19:32 "Die nach vorne gebeugte Animation sieht schlecht aus. Das ganze Modell lehnt sich stark nach vorne, statt nur der
+	// Oberkoerper und Kopf. Die Beinbewegung ist eigentlich ok, aber ohne das Lehnen unten."): die ganze Figur wird nicht mehr gekippt - das
+	// Ducken steckt jetzt in den Laufanimationen selbst (Paket: crouchrun.py neigt nur Rumpf, Kopf, Arme und Waffe, die Beine bleiben).
+	static const bool kWholeBodyDuck = false;
+	if (!kWholeBodyDuck || d == nullptr || d->droidType != DROID_PERSON) { return false; }
 	// (Wunsch 26.11. "Die Laufanimation der Infanterie soll nur noch die geduckte Variante sein"): wer laeuft, laeuft geduckt - weich
 	// hinein (0,25 s) und nach dem Anhalten wieder aufrichten (0,5 s)
 	static std::unordered_map<uint32_t, std::pair<float, unsigned>> s_move;

@@ -554,8 +554,19 @@ std::vector<Placement> planFor(unsigned player, const Vector2i &worldCenter, int
 	return out;
 }
 
+// (Wunsch 26.11. 19:32 "Das Shift-Bewegungsklick-Wegpunktsystem funktioniert bei den Baggern nicht mehr vor dem Bauwerk-Errichten. Es soll
+// zwar das Bauen priorisiert werden (nicht Shift + Bewegungsbefehl), aber wenn man Wegpunkte setzt, sollen die immer noch abgefahren werden,
+// um Feinden auszuweichen."): Bauer, die seit ihrem letzten gewoehnlichen Befehl per Shift Wegpunkte (Fahren/Erkunden) bekommen haben.
+// Fuer sie gilt "Arbeit vor Fahrt" (organize) nicht. Gepflegt im synchronen Befehlsempfang (recvDroidInfo), also auf allen Rechnern gleich.
+static std::set<uint32_t> s_waypointDroids;
+
 void onPlayerBuildOrder(DROID *psDroid, const DroidOrder &order, bool queued)
 {
+	if (psDroid != nullptr && !psDroid->died)
+	{
+		if (!queued) { s_waypointDroids.erase(psDroid->id); }
+		else if (order.type == DORDER_MOVE || order.type == DORDER_SCOUT) { s_waypointDroids.insert(psDroid->id); }
+	}
 	if (psDroid == nullptr || psDroid->died || !isInfantryBuilder(psDroid)) { return; }
 	if (order.type != DORDER_BUILD || order.psStats == nullptr) { return; }
 	const auto *core = static_cast<const STRUCTURE_STATS *>(order.psStats);
@@ -1199,8 +1210,8 @@ void organize(GameWorld &world)
 		{
 			if (d->died) { continue; }
 			pruneDone(d);
-			// 1. Arbeit vor Fahrt
-			if ((d->order.type == DORDER_MOVE || d->order.type == DORDER_SCOUT) && d->listSize > 0)
+			// 1. Arbeit vor Fahrt (nicht bei per Shift gesetzten Wegpunkten - die werden der Reihe nach abgefahren)
+			if ((d->order.type == DORDER_MOVE || d->order.type == DORDER_SCOUT) && d->listSize > 0 && s_waypointDroids.count(d->id) == 0)
 			{
 				unsigned first = d->listSize;
 				for (unsigned k = 0; k < d->listSize && k < d->asOrderList.size(); ++k)

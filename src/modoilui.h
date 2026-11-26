@@ -25,4 +25,6 @@ void shutdown();
 /// Strommasten/Umspannwerk/Kraftwerk/Solar/Oellager als leuchtende Ringe des Reichweiten-Systems (range_rings). supply = Versorgungs-
 /// bereiche (blau, schon versorgte Flaechen eingeschlossen), link = Verbindungsreichweite zu anderen Masten (hellblau). x, y, Radius (Welt).
 void placementRings(std::vector<glm::vec3> &supply, std::vector<glm::vec3> &link);
+/// (26.11.) belegtes Rechteck oben rechts (Knopf + Fenster); false = nichts sichtbar
+bool screenRect(int &x0, int &y0, int &x1, int &y1);
 }

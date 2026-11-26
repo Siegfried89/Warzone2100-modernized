@@ -39,6 +39,8 @@ void tick();
 void setSuppressed(bool suppressed);
 /// MOD (21.11.): Breite, die die Ebenen-Knoepfe am rechten Rand oben belegen (0 = verborgen) - andere Anzeigen weichen nach links aus
 int reservedRight();
+/// (26.11.) Rechteck der Ebenen-Knoepfe oben rechts; false = verborgen
+bool screenRect(int &x0, int &y0, int &x1, int &y1);
 /// beim Beenden der Oberflaeche aufrufen; setzt die Ebene auf Oberflaeche zurueck
 void shutdown();
 

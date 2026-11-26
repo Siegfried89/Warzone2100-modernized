@@ -28,6 +28,7 @@
 #include "modlayer.h"
 #include "modui.h"
 #include "modglow.h"
+#include "modoilui.h"
 #include "modrosette.h"
 #include "multiplay.h"
 #include "modincoming.h"
@@ -560,8 +561,37 @@ void calcRect(int &x, int &y, int &w, int &h)
 	w = static_cast<int>(TOTAL_W * s); h = static_cast<int>(TOTAL_H * s);
 	// (17.11.) nicht ueber der Karte unten rechts (Radar): links daneben, unten buendig
 	// (18.11. 12:10) ohne Minikarte unten rechts in der Ecke - Map/Symbol-Knoepfe und Rosette stapeln sich darueber (siehe stackTop)
-	x = static_cast<int>(screenWidth) - w - 4;
-	y = static_cast<int>(screenHeight) - h - 8;
+	// (Wunsch 26.11. 19:32 "Das Befehlsmenue soll nicht die Rosette hochschieben, sondern darueber erscheinen. Die Rosette bleibt, wo sie
+	// ist. Alles auf Ueberdeckungen der Knoepfe pruefen und gegebenenfalls verschieben."): ueber der Rosette (rechtsbuendig); reicht der Platz
+	// bis zu den Anzeigen oben rechts (Oel & Strom, Ebenen) nicht, links neben die Rosette (unten buendig), notfalls noch weiter nach links
+	const int gap = static_cast<int>(6 * s);
+	int rx, ry, rw, rh;
+	modrosette::formRect(rx, ry, rw, rh);
+	struct R { int x0, y0, x1, y1; };
+	std::vector<R> obst;
+	{
+		int a, b, c, d;
+		if (modoilui::screenRect(a, b, c, d)) { obst.push_back({a, b, c, d}); }
+		if (modlayer::screenRect(a, b, c, d)) { obst.push_back({a, b, c, d}); }
+	}
+	obst.push_back({rx, ry, rx + rw, static_cast<int>(screenHeight)});   // Rosette und die Knopfzeile Map/Symbol darunter
+	auto freeAt = [&](int cx, int cy) {
+		if (cx < 4 || cy < 4) { return false; }
+		for (const R &o : obst) { if (cx < o.x1 + gap && cx + w > o.x0 - gap && cy < o.y1 + gap && cy + h > o.y0 - gap) { return false; } }
+		return true;
+	};
+	const int W = static_cast<int>(screenWidth), H = static_cast<int>(screenHeight);
+	const int cand[4][2] = { { W - w - 4, ry - gap - h }, { rx - w - gap, H - h - 8 }, { rx - w - gap, ry + rh - h }, { rx - w - gap, 4 } };
+	x = cand[1][0]; y = cand[1][1];
+	for (const auto &c : cand) { if (freeAt(c[0], c[1])) { x = c[0]; y = c[1]; break; } }
+	if (!freeAt(x, y))
+	{
+		// links an allen Anzeigen oben rechts vorbei
+		int left = rx;
+		for (const R &o : obst) { left = std::min(left, o.x0); }
+		x = left - w - gap; y = H - h - 8;
+	}
+	x = std::max(4, x); y = std::max(4, y);
 	const std::shared_ptr<WIDGET> radar = getRadarWidget();
 	if (radar && radar->visible() && radar->width() > 0)
 	{
@@ -3798,9 +3828,15 @@ int stackTop()
 {
 	// (18.11. 12:10 "die Menues ueberlappen sich immer noch extrem") Oberkante des Stapels unten rechts, wenn keine Minikarte sichtbar ist:
 	// offener Schlachtplan (unten rechts in der Ecke) - sonst der Bildschirmrand
-	int x, y, w, h;
-	calcRect(x, y, w, h);
-	return modrosette::planOpen() ? y : static_cast<int>(screenHeight) - 4;
+	// (26.11.) der Schlachtplan schiebt nichts mehr hoch - er sucht sich selbst einen freien Platz (calcRect)
+	return static_cast<int>(screenHeight) - 4;
+}
+
+bool planRect(int &x0, int &y0, int &x1, int &y1)
+{
+	if (!s_root || !s_root->visible()) { return false; }
+	x0 = s_root->x(); y0 = s_root->y(); x1 = s_root->x() + s_root->width(); y1 = s_root->y() + s_root->height();
+	return true;
 }
 
 void selectMode(const char *label)

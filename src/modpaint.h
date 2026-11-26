@@ -38,6 +38,8 @@ const char *activeLabel();
 void selectMode(const char *label);
 /// (18.11.) Oberkante des Stapels unten rechts ohne Minikarte (Schlachtplan offen: seine Oberkante, sonst Bildschirmunterkante)
 int stackTop();
+/// (26.11.) Rechteck des offenen Schlachtplans; false = geschlossen
+bool planRect(int &x0, int &y0, int &x1, int &y1);
 /// beim Beenden der Oberflaeche
 void shutdown();
 /// (22.11.) Angriffsplaner im Spielstand (Zonen, Leuchtfeuer, Brueckenkoepfe, Vektoren, Einheiten, Transporter)
