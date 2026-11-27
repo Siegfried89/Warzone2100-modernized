@@ -896,6 +896,9 @@ void loadParts()
 			{
 				const modcompbody::BodyInfo *bi = modcompbody::bodyInfo(it.key());
 				want = designable || modcompbody::isWzFactionBody(it.key()) || (bi != nullptr && bi->listed);
+				// (27.11.) SupCom-Gebaeude (SC_xxB/SC_xxC) sind nur Bauteile im Rumpf-Baukasten, keine Einheiten-Rumpfe
+				const std::string &k = it.key();
+				if (k.size() >= 6 && k.rfind("SC_", 0) == 0 && (k[5] == 'B' || k[5] == 'C')) { want = false; }
 			}
 			else if (src.kind == PK_PROP)
 			{

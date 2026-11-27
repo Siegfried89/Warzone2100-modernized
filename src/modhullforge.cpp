@@ -93,6 +93,8 @@ const float ANGLES[3] = { 5.f, 15.f, 90.f };
 
 // Bereiche (virtuelle Einheiten)
 constexpr float BAY_X = 166, BAY_Y = 6, BAY_W = 308, BAY_H = 330;
+constexpr float CEN_W = 50, CEN_H = 14, CEN_X = BAY_X + BAY_W - CEN_W - 6, CEN_Y = BAY_Y + 6;   // (Wunsch 27.11. 20:38) schneller Zentrier-Knopf
+constexpr float SUB_Y = 3, SUB_H = 12, SUB_X0 = 58, SUB_W0 = 46, SUB_X1 = 106, SUB_W1 = 54;   // SupCom-Unterreiter in der HULLS-Kopfzeile
 constexpr float PARTS_Y = 20, SLOTS_HEAD_Y = 134, SLOTS_Y = 148, VALUES_Y = 282;
 constexpr float ROW_A = 350, ROW_B = 418;
 // Rumpf-Liste links
@@ -353,6 +355,16 @@ const char *shortSource(const std::string &s)
 	return s.c_str();
 }
 
+/// (Wunsch 27.11. 20:38 "SupCom-Gebaeude ... durch Unterreiter abgrenzen von den Einheiten"): 0 = Units, 1 = Buildings
+int s_scSub = 0;
+bool hasSubTabs(const std::string &src) { return src == "Supreme Commander"; }
+bool isBuildingGroup(const std::string &g)
+{
+	auto ends = [&g](const char *t) { const size_t n = std::strlen(t); return g.size() >= n && g.compare(g.size() - n, n, t) == 0; };
+	return ends(" - Buildings") || ends(" - Civilian");
+}
+bool subTabsShown() { return s_source >= 0 && s_source < static_cast<int>(s_sources.size()) && hasSubTabs(s_sources[static_cast<size_t>(s_source)]); }
+
 void rebuildItems()
 {
 	const auto &cat = modcompbody::catalog();
@@ -362,10 +374,12 @@ void rebuildItems()
 	const std::string &src = s_sources[static_cast<size_t>(s_source)];
 	std::string group;
 	bool open = false;   // Zeile mit einem freien Platz
+	const bool sub = hasSubTabs(src);
 	for (size_t i = 0; i < cat.size(); ++i)
 	{
 		const BodyInfo &b = cat[i];
 		if (!b.listed || b.source != src) { continue; }
+		if (sub && isBuildingGroup(b.group) != (s_scSub == 1)) { continue; }   // (27.11.) SupCom: Einheiten | Gebaeude
 		if (b.group != group || s_items.empty())
 		{
 			group = b.group;
@@ -1368,7 +1382,7 @@ void drawBay(const Ctx &c)
 	if (s_def.parts.empty()) { wzText("<  Click a hull on the left", bx + c.L(60), by + c.L(150), pal_RGBA(120, 230, 255, 255), TK_BUTTON, c.S); }
 	if (!s_status.empty() && realTime < s_statusUntil)
 	{
-		const std::string t = fitW(s_status, bw - c.L(16), TK_ROW, c.S);
+		const std::string t = fitW(s_status, bw - c.L(16 + CEN_W + 8), TK_ROW, c.S);   // (27.11.) Platz fuer den Zentrier-Knopf
 		const int tw = textW(t, TK_ROW, c.S);
 		pie_UniTransBoxFill(bx + c.L(6), by + c.L(6), bx + c.L(14) + tw, by + c.L(20), pal_RGBA(0, 0, 0, 150));
 		wzText(t, bx + c.L(10), by + c.L(9), s_statusBad ? pal_RGBA(255, 130, 100, 255) : pal_RGBA(120, 255, 170, 255), TK_ROW, c.S);
@@ -1397,6 +1411,18 @@ void drawHullList(const Ctx &c, int &hoverCat)
 		}
 		const std::string lab = fitW(shortSource(s_sources[k]), w - 2, TK_SMALL, S);
 		wzText(lab, x0 + (w - textW(lab, TK_SMALL, S)) / 2, y0 + h - c.L(10), sel ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(190, 196, 236, 255), TK_SMALL, S);
+	}
+	if (subTabsShown())   // (27.11.) Unterreiter "Units | Buildings" rechts neben "HULLS"
+	{
+		for (int k = 0; k < 2; ++k)
+		{
+			const int x0 = c.X(k == 0 ? SUB_X0 : SUB_X1), y0 = c.Y(SUB_Y), w = c.L(k == 0 ? SUB_W0 : SUB_W1), h = c.L(SUB_H);
+			const bool sel = s_scSub == k;
+			const bool hover = mx >= x0 && mx < x0 + w && my >= y0 && my < y0 + h;
+			modwzhd::textButton(x0, y0, w, h, std::string(), sel, hover, false);
+			const std::string lab = k == 0 ? "Units" : "Buildings";
+			wzText(lab, x0 + (w - textW(lab, TK_SMALL, S)) / 2, y0 + c.L(2), sel ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(190, 196, 236, 255), TK_SMALL, S);
+		}
 	}
 	resetOffset();
 	// Liste
@@ -1772,6 +1798,18 @@ void buildScreen()
 		}
 		else { b->hide(); }
 	}
+	for (int k = 0; k < 2; ++k)   // (27.11.) SupCom-Unterreiter (gezeichnet von drawHullList, nur im SupCom-Reiter aktiv)
+	{
+		addBtn(parent, k == 0 ? SUB_X0 : SUB_X1, SUB_Y, k == 0 ? SUB_W0 : SUB_W1, SUB_H, -1, "", nullptr, [k](bool) {
+			if (subTabsShown() && k != s_scSub) { s_scSub = k; rebuildItems(); play("mfclick_move.ogg"); }
+		}, nullptr, noDisplay);
+	}
+	// (Wunsch 27.11. 20:38 "noch einen zusaetzlichen schnellen Zentrier-Knopf, ohne das bisherige UI zu verschieben"): oben rechts in der Ansicht
+	addBtn0(parent, CEN_X, CEN_Y, CEN_W, CEN_H, -1, "Centre", "Centre the hull on its base (saving does this too)", []() {
+		if (s_def.parts.empty()) { setStatus("Nothing to centre yet.", true); return; }
+		if (modcompbody::centerDef(s_def)) { s_dirty = true; setStatus("Centred on its base."); play("mfclick_move.ogg"); }
+		else { setStatus("Already centred."); }
+	});
 	addBtn0(parent, 6, 317, 75, 18, FI_SCROLL_UP, "Up", "Scroll up", []() { s_listScroll = std::max(0, s_listScroll - 3); });
 	addBtn0(parent, 85, 317, 75, 18, FI_SCROLL_DOWN, "Down", "Scroll down", []() { s_listScroll = std::min(maxListScroll(), s_listScroll + 3); });
 
@@ -1934,6 +1972,7 @@ bool inBay(int x, int y)
 {
 	if (inShapePanel(x, y)) { return false; }   // (24.11.) Form-Fenster liegt ueber der Ansicht
 	const Ctx c = ctx();
+	if (x >= c.X(CEN_X) && x <= c.X(CEN_X + CEN_W) && y >= c.Y(CEN_Y) && y <= c.Y(CEN_Y + CEN_H)) { return false; }   // (27.11.) Zentrier-Knopf
 	return x >= c.X(BAY_X) && x <= c.X(BAY_X + BAY_W) && y >= c.Y(BAY_Y) && y <= c.Y(BAY_Y + BAY_H);
 }
 
