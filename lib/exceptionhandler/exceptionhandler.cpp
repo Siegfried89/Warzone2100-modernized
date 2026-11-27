@@ -850,3 +850,12 @@ void modBreadcrumb(const char *step)
 	(void)step;
 #endif
 }
+
+bool modPreviousStartCrashed()
+{
+#if defined(WZ_OS_WIN) && !(defined(__GNUC__) && !defined(__clang__))
+	return ExchndlPreviousStartCrashed();
+#else
+	return false;
+#endif
+}

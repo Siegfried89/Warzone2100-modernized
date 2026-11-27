@@ -107,7 +107,6 @@
 #include "modshield.h"
 #include "modmobilefactory.h"
 #include "modairwar.h"
-#include "modcrew.h"
 #include "modgdiart.h"
 #include "modarty.h"
 #include "modtracks.h"
@@ -815,7 +814,6 @@ void interfaceShutDown()
 	modtracks::reset();      // MOD: Fahrspuren
 	modmobilefactory::reset();   // MOD: fahrende Fabrik (Fatboy)
 	modairwar::reset();      // MOD: Luftkampf
-	modcrew::reset();        // MOD: MF-Besatzung
 	modgdiart::reset();      // MOD: GDI-Artillerie
 	modarty::reset();        // MOD (19.11.): Steilfeuermodus der Panzer
 	modoutpost::reset();     // MOD: Aussenposten-Teleport

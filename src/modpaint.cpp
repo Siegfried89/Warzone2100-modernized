@@ -170,7 +170,6 @@ constexpr int groupsHeight()
 }
 constexpr int TOTAL_W = COLS * BTN_W + (COLS - 1) * GAP + 2 * PAD;
 constexpr int TOTAL_H = PAD + TITLE_H + groupsHeight() + PAD;
-constexpr unsigned SHOW_MS = 25000;   // so lange bleibt eine Zeichnung sichtbar
 constexpr int NEAR_TILES = 16;        // ohne Auswahl: passende Einheiten in diesem Umkreis
 constexpr size_t MAX_UNITS = 40;
 
@@ -181,6 +180,8 @@ struct Stroke
 	unsigned born = 0;
 	std::vector<Vector2i> marks;   // Panzersperren / Minen: geplante Stellen
 	int side = 0;                  // Verteidigungslinie: Seite der Querstriche (zum Feind)
+	uint32_t id = 0;               // (27.11.) Kennung - die Planauftraege der Einheiten verweisen darauf
+	bool planned = false;          // (27.11.) hat Einheiten einen Planauftrag gegeben (bleibt, solange einer davon besteht)
 };
 
 std::shared_ptr<W_SCREEN> s_screen;
@@ -191,7 +192,14 @@ std::vector<std::shared_ptr<W_BUTTON>> s_tplButtons;
 int s_mode = -1;                 // aktiver Zeichenmodus (-1 = keiner)
 bool s_drawing = false;
 std::vector<Vector2i> s_cur;     // Linie, die gerade gezeichnet wird
-std::vector<Stroke> s_done;      // fertige Zeichnungen (verblassen)
+// (Wunsch 27.11. 18:46 "Die Befehlsstreifen verblassen nach kurzer Zeit ... damit verblasst auch der Befehl. Die sollen dauerhaft da
+// bleiben"): fertige Zeichnungen bleiben stehen - eine Zeichnung mit Einheiten-Auftraegen, solange noch eine ihrer Einheiten den Auftrag hat;
+// sonst, bis eine neue Zeichnung derselben Art sie ersetzt (ohne Shift) oder "Clear Plan" alles loescht.
+std::vector<Stroke> s_done;
+uint32_t s_strokeSeq = 0;        // (27.11.) laufende Nummer der Zeichnungen
+uint32_t s_strokeId = 0;         // (27.11.) Zeichnung, die gerade ausgefuehrt wird (fuer rememberPlan)
+void clearOrders();              // (27.11.) "Clear Plan": stehende Befehlsstreifen und Planauftraege loeschen
+bool ordersPresent();
 // MOD (Wunsch 18.11. 00:59, berichtigt 02:44): "Wenn man Shift drueckt, lassen sich neue zeichnen, auch mehrere. Aber wenn man nicht Shift
 // drueckt, dann wird sie ersetzt." - mit gedrueckter Umschalttaste kommt jede Zeichnung als WEITERE Linie dazu (eigener Marker, eigene
 // Einheiten; der Zeichenmodus bleibt an); ohne Shift ersetzt eine neue Zeichnung die bisherigen Linien derselben Art.
@@ -499,10 +507,11 @@ void ensureScreen()
 				if (s_planClearArmed != 0 && realTime - s_planClearArmed < 4000)
 				{
 					plan::clearAll();
+					clearOrders();   // (27.11.) die stehenden Befehlsstreifen und ihre Auftraege gehoeren zum Plan
 					s_planClearArmed = 0;
 					addConsoleMessage(_("Attack plan cleared"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 				}
-				else if (plan::hasElems()) { s_planClearArmed = std::max(1u, realTime); }
+				else if (plan::hasElems() || ordersPresent()) { s_planClearArmed = std::max(1u, realTime); }
 				s_mode = -1; s_drawing = false; s_cur.clear();
 				return;
 			}
@@ -1245,7 +1254,8 @@ SalvageOp s_op;
 // MOD (Wunsch 14.11. Punkt 12, Rest): "Kommen nach einer Zeit keine weiteren Befehle, nehmen sie wieder an den Oberbefehlen teil."
 // Jede Einheit merkt sich ihren letzten Schlachtplan-Auftrag (Bewegung, Sammeln, Angriff, Verteidigung, Combot-Gebiet). Hat der Spieler
 // sie einzeln woanders hingeschickt, ist sie fertig (kein Befehl mehr), die 45-s-Spielerkontrolle (modcontrol) ist vorbei und sie steht
-// weit weg vom Planziel, kehrt sie von selbst zu ihrem Planauftrag zurueck. Ein Planauftrag gilt 15 Minuten.
+// weit weg vom Planziel, kehrt sie von selbst zu ihrem Planauftrag zurueck. (27.11.) Ein Planauftrag gilt dauerhaft - bis die Einheit
+// einen neuen Planauftrag bekommt, faellt oder der Plan geloescht wird (frueher 15 Minuten).
 struct PlanTask
 {
 	DroidOrder order = DroidOrder(DORDER_NONE);
@@ -1254,10 +1264,21 @@ struct PlanTask
 	int face = -1;        // (19.11. 16:44) Verteidigungslinie: Blickrichtung am Ziel (Richtung der Querstriche), -1 = keine
 	bool faced = false;   // schon eingedreht (bis die Einheit ihren Platz wieder verlaesst)
 	unsigned sent = 0;    // letzter eigener Befehl (Linienbefehl oder Rueckkehr) - spaetere Befehle sind Eingriffe des Spielers
+	uint32_t stroke = 0;  // (27.11.) Zeichnung, aus der der Auftrag stammt
 };
 std::map<uint32_t, PlanTask> s_plan;
 unsigned s_nextPlanCheck = 0;
-constexpr unsigned PLAN_LIFE = 15 * 60 * 1000;
+
+void clearOrders()
+{
+	s_done.clear();
+	s_plan.clear();
+}
+
+bool ordersPresent()
+{
+	return !s_done.empty() || !s_plan.empty();
+}
 
 constexpr unsigned OP_STEP_MS = 1000;
 constexpr unsigned OP_GATHER_MAX = 75000;   // laenger wartet der Trupp nicht auf Nachzuegler
@@ -1440,6 +1461,7 @@ void rememberPlan(const DROID *d, const DroidOrder &o, const Vector2i &anchor, i
 	t.born = gameTime;
 	t.face = face;
 	t.sent = gameTime;
+	t.stroke = s_strokeId;
 	s_plan[d->id] = t;
 }
 
@@ -1482,7 +1504,7 @@ void planTick()
 	for (auto it = s_plan.begin(); it != s_plan.end();)
 	{
 		DROID *d = IdToDroid(gameWorld.objects, it->first, selectedPlayer);
-		if (d == nullptr || d->died || gameTime - it->second.born > PLAN_LIFE) { it = s_plan.erase(it); continue; }
+		if (d == nullptr || d->died) { it = s_plan.erase(it); continue; }
 		if (d->order.type == DORDER_NONE && !modcontrol::manual(d) && !inOp(d->id) && !modrecover::carrying(d)
 		    && dist2(d->pos.xy(), it->second.anchor) > far2)
 		{
@@ -2586,14 +2608,18 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 	}
 	if (lineWithTicks)
 	{
-		const float hw = std::clamp(std::min(5.5f * sc * widthScale, L * 0.05f), 2.f * sc, 24.f * sc);
-		const float glow = 3.f * sc + hw * 0.7f;
-		// kurze, dichte Querstriche zur Feindseite (in Bildpunkten): erst die Striche, dann die Linie darueber
+		// (Wunsch 27.11. 18:46 "die Verteidigungslinien mit den sehr vielen Staeben sehen schlecht aus. Der Streifen an sich soll viel dicker
+		// werden (mehr Farbe im Inneren, nicht der weisse Anteil). Die Staebe sollen viel weiter im Abstand sein und viel weniger werden.
+		// Ausserdem kurz gehalten, aber laenger als jetzt - ganz im Sinne taktischer Verteidigungslinien-Symbole"): doppelt so dicker
+		// Streifen, Querstriche gut viermal so weit auseinander, etwas laenger und kraeftiger
+		const float hw = std::clamp(std::min(11.f * sc * widthScale, L * 0.08f), 3.f * sc, 40.f * sc);
+		const float glow = 3.f * sc + hw * 0.6f;
+		// wenige, kraeftige Querstriche zur Feindseite (in Bildpunkten): erst die Striche, dann die Linie darueber
 		const float sgn = screenSide(pts, side, p, m);
 		if (sgn != 0.f)
 		{
 			std::vector<std::pair<glm::vec2, glm::vec2>> ticks;
-			const float spacing = hw * 1.9f, len = hw * 1.55f;
+			const float spacing = hw * 7.5f, len = hw * 1.9f;
 			float acc = 0.f, next = spacing * 0.5f;
 			for (size_t i = 1; i < p.size() && ticks.size() < 600; ++i)
 			{
@@ -2604,12 +2630,12 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 				while (acc + seg >= next)
 				{
 					const glm::vec2 q = a + t * (next - acc);
-					if (next > spacing * 0.3f && next < L - spacing * 0.3f) { ticks.emplace_back(q + nS * (hw * 0.4f), q + nS * (hw + len)); }
+					if (next > spacing * 0.3f && next < L - spacing * 0.3f) { ticks.emplace_back(q + nS * (hw * 0.6f), q + nS * (hw + len)); }
 					next += spacing;
 				}
 				acc += seg;
 			}
-			modglow::bars(ticks, std::max(1.2f, hw * 0.36f), col, static_cast<float>(alpha) * 0.95f);
+			modglow::bars(ticks, std::max(1.5f, hw * 0.30f), col, static_cast<float>(alpha) * 0.95f);
 		}
 		modglow::ribbon(p, hw, glow, col, static_cast<float>(alpha), false);
 		return;
@@ -3906,8 +3932,12 @@ void tick()
 	faceTick(); // Verteidigungslinie: am Platz zur Feindseite drehen
 	sweepTick(); // Minen raeumen im Gebiet
 	plan::step(); // (22.11.) Angriffsplaner
-	// alte Zeichnungen entfernen
-	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [](const Stroke &st) { return realTime - st.born > SHOW_MS; }), s_done.end());
+	// (27.11.) Zeichnungen mit Einheiten-Auftraegen verschwinden erst, wenn keine ihrer Einheiten den Auftrag mehr hat
+	s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [](const Stroke &st) {
+		if (!st.planned) { return false; }
+		for (const auto &kv : s_plan) { if (kv.second.stroke == st.id) { return false; } }
+		return true;
+	}), s_done.end());
 }
 
 bool processMouse(bool overUi, const Vector2i &worldPos)
@@ -4019,8 +4049,11 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	const bool shift = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
 	if (!shift) { s_chain.clear(); }
 	s_append = shift;
+	s_strokeId = ++s_strokeSeq;
 	applyStroke(m, s_cur);
 	s_append = false;
+	const uint32_t strokeId = s_strokeId;
+	s_strokeId = 0;
 	if (s_lastPlanned)
 	{
 		// Teil des Angriffsplans: bleibt als eigener Baustein stehen (kein verblassender Strich)
@@ -4032,13 +4065,15 @@ bool processMouse(bool overUi, const Vector2i &worldPos)
 	st.mode = m;
 	st.pts = s_cur;
 	st.born = realTime;
+	st.id = strokeId;
+	for (const auto &kv : s_plan) { if (kv.second.stroke == strokeId) { st.planned = true; break; } }
 	if (m == M_TRAPS || m == M_MINES) { st.marks = fieldSpots(s_cur, m == M_MINES); }
 	if (m == M_DEFEND || m == M_OFFENSE || m == M_DEFNET) { st.side = defendSide(s_cur); }
 	// MOD (Wunsch 16.11. 21:25): hoechstens ein Marker je Aktion - eine neue Zeichnung ersetzt die alte derselben Art
 	// (18.11.) mit Shift bleiben die vorigen Marker stehen (die Befehle wurden ja angehaengt)
 	if (!shift) { s_done.erase(std::remove_if(s_done.begin(), s_done.end(), [m](const Stroke &o) { return o.mode == m; }), s_done.end()); }
 	s_done.push_back(std::move(st));
-	if (s_done.size() > 24) { s_done.erase(s_done.begin()); }
+	if (s_done.size() > 40) { s_done.erase(s_done.begin()); }
 	s_cur.clear();
 	if (!shift) { s_mode = -1; }   // ein Zug je Knopfdruck - mit Shift bleibt der Modus fuer den naechsten Strich an
 	return true;
@@ -4049,9 +4084,7 @@ void drawOverlay(const glm::mat4 &m)
 	plan::draw(m);   // (22.11.) Angriffsplaner (bleibt stehen)
 	for (const Stroke &st : s_done)
 	{
-		const unsigned age = realTime - st.born;
-		const int a = age >= SHOW_MS ? 0 : static_cast<int>(230 - 200 * static_cast<int64_t>(age) / static_cast<int64_t>(SHOW_MS));
-		if (a > 0) { drawStroke(st.pts, st.mode, a, m, &st.marks, st.side); }
+		drawStroke(st.pts, st.mode, 230, m, &st.marks, st.side);   // (27.11.) bleibt stehen, verblasst nicht mehr
 	}
 	if (s_op.active)
 	{

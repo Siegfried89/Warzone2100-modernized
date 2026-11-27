@@ -35,7 +35,6 @@
 #include "map.h"
 #include "projectile.h"
 #include "modlayer.h"
-#include "modcrew.h"
 #include "objmem.h"
 #include "order.h"
 #include "visibility.h"
@@ -235,8 +234,7 @@ static BASE_OBJECT *aiSearchSensorTargets(BASE_OBJECT *psObj, int weapon_slot, W
 			isCB = structCBSensor(psCStruct);
 			//isRD = objRadarDetector((BASE_OBJECT *)psCStruct);
 		}
-		if (!psTemp || psTemp->died || aiObjectIsProbablyDoomed(psTemp, false) || !validTarget(psObj, psTemp, 0) || aiCheckAlliances(psTemp->player, psObj->player)
-		    || modcrew::crewless(psTemp))   // MOD: Combot ohne Besatzung ist neutral
+		if (!psTemp || psTemp->died || aiObjectIsProbablyDoomed(psTemp, false) || !validTarget(psObj, psTemp, 0) || aiCheckAlliances(psTemp->player, psObj->player))
 		{
 			continue;
 		}
@@ -682,7 +680,6 @@ int aiBestNearestTarget(DROID *psDroid, BASE_OBJECT **ppsObj, int weapon_slot, i
 		    && (targetInQuestion->type == OBJ_DROID || targetInQuestion->type == OBJ_STRUCTURE || targetInQuestion->type == OBJ_FEATURE)
 		    && targetInQuestion->visible[psDroid->player] == UBYTE_MAX
 		    && !aiCheckAlliances(targetInQuestion->player, psDroid->player)
-		    && !modcrew::crewless(targetInQuestion)   // MOD: Combot ohne Besatzung ist neutral
 		    && validTarget(psDroid, targetInQuestion, weapon_slot)
 		    && objPosDiffSq(psDroid, targetInQuestion) < droidRange * droidRange)
 		{
@@ -990,7 +987,6 @@ bool aiChooseTarget(BASE_OBJECT *psObj, BASE_OBJECT **ppsTarget, int weapon_slot
 				if (canAttack && psCurr->type != OBJ_FEATURE && !psCurr->died
 				    && !aiCheckAlliances(psCurr->player, psObj->player)
 				    && validTarget(psObj, psCurr, weapon_slot) && psCurr->visible[psObj->player] == UBYTE_MAX
-				    && !modcrew::crewless(psCurr)   // MOD: Combot ohne Besatzung ist neutral
 				    && objPosDiffSq(psObj, psCurr) < longRange * longRange)
 				{
 					int newTargetValue = targetAttackWeightIfGreaterThan(targetValue - 1, psCurr, psObj, weapon_slot, true);
@@ -1158,11 +1154,6 @@ void aiUpdateDroid(DROID *psDroid)
 	{
 		return;
 	}
-	if (modcrew::crewless(psDroid))   // MOD (18.11.): Combot ohne Besatzung tut nichts
-	{
-		return;
-	}
-
 	lookForTarget = false;
 	updateTarget = false;
 

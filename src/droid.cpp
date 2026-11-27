@@ -2622,7 +2622,22 @@ bool calcDroidMuzzleLocation(const DROID *psDroid, Vector3i *muzzle, int weapon_
 		debugLen += sprintf(debugStr + debugLen, "connect:body[%d]=(%d,%d,%d)", weapon_slot, psBodyImd->connectors[conn].x, -psBodyImd->connectors[conn].z, -psBodyImd->connectors[conn].y);
 
 		//matrix = the weapon[slot] mount on the body
-		af.RotY(psDroid->asWeaps[weapon_slot].rot.direction);  // +ve anticlockwise
+		{
+			// MOD (27.11.): geneigter Waffenplatz eines Verbundrumpfes - wie beim Zeichnen (component.cpp) um die Achsen des Platzes neigen
+			// (Zeichnen: Schwenk R_y(-w) = af.RotY(+w), Hoehe R_x(+w) = af.RotX(+w), Rollen R_z(+w) = af.RotZ(-w))
+			float mYaw = 0.f, mPitch = 0.f, mRoll = 0.f;
+			if (modcompbody::mountTilt(psDroid->asBits[COMP_BODY], static_cast<int>(conn), mYaw, mPitch, mRoll))
+			{
+				const auto deg16 = [](float d) { return static_cast<uint16_t>(static_cast<int>(std::lround(d * 65536.f / 360.f)) & 0xFFFF); };
+				af.RotY(deg16(mYaw));
+				af.RotX(deg16(mPitch));
+				af.RotZ(deg16(-mRoll));
+				af.RotY(deg16(-mYaw));
+			}
+		}
+		uint16_t modAimDir = psDroid->asWeaps[weapon_slot].rot.direction, modAimPitch = psDroid->asWeaps[weapon_slot].rot.pitch;
+		modcompbody::tiltedAim(psDroid->asBits[COMP_BODY], static_cast<int>(conn), modAimDir, modAimPitch);   // MOD (27.11.): geneigter Platz
+		af.RotY(modAimDir);  // +ve anticlockwise
 
 		// process turret mount
 		if (psMountImd && !psMountImd->connectors.empty())
@@ -2632,7 +2647,7 @@ bool calcDroidMuzzleLocation(const DROID *psDroid, Vector3i *muzzle, int weapon_
 		}
 
 		//matrix = the turret connector for the gun
-		af.RotX(psDroid->asWeaps[weapon_slot].rot.pitch);      // +ve up
+		af.RotX(modAimPitch);      // +ve up
 
 		//process the gun
 		if (psWeaponImd && !psWeaponImd->connectors.empty())

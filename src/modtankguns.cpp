@@ -15,7 +15,6 @@
 #include "game_world.h"
 #include "modlayer.h"
 #include "modammo.h"
-#include "modcrew.h"
 #include "projectile.h"
 #include "random.h"
 #include "stats.h"
@@ -138,7 +137,7 @@ void tick()
 				if (q == p || aiCheckAlliances(p, q)) { continue; }
 				for (DROID *e : gameWorld.objects.droids[q])
 				{
-					if (e->died || e->visible[p] < UBYTE_MAX || e->isFlying() || !modlayer::canInteract(d, e) || modcrew::crewless(e)) { continue; }
+					if (e->died || e->visible[p] < UBYTE_MAX || e->isFlying() || !modlayer::canInteract(d, e)) { continue; }
 					const int64_t dx = e->pos.x - d->pos.x, dy = e->pos.y - d->pos.y, dd = dx * dx + dy * dy;
 					if (dd >= bestD) { continue; }
 					const int diff = std::abs(angleDelta(iAtan2(static_cast<int>(dx), static_cast<int>(dy)) - d->rot.direction));

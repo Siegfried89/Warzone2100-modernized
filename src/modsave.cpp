@@ -16,7 +16,6 @@
 #include "modwreck.h"
 #include "modrecover.h"
 #include "modlayer.h"
-#include "modcrew.h"
 #include "modtunnel.h"
 #include "modpaint.h"
 #include "featuredef.h"
@@ -163,9 +162,6 @@ void write(const std::string &folder)
 		modlayer::saveState(lobjs, ldrills);
 		j["layerObjs"] = lobjs;
 		j["layerDrills"] = ldrills;
-		std::vector<int64_t> crew;
-		modcrew::saveState(crew);   // MOD (18.11.): Piloten mit Namen/Stufen, Combots ohne Besatzung
-		j["crew"] = crew;
 		std::vector<int64_t> tunnels, plan;
 		modtunnel::saveState(tunnels);   // MOD (22.11.): Tunnel, Grabungen, Einheiten im Gang
 		j["tunnels"] = tunnels;
@@ -246,9 +242,7 @@ void applyPending()
 		readArray(*j, "layerObjs", lobjs);
 		readArray(*j, "layerDrills", ldrills);
 		modlayer::loadState(lobjs, ldrills);   // eingesetzt im ersten Spielschritt (wenn die Zusatzkarten stehen)
-		std::vector<int64_t> crew;
-		readArray(*j, "crew", crew);
-		modcrew::loadState(crew);
+		// (27.11.) "crew" aelterer Spielstaende (MF-Besatzung, entfernt) wird ignoriert
 		std::vector<int64_t> tunnels, plan;
 		readArray(*j, "tunnels", tunnels);
 		modtunnel::loadState(tunnels);

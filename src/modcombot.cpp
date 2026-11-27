@@ -31,7 +31,6 @@
 #include "modlayermap.h"
 #include "modlayer.h"
 #include "modduel.h"
-#include "modcrew.h"
 #include "random.h"
 #include "stats.h"
 
@@ -92,7 +91,7 @@ float s_show = 1.f;   // MOD (19.11. 23:00 "die Groessenordnung auch"): Anzeige-
 float s_front = 8.2f;  // (21.11.) Brusttiefe des Grund-Combots in der Kampfhaltung (MF-Einheiten, parts.json "front" von mfreach.py)
 std::vector<Part> s_parts;
 std::unordered_map<std::string, Anim> s_anims;
-const Anim *s_stand = nullptr, *s_standCrewless = nullptr, *s_standTurn = nullptr, *s_attackIdle = nullptr;
+const Anim *s_stand = nullptr, *s_standTurn = nullptr, *s_attackIdle = nullptr;
 const Anim *s_death[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
 const Anim *s_hit[4] = { nullptr, nullptr, nullptr, nullptr };
 JetSet s_jetTorso, s_jetLegs;
@@ -314,7 +313,6 @@ bool loadAll()
 			}
 			const auto &b = aj["base"];
 			s_stand = animByKey(b["stand"]);
-			s_standCrewless = animByKey(b["standcrewless"]);
 			s_standTurn = animByKey(b["standturn"]);
 			s_attackIdle = animByKey(b["attackidlestill"]);
 			for (int i = 0; i < 5 && i < static_cast<int>(b["death"].size()); ++i) { s_death[i] = animByKey(b["death"][i]); }
@@ -1659,11 +1657,6 @@ void animate(const DROID *d, const Loadout &lo, Pose &P)
 		else if (!air->want && js.land) { setBase(da, js.land, false); da.cur.t = std::min(since, js.land->T); baseClock = false; }
 		else if (moving && js.fly) { setBase(da, js.fly, true); }
 		else if (js.idle) { setBase(da, js.idle, true); }
-	}
-	else if (s_standCrewless != nullptr && modcrew::crewless(d))
-	{
-		// MF "standcrewless": ohne Besatzung sackt der Combot zusammen und bleibt so stehen (einmal abgespielt, letzte Haltung bleibt)
-		setBase(da, s_standCrewless, false);
 	}
 	else if (moving && ti != nullptr && ti->walk[tier] != nullptr)
 	{

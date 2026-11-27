@@ -57,7 +57,6 @@
 #include "faction.h"
 #include "modcombot.h"
 #include "modlayer.h"
-#include "modcrew.h"
 #include "modgdiart.h"
 #include "modicbm.h"
 #include "lib/ivis_opengl/piepalette.h"
@@ -1221,13 +1220,6 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	// MOD: modulare Combots (Torso/Beine/Arme) werden Teil fuer Teil mit den Original-MF-Animationen zusammengesetzt
 	if (modcombot::isModular(psDroid))
 	{
-		if (!bButton && modcrew::crewless(psDroid))
-		{
-			// (18.11., MF-Besatzung) Combot ohne Besatzung: dunkel wie abgeschaltet - so findet man ihn zum Besteigen
-			brightness.byte.r = static_cast<uint8_t>(brightness.byte.r * 45 / 100);
-			brightness.byte.g = static_cast<uint8_t>(brightness.byte.g * 45 / 100);
-			brightness.byte.b = static_cast<uint8_t>(brightness.byte.b * 45 / 100);
-		}
 		return modcombot::draw(const_cast<DROID *>(psDroid), bButton, modifiedModelMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, iPieData);
 	}
 
@@ -1509,6 +1501,17 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					else
 					{
 						debug(LOG_INFO, "Model lacks sufficient connectors?: %s", psShapeBody->modelName.toUtf8().c_str());
+					}
+					// MOD (Wunsch 27.11. 18:48): geneigter Waffenplatz eines Verbundrumpfes (Nase/Rollen aus der Hull Forge) - die Waffe sitzt schraeg und
+					// schwenkt um die geneigte Achse; ungeneigt bleibt alles wie bisher
+					{
+						float mYaw = 0.f, mPitch = 0.f, mRoll = 0.f;
+						if (iConnector < VTOL_CONNECTOR_START && modcompbody::mountTilt(psDroid->asBits[COMP_BODY], static_cast<int>(bodyConnectorIndex), mYaw, mPitch, mRoll))
+						{
+							localModelMatrix *= modcompbody::tiltMatrix(mYaw, mPitch, mRoll);
+							// Schwenk/Hoehe in die Achsen des geneigten Platzes umrechnen - das Rohr zeigt weiter genau aufs Ziel
+							modcompbody::tiltedAim(psDroid->asBits[COMP_BODY], static_cast<int>(bodyConnectorIndex), rot.direction, rot.pitch);
+						}
 					}
 					if (!bButton)
 					{

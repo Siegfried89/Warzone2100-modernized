@@ -91,6 +91,7 @@
 #include "notifications.h"
 #include "activity.h"
 #include "hci/groups.h"
+#include "lib/exceptionhandler/exceptionhandler.h"   // MOD (27.11.): Hinweis nach stillem Startabsturz
 
 #if defined(__EMSCRIPTEN__)
 # include "emscripten_helpers.h"
@@ -185,6 +186,23 @@ static void runchatlink()
 }
 
 const char * VIDEO_TAG = "videoMissing";
+
+// MOD (27.11.): ist der vorige Start in den ersten Sekunden abgestuerzt, wurde er still beendet (exchndl_win.cpp) - hier einmal je
+// Programmstart ein kurzer Hinweis, wo der Bericht liegt (statt der englischen Absturzfenster beim Absturz selbst)
+static void modNotifyPreviousStartCrash()
+{
+	static bool s_done = false;
+	if (s_done) { return; }
+	s_done = true;
+	if (!modPreviousStartCrashed()) { return; }
+	WZ_Notification notification;
+	notification.duration = 12 * GAME_TICKS_PER_SEC;
+	notification.contentTitle = "Letzter Start abgebrochen";
+	notification.contentText = "Der letzte Start von Warzone modernized wurde kurz nach dem Laden unerwartet beendet. Der Bericht liegt im "
+	                           "Benutzerordner unter logs (Warzone2100.RPT). Jetzt l\xC3\xA4uft alles normal weiter.";
+	notification.largeIcon = WZ_Notification_Image("images/notifications/exclamation_triangle.png");
+	addNotification(notification, WZ_Notification_Trigger(GAME_TICKS_PER_SEC));
+}
 
 void notifyAboutMissingVideos()
 {
@@ -350,6 +368,7 @@ void startTitleMenu()
 	addTextButton(FRONTEND_MULTIPLAYER, FRONTEND_POS3X, FRONTEND_POS3Y, _("Multi Player"), WBUT_TXTCENTRE);
 	addTextButton(FRONTEND_TUTORIAL, FRONTEND_POS4X, FRONTEND_POS4Y, _("Tutorial"), WBUT_TXTCENTRE);
 	addTextButton(FRONTEND_OPTIONS, FRONTEND_POS5X, FRONTEND_POS5Y, _("Options"), WBUT_TXTCENTRE);
+	modNotifyPreviousStartCrash();   // MOD (27.11.)
 
 	// check whether video sequences are installed
 	if (seq_hasVideos())
