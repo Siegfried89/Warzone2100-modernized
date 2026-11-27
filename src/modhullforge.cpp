@@ -235,6 +235,8 @@ Def s_def;
 std::vector<Link> s_links;      // parallel zu s_def.mounts
 int s_sel = -1;                 // gewaehltes Teil
 int s_selMount = -1;            // gewaehlter Waffenplatz (>= 0: Verschieben wirkt auf ihn)
+int s_selDrive = -1;            // (27.11.) gewaehlter Antriebsplatz (>= 0: Verschieben/Drehen wirkt auf ihn)
+bool s_drivePick = false;       // (27.11.) naechster Klick auf einen Rumpf links: Groesse (Laufwerk-Modelle) des gewaehlten Antriebsplatzes
 // MOD (Wunsch 24.11. 15:33 "die Ruempfe dicker, duenner, laenger, breiter machen - in einem Unter-Fenster, das mit einem Knopf kommt,
 // bitte das jetzige sehr gute UI nicht noch komplexer machen"): Form-Fenster ueber der Ansicht, Knopf "Form" in der Gruppe PART
 bool s_shapeOpen = false;
@@ -250,7 +252,7 @@ bool s_partsOpen = false;
 bool s_texAll = false;          // Farben fuer den ganzen Rumpf statt fuer das gewaehlte Teil
 bool s_texPick = false;         // naechster Klick auf einen Rumpf links waehlt die Farben (statt ein Teil anzufuegen)
 std::vector<size_t> s_partsBtns;
-constexpr float PM_X = 262, PM_Y = 226, PM_W = 206, PM_H = 108;   // Parts-Fenster (unten rechts in der Ansicht)
+constexpr float PM_X = 262, PM_Y = 178, PM_W = 206, PM_H = 156;   // Parts-Fenster (unten rechts in der Ansicht; (27.11.) hoeher: Antriebsplaetze)
 const float SHAPE_STEPS[3] = { 0.05f, 0.10f, 0.25f };
 int s_step = 1, s_angle = 1;
 float s_yaw = 215.f, s_pitch = 24.f, s_zoom = 1.f;
@@ -608,6 +610,7 @@ void selectPart(int i)
 	if (s_def.parts.empty()) { s_sel = -1; return; }
 	s_sel = std::clamp(i, 0, static_cast<int>(s_def.parts.size()) - 1);
 	s_selMount = -1;
+	s_selDrive = -1;
 	if (s_sel < s_partScroll) { s_partScroll = s_sel; }
 	if (s_sel >= s_partScroll + PART_ROWS) { s_partScroll = s_sel - PART_ROWS + 1; }
 }
@@ -616,8 +619,82 @@ void selectMount(int k)
 {
 	if (k < 0 || k >= static_cast<int>(s_def.mounts.size())) { return; }
 	s_selMount = k;
+	s_selDrive = -1;
 	if (s_selMount < s_mountScroll) { s_mountScroll = s_selMount; }
 	if (s_selMount >= s_mountScroll + MOUNT_ROWS) { s_mountScroll = s_selMount - MOUNT_ROWS + 1; }
+}
+
+// ---------------------------------------------------------------- (Wunsch 27.11. 19:16) Antriebsplaetze
+bool driveSelected()
+{
+	return s_selDrive >= 0 && s_selDrive < static_cast<int>(s_def.drives.size());
+}
+
+void selectDrive(int k)
+{
+	if (k < 0 || k >= static_cast<int>(s_def.drives.size())) { return; }
+	s_selDrive = k;
+	s_selMount = -1;
+}
+
+/// Rumpf, dessen Laufwerk ein Antriebsplatz traegt (leer = Fahrgestell)
+std::string driveBodyId(const modcompbody::Drive &dr)
+{
+	if (!dr.body.empty()) { return dr.body; }
+	return s_def.parts.empty() ? std::string() : s_def.parts[0].body;
+}
+
+const iIMDShape *driveShape(const modcompbody::Drive &dr)
+{
+	const BodyInfo *b = modcompbody::bodyInfo(driveBodyId(dr));
+	if (b == nullptr || b->driveModel == nullptr) { return nullptr; }
+	return b->driveModel->displayModel();
+}
+
+void addDrive()
+{
+	if (s_def.parts.empty()) { setStatus("Add a hull first.", true); return; }
+	if (s_def.drives.size() >= modcompbody::MAX_DRIVES) { setStatus("At most " + std::to_string(modcompbody::MAX_DRIVES) + " drives.", true); return; }
+	modcompbody::Drive dr;
+	if (!s_def.drives.empty())
+	{
+		// neben den letzten setzen: erst gespiegelt, dann dahinter
+		const modcompbody::Drive &last = s_def.drives.back();
+		dr = last;
+		bool mirrorFree = std::fabs(last.pos.x) > 2.f;
+		for (const modcompbody::Drive &o : s_def.drives) { if (glm::length(o.pos - glm::vec3(-last.pos.x, last.pos.y, last.pos.z)) < 2.f) { mirrorFree = false; } }
+		if (mirrorFree) { dr.pos.x = -last.pos.x; dr.yaw = -last.yaw; }
+		else
+		{
+			const iIMDShape *sh = driveShape(last);
+			const float len = sh != nullptr ? static_cast<float>(sh->max.z - sh->min.z) * last.scale : 30.f;
+			dr.pos.z += std::max(8.f, std::round(len));
+		}
+	}
+	s_def.drives.push_back(dr);
+	selectDrive(static_cast<int>(s_def.drives.size()) - 1);
+	s_dirty = true;
+	play("mfui_clank.ogg");
+	setStatus("Drive " + std::to_string(s_def.drives.size()) + " added - move it with MOVE, turn it with Turn; each drive gets its own propulsion in the Unit Designer.");
+}
+
+void removeDrive(int k)
+{
+	if (k < 0 || k >= static_cast<int>(s_def.drives.size())) { return; }
+	s_def.drives.erase(s_def.drives.begin() + k);
+	if (s_def.drives.empty()) { s_selDrive = -1; }
+	else if (s_selDrive >= 0) { s_selDrive = std::min(s_selDrive > k ? s_selDrive - 1 : s_selDrive, static_cast<int>(s_def.drives.size()) - 1); }
+	s_dirty = true;
+	play("mfui_detach.ogg");
+	setStatus(s_def.drives.empty() ? std::string("Last drive removed - the hull uses one drive under the chassis again.") : std::string("Drive removed."));
+}
+
+void scaleDrive(float f)
+{
+	if (!driveSelected()) { setStatus("Select a drive first (SLOTS list or click it).", true); return; }
+	modcompbody::Drive &dr = s_def.drives[static_cast<size_t>(s_selDrive)];
+	dr.scale = std::clamp(std::round(dr.scale * f * 20.f) / 20.f, 0.25f, 4.f);
+	s_dirty = true;
 }
 
 void addPart(size_t catIdx)
@@ -649,6 +726,12 @@ void move(int axis, float sign)
 {
 	const bool fine = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
 	const float d = (fine ? STEPS[0] : STEPS[s_step]) * sign;
+	if (driveSelected())   // (27.11.)
+	{
+		s_def.drives[static_cast<size_t>(s_selDrive)].pos[axis] += d;
+		s_dirty = true;
+		return;
+	}
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
 		s_def.mounts[static_cast<size_t>(s_selMount)].pos[axis] += d;
@@ -666,6 +749,14 @@ void move(int axis, float sign)
 void rotate(int axis, float sign)
 {
 	const bool fine = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
+	if (driveSelected())   // (27.11.) Antriebsplatz: nur um die Hochachse
+	{
+		if (axis != 0) { setStatus("Drives only turn left/right.", true); return; }
+		modcompbody::Drive &dr = s_def.drives[static_cast<size_t>(s_selDrive)];
+		dr.yaw = std::remainder(dr.yaw - (fine ? 1.f : ANGLES[s_angle]) * sign, 360.f);
+		s_dirty = true;
+		return;
+	}
 	// (Wunsch 23.11. 03:05) Waffenplatz: Gieren dreht seine Blickrichtung - die Waffe schwenkt 180 Grad um sie
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
@@ -690,6 +781,18 @@ void rotate(int axis, float sign)
 
 void duplicatePart(bool mirror)
 {
+	if (driveSelected())   // (27.11.)
+	{
+		if (s_def.drives.size() >= modcompbody::MAX_DRIVES) { setStatus("At most " + std::to_string(modcompbody::MAX_DRIVES) + " drives.", true); return; }
+		modcompbody::Drive dr = s_def.drives[static_cast<size_t>(s_selDrive)];
+		if (mirror) { dr.pos.x = -dr.pos.x; dr.yaw = -dr.yaw; } else { dr.pos.z += STEPS[s_step] * 2.f; }
+		s_def.drives.push_back(dr);
+		selectDrive(static_cast<int>(s_def.drives.size()) - 1);
+		s_dirty = true;
+		play("mfui_clank.ogg");
+		setStatus(mirror ? "Drive mirrored." : "Drive copied.");
+		return;
+	}
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
 		if (s_def.mounts.size() >= modcompbody::MAX_SLOTS) { setStatus("At most " + std::to_string(modcompbody::MAX_SLOTS) + " weapon slots.", true); return; }
@@ -747,6 +850,7 @@ void removePart(int i)
 
 void deleteSelected()
 {
+	if (driveSelected()) { removeDrive(s_selDrive); return; }   // (27.11.)
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
 		const int k = s_selMount;
@@ -760,7 +864,7 @@ void deleteSelected()
 
 void flipSelected(int axisBit)
 {
-	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size()) || s_selMount >= 0) { return; }
+	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size()) || s_selMount >= 0 || driveSelected()) { return; }
 	s_def.parts[static_cast<size_t>(s_sel)].flip ^= axisBit;
 	syncPart(s_sel);
 	s_dirty = true;
@@ -769,6 +873,13 @@ void flipSelected(int axisBit)
 
 void resetSelected()
 {
+	if (driveSelected())   // (27.11.) Antriebsplatz: geradeaus, Originalgroesse, auf den Boden
+	{
+		modcompbody::Drive &dr = s_def.drives[static_cast<size_t>(s_selDrive)];
+		dr.yaw = 0.f; dr.scale = 1.f; dr.pos.y = 0.f;
+		s_dirty = true;
+		return;
+	}
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
 		const size_t k = static_cast<size_t>(s_selMount);
@@ -855,7 +966,7 @@ void partsShow(bool on)
 {
 	if (on && s_shapeOpen) { shapeShow(false); }
 	s_partsOpen = on;
-	if (!on) { s_texPick = false; }
+	if (!on) { s_texPick = false; s_drivePick = false; }
 	for (size_t k : s_partsBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
 }
 
@@ -904,7 +1015,7 @@ void newHull()
 	s_def = Def();
 	s_def.name = "New hull";
 	s_links.clear();
-	s_sel = -1; s_selMount = -1; s_partScroll = 0; s_mountScroll = 0; s_loadIdx = -1;
+	s_sel = -1; s_selMount = -1; s_selDrive = -1; s_drivePick = false; s_partScroll = 0; s_mountScroll = 0; s_loadIdx = -1;
 	if (s_nameBox) { s_nameBox->setString(WzString::fromUtf8(s_def.name)); }
 	s_dirty = false;
 	setStatus("Click a hull on the left - the first one is the chassis.");
@@ -924,7 +1035,7 @@ void loadCycle(int dir)
 	// alte Entwuerfe ohne eigene Plaetze: die des Fahrgestells (wie im Spiel)
 	if (s_def.mounts.empty() && !s_def.parts.empty()) { s_def.mounts = modcompbody::defaultMounts(s_def.parts[0]); }
 	inferLinks();
-	s_sel = s_def.parts.empty() ? -1 : 0; s_selMount = -1; s_partScroll = 0; s_mountScroll = 0;
+	s_sel = s_def.parts.empty() ? -1 : 0; s_selMount = -1; s_selDrive = -1; s_drivePick = false; s_partScroll = 0; s_mountScroll = 0;
 	if (s_nameBox) { s_nameBox->setString(WzString::fromUtf8(s_def.name)); }
 	s_dirty = false;
 	setStatus(std::string("Loaded: ") + s_def.name + (s_def.preset ? " (preset)" : "") + "  (" + std::to_string(pos + 1) + "/" + std::to_string(idx.size()) + ")");
@@ -934,9 +1045,10 @@ void doSave()
 {
 	if (s_nameBox) { s_def.name = s_nameBox->getString().toStdString(); }
 	std::string err;
+	const bool centred = modcompbody::centerDef(s_def);   // (Wunsch 27.11. 19:16) Grundriss mittig - passt im Einheiten-Designer
 	const bool ok = modcompbody::save(s_def, err);
 	if (!err.empty()) { setStatus(err, !ok); }
-	else if (ok) { setStatus("Saved: \"" + s_def.name + (s_menu ? "\" - ready in every game." : "\" - ready to build.")); }
+	else if (ok) { setStatus("Saved: \"" + s_def.name + (s_menu ? "\" - ready in every game." : "\" - ready to build.") + (centred ? " (centred)" : "")); }
 	else { setStatus("Could not save.", true); }
 	if (ok) { s_dirty = false; play("mfui_clank.ogg"); }
 	const auto &all = modcompbody::defs();
@@ -1076,6 +1188,38 @@ int mountAt(int mx, int my)
 	return best;
 }
 
+/// (27.11.) Antriebsplatz unter dem Mauszeiger (Bildschirm-Huelle seines Laufwerks); -1 = keiner
+int driveAt(int mx, int my)
+{
+	const Ctx c = ctx();
+	setBayOffset(c);
+	float sc = 1.f;
+	const glm::mat4 base = bayBase(c, sc);
+	int best = -1;
+	long bestA = 0;
+	for (size_t i = 0; i < s_def.drives.size(); ++i)
+	{
+		const modcompbody::Drive &dr = s_def.drives[i];
+		const iIMDShape *sh = driveShape(dr);
+		const glm::vec3 mn = sh != nullptr ? glm::vec3(sh->min.x, sh->min.y, sh->min.z) : glm::vec3(-6.f, 0.f, -6.f);
+		const glm::vec3 mxv = sh != nullptr ? glm::vec3(sh->max.x, sh->max.y, sh->max.z) : glm::vec3(6.f, 8.f, 6.f);
+		int x0 = 1 << 30, y0 = 1 << 30, x1 = -(1 << 30), y1 = -(1 << 30);
+		bool ok = true;
+		for (int k = 0; k < 8 && ok; ++k)
+		{
+			const glm::vec3 v((k & 1) ? mxv.x : mn.x, (k & 2) ? mxv.y : mn.y, (k & 4) ? mxv.z : mn.z);
+			Vector2i sp;
+			ok = project(base, glm::vec3(modcompbody::driveMatrix(dr) * glm::vec4(v, 1.f)), sp);
+			x0 = std::min(x0, sp.x); y0 = std::min(y0, sp.y); x1 = std::max(x1, sp.x); y1 = std::max(y1, sp.y);
+		}
+		if (!ok || mx < x0 || mx > x1 || my < y0 || my > y1) { continue; }
+		const long a = static_cast<long>(x1 - x0) * static_cast<long>(y1 - y0);
+		if (best < 0 || a < bestA) { best = static_cast<int>(i); bestA = a; }
+	}
+	resetOffset();
+	return best;
+}
+
 /// Teil unter dem Mauszeiger (kleinste Bildschirm-Huelle, die den Punkt enthaelt); -1 = keines
 int partAt(int mx, int my)
 {
@@ -1149,6 +1293,34 @@ void drawBay(const Ctx &c)
 			bool ok = true;
 			for (int k = 0; k < 8; ++k) { ok = ok && project(base, cr[k], sp[k]); }
 			if (ok) { for (const auto &e : edges) { iV_Line(sp[e[0]].x, sp[e[0]].y, sp[e[1]].x, sp[e[1]].y, col); } }
+		}
+	}
+	// (27.11.) Antriebsplaetze: das Laufwerk (Ketten) des gewaehlten Rumpfes; gewaehlter Platz mit gruenem Rahmen
+	for (size_t i = 0; i < s_def.drives.size(); ++i)
+	{
+		const modcompbody::Drive &dr = s_def.drives[i];
+		const glm::mat4 dm = base * modcompbody::driveMatrix(dr);
+		const iIMDShape *sh = driveShape(dr);
+		if (sh != nullptr) { pie_Draw3DShape(sh, 0, team, WZCOL_WHITE, pie_BUTTON, 0, dm, view); }
+		const bool dsel = static_cast<int>(i) == s_selDrive;
+		Vector2i sp;
+		if (sh != nullptr && dsel)
+		{
+			const unsigned char a = static_cast<unsigned char>(170 + 80 * std::sin(static_cast<float>(realTime) * 0.008f));
+			static const int edges[12][2] = { {0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7} };
+			Vector2i cp[8];
+			bool ok = true;
+			for (int k = 0; k < 8 && ok; ++k)
+			{
+				const glm::vec3 v((k & 1) ? sh->max.x : sh->min.x, (k & 2) ? sh->max.y : sh->min.y, (k & 4) ? sh->max.z : sh->min.z);
+				ok = project(base, glm::vec3(modcompbody::driveMatrix(dr) * glm::vec4(v, 1.f)), cp[k]);
+			}
+			if (ok) { for (const auto &e : edges) { iV_Line(cp[e[0]].x, cp[e[0]].y, cp[e[1]].x, cp[e[1]].y, pal_RGBA(120, 255, 170, a)); } }
+		}
+		if (project(base, dr.pos + glm::vec3(0.f, sh != nullptr ? static_cast<float>(sh->max.y) * dr.scale + 2.f : 4.f, 0.f), sp))
+		{
+			if (sh == nullptr) { pie_BoxFill(sp.x - 4, sp.y - 4, sp.x + 4, sp.y + 4, pal_RGBA(120, 255, 170, 255)); }
+			wzText("D" + std::to_string(i + 1), sp.x + c.L(5), sp.y - c.L(9), dsel ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(140, 240, 180, 255), TK_ROW, c.S);
 		}
 	}
 	// Waffenplaetze: der gelbe WZ-Platzhalter-Turm (znullturret + znullgun) in der Blickrichtung des Platzes
@@ -1309,7 +1481,7 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		const int idx = s_partScroll + i;
 		if (idx >= static_cast<int>(s_def.parts.size())) { break; }
 		const int ry = c.Y(PARTS_Y + 1.f + i * LIST_ROW_H);
-		const bool sel = idx == s_sel && s_selMount < 0;
+		const bool sel = idx == s_sel && s_selMount < 0 && s_selDrive < 0;
 		if (sel) { pie_UniTransBoxFill(c.X(481), ry, c.X(633), ry + c.L(LIST_ROW_H) - 1, pal_RGBA(40, 110, 190, 170)); }
 		int nSlots = 0;
 		for (const Link &l : s_links) { if (l.part == idx) { ++nSlots; } }
@@ -1318,15 +1490,28 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	}
 
 	// ---- rechts: Waffenplaetze
-	if (!s_def.mounts.empty()) { s_mountScroll = std::max(0, std::min(s_mountScroll, static_cast<int>(s_def.mounts.size()) - MOUNT_ROWS)); }
+	const int nRows = static_cast<int>(s_def.mounts.size() + s_def.drives.size());   // (27.11.) danach die Antriebsplaetze
+	if (nRows > 0) { s_mountScroll = std::max(0, std::min(s_mountScroll, nRows - MOUNT_ROWS)); }
 	else { s_mountScroll = 0; }
-	groupFrame(c, 476, SLOTS_HEAD_Y - 4, 162, 150, "SLOTS " + std::to_string(s_def.mounts.size()) + "/" + std::to_string(modcompbody::MAX_SLOTS));
+	groupFrame(c, 476, SLOTS_HEAD_Y - 4, 162, 150, "SLOTS " + std::to_string(s_def.mounts.size()) + "/" + std::to_string(modcompbody::MAX_SLOTS)
+	           + (s_def.drives.empty() ? std::string() : "  DRIVES " + std::to_string(s_def.drives.size())));
 	listFrame(c.X(480), c.Y(SLOTS_Y), c.L(154), c.L(MOUNT_ROWS * LIST_ROW_H + 2));
 	for (int r = 0; r < MOUNT_ROWS; ++r)
 	{
 		const int i = s_mountScroll + r;
-		if (i >= static_cast<int>(s_def.mounts.size())) { break; }
+		if (i >= nRows) { break; }
 		const int ry = c.Y(SLOTS_Y + 1.f + r * LIST_ROW_H);
+		if (i >= static_cast<int>(s_def.mounts.size()))
+		{
+			const int di = i - static_cast<int>(s_def.mounts.size());
+			const bool dsel = di == s_selDrive;
+			if (dsel) { pie_UniTransBoxFill(c.X(481), ry, c.X(633), ry + c.L(LIST_ROW_H) - 1, pal_RGBA(30, 140, 90, 170)); }
+			const modcompbody::Drive &dr = s_def.drives[static_cast<size_t>(di)];
+			std::string t = "Drive " + std::to_string(di + 1) + "  " + bodyName(driveBodyId(dr)) + " size";
+			if (std::fabs(dr.scale - 1.f) > 1e-3f) { t += " " + std::to_string(static_cast<int>(std::lround(dr.scale * 100.f))) + "%"; }
+			wzText(fitW(t, c.L(146), TK_ROW, S), c.X(484), ry + c.L(1), dsel ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(140, 240, 180, 255), TK_ROW, S);
+			continue;
+		}
 		const bool sel = i == s_selMount;
 		if (sel) { pie_UniTransBoxFill(c.X(481), ry, c.X(633), ry + c.L(LIST_ROW_H) - 1, pal_RGBA(150, 110, 20, 170)); }
 		std::string t = "Slot " + std::to_string(i + 1);
@@ -1398,13 +1583,26 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		wzText("Colours:", c.X(PM_X + 6), c.Y(PM_Y + 36), WZCOL_TEXT_BRIGHT, TK_ROW, S);
 		wzText(fitW(col, c.L(PM_W - 64), TK_ROW, S), c.X(PM_X + 58), c.Y(PM_Y + 36), pal_RGBA(255, 226, 140, 255), TK_ROW, S);
 		if (s_texPick) { wzText("click a hull on the left", c.X(PM_X + 6), c.Y(PM_Y + 72), pal_RGBA(120, 255, 170, 255), TK_ROW, S); }
+		// (27.11.) Antriebsplaetze
+		std::string dl = "Drives " + std::to_string(s_def.drives.size()) + "/" + std::to_string(modcompbody::MAX_DRIVES);
+		if (driveSelected()) { dl += "   drive " + std::to_string(s_selDrive + 1) + ": " + bodyName(driveBodyId(s_def.drives[static_cast<size_t>(s_selDrive)])) + " size"; }
+		else if (s_def.drives.empty()) { dl += "   (none: one drive under the chassis)"; }
+		wzText(fitW(dl, c.L(PM_W - 12), TK_ROW, S), c.X(PM_X + 6), c.Y(PM_Y + 92), WZCOL_TEXT_BRIGHT, TK_ROW, S);
+		if (s_drivePick) { wzText("click a hull on the left: its drive size", c.X(PM_X + 6), c.Y(PM_Y + 124), pal_RGBA(120, 255, 170, 255), TK_ROW, S); }
 	}
 
 	// ---- Auswahl-Zeile
 	{
 		std::string t;
 		char buf[200];
-		if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
+		if (driveSelected())   // (27.11.)
+		{
+			const modcompbody::Drive &dr = s_def.drives[static_cast<size_t>(s_selDrive)];
+			snprintf(buf, sizeof(buf), "Drive %d (%s size)    x %.1f   y %.1f   z %.1f    turn %.0f    size %d %%", s_selDrive + 1, bodyName(driveBodyId(dr)).c_str(),
+			         dr.pos.x, dr.pos.y, dr.pos.z, dr.yaw, static_cast<int>(std::lround(dr.scale * 100.f)));
+			t = buf;
+		}
+		else if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 		{
 			const glm::vec3 &p = s_def.mounts[static_cast<size_t>(s_selMount)].pos;
 			const Mount &mt = s_def.mounts[static_cast<size_t>(s_selMount)];
@@ -1544,7 +1742,7 @@ void layout()
 
 bool partSelected()
 {
-	return s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0;
+	return s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0 && s_selDrive < 0;
 }
 
 void buildScreen()
@@ -1555,7 +1753,7 @@ void buildScreen()
 	root->backgroundColor = pal_RGBA(0, 0, 0, 0);
 	root->displayFunction = drawScreen;
 	root->onClickedFunc = []() {};
-	root->onCancelPressed = []() { widgScheduleTask([]() { if (s_texPick) { s_texPick = false; setStatus("Cancelled."); return; } requestClose(); }); };
+	root->onCancelPressed = []() { widgScheduleTask([]() { if (s_texPick || s_drivePick) { s_texPick = false; s_drivePick = false; setStatus("Cancelled."); return; } requestClose(); }); };
 	screen->psForm->attach(root);
 	const std::shared_ptr<WIDGET> parent = root;
 	s_btns.clear();
@@ -1591,7 +1789,14 @@ void buildScreen()
 	{
 		addBtn(parent, 481, SLOTS_Y + 1.f + i * LIST_ROW_H, 152, LIST_ROW_H, -1, "", "Click: select   Right-click: remove", [i](bool right) {
 			const int idx = s_mountScroll + i;
-			if (idx >= static_cast<int>(s_def.mounts.size())) { return; }
+			const int nm = static_cast<int>(s_def.mounts.size());
+			if (idx >= nm)   // (27.11.) Antriebsplaetze unter den Waffenplaetzen
+			{
+				const int di = idx - nm;
+				if (di >= static_cast<int>(s_def.drives.size())) { return; }
+				if (right) { removeDrive(di); } else { selectDrive(di); }
+				return;
+			}
 			if (right) { removeSlot(static_cast<size_t>(idx)); play("mfui_detach.ogg"); /* MOD: mfui_rattle.ogg gab es nie */ } else { selectMount(idx); }
 		}, nullptr, hotDisplay, true);
 	}
@@ -1599,10 +1804,10 @@ void buildScreen()
 	addBtn0(parent, 617, SLOTS_HEAD_Y - 2, 17, 13, FI_SCROLL_DOWN, "", "Scroll down", []() { s_mountScroll += MOUNT_ROWS; });
 	const float sy = SLOTS_Y + MOUNT_ROWS * LIST_ROW_H + 5;
 	addBtn0(parent, 480, sy, 50, 20, FI_SLOT_ADD, "Slot", "Add weapon slot", []() { addMount(); });
-	addBtn0(parent, 532, sy, 50, 20, FI_SLOT_REMOVE, "Slot", "Remove weapon slot", []() {
-		if (s_selMount >= 0) { deleteSelected(); } else if (!s_def.mounts.empty()) { removeSlot(s_def.mounts.size() - 1); }
+	addBtn0(parent, 532, sy, 50, 20, FI_SLOT_REMOVE, "Slot", "Remove weapon slot (or the selected drive)", []() {
+		if (s_selMount >= 0 || driveSelected()) { deleteSelected(); } else if (!s_def.mounts.empty()) { removeSlot(s_def.mounts.size() - 1); }
 	});
-	addBtn0(parent, 584, sy, 50, 20, FI_PARTS, "Parts", "Part tools: edit parts, take the colours of another hull",
+	addBtn0(parent, 584, sy, 50, 20, FI_PARTS, "Parts", "Part tools: edit parts, take the colours of another hull, drives (up to 8 propulsion slots)",
 	        []() { s_selMount = -1; if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; } partsShow(!s_partsOpen); play("mfclick_move.ogg"); }, []() { return s_partsOpen; });
 
 	// ---- VERSCHIEBEN: Schrittweite (Kopfzeile) und sechs Richtungen
@@ -1666,13 +1871,24 @@ void buildScreen()
 		addBtn0(parent, PM_X + 4, PM_Y + 52, 96, 16, -1, "From hull...", "Then click a hull on the left: the part takes its colours (Esc cancels)", []() {
 			if (s_def.parts.empty()) { setStatus("Add a hull first.", true); return; }
 			s_texPick = !s_texPick;
+			s_drivePick = false;
 			setStatus(s_texPick ? std::string("Click a hull on the left - its colours go onto ") + (s_texAll ? "all parts" : "part " + std::to_string(s_sel + 1)) + " (Esc cancels)" : "Cancelled.");
 		}, []() { return s_texPick; });
 		addBtn0(parent, PM_X + 104, PM_Y + 52, 60, 16, -1, "Own", "Back to the part's own colours", []() { s_texPick = false; setTexFrom(std::string(), std::string()); });
-		addBtn0(parent, PM_X + 4, PM_Y + 89, 70, 16, -1, "Edit parts", "Back to moving and turning the parts (instead of a weapon slot)", []() {
-			s_selMount = -1; if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; }
+		// (Wunsch 27.11. 19:16) Antriebsplaetze: anfuegen, Groesse von einem Rumpf, kleiner/groesser
+		addBtn0(parent, PM_X + 4, PM_Y + 106, 54, 16, -1, "+ Drive", "Add a drive slot (up to 8; with drives the hull stands on them instead of one drive under the chassis)", []() { addDrive(); });
+		addBtn0(parent, PM_X + 60, PM_Y + 106, 84, 16, -1, "Size from hull...", "Then click a hull on the left: the selected drive gets its drive size (Esc cancels)", []() {
+			if (!driveSelected()) { setStatus("Select a drive first (SLOTS list or click it).", true); return; }
+			s_drivePick = !s_drivePick;
+			s_texPick = false;
+			setStatus(s_drivePick ? "Click a hull on the left - drive " + std::to_string(s_selDrive + 1) + " takes its drive size (Esc cancels)" : std::string("Cancelled."));
+		}, []() { return s_drivePick; });
+		addBtn0(parent, PM_X + 146, PM_Y + 106, 27, 16, -1, "-", "Selected drive smaller", []() { scaleDrive(1.f / 1.1f); });
+		addBtn0(parent, PM_X + 175, PM_Y + 106, 27, 16, -1, "+", "Selected drive bigger", []() { scaleDrive(1.1f); });
+		addBtn0(parent, PM_X + 4, PM_Y + 137, 70, 16, -1, "Edit parts", "Back to moving and turning the parts (instead of a weapon slot or drive)", []() {
+			s_selMount = -1; s_selDrive = -1; if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; }
 		});
-		addBtn0(parent, PM_X + PM_W - 64, PM_Y + 89, 60, 16, -1, "Done", "Close the parts window", []() { partsShow(false); });
+		addBtn0(parent, PM_X + PM_W - 64, PM_Y + 137, 60, 16, -1, "Done", "Close the parts window", []() { partsShow(false); });
 		s_partsBtns.clear();
 		for (size_t k = first; k < s_btns.size(); ++k) { s_partsBtns.push_back(k); }
 	}
@@ -1752,7 +1968,13 @@ void dragEnd(int x, int y)
 		if (s_dragBtn == 0)
 		{
 			if (m >= 0) { selectMount(m); }
-			else { const int p = partAt(x, y); if (p >= 0) { selectPart(p); } }
+			else
+			{
+				// (27.11.) Antriebsplaetze vor den Teilen (liegen meist darunter/daneben)
+				const int dr = driveAt(x, y);
+				if (dr >= 0) { selectDrive(dr); }
+				else { const int p = partAt(x, y); if (p >= 0) { selectPart(p); } }
+			}
 		}
 		else if (s_dragBtn == 1 && m >= 0)
 		{
@@ -1760,6 +1982,7 @@ void dragEnd(int x, int y)
 			play("mfui_detach.ogg"); /* MOD: mfui_rattle.ogg gab es nie */
 			setStatus("Weapon slot removed.");
 		}
+		else if (s_dragBtn == 1) { const int dr = driveAt(x, y); if (dr >= 0) { removeDrive(dr); } }
 	}
 	s_dragBtn = -1;
 	s_drag = DRAG_NONE;
@@ -1796,7 +2019,25 @@ void handleMouse()
 				const int cell = cellAt(p.pos.x, p.pos.y);
 				if (cell == s_listPress)
 				{
-					if (s_texPick)   // (27.11.) Farben dieses Rumpfes nehmen
+					if (s_drivePick)   // (27.11.) Laufwerk-Groesse dieses Rumpfes fuer den Antriebsplatz
+					{
+						const auto &cat = modcompbody::catalog();
+						if (static_cast<size_t>(cell) < cat.size() && driveSelected())
+						{
+							const BodyInfo &bi = cat[static_cast<size_t>(cell)];
+							if (bi.driveModel == nullptr) { setStatus(bi.name + " has no drive models - pick another hull.", true); }
+							else
+							{
+								modcompbody::Drive &dr = s_def.drives[static_cast<size_t>(s_selDrive)];
+								dr.body = (!s_def.parts.empty() && bi.id == s_def.parts[0].body) ? std::string() : bi.id;
+								s_dirty = true;
+								setStatus("Drive " + std::to_string(s_selDrive + 1) + " now has the drive size of " + bi.name);
+								play("mfui_clank.ogg");
+							}
+						}
+						s_drivePick = false;
+					}
+					else if (s_texPick)   // (27.11.) Farben dieses Rumpfes nehmen
 					{
 						const auto &cat = modcompbody::catalog();
 						if (static_cast<size_t>(cell) < cat.size()) { setTexFrom(cat[static_cast<size_t>(cell)].id, cat[static_cast<size_t>(cell)].name); }

@@ -795,6 +795,8 @@ struct DesignPart
 	glm::mat4 propM = glm::mat4(1.f);   // Verbundrumpf: Lage des Fahrgestells (Laufwerk folgt ihm)
 	float lift = 0.f;                   // Verbundrumpf: Hub ueber dem Laufwerk (modcompbody::liftOf)
 	std::vector<glm::vec3> tilt;        // (27.11.) Verbundrumpf: je Platz Blickrichtung/Nase/Rolle in Grad (Hull Forge)
+	std::vector<modcompbody::Drive> drives;   // (27.11.) Verbundrumpf: Antriebsplaetze (body leer = Fahrgestell, siehe driveBody)
+	std::vector<std::string> driveBody;       // (27.11.) je Antriebsplatz: Rumpf, dessen Laufwerk-Modelle er traegt
 	bool noProp = false;                // (27.11.) SupCom-Einheit (bzw. Verbundrumpf mit ihr als Fahrgestell): Laufwerk steckt im Modell
 	std::string source;                 // Rumpf: Herkunft/Fraktion wie im Rumpf-Baukasten ("Scavengers", "Project", "Metal Fatigue" ...)
 	int sourceRank = 99;                // Reihenfolge der Fraktions-Reiter
@@ -825,7 +827,9 @@ struct DesignState
 	std::string name;
 	bool edited = false;
 	std::string info;
-	DesignState() { for (int &v : slot) { v = -1; } }
+	int driveProp[8];              // (27.11.) Antrieb je Antriebsplatz (Index in s_parts; -1 = wie Antrieb 1 = prop)
+	int curDrive = 0;              // (27.11.) gewaehlter Antriebsplatz (Reiter Antrieb)
+	DesignState() { for (int &v : slot) { v = -1; } for (int &v : driveProp) { v = -1; } }
 };
 DesignState s_ds;
 // (Wunsch 27.11. 19:24 "im Unit Designer sehe ich keine Waffenslots leuchten ... aus- und abschaltbar, einzeln aufschaltbar ... ein Button fuer
@@ -837,6 +841,7 @@ constexpr unsigned ID_D_NAME = 4599664, ID_D_VIEW = 4599665, ID_D_INFO = 4599666
 constexpr unsigned ID_D_FORGE = 4599667;   // (23.11. 04:23) Rumpf-Baukasten
 constexpr unsigned ID_D_SLOT = 4599800, ID_D_SPREV = 4599840, ID_D_SNEXT = 4599841, ID_D_SCLEAR = 4599842, ID_D_SFILL = 4599843;
 constexpr unsigned ID_D_SLOTEYE = 4599844;   // (27.11.) alle Plaetze anzeigen/ausblenden
+constexpr unsigned ID_D_DRIVE = 4599870;     // (27.11.) + Index: Antriebsplatz-Knoepfe (bis 8)
 constexpr unsigned ID_D_FACTION = 4599850;   // + Index (Fraktions-Reiter)
 constexpr int D_TOP = 84;                    // Oberkante der Reiter/Vorschau (darueber die Fraktions-Reiter)
 constexpr int D_ROWS = 12;
@@ -1045,8 +1050,14 @@ void refreshCompositeParts()
 		p.armour = static_cast<int>(t.armour); p.engine = static_cast<int>(t.power); p.slots = std::max(1, static_cast<int>(t.slots));
 		p.size = modcompbody::sizeText(t.size);
 		p.propM = modcompbody::partMatrix(d.parts[0]);   // (24.11.) Laufwerk unter dem Fahrgestell wie im Spiel
-		p.lift = modcompbody::liftOf(d);
+		p.lift = d.drives.empty() ? modcompbody::liftOf(d) : 0.f;   // (27.11.) mit Antriebsplaetzen: stehen, wo sie gesetzt sind (wie im Spiel)
 		p.noProp = d.parts[0].body.rfind("SC_", 0) == 0;
+		for (const modcompbody::Drive &dr : d.drives)
+		{
+			if (p.drives.size() >= modcompbody::MAX_DRIVES) { break; }
+			p.drives.push_back(dr);
+			p.driveBody.push_back(dr.body.empty() ? d.parts[0].body : dr.body);
+		}
 		for (const modcompbody::Mount &mt : d.mounts) { p.tilt.emplace_back(mt.yaw, mt.pitch, mt.roll); }
 		p.source = "Custom"; p.sourceRank = -1;   // (Wunsch 24.11. 14:20 "Alle eigenen Builds kommen unter einen Custom-Reiter")
 		for (const DesignPart &q : s_parts) { if (q.kind == PK_BODY && q.id == d.parts[0].body) { p.extra = q.extra; break; } }
@@ -1119,6 +1130,24 @@ const char *factionLabel(const std::string &s)
 }
 
 /// Turm-Plaetze des Rumpfs (wie im Spiel: hoechstens so viele, wie das Modell Anschluesse hat; bis 30)
+/// (27.11.) Antriebsplaetze des gewaehlten Rumpfes (0 = ein Laufwerk wie bisher)
+int bodyDrives()
+{
+	const DesignPart *b = partAt(s_ds.body);
+	return b != nullptr ? std::min(static_cast<int>(b->drives.size()), 8) : 0;
+}
+
+/// (27.11.) Antrieb des Antriebsplatzes k (Platz 1 = der Antrieb des Entwurfs)
+const DesignPart *driveProp(int k)
+{
+	if (k > 0 && k < 8 && s_ds.driveProp[k] >= 0)
+	{
+		const DesignPart *q = partAt(s_ds.driveProp[k]);
+		if (q != nullptr && q->kind == PK_PROP) { return q; }
+	}
+	return partAt(s_ds.prop);
+}
+
 int bodySlots()
 {
 	const DesignPart *b = partAt(s_ds.body);
@@ -1386,6 +1415,14 @@ DesignNumbers numbers()
 	r.power = b->power + p->power * b->power / 100;
 	r.weight = b->weight + p->weight * b->weight / 100;
 	r.hp = b->hp + p->hp * b->hp / 100;
+	// (27.11.) weitere Antriebsplaetze: ihr Antriebs-Anteil (wie im Spiel); mehr Laufwerke ziehen kraeftiger
+	const int nd = bodyDrives();
+	for (int k = 1; k < nd; ++k)
+	{
+		const DesignPart *q = driveProp(k);
+		if (q == nullptr) { continue; }
+		r.power += q->power * b->power / 100; r.weight += q->weight * b->weight / 100; r.hp += q->hp * b->hp / 100;
+	}
 	for (int s = 0; s < bodySlots(); ++s)
 	{
 		const DesignPart *t = partAt(s_ds.slot[s]);
@@ -1395,7 +1432,8 @@ DesignNumbers numbers()
 	}
 	const auto pr = s_powerRatio.find(p->ptype);
 	const int ratio = pr != s_powerRatio.end() ? pr->second : 100;
-	int spd = ratio * b->engine / std::max(1, r.weight);
+	const int pullWeight = nd > 1 ? static_cast<int>(static_cast<double>(r.weight) / (1.0 + 0.35 * (nd - 1))) : r.weight;
+	int spd = ratio * b->engine / std::max(1, pullWeight);
 	if (p->ptype == "Lift") { spd = (b->size == "HEAVY") ? spd / 4 : (b->size == "MEDIUM" ? spd * 3 / 4 : spd); }
 	if (b->engine > r.weight) { spd = spd * 3 / 2; }
 	r.speed = p->speed > 0 ? std::min(p->speed, spd) : spd;
@@ -1488,6 +1526,44 @@ void drawSlotMarks(const std::vector<SlotMark> &marks, float pxPerModelUnit)
 	}
 }
 
+/// (27.11.) Laufwerk-Modelle eines Antriebsplatzes: Antrieb prop in der Groesse des Rumpfes sizeBodyId (Lauf-Beine: Stand-Modell)
+void driveShapes(const std::string &sizeBodyId, const DesignPart &prop, const iIMDShape *&L, const iIMDShape *&R)
+{
+	L = nullptr; R = nullptr;
+	if (!prop.walker.empty()) { L = shapeOf(prop.walker); return; }
+	const DesignPart *sb = nullptr;
+	for (const DesignPart &q : s_parts) { if (q.kind == PK_BODY && q.id == sizeBodyId) { sb = &q; break; } }
+	if (sb != nullptr && sb->extra.is_object())
+	{
+		auto pe = sb->extra.find(prop.id);
+		if (pe != sb->extra.end() && pe->is_object())
+		{
+			L = shapeOf(jsonStr(*pe, "left"));
+			R = shapeOf(jsonStr(*pe, "right"));
+		}
+	}
+	if (L == nullptr && R == nullptr)
+	{
+		if (sb != nullptr) { L = fallbackProp(*sb, prop); }
+		if (L == nullptr) { auto pm = s_propModel.find(prop.id); if (pm != s_propModel.end()) { L = shapeOf(pm->second); } }
+	}
+}
+
+/// (27.11.) alle Antriebsplaetze eines Verbundrumpfes in der Vorschau (je Platz sein Antrieb)
+void drawDrives(const DesignPart &b, const glm::mat4 &base)
+{
+	for (size_t k = 0; k < b.drives.size() && k < 8; ++k)
+	{
+		const DesignPart *q = driveProp(static_cast<int>(k));
+		if (q == nullptr) { continue; }
+		const iIMDShape *L = nullptr, *R = nullptr;
+		driveShapes(k < b.driveBody.size() ? b.driveBody[k] : std::string(), *q, L, R);
+		const glm::mat4 m = base * modcompbody::driveMatrix(b.drives[k]);
+		if (L != nullptr) { drawShape(L, m); }
+		if (R != nullptr && R != L) { drawShape(R, m); }
+	}
+}
+
 class DesignView : public WIDGET
 {
 public:
@@ -1514,6 +1590,8 @@ public:
 		}
 		const iIMDShape *legs = (p != nullptr && !p->walker.empty()) ? shapeOf(p->walker) : nullptr;
 		if (p != nullptr && propL == nullptr && propR == nullptr && legs == nullptr) { propL = fallbackProp(*b, *p); }
+		const bool withDrives = !b->drives.empty();   // (27.11.) Antriebsplaetze statt des einen Laufwerks
+		if (withDrives) { propL = nullptr; propR = nullptr; legs = nullptr; }
 		glm::vec3 hip(0.f);
 		if (legs != nullptr && !legs->connectors.empty()) { hip = glm::vec3(legs->connectors[0].xzy()); }
 		const float lift = legs != nullptr ? 0.f : b->lift;   // Verbundrumpf mit Teilen unter dem Fahrgestell steht hoeher (wie im Spiel)
@@ -1593,6 +1671,7 @@ public:
 			if (gun != nullptr && gun != mount) { drawShape(gun, m); }
 		}
 		if (secondProp) { drawShape(secondProp, propBase); }
+		if (withDrives) { drawDrives(*b, base); }
 		drawSlotMarks(marks, pxPerUnit * scale);
 	}
 };
@@ -1632,6 +1711,17 @@ void displaySlotButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		pie_UniTransBoxFill(x0 + 3, y0 + h - 5, x0 + w - 3, y0 + h - 2, col);
 	}
 }
+/// (27.11.) Knopf eines Antriebsplatzes: Nummer, darunter gruen, wenn er einen eigenen Antrieb hat
+void displayDriveButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
+	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
+	const int w = psWidget->width(), h = psWidget->height();
+	const int k = static_cast<int>(psWidget->UserData);
+	modwzhd::textButton(x0, y0, w, h, std::to_string(k + 1), k == s_ds.curDrive, b->isMouseOverWidget(), (b->getState() & WBUT_DOWN) != 0);
+	if (k > 0 && k < 8 && s_ds.driveProp[k] >= 0) { pie_UniTransBoxFill(x0 + 3, y0 + h - 5, x0 + w - 3, y0 + h - 2, pal_RGBA(110, 230, 140, 255)); }
+}
+
 /// (Wunsch 27.11. 19:24) Auge-Knopf im Vorschaufenster: alle Plaetze anzeigen/ausblenden (golden = alle an, blasser = einige, durchgestrichen = keiner)
 void displaySlotEye(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
@@ -1811,6 +1901,34 @@ void WzUnitDesignTitleUI::build()
 	}
 	int listY = sy + 34;
 
+	// ---- (Wunsch 27.11. 19:16) Antriebsplatz-Leiste (Reiter Antrieb, Verbundrumpf mit Antriebsplaetzen): je Platz ein eigener Antrieb
+	s_ds.curDrive = std::clamp(s_ds.curDrive, 0, std::max(0, bodyDrives() - 1));
+	if (s_ds.tab == 1 && bodyDrives() > 0)
+	{
+		const int bw = 22, bh = 22;
+		int x = 18;
+		for (int k = 0; k < bodyDrives(); ++k)
+		{
+			W_BUTINIT init;
+			init.formID = FRONTEND_BOTFORM;
+			init.id = ID_D_DRIVE + static_cast<unsigned>(k);
+			init.x = static_cast<short>(x);
+			init.y = static_cast<short>(listY);
+			init.width = static_cast<unsigned short>(bw);
+			init.height = static_cast<unsigned short>(bh);
+			init.pDisplay = displayDriveButton;
+			init.UserData = static_cast<UDWORD>(k);
+			auto btn = std::make_shared<W_BUTTON>(&init);
+			form->attach(btn);
+			const DesignPart *q = driveProp(k);
+			btn->setTip(astringf(_("Drive %d: %s"), k + 1, q != nullptr ? q->name.c_str() : "-")
+			            + (k == 0 ? std::string("\n") + _("Drive 1 is the main propulsion (it decides how the unit moves)") : std::string()));
+			x += bw + 2;
+		}
+		headLabel(form, ID_D_HEAD + 21, x + 6, listY + 1, 140, astringf(_("Drive %d / %d"), s_ds.curDrive + 1, bodyDrives()), pal_RGBA(140, 240, 180, 255), font_regular, 20);
+		listY += bh + 6;
+	}
+
 	// ---- Platz-Leiste (Reiter Tuerme, Rumpf mit mehreren Plaetzen): Nummern 1..n, Pfeile bei vielen Plaetzen, leeren, auf alle verteilen
 	if (s_ds.tab == 2 && slots > 1)
 	{
@@ -1850,7 +1968,7 @@ void WzUnitDesignTitleUI::build()
 
 	// ---- links: Liste der Teile des Unterreiters
 	const std::vector<int> cand = candidates(s_ds.tab);
-	const bool allowNone = s_ds.tab == 2 && (freeSlots() || s_ds.cur > 0);   // Plaetze duerfen leer bleiben (ohne freie Belegung nicht Platz 1)
+	const bool allowNone = (s_ds.tab == 2 && (freeSlots() || s_ds.cur > 0)) || (s_ds.tab == 1 && bodyDrives() > 0 && s_ds.curDrive > 0);   // Plaetze duerfen leer bleiben (ohne freie Belegung nicht Platz 1); (27.11.) Antriebsplatz 2..n: wie Antrieb 1
 	std::vector<int> rows;
 	if (allowNone) { rows.push_back(-1); }
 	rows.insert(rows.end(), cand.begin(), cand.end());
@@ -1858,14 +1976,14 @@ void WzUnitDesignTitleUI::build()
 	s_rows = std::clamp((pagerY - 2 - listY) / LINE_H, 4, D_ROWS);
 	const int pages = std::max(1, (static_cast<int>(rows.size()) + s_rows - 1) / s_rows);
 	s_ds.page = std::clamp(s_ds.page, 0, pages - 1);
-	const int current = s_ds.tab == 0 ? s_ds.body : (s_ds.tab == 1 ? s_ds.prop : s_ds.slot[std::clamp(s_ds.cur, 0, MAX_DSLOTS - 1)]);
+	const int current = s_ds.tab == 0 ? s_ds.body : (s_ds.tab == 1 ? ((bodyDrives() > 0 && s_ds.curDrive > 0) ? s_ds.driveProp[std::clamp(s_ds.curDrive, 0, 7)] : s_ds.prop) : s_ds.slot[std::clamp(s_ds.cur, 0, MAX_DSLOTS - 1)]);
 	s_selectedButton = 0;
 	int y = listY;
 	for (int k = s_ds.page * s_rows; k < static_cast<int>(rows.size()) && k < (s_ds.page + 1) * s_rows; ++k)
 	{
 		const int idx = rows[static_cast<size_t>(k)];
 		const DesignPart *p = partAt(idx);
-		std::string t = p ? p->name : std::string(_("(none)"));
+		std::string t = p ? p->name : std::string(s_ds.tab == 1 ? _("(like drive 1)") : _("(none)"));
 		if (p && p->power > 0) { t += astringf("  (%d)", p->power); }
 		if (p && p->kind == PK_BODY) { const std::string tag = bodyTag(*p); if (!tag.empty()) { t += "  - " + tag; } }   // (23.11. 23:24) Herkunft
 		const unsigned id = ID_D_ITEM + static_cast<unsigned>(k - s_ds.page * s_rows);
@@ -1986,13 +2104,27 @@ bool designJson(nlohmann::json &t, std::string &err)
 	if (rep) { t["repair"] = rep->id; }
 	// bisherige Form: nur Waffen ab Platz 1 lueckenlos, oder ein einziger Systemturm auf Platz 1
 	const bool classic = (systems.empty() && identity) || (weapons.empty() && systems.size() == 1 && systems[0]["slot"].get<int>() == 0);
+	nlohmann::json ms = nlohmann::json::object();
 	if (!classic)
 	{
-		nlohmann::json ms = nlohmann::json::object();
 		ms["weapConn"] = weapConn;
 		if (!systems.empty()) { ms["systems"] = systems; }
-		t["modSlots"] = ms;
 	}
+	// (27.11.) Antrieb je Antriebsplatz (Platz 1 = "propulsion"; leer = wie Antrieb 1)
+	const int nd = bodyDrives();
+	bool ownDrive = false;
+	for (int k = 1; k < nd; ++k) { ownDrive = ownDrive || s_ds.driveProp[k] >= 0; }
+	if (nd > 0 && ownDrive)
+	{
+		nlohmann::json drv = nlohmann::json::array();
+		for (int k = 0; k < nd; ++k)
+		{
+			const DesignPart *q = (k > 0 && s_ds.driveProp[k] >= 0) ? partAt(s_ds.driveProp[k]) : nullptr;
+			drv.push_back(q != nullptr ? q->id : std::string());
+		}
+		ms["drives"] = drv;
+	}
+	if (!ms.empty()) { t["modSlots"] = ms; }
 	return true;
 }
 }
@@ -2048,6 +2180,11 @@ TITLECODE WzUnitDesignTitleUI::run()
 			s_slotShow[k] = true;
 		}
 	}
+	else if (id >= ID_D_DRIVE && id < ID_D_DRIVE + 8)
+	{
+		s_ds.curDrive = std::clamp(static_cast<int>(id - ID_D_DRIVE), 0, std::max(0, bodyDrives() - 1));
+		s_ds.page = 0;
+	}
 	else if (id == ID_D_SLOTEYE)
 	{
 		bool any = false;
@@ -2089,13 +2226,14 @@ TITLECODE WzUnitDesignTitleUI::run()
 	{
 		const std::vector<int> cand = candidates(s_ds.tab);
 		std::vector<int> rows;
-		if (s_ds.tab == 2 && (freeSlots() || s_ds.cur > 0)) { rows.push_back(-1); }
+		if ((s_ds.tab == 2 && (freeSlots() || s_ds.cur > 0)) || (s_ds.tab == 1 && bodyDrives() > 0 && s_ds.curDrive > 0)) { rows.push_back(-1); }
 		rows.insert(rows.end(), cand.begin(), cand.end());
 		const size_t k = static_cast<size_t>(s_ds.page * s_rows) + (id - ID_D_ITEM);
 		if (k < rows.size())
 		{
 			const int idx = rows[k];
-			if (s_ds.tab == 0) { s_ds.body = idx; }
+			if (s_ds.tab == 0) { s_ds.body = idx; s_ds.curDrive = 0; }
+			else if (s_ds.tab == 1 && bodyDrives() > 0 && s_ds.curDrive > 0) { s_ds.driveProp[std::clamp(s_ds.curDrive, 0, 7)] = idx; }   // (27.11.)
 			else if (s_ds.tab == 1) { s_ds.prop = idx; }
 			else
 			{
@@ -2249,6 +2387,14 @@ void editDesign(const nlohmann::json &e, int fleet, int designIdx)
 		const std::string type = e.value("type", std::string());
 		const char *key = type == "SENSOR" ? "sensor" : type == "ECM" ? "ecm" : type == "CONSTRUCT" ? "construct" : type == "REPAIR" ? "repair" : nullptr;
 		if (key != nullptr) { s_ds.slot[0] = find(e.value(key, std::string()), kindOf(key)); }
+	}
+	// (27.11.) Antrieb je Antriebsplatz
+	if (ms.contains("drives") && ms["drives"].is_array())
+	{
+		for (size_t k = 1; k < ms["drives"].size() && k < 8; ++k)
+		{
+			if (ms["drives"][k].is_string()) { s_ds.driveProp[k] = find(ms["drives"][k].get<std::string>(), PK_PROP); }
+		}
 	}
 	const DesignPart *b = partAt(s_ds.body);
 	s_ds.faction = b != nullptr ? b->source : (keepFaction.empty() ? std::string("Scavengers") : keepFaction);

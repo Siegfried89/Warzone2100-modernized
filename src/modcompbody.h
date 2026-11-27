@@ -55,6 +55,16 @@ struct Mount
 	float roll = 0.f;
 };
 
+/// (Wunsch 27.11. 19:16 "um so eine Einheit wie den Fatboy zu machen, braeuchten wir mehrere Propulsion-Slots ... bis zu 8"): Antriebsplaetze
+constexpr unsigned MAX_DRIVES = 8;
+struct Drive
+{
+	glm::vec3 pos = glm::vec3(0.f);    ///< Lage des Laufwerks (Modellkoordinaten; y = Unterkante des Laufwerk-Modells, 0 = Boden)
+	float yaw = 0.f;                   ///< Drehung um die Hochachse in Grad (0 = vorn)
+	float scale = 1.f;                 ///< Groesse
+	std::string body;                  ///< Rumpf, dessen Laufwerk-Modelle (Groesse) es traegt; leer = Fahrgestell (Teil 0)
+};
+
 /// Schwenkbereich der Waffen auf Verbundrumpfen: halber Winkel um die Blickrichtung des Platzes (Wunsch 23.11. 03:05: "maximal 180 Grad")
 constexpr float ARC_HALF_DEG = 90.f;
 
@@ -64,6 +74,9 @@ struct Def
 	std::string name;                 ///< Anzeigename
 	std::vector<Part> parts;          ///< Teil 0 = Fahrgestell (Laufwerke, Klasse)
 	std::vector<Mount> mounts;        ///< Waffenplaetze (bis MAX_SLOTS) - jeder ein Turm-Platz fuer eine Waffe oder einen Systemturm
+	/// (27.11.) Antriebsplaetze (bis MAX_DRIVES): mit ihnen zeichnet das Spiel statt des einen Laufwerks unter dem Fahrgestell je Platz ein
+	/// Laufwerk (eigener Antrieb je Platz moeglich: modslots driveProp); leer = wie bisher
+	std::vector<Drive> drives;
 	bool preset = false;              ///< Vorlage aus dem Mod-Paket (noch nicht im Benutzerordner)
 	bool deleted = false;             ///< geloescht: bleibt fuer alte Spielstaende angemeldet, aber nicht mehr baubar
 };
@@ -99,6 +112,12 @@ glm::mat4 tiltMatrix(float yawDeg, float pitchDeg, float rollDeg);
 /// (27.11.) Zielrichtung der Waffe (Schwenk/Hoehe relativ zum Rumpf, 16-Bit-Winkel) in die Achsen des geneigten Platzes umrechnen, damit das
 /// Rohr auf einem geneigten Platz trotzdem genau aufs Ziel zeigt; false = Platz nicht geneigt (Winkel unveraendert)
 bool tiltedAim(size_t bodyIdx, int connector, uint16_t &dir, uint16_t &pitch);
+/// (27.11.) Antriebsplaetze eines Verbundrumpfes (0 = keine: ein Laufwerk wie bisher)
+size_t driveCount(size_t bodyIdx);
+/// (27.11.) Antriebsplatz i: Lage (Modellkoordinaten des Rumpfes) und der Rumpf, dessen Laufwerk-Modelle er traegt (asBodyStats-Index)
+bool driveInfo(size_t bodyIdx, size_t i, glm::mat4 &m, size_t &sizeBodyIdx);
+/// (27.11.) Lage eines Antriebsplatzes als Matrix
+glm::mat4 driveMatrix(const Drive &dr);
 /// Waffe weaponSlot eines Fahrzeugs auf einem Verbundrumpf (kein VTOL): Blickrichtung ihres Platzes als 16-Bit-Winkel (relativ zum Rumpf).
 /// false = Waffe dreht frei wie bisher
 bool weaponArc(const BASE_OBJECT *psObj, int weaponSlot, uint16_t &yaw);
@@ -119,6 +138,7 @@ struct BodyInfo
 	std::string group;                      ///< Fraktion/Gruppe innerhalb der Herkunft
 	int sourceRank = 0, groupRank = 0;
 	size_t statIdx = SIZE_MAX;              ///< im Spiel: Platz in asBodyStats
+	const iIMDBaseShape *driveModel = nullptr;   ///< (27.11.) Laufwerk fuer die Vorschau der Antriebsplaetze (Ketten, sonst Halbketten/Raeder/Hover)
 	bool listed = true;                     ///< in der Liste (Rumpfe mit demselben Modell nur einmal)
 };
 /// alle Teil-Rumpfe, sortiert nach Herkunft, Gruppe, Groesse, Name
@@ -149,6 +169,9 @@ Totals totals(const Def &d);
 bool save(Def &d, std::string &err);
 /// loeschen (Datei weg, Rumpf nicht mehr baubar)
 bool remove(const std::string &id, std::string &err);
+/// (Wunsch 27.11. 19:16 "das Modell in der Hull Forge sollte am Ende zentriert werden, dass es fuer den Unit Designer passt"): Grundriss
+/// der Teile in die Mitte schieben (Teile, Waffen- und Antriebsplaetze gemeinsam, nur waagerecht); true = verschoben
+bool centerDef(Def &d);
 /// Standard-Waffenplaetze aus den Anschluessen des Fahrgestells
 std::vector<Mount> defaultMounts(const Part &chassis);
 
