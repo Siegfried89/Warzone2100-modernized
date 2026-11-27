@@ -21,6 +21,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <climits>
 #include <cstring>
@@ -103,6 +104,8 @@ nlohmann::json toJson(const Def &d)
 		if (p.flip != 0) { e["flip"] = p.flip; }
 		if (glm::length(p.stretch - glm::vec3(1.f)) > 1e-4f) { e["stretch"] = vec3(p.stretch); }   // (24.11.) Form
 		if (!p.texFrom.empty() && p.texFrom != p.body) { e["tex"] = p.texFrom; }                  // (27.11.) Farben eines anderen Rumpfes
+		if (p.cut != 0) { e["cut"] = { p.cut, p.cutAngle, p.cutPos, p.cutFlip ? 1 : 0 }; }   // (27.11.) Schnitt
+		if (p.group != 0) { e["group"] = p.group; }                                          // (27.11.) Verbund
 		// (27.11.) Animation
 		if (p.parent >= 0) { e["parent"] = p.parent; }
 		if (glm::length(p.pivot) > 1e-4f) { e["pivot"] = vec3(p.pivot); }
@@ -188,6 +191,15 @@ bool fromJson(const nlohmann::json &j, Def &d)
 		p.flip = std::clamp(e.value("flip", 0), 0, 7);
 		if (e.contains("stretch")) { p.stretch = glm::clamp(vec3(e["stretch"]), glm::vec3(0.25f), glm::vec3(4.f)); }
 		p.texFrom = e.value("tex", std::string());
+		if (e.contains("cut") && e["cut"].is_array() && e["cut"].size() >= 4)   // (27.11.) Schnitt
+		{
+			const auto &c = e["cut"];
+			if (c[0].is_number_integer()) { p.cut = std::clamp(c[0].get<int>(), 0, 3); }
+			if (c[1].is_number()) { p.cutAngle = std::remainder(c[1].get<float>(), 360.f); }
+			if (c[2].is_number()) { p.cutPos = std::clamp(c[2].get<float>(), -1000.f, 1000.f); }
+			if (c[3].is_number()) { p.cutFlip = c[3].get<float>() != 0.f; }
+		}
+		p.group = std::max(0, e.value("group", 0));
 		// (27.11.) Animation
 		p.parent = e.value("parent", -1);
 		if (e.contains("pivot")) { p.pivot = vec3(e["pivot"]); }
@@ -723,6 +735,105 @@ void texLines(std::ostringstream &o, const iIMDShape &lvl, const std::string &te
 	}
 }
 
+/// (27.11.) Ebene an der Schnittebene kappen (Teil-Raum): Dreiecke auf der anderen Seite fallen weg, geteilte werden zugeschnitten,
+/// die Schnittflaeche wird je Umriss als Faecher geschlossen (Umlaufsinn entgegen dem Rand der bleibenden Flaechen = nach aussen)
+void clipLevel(std::vector<glm::vec3> &P, std::vector<std::array<uint32_t, 3>> &I, std::vector<std::array<Vector2f, 3>> &UV, const glm::vec3 &n, const glm::vec3 &c)
+{
+	std::vector<float> dist(P.size());
+	for (size_t k = 0; k < P.size(); ++k) { dist[k] = glm::dot(n, P[k] - c); }
+	std::map<std::pair<uint32_t, uint32_t>, uint32_t> edgePt;
+	struct V { uint32_t i; Vector2f uv; bool cutPt; };
+	std::vector<std::array<uint32_t, 3>> outI;
+	std::vector<std::array<Vector2f, 3>> outUV;
+	struct Seg { uint32_t a, b; Vector2f ua, ub; };
+	std::vector<Seg> segs;
+	auto cutPoint = [&](uint32_t a, uint32_t b) {
+		const std::pair<uint32_t, uint32_t> key(std::min(a, b), std::max(a, b));
+		const auto it = edgePt.find(key);
+		if (it != edgePt.end()) { return it->second; }
+		const float t = dist[key.first] / (dist[key.first] - dist[key.second]);
+		P.push_back(glm::mix(P[key.first], P[key.second], t));
+		dist.push_back(0.f);
+		const uint32_t idx = static_cast<uint32_t>(P.size() - 1);
+		edgePt[key] = idx;
+		return idx;
+	};
+	for (size_t t = 0; t < I.size(); ++t)
+	{
+		const auto &tri = I[t];
+		if (tri[0] >= dist.size() || tri[1] >= dist.size() || tri[2] >= dist.size()) { continue; }
+		const bool in0 = dist[tri[0]] >= 0.f, in1 = dist[tri[1]] >= 0.f, in2 = dist[tri[2]] >= 0.f;
+		if (in0 && in1 && in2) { outI.push_back(tri); outUV.push_back(UV[t]); continue; }
+		if (!in0 && !in1 && !in2) { continue; }
+		std::vector<V> poly;
+		for (int k = 0; k < 3; ++k)
+		{
+			const uint32_t a = tri[k], b = tri[(k + 1) % 3];
+			const Vector2f ua = UV[t][k], ub = UV[t][(k + 1) % 3];
+			const bool ia = dist[a] >= 0.f, ib = dist[b] >= 0.f;
+			if (ia) { poly.push_back({ a, ua, false }); }
+			if (ia != ib)
+			{
+				const float u = dist[a] / (dist[a] - dist[b]);
+				poly.push_back({ cutPoint(a, b), ua + (ub - ua) * u, true });
+			}
+		}
+		for (size_t k = 1; k + 1 < poly.size(); ++k)
+		{
+			outI.push_back({ poly[0].i, poly[k].i, poly[k + 1].i });
+			outUV.push_back({ poly[0].uv, poly[k].uv, poly[k + 1].uv });
+		}
+		// Rand auf der Ebene: vom Austritts- zum Eintrittspunkt (in Umlaufrichtung des bleibenden Stuecks)
+		for (size_t k = 0; k < poly.size(); ++k)
+		{
+			const V &x = poly[k], &y = poly[(k + 1) % poly.size()];
+			if (x.cutPt && y.cutPt) { segs.push_back({ x.i, y.i, x.uv, y.uv }); }
+		}
+	}
+	// Deckel: Punkte nach Lage zusammenfassen (Naehte), Umrisse verketten, je Umriss ein Faecher um seine Mitte
+	std::map<std::array<int64_t, 3>, uint32_t> canon;
+	auto canonOf = [&](uint32_t i) {
+		const glm::vec3 &q = P[i];
+		const std::array<int64_t, 3> k = { std::llround(q.x * 512.0), std::llround(q.y * 512.0), std::llround(q.z * 512.0) };
+		const auto it = canon.find(k);
+		if (it != canon.end()) { return it->second; }
+		canon[k] = i;
+		return i;
+	};
+	std::map<uint32_t, size_t> fromSeg;
+	for (size_t k = 0; k < segs.size(); ++k) { segs[k].a = canonOf(segs[k].a); segs[k].b = canonOf(segs[k].b); if (segs[k].a != segs[k].b) { fromSeg[segs[k].a] = k; } }
+	std::vector<bool> used(segs.size(), false);
+	for (size_t s0 = 0; s0 < segs.size(); ++s0)
+	{
+		if (used[s0] || segs[s0].a == segs[s0].b) { continue; }
+		std::vector<size_t> chain;
+		size_t cur = s0;
+		while (!used[cur] && chain.size() < 100000)
+		{
+			used[cur] = true;
+			chain.push_back(cur);
+			const auto it = fromSeg.find(segs[cur].b);
+			if (it == fromSeg.end()) { break; }
+			cur = it->second;
+		}
+		if (chain.size() < 2) { continue; }
+		glm::vec3 mid(0.f);
+		Vector2f muv(0.f, 0.f);
+		for (size_t k : chain) { mid += P[segs[k].a]; muv = muv + segs[k].ua; }
+		mid /= static_cast<float>(chain.size());
+		muv = muv * (1.f / static_cast<float>(chain.size()));
+		P.push_back(mid);
+		const uint32_t m = static_cast<uint32_t>(P.size() - 1);
+		for (size_t k : chain)
+		{
+			outI.push_back({ segs[k].b, segs[k].a, m });
+			outUV.push_back({ segs[k].ub, segs[k].ua, muv });
+		}
+	}
+	I.swap(outI);
+	UV.swap(outUV);
+}
+
 std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut, std::vector<int> *levelPartOut = nullptr)
 {
 	struct Lv { const iIMDShape *s; glm::mat4 m; bool mirrored; std::string tex; int part; };
@@ -758,21 +869,35 @@ std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut, std::ve
 		o << "LEVEL " << (li + 1) << "\n";
 		o << "TYPE " << std::hex << s.flags << std::dec << "\n";
 		texLines(o, s, levels[li].tex);
-		o << "POINTS " << s.points.size() << "\n";
-		for (const Vector3f &v : s.points)
+		// (27.11.) Geometrie im Teil-Raum, ggf. geschnitten
+		std::vector<glm::vec3> P;
+		std::vector<std::array<uint32_t, 3>> I;
+		std::vector<std::array<Vector2f, 3>> UV;
+		P.reserve(s.points.size());
+		for (const Vector3f &v : s.points) { P.emplace_back(v.x, v.y, v.z); }
+		for (const iIMDPoly &poly : s.polys) { I.push_back({ poly.pindex[0], poly.pindex[1], poly.pindex[2] }); UV.push_back(poly.texCoord); }
 		{
-			const glm::vec4 q = m * glm::vec4(v.x, v.y, v.z, 1.f);
+			glm::vec3 cn, cc;
+			if (levels[li].part >= 0 && levels[li].part < static_cast<int>(d.parts.size()) && cutPlane(d.parts[static_cast<size_t>(levels[li].part)], cn, cc))
+			{
+				clipLevel(P, I, UV, cn, cc);
+			}
+		}
+		o << "POINTS " << P.size() << "\n";
+		for (const glm::vec3 &v : P)
+		{
+			const glm::vec4 q = m * glm::vec4(v, 1.f);
 			o << "\t" << q.x << " " << q.y << " " << q.z << "\n";
 		}
-		o << "POLYGONS " << s.polys.size() << "\n";
+		o << "POLYGONS " << I.size() << "\n";
 		o.precision(6);
 		const bool mir = levels[li].mirrored;
-		for (const iIMDPoly &poly : s.polys)
+		for (size_t t = 0; t < I.size(); ++t)
 		{
 			static const size_t ordN[3] = { 0, 1, 2 }, ordM[3] = { 0, 2, 1 };   // gespiegelt: Umlaufsinn tauschen
 			const size_t *ord = mir ? ordM : ordN;
-			o << "\t200 3 " << poly.pindex[ord[0]] << " " << poly.pindex[ord[1]] << " " << poly.pindex[ord[2]];
-			for (int k = 0; k < 3; ++k) { o << " " << poly.texCoord[ord[k]].x << " " << poly.texCoord[ord[k]].y; }
+			o << "\t200 3 " << I[t][ord[0]] << " " << I[t][ord[1]] << " " << I[t][ord[2]];
+			for (int k = 0; k < 3; ++k) { o << " " << UV[t][ord[k]].x << " " << UV[t][ord[k]].y; }
 			o << "\n";
 		}
 		o.precision(3);
@@ -1126,18 +1251,30 @@ void evalAnim(const Def &d, const AnimCtx &c, std::vector<glm::mat4> &partW)
 		const glm::vec3 P = pivotOf(p);
 		L[i] = glm::translate(glm::mat4(1.f), P + pos) * rotYXZ(rot) * glm::translate(glm::mat4(1.f), -P);
 	}
+	// (27.11.) Verbund (Join): alle Teile eines Verbunds bewegen sich wie sein erstes Teil (Fuehrer) - ein starres Stueck
+	std::vector<int> leader(n);
+	for (size_t i = 0; i < n; ++i)
+	{
+		leader[i] = static_cast<int>(i);
+		if (d.parts[i].group == 0) { continue; }
+		for (size_t j = 0; j < i; ++j) { if (d.parts[j].group == d.parts[i].group) { leader[i] = static_cast<int>(j); break; } }
+	}
 	partW.assign(n, glm::mat4(1.f));
 	for (size_t i = 0; i < n; ++i)
 	{
+		if (leader[i] != static_cast<int>(i)) { continue; }
 		glm::mat4 w = L[i];
 		int q = d.parts[i].parent, guard = 0;
-		while (q >= 0 && q < static_cast<int>(n) && q != static_cast<int>(i) && guard++ < 32)
+		while (q >= 0 && q < static_cast<int>(n) && guard++ < 32)
 		{
+			q = leader[static_cast<size_t>(q)];
+			if (q == static_cast<int>(i)) { break; }
 			w = L[static_cast<size_t>(q)] * w;
 			q = d.parts[static_cast<size_t>(q)].parent;
 		}
 		partW[i] = w;
 	}
+	for (size_t i = 0; i < n; ++i) { if (leader[i] != static_cast<int>(i)) { partW[i] = partW[static_cast<size_t>(leader[i])]; } }
 }
 
 bool animated(size_t bodyIdx)
@@ -1462,6 +1599,53 @@ glm::mat4 partMatrix(const Part &p, bool withFlip)
 		if (p.flip & 4) { sc.z = -sc.z; }
 	}
 	return glm::scale(m, sc);
+}
+
+bool cutPlane(const Part &p, glm::vec3 &n, glm::vec3 &c)
+{
+	if (p.cut <= 0 || p.cut > 3) { return false; }
+	const BodyInfo *b = bodyInfo(p.body);
+	const iIMDShape *m = (b != nullptr && b->model != nullptr) ? b->model->displayModel() : nullptr;
+	if (m == nullptr) { return false; }
+	const float a = glm::radians(p.cutAngle);
+	if (p.cut == 1) { n = glm::vec3(std::cos(a), 0.f, -std::sin(a)); }
+	else if (p.cut == 2) { n = glm::vec3(std::sin(a), 0.f, std::cos(a)); }
+	else { n = glm::vec3(0.f, std::cos(a), std::sin(a)); }
+	if (p.cutFlip) { n = -n; }
+	const glm::vec3 mid((m->min.x + m->max.x) * 0.5f, (m->min.y + m->max.y) * 0.5f, (m->min.z + m->max.z) * 0.5f);
+	c = mid + n * (p.cutFlip ? -p.cutPos : p.cutPos);   // Versatz in Richtung der Grund-Normale (unabhaengig von "andere Haelfte")
+	return true;
+}
+
+const iIMDShape *bakedShape(const Part &src)
+{
+	if (src.cut == 0) { return bakedShape(src.body, src.flip, src.texFrom); }
+	const bool tex = !src.texFrom.empty() && src.texFrom != src.body;
+	static std::map<std::string, iIMDBaseShape *> cache;
+	static unsigned gen = 0;
+	if (modelCacheStale(gen)) { cache.clear(); }
+	char cbuf[96];
+	snprintf(cbuf, sizeof(cbuf), "_c%d_%d_%d_%d", src.cut, static_cast<int>(std::lround(src.cutAngle * 10.f)), static_cast<int>(std::lround(src.cutPos * 10.f)), src.cutFlip ? 1 : 0);
+	const std::string name = "compcut_" + slug(src.body) + "_" + std::to_string(src.flip & 7) + (tex ? "_" + slug(src.texFrom) : std::string()) + cbuf + ".pie";
+	auto it = cache.find(name);
+	if (it != cache.end()) { return it->second != nullptr ? it->second->displayModel() : nullptr; }
+	cache[name] = nullptr;
+	Def d;
+	d.id = "cut";
+	Part p;
+	p.body = src.body;
+	p.flip = src.flip & 7;
+	if (tex) { p.texFrom = src.texFrom; }
+	p.cut = src.cut; p.cutAngle = src.cutAngle; p.cutPos = src.cutPos; p.cutFlip = src.cutFlip;
+	d.parts.push_back(p);
+	Mount none;
+	d.mounts.push_back(none);
+	std::vector<Vector3i> conns;
+	const std::string pie = buildPie(d, conns);
+	if (pie.empty()) { return nullptr; }
+	iIMDBaseShape *shape = modelRegisterFromText(WzString::fromUtf8(name), pie);
+	cache[name] = shape;
+	return shape != nullptr ? shape->displayModel() : nullptr;
 }
 
 const iIMDShape *bakedShape(const std::string &bodyId, int flipMask, const std::string &texFrom)
