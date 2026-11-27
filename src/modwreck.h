@@ -49,6 +49,14 @@ struct WreckInfo
 };
 /// gelandetes Wrack mit bekanntem Bauplan? (Wracks aus alten Spielstaenden haben keinen)
 bool wreckInfo(const FEATURE *f, WreckInfo &out);
+/// (Wunsch 27.11.) Wracks liegen frei (keiner Kachel zugeordnet) - die Maus fand sie darum nie: gelandetes Wrack auf dieser Kachel
+/// (nullptr = keins). Fuer Mauszeiger und Klick (Angriff mit allen Waffen, Bergen).
+FEATURE *wreckAtTile(GameWorld &world, int tileX, int tileY);
+/// liegt dieses Wrack schon (Todesanimation vorbei)? Wracks ohne eigenen Eintrag (Karte) gelten als liegend.
+bool landed(const FEATURE *f);
+/// (Wunsch 27.11. "durch die Bagger Wracks bergen") Wrack wegraeumen: Kachel-Sperre aufheben, Feature entfernen. Gibt den Schrottwert
+/// zurueck (ein Zehntel der Baukosten des Fahrzeugs, ohne Bauplan 15), -1 = kein liegendes Wrack.
+int clearWreck(FEATURE *f, GameWorld &world);
 /// Wrack wird aufgeladen: Bauplan holen, Kachel-Sperre aufheben, Feature entfernen. false = kein bergbares Wrack
 bool takeWreck(FEATURE *f, GameWorld &world, WreckInfo &out);
 
