@@ -9,6 +9,8 @@
 #include "lib/framework/physfs_ext.h"
 #include "lib/ivis_opengl/imd.h"
 #include "lib/ivis_opengl/ivisdef.h"
+#include "lib/ivis_opengl/png_util.h"   // (27.11.) umgefaerbte Texturen
+#include "lib/ivis_opengl/pietypes.h"
 #include "lib/netplay/netplay.h"
 
 #include "game.h"
@@ -94,6 +96,7 @@ nlohmann::json toJson(const Def &d)
 		if (std::fabs(p.scale - 1.f) > 1e-4f) { e["scale"] = p.scale; }
 		if (p.flip != 0) { e["flip"] = p.flip; }
 		if (glm::length(p.stretch - glm::vec3(1.f)) > 1e-4f) { e["stretch"] = vec3(p.stretch); }   // (24.11.) Form
+		if (!p.texFrom.empty() && p.texFrom != p.body) { e["tex"] = p.texFrom; }                  // (27.11.) Farben eines anderen Rumpfes
 		parts.push_back(e);
 	}
 	j["parts"] = parts;
@@ -128,6 +131,7 @@ bool fromJson(const nlohmann::json &j, Def &d)
 		p.scale = std::clamp(e.value("scale", 1.f), 0.1f, 4.f);
 		p.flip = std::clamp(e.value("flip", 0), 0, 7);
 		if (e.contains("stretch")) { p.stretch = glm::clamp(vec3(e["stretch"]), glm::vec3(0.25f), glm::vec3(4.f)); }
+		p.texFrom = e.value("tex", std::string());
 		d.parts.push_back(p);
 	}
 	if (j.contains("mounts") && j["mounts"].is_array())
@@ -390,13 +394,148 @@ const Catalog &cat()
 	return s_cat;
 }
 
+// ---------------------------------------------------------------- (27.11.) Farben eines anderen Rumpfes
+// Wunsch 27.11. 19:07: "einem Viper-Body kurzerhand die Kollektiv-Textur geben". Alle WZ-Ruempfe liegen auf derselben Texturseite, nur an
+// verschiedenen Stellen - ein Seitentausch ginge also nicht. Stattdessen wird die Textur des Teils in den Farbverlauf des anderen Rumpfes
+// umgefaerbt: helle Stellen bekommen dessen helle Farben, dunkle dessen dunkle (Angleich ueber die Helligkeitsverteilung). Muster, Kanten und
+// Details des Teils bleiben, Farbgebung und Stimmung kommen vom anderen Rumpf. Die umgefaerbte Seite liegt einmal im Benutzerordner
+// (texpages/modtex_...png) - Teamfarben-, Normalen- und Glanzkarten bleiben die des Teils (gleiche Aufteilung).
+namespace
+{
+std::map<std::string, std::shared_ptr<iV_Image>> s_texImages;   // geladene Seiten (nur waehrend des Umfaerbens)
+std::map<std::string, bool> s_texDone;                          // erzeugte Seiten in diesem Programmlauf (true = vorhanden)
+
+std::shared_ptr<iV_Image> loadPage(const std::string &file)
+{
+	auto it = s_texImages.find(file);
+	if (it != s_texImages.end()) { return it->second; }
+	auto img = std::make_shared<iV_Image>();
+	const std::string path = "texpages/" + file;
+	if (!PHYSFS_exists(path.c_str()) || !iV_loadImage_PNG2(path.c_str(), *img, true, true) || img->channels() != 4) { img.reset(); }
+	s_texImages[file] = img;
+	return img;
+}
+
+/// Texel (Pixelindizes) unter den UV-Dreiecken der Ebenen eines Modells, die die Seite file benutzen
+void texelsOf(const iIMDShape *model, const std::string &file, unsigned w, unsigned h, std::vector<uint32_t> &out)
+{
+	std::vector<uint8_t> seen(static_cast<size_t>(w) * h, 0);
+	for (const iIMDShape *lvl = model; lvl != nullptr; lvl = lvl->next.get())
+	{
+		if (lvl->tilesetTextureFiles[0].texfile != file) { continue; }
+		for (const iIMDPoly &poly : lvl->polys)
+		{
+			float px[3], py[3];
+			for (int k = 0; k < 3; ++k)
+			{
+				px[k] = std::clamp(poly.texCoord[k].x, 0.f, 1.f) * static_cast<float>(w);
+				py[k] = std::clamp(poly.texCoord[k].y, 0.f, 1.f) * static_cast<float>(h);
+			}
+			const int x0 = std::max(0, static_cast<int>(std::floor(std::min({ px[0], px[1], px[2] }))));
+			const int x1 = std::min(static_cast<int>(w) - 1, static_cast<int>(std::ceil(std::max({ px[0], px[1], px[2] }))));
+			const int y0 = std::max(0, static_cast<int>(std::floor(std::min({ py[0], py[1], py[2] }))));
+			const int y1 = std::min(static_cast<int>(h) - 1, static_cast<int>(std::ceil(std::max({ py[0], py[1], py[2] }))));
+			const float area = (px[1] - px[0]) * (py[2] - py[0]) - (px[2] - px[0]) * (py[1] - py[0]);
+			if (std::fabs(area) < 1e-6f) { continue; }
+			for (int y = y0; y <= y1; ++y)
+			{
+				for (int x = x0; x <= x1; ++x)
+				{
+					const float cx = static_cast<float>(x) + 0.5f, cy = static_cast<float>(y) + 0.5f;
+					const float w0 = ((px[1] - cx) * (py[2] - cy) - (px[2] - cx) * (py[1] - cy)) / area;
+					const float w1 = ((px[2] - cx) * (py[0] - cy) - (px[0] - cx) * (py[2] - cy)) / area;
+					const float w2 = 1.f - w0 - w1;
+					const float e = -0.02f;   // Kanten mitnehmen
+					if (w0 < e || w1 < e || w2 < e) { continue; }
+					const size_t i = static_cast<size_t>(y) * w + static_cast<size_t>(x);
+					if (!seen[i]) { seen[i] = 1; out.push_back(static_cast<uint32_t>(i)); }
+				}
+			}
+		}
+	}
+}
+
+inline int lumOf(const unsigned char *p) { return (p[0] * 77 + p[1] * 150 + p[2] * 29) >> 8; }
+
+/// Name der umgefaerbten Seite fuer die Ebenen von target mit der Seite file in den Farben von source; leer = geht nicht (eigene Textur)
+std::string recoloredPage(const BodyInfo &target, const std::string &file, const BodyInfo &source)
+{
+	if (file.empty() || target.model == nullptr || source.model == nullptr || target.id == source.id) { return std::string(); }
+	const std::string stem = file.substr(0, file.find_last_of('.'));
+	const std::string name = "modtex_" + slug(target.id) + "_" + slug(source.id) + "_" + slug(stem) + ".png";
+	auto done = s_texDone.find(name);
+	if (done != s_texDone.end()) { return done->second ? name : std::string(); }
+	s_texDone[name] = false;
+	const std::shared_ptr<iV_Image> page = loadPage(file);
+	if (!page) { debug(LOG_INFO, "MOD Hull Forge: Textur %s nicht als PNG lesbar - Teil behaelt seine Farben", file.c_str()); return std::string(); }
+	// Farbverlauf des anderen Rumpfes: alle seine Texel (auch auf anderen Seiten), nach Helligkeit sortiert, in 256 Stufen gemittelt
+	std::vector<std::array<int, 4>> src;   // Helligkeit, r, g, b
+	for (const iIMDShape *lvl = source.model->displayModel(); lvl != nullptr; lvl = lvl->next.get())
+	{
+		const std::string &sf = lvl->tilesetTextureFiles[0].texfile;
+		if (sf.empty()) { continue; }
+		const std::shared_ptr<iV_Image> sp = loadPage(sf);
+		if (!sp) { continue; }
+		std::vector<uint32_t> idx;
+		texelsOf(lvl, sf, sp->width(), sp->height(), idx);
+		const unsigned char *b = sp->bmp();
+		for (uint32_t i : idx)
+		{
+			const unsigned char *q = b + static_cast<size_t>(i) * 4;
+			if (q[3] < 32) { continue; }
+			src.push_back({ lumOf(q), q[0], q[1], q[2] });
+		}
+		break;   // die erste Ebene genuegt (weitere Ebenen sind Detailstufen desselben Rumpfes)
+	}
+	std::vector<uint32_t> tgt;
+	texelsOf(target.model->displayModel(), file, page->width(), page->height(), tgt);
+	if (src.size() < 64 || tgt.size() < 16) { s_texImages.clear(); return std::string(); }
+	std::sort(src.begin(), src.end(), [](const std::array<int, 4> &a, const std::array<int, 4> &c) { return a[0] < c[0]; });
+	unsigned char ramp[256][3];
+	for (int k = 0; k < 256; ++k)
+	{
+		const size_t a = src.size() * static_cast<size_t>(k) / 256, e = std::max(a + 1, src.size() * static_cast<size_t>(k + 1) / 256);
+		long r = 0, g = 0, bl = 0;
+		for (size_t i = a; i < e && i < src.size(); ++i) { r += src[i][1]; g += src[i][2]; bl += src[i][3]; }
+		const long n = static_cast<long>(std::max<size_t>(1, std::min(e, src.size()) - a));
+		ramp[k][0] = static_cast<unsigned char>(r / n); ramp[k][1] = static_cast<unsigned char>(g / n); ramp[k][2] = static_cast<unsigned char>(bl / n);
+	}
+	// Helligkeitsverteilung des Teils -> Rang (0..255) je Helligkeit
+	unsigned char *pb = page->bmp_w();
+	std::vector<uint32_t> hist(256, 0);
+	for (uint32_t i : tgt) { hist[static_cast<size_t>(lumOf(pb + static_cast<size_t>(i) * 4))]++; }
+	unsigned char rank[256];
+	uint64_t acc = 0;
+	for (int l = 0; l < 256; ++l)
+	{
+		const uint64_t mid = acc + hist[static_cast<size_t>(l)] / 2;
+		rank[l] = static_cast<unsigned char>(std::min<uint64_t>(255, mid * 256 / std::max<size_t>(1, tgt.size())));
+		acc += hist[static_cast<size_t>(l)];
+	}
+	for (uint32_t i : tgt)
+	{
+		unsigned char *q = pb + static_cast<size_t>(i) * 4;
+		const unsigned char *c = ramp[rank[lumOf(q)]];
+		q[0] = c[0]; q[1] = c[1]; q[2] = c[2];
+	}
+	PHYSFS_mkdir("texpages");
+	const std::string out = "texpages/" + name;
+	const IMGSaveError err = iV_saveImage_PNG(out.c_str(), page.get());
+	s_texImages.clear();   // die Seite wurde veraendert - beim naechsten Mal neu laden
+	if (!err.noError()) { debug(LOG_INFO, "MOD Hull Forge: %s nicht geschrieben (%s)", out.c_str(), err.text.c_str()); return std::string(); }
+	debug(LOG_INFO, "MOD Hull Forge: %s in den Farben von %s (%zu Texel)", target.id.c_str(), source.id.c_str(), tgt.size());
+	s_texDone[name] = true;
+	return name;
+}
+} // namespace
+
 // ---------------------------------------------------------------- Modell (PIE 4, eine Ebene je Teil-Ebene, eigene Texturen)
-void texLines(std::ostringstream &o, const iIMDShape &lvl)
+void texLines(std::ostringstream &o, const iIMDShape &lvl, const std::string &texOverride = std::string())
 {
 	for (size_t t = 0; t < lvl.tilesetTextureFiles.size(); ++t)
 	{
 		const TilesetTextureFiles &f = lvl.tilesetTextureFiles[t];
-		if (!f.texfile.empty()) { o << "TEXTURE " << t << " " << f.texfile << "\n"; }
+		if (!f.texfile.empty()) { o << "TEXTURE " << t << " " << ((t == 0 && !texOverride.empty()) ? texOverride : f.texfile) << "\n"; }
 	}
 	for (size_t t = 0; t < lvl.tilesetTextureFiles.size(); ++t)
 	{
@@ -417,7 +556,7 @@ void texLines(std::ostringstream &o, const iIMDShape &lvl)
 
 std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 {
-	struct Lv { const iIMDShape *s; glm::mat4 m; bool mirrored; };
+	struct Lv { const iIMDShape *s; glm::mat4 m; bool mirrored; std::string tex; };
 	std::vector<Lv> levels;
 	for (const Part &p : d.parts)
 	{
@@ -425,11 +564,12 @@ std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 		if (b == nullptr || b->model == nullptr || b->model->displayModel() == nullptr) { continue; }
 		const glm::mat4 m = partMatrix(p);
 		const bool mirrored = glm::determinant(glm::mat3(m)) < 0.f;
+		const BodyInfo *texSrc = (!p.texFrom.empty() && p.texFrom != p.body) ? bodyInfo(p.texFrom) : nullptr;   // (27.11.)
 		for (const iIMDShape *lvl = b->model->displayModel(); lvl != nullptr; lvl = lvl->next.get())
 		{
 			if (lvl->points.empty() || lvl->polys.empty()) { continue; }
 			if (lvl->tilesetTextureFiles[0].texfile.empty()) { continue; }
-			levels.push_back({ lvl, m, mirrored });
+			levels.push_back({ lvl, m, mirrored, texSrc != nullptr ? recoloredPage(*b, lvl->tilesetTextureFiles[0].texfile, *texSrc) : std::string() });
 		}
 	}
 	std::ostringstream o;
@@ -437,7 +577,7 @@ std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 	if (levels.empty()) { return std::string(); }
 	o << "PIE 4\n";
 	o << "TYPE " << std::hex << levels[0].s->flags << std::dec << "\n";
-	texLines(o, *levels[0].s);
+	texLines(o, *levels[0].s, levels[0].tex);
 	o << "LEVELS " << levels.size() << "\n";
 	for (size_t li = 0; li < levels.size(); ++li)
 	{
@@ -445,7 +585,7 @@ std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 		const glm::mat4 &m = levels[li].m;
 		o << "LEVEL " << (li + 1) << "\n";
 		o << "TYPE " << std::hex << s.flags << std::dec << "\n";
-		texLines(o, s);
+		texLines(o, s, levels[li].tex);
 		o << "POINTS " << s.points.size() << "\n";
 		for (const Vector3f &v : s.points)
 		{
@@ -833,13 +973,14 @@ glm::mat4 partMatrix(const Part &p, bool withFlip)
 	return glm::scale(m, sc);
 }
 
-const iIMDShape *flippedShape(const std::string &bodyId, int flipMask)
+const iIMDShape *bakedShape(const std::string &bodyId, int flipMask, const std::string &texFrom)
 {
-	if ((flipMask & 7) == 0) { return nullptr; }
+	const bool tex = !texFrom.empty() && texFrom != bodyId;
+	if ((flipMask & 7) == 0 && !tex) { return nullptr; }
 	static std::map<std::string, iIMDBaseShape *> cache;
 	static unsigned gen = 0;
 	if (modelCacheStale(gen)) { cache.clear(); }
-	const std::string name = "compflip_" + slug(bodyId) + "_" + std::to_string(flipMask & 7) + ".pie";
+	const std::string name = "compflip_" + slug(bodyId) + "_" + std::to_string(flipMask & 7) + (tex ? "_" + slug(texFrom) : std::string()) + ".pie";
 	auto it = cache.find(name);
 	if (it != cache.end()) { return it->second != nullptr ? it->second->displayModel() : nullptr; }
 	cache[name] = nullptr;
@@ -848,6 +989,7 @@ const iIMDShape *flippedShape(const std::string &bodyId, int flipMask)
 	Part p;
 	p.body = bodyId;
 	p.flip = flipMask & 7;
+	if (tex) { p.texFrom = texFrom; }
 	d.parts.push_back(p);
 	Mount none;
 	d.mounts.push_back(none);

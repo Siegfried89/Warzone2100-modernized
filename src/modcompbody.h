@@ -40,6 +40,9 @@ struct Part
 	/// (Wunsch 24.11. 15:33 "die Ruempfe dicker, duenner, laenger, breiter machen - das Mesh an sich"): Streckung je Achse im Teil-Raum
 	/// (x = Breite, y = Hoehe/Dicke, z = Laenge), zusaetzlich zu scale
 	glm::vec3 stretch = glm::vec3(1.f);
+	/// (Wunsch 27.11. 19:07 "die Moeglichkeit, die Textur von einem anderen Body zu nehmen"): ID des Rumpfes, dessen Farben das Teil traegt
+	/// (die Textur des Teils wird in dessen Farbverlauf umgefaerbt, Muster und Details bleiben); leer = eigene Textur
+	std::string texFrom;
 };
 
 struct Mount
@@ -138,8 +141,9 @@ const Def *find(const std::string &id);
 glm::mat4 partMatrix(const Part &p, bool withFlip = true);
 /// Hub des Rumpfes ueber dem Laufwerk (unterstes Teil sitzt auf dem Laufwerk wie sonst das Fahrgestell), siehe propLift
 float liftOf(const Def &d);
-/// gespiegelte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
-const iIMDShape *flippedShape(const std::string &bodyId, int flipMask);
+/// gespiegelte und/oder umgefaerbte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
+/// (zeichnen mit partMatrix(p, false))
+const iIMDShape *bakedShape(const std::string &bodyId, int flipMask, const std::string &texFrom);
 Totals totals(const Def &d);
 /// speichern (Datei im Benutzerordner) und - im Spiel - sofort als Rumpf anmelden bzw. aktualisieren; d.id wird bei neuen Entwuerfen vergeben
 bool save(Def &d, std::string &err);

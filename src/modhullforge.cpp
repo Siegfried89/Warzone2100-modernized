@@ -63,6 +63,7 @@
 #include "statsdef.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <set>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -241,6 +242,15 @@ bool s_shapeAll = false;        // ganzer Rumpf statt des gewaehlten Teils
 int s_shapeStep = 1;            // 5 %, 10 %, 25 %
 std::vector<size_t> s_shapeBtns; // Indizes der Knoepfe des Form-Fensters in s_btns
 constexpr float SH_X = 172, SH_Y = 226, SH_W = 250, SH_H = 108;   // Form-Fenster (unten links in der Ansicht)
+// MOD (Wunsch 27.11. 19:07 "die Moeglichkeit, die Textur von einem anderen Body zu nehmen ... der Knopf soll aufgeraeumt sein und keinen
+// zusaetzlichen Platz wegnehmen. Der Parts-Knopf rechts reagiert gar nicht - vielleicht koennen wir unter dem ein paar Funktionen
+// verstecken"): der Knopf "Parts" oeffnet ein kleines Fenster ueber der Ansicht (wie "Form") - Teile bearbeiten (bisherige Wirkung)
+// und Farben eines anderen Rumpfes; Platz fuer weitere Funktionen
+bool s_partsOpen = false;
+bool s_texAll = false;          // Farben fuer den ganzen Rumpf statt fuer das gewaehlte Teil
+bool s_texPick = false;         // naechster Klick auf einen Rumpf links waehlt die Farben (statt ein Teil anzufuegen)
+std::vector<size_t> s_partsBtns;
+constexpr float PM_X = 262, PM_Y = 226, PM_W = 206, PM_H = 108;   // Parts-Fenster (unten rechts in der Ansicht)
 const float SHAPE_STEPS[3] = { 0.05f, 0.10f, 0.25f };
 int s_step = 1, s_angle = 1;
 float s_yaw = 215.f, s_pitch = 24.f, s_zoom = 1.f;
@@ -833,17 +843,46 @@ void shapeReset()
 	play("mfui_clank.ogg");
 }
 
+void partsShow(bool on);
 void shapeShow(bool on)
 {
+	if (on && s_partsOpen) { partsShow(false); }   // (27.11.) nur eines der beiden Fenster
 	s_shapeOpen = on;
 	for (size_t k : s_shapeBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
 }
 
+void partsShow(bool on)
+{
+	if (on && s_shapeOpen) { shapeShow(false); }
+	s_partsOpen = on;
+	if (!on) { s_texPick = false; }
+	for (size_t k : s_partsBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
+}
+
 bool inShapePanel(int x, int y)
 {
-	if (!s_shapeOpen) { return false; }
 	const Ctx c = ctx();
+	if (s_partsOpen && x >= c.X(PM_X) && x <= c.X(PM_X + PM_W) && y >= c.Y(PM_Y) && y <= c.Y(PM_Y + PM_H)) { return true; }   // (27.11.) Parts-Fenster
+	if (!s_shapeOpen) { return false; }
 	return x >= c.X(SH_X) && x <= c.X(SH_X + SH_W) && y >= c.Y(SH_Y) && y <= c.Y(SH_Y + SH_H);
+}
+
+bool partSelected();
+/// (27.11.) Farben eines anderen Rumpfes fuer das gewaehlte Teil (oder alle Teile); leere ID = eigene Farben
+void setTexFrom(const std::string &bodyId, const std::string &label)
+{
+	if (s_def.parts.empty()) { setStatus("Add a hull first.", true); return; }
+	if (!s_texAll && !partSelected()) { setStatus("Select a part first (or choose Whole hull).", true); return; }
+	for (size_t i = 0; i < s_def.parts.size(); ++i)
+	{
+		if (!s_texAll && static_cast<int>(i) != s_sel) { continue; }
+		Part &p = s_def.parts[i];
+		p.texFrom = (bodyId.empty() || bodyId == p.body) ? std::string() : bodyId;
+	}
+	s_dirty = true;
+	const std::string who = s_texAll ? "All parts" : "Part " + std::to_string(s_sel + 1);
+	setStatus(bodyId.empty() ? who + ": own colours again" : who + " now wear the colours of " + label);
+	play("mfui_clank.ogg");
 }
 
 void addMount()
@@ -1093,7 +1132,7 @@ void drawBay(const Ctx &c)
 		const Part &p = s_def.parts[i];
 		const BodyInfo *b = modcompbody::bodyInfo(p.body);
 		if (b == nullptr || b->model == nullptr || b->model->displayModel() == nullptr) { continue; }
-		const iIMDShape *flipped = modcompbody::flippedShape(p.body, p.flip);
+		const iIMDShape *flipped = modcompbody::bakedShape(p.body, p.flip, p.texFrom);   // (27.11.) gespiegelt und/oder umgefaerbt
 		if (flipped != nullptr) { pie_Draw3DShape(flipped, 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p, false), view); }
 		else { pie_Draw3DShape(b->model->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p), view); }
 	}
@@ -1336,6 +1375,31 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		}
 	}
 
+	// ---- (27.11.) Parts-Fenster (die Knoepfe zeichnen sich selbst darueber)
+	if (s_partsOpen)
+	{
+		pie_UniTransBoxFill(c.X(PM_X), c.Y(PM_Y), c.X(PM_X + PM_W), c.Y(PM_Y + PM_H), pal_RGBA(6, 12, 28, 235));
+		groupFrame(c, PM_X, PM_Y, PM_W, PM_H, "PARTS");
+		const bool havePart = s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size());
+		const std::string who = s_texAll ? "whole hull" : (havePart ? "part " + std::to_string(s_sel + 1) + " " + bodyName(s_def.parts[static_cast<size_t>(s_sel)].body) : "no part selected");
+		wzText(fitW(who, c.L(PM_W - 60), TK_ROW, S), c.X(PM_X + 50), c.Y(PM_Y + 3), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
+		std::string col = "-";
+		if (havePart && !s_texAll)
+		{
+			const Part &p = s_def.parts[static_cast<size_t>(s_sel)];
+			col = p.texFrom.empty() ? std::string("own") : bodyName(p.texFrom);
+		}
+		else if (s_texAll && !s_def.parts.empty())
+		{
+			std::set<std::string> used;
+			for (const Part &p : s_def.parts) { used.insert(p.texFrom); }
+			col = used.size() == 1 ? (s_def.parts[0].texFrom.empty() ? std::string("own") : bodyName(s_def.parts[0].texFrom)) : std::string("mixed");
+		}
+		wzText("Colours:", c.X(PM_X + 6), c.Y(PM_Y + 36), WZCOL_TEXT_BRIGHT, TK_ROW, S);
+		wzText(fitW(col, c.L(PM_W - 64), TK_ROW, S), c.X(PM_X + 58), c.Y(PM_Y + 36), pal_RGBA(255, 226, 140, 255), TK_ROW, S);
+		if (s_texPick) { wzText("click a hull on the left", c.X(PM_X + 6), c.Y(PM_Y + 72), pal_RGBA(120, 255, 170, 255), TK_ROW, S); }
+	}
+
 	// ---- Auswahl-Zeile
 	{
 		std::string t;
@@ -1491,7 +1555,7 @@ void buildScreen()
 	root->backgroundColor = pal_RGBA(0, 0, 0, 0);
 	root->displayFunction = drawScreen;
 	root->onClickedFunc = []() {};
-	root->onCancelPressed = []() { widgScheduleTask([]() { requestClose(); }); };
+	root->onCancelPressed = []() { widgScheduleTask([]() { if (s_texPick) { s_texPick = false; setStatus("Cancelled."); return; } requestClose(); }); };
 	screen->psForm->attach(root);
 	const std::shared_ptr<WIDGET> parent = root;
 	s_btns.clear();
@@ -1538,7 +1602,8 @@ void buildScreen()
 	addBtn0(parent, 532, sy, 50, 20, FI_SLOT_REMOVE, "Slot", "Remove weapon slot", []() {
 		if (s_selMount >= 0) { deleteSelected(); } else if (!s_def.mounts.empty()) { removeSlot(s_def.mounts.size() - 1); }
 	});
-	addBtn0(parent, 584, sy, 50, 20, FI_PARTS, "Parts", "Edit parts", []() { s_selMount = -1; if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; } });
+	addBtn0(parent, 584, sy, 50, 20, FI_PARTS, "Parts", "Part tools: edit parts, take the colours of another hull",
+	        []() { s_selMount = -1; if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; } partsShow(!s_partsOpen); play("mfclick_move.ogg"); }, []() { return s_partsOpen; });
 
 	// ---- VERSCHIEBEN: Schrittweite (Kopfzeile) und sechs Richtungen
 	static const char *stepLbl[3] = { "0.5", "2", "8" };
@@ -1593,6 +1658,24 @@ void buildScreen()
 		s_shapeBtns.clear();
 		for (size_t k = first; k < s_btns.size(); ++k) { s_shapeBtns.push_back(k); }
 	}
+	// ---- (27.11.) Parts-Fenster (anfangs verborgen)
+	{
+		const size_t first = s_btns.size();
+		addBtn0(parent, PM_X + 4, PM_Y + 16, 44, 14, -1, "Part", "Colours for the selected part", []() { s_texAll = false; }, []() { return !s_texAll; });
+		addBtn0(parent, PM_X + 50, PM_Y + 16, 70, 14, -1, "Whole hull", "Colours for all parts", []() { s_texAll = true; }, []() { return s_texAll; });
+		addBtn0(parent, PM_X + 4, PM_Y + 52, 96, 16, -1, "From hull...", "Then click a hull on the left: the part takes its colours (Esc cancels)", []() {
+			if (s_def.parts.empty()) { setStatus("Add a hull first.", true); return; }
+			s_texPick = !s_texPick;
+			setStatus(s_texPick ? std::string("Click a hull on the left - its colours go onto ") + (s_texAll ? "all parts" : "part " + std::to_string(s_sel + 1)) + " (Esc cancels)" : "Cancelled.");
+		}, []() { return s_texPick; });
+		addBtn0(parent, PM_X + 104, PM_Y + 52, 60, 16, -1, "Own", "Back to the part's own colours", []() { s_texPick = false; setTexFrom(std::string(), std::string()); });
+		addBtn0(parent, PM_X + 4, PM_Y + 89, 70, 16, -1, "Edit parts", "Back to moving and turning the parts (instead of a weapon slot)", []() {
+			s_selMount = -1; if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; }
+		});
+		addBtn0(parent, PM_X + PM_W - 64, PM_Y + 89, 60, 16, -1, "Done", "Close the parts window", []() { partsShow(false); });
+		s_partsBtns.clear();
+		for (size_t k = first; k < s_btns.size(); ++k) { s_partsBtns.push_back(k); }
+	}
 	// ---- UEBER-RUMPF
 	addBtn0(parent, 168, ROW_B + 13, 52, 42, FI_NEW, "New", "New hull", []() { newHull(); });
 	addBtn0(parent, 222, ROW_B + 13, 52, 42, FI_LOAD_PREV, "Prev", "Previous saved hull", []() { loadCycle(-1); });
@@ -1621,6 +1704,7 @@ void buildScreen()
 	s_screen = screen;
 	s_root = root;
 	shapeShow(s_shapeOpen);
+	partsShow(s_partsOpen);   // (27.11.)
 }
 
 bool mouseInBay()
@@ -1710,7 +1794,16 @@ void handleMouse()
 			else if (b == 0 && s_listPress >= 0)
 			{
 				const int cell = cellAt(p.pos.x, p.pos.y);
-				if (cell == s_listPress) { addPart(static_cast<size_t>(cell)); }
+				if (cell == s_listPress)
+				{
+					if (s_texPick)   // (27.11.) Farben dieses Rumpfes nehmen
+					{
+						const auto &cat = modcompbody::catalog();
+						if (static_cast<size_t>(cell) < cat.size()) { setTexFrom(cat[static_cast<size_t>(cell)].id, cat[static_cast<size_t>(cell)].name); }
+						s_texPick = false;
+					}
+					else { addPart(static_cast<size_t>(cell)); }
+				}
 				s_listPress = -1;
 			}
 		}
