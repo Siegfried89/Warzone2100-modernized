@@ -203,14 +203,26 @@ void applyLighting(float level, float flash)
 	float dif[3] = {lerp(1.f, d.difR, l), lerp(1.f, d.difG, l), lerp(1.f, d.difB, l)};
 	const float nk = s_night ? 1.f : smooth(s_nightK);
 	const bool dayBoost = modlayer::current() == modlayer::SURFACE && !s_night;   // (27.11.) Tageslicht wie in der Daemmerung
+	// (27.11. 16:40 "NUR das TERRAIN soll so schoen leuchten, nicht alles andere auch"): Modelle bekommen nur noch den Nacht-Uebergang,
+	// das helle Tageslicht geht als Zusatz nur auf den Boden (Gelaende + Wasser) - der Boden sieht genau so aus wie bisher.
+	float tAmb[3] = {1.f, 1.f, 1.f};
+	float tDif[3] = {1.f, 1.f, 1.f};
 	if (nk > 0.f || dayBoost)
 	{
 		for (int i = 0; i < 3; i++)
 		{
-			amb[i] *= lerp(dayBoost ? DAY_AMB[i] : 1.f, NIGHT_AMB[i], nk);
-			dif[i] *= lerp(dayBoost ? DAY_DIF[i] : 1.f, NIGHT_DIF[i], nk);
+			const float na = lerp(1.f, NIGHT_AMB[i], nk);
+			const float nd = lerp(1.f, NIGHT_DIF[i], nk);
+			amb[i] *= na;
+			dif[i] *= nd;
+			if (dayBoost)
+			{
+				tAmb[i] = lerp(DAY_AMB[i], NIGHT_AMB[i], nk) / na;
+				tDif[i] = lerp(DAY_DIF[i], NIGHT_DIF[i], nk) / nd;
+			}
 		}
 	}
+	pie_SetTerrainLightingScale(glm::vec3(tAmb[0], tAmb[1], tAmb[2]), glm::vec3(tDif[0], tDif[1], tDif[2]));
 	if (flash > 0.f)
 	{
 		for (int i = 0; i < 3; i++) { amb[i] *= 1.f + 2.2f * flash; dif[i] *= 1.f + 3.0f * flash; }
@@ -306,6 +318,7 @@ void reset()
 	s_wasActive = false;
 	s_nextBed = 0;
 	pie_SetLightingScale(glm::vec3(1.f), glm::vec3(1.f));
+	pie_SetTerrainLightingScale(glm::vec3(1.f), glm::vec3(1.f));
 }
 
 void onSkybox(const char *page)

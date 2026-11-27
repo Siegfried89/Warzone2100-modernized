@@ -149,6 +149,25 @@ glm::vec4 pie_GetSceneLighting0(LIGHTING_TYPE entry)
 	return modScaled(entry, sceneLighting(lighting0[entry]));
 }
 
+// MOD (Wunsch 27.11. 16:40 "Die Helligkeit der Fahrzeuge und Modelle ist jetzt extrem. Ich wollte, dass NUR das TERRAIN so schoen
+// leuchtet"): das helle Tageslicht (modweather) wirkt nur noch hier - Gelaende und Wasser; Einheiten, Gebaeude und alle Modelle bekommen
+// wieder das normale Licht.
+static glm::vec3 modTerrainAmbientScale(1.f, 1.f, 1.f);
+static glm::vec3 modTerrainDiffuseScale(1.f, 1.f, 1.f);
+void pie_SetTerrainLightingScale(const glm::vec3 &ambientScale, const glm::vec3 &diffuseScale)
+{
+	modTerrainAmbientScale = ambientScale;
+	modTerrainDiffuseScale = diffuseScale;
+}
+
+glm::vec4 pie_GetTerrainSceneLighting0(LIGHTING_TYPE entry)
+{
+	glm::vec4 v = pie_GetSceneLighting0(entry);
+	if (entry == LIGHT_AMBIENT) { v.r *= modTerrainAmbientScale.r; v.g *= modTerrainAmbientScale.g; v.b *= modTerrainAmbientScale.b; }
+	else if (entry == LIGHT_DIFFUSE || entry == LIGHT_SPECULAR) { v.r *= modTerrainDiffuseScale.r; v.g *= modTerrainDiffuseScale.g; v.b *= modTerrainDiffuseScale.b; }
+	return v;
+}
+
 void pie_Lighting0(LIGHTING_TYPE entry, const float value[4])
 {
 	lighting0[entry][0] = value[0];

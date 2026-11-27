@@ -72,6 +72,10 @@ glm::vec4 pie_GetLighting0(LIGHTING_TYPE entry);
 void pie_SetLightingScale(const glm::vec3 &ambientScale, const glm::vec3 &diffuseScale);
 /// A light parameter in the form a scene shader needs it: decoded to linear while linear lighting is on
 glm::vec4 pie_GetSceneLighting0(LIGHTING_TYPE entry);
+/// MOD (27.11.): zusaetzliche Skalierung nur fuer den Boden (Gelaende und Wasser) - das helle Tageslicht soll nur das Gelaende treffen
+void pie_SetTerrainLightingScale(const glm::vec3 &ambientScale, const glm::vec3 &diffuseScale);
+/// wie pie_GetSceneLighting0, dazu die Boden-Skalierung
+glm::vec4 pie_GetTerrainSceneLighting0(LIGHTING_TYPE entry);
 
 void pie_InitializeInstancedRenderer();
 /// Frees the mesh batch storage the renderer keeps across frames. For ending a match, so a finished
