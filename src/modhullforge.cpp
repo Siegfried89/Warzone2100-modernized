@@ -25,6 +25,7 @@
 
 #include "modhullforge.h"
 #include "modcompbody.h"
+#include "modanimlib.h"
 #include "modpanel.h"
 #include "modlayer.h"
 #include "modui.h"
@@ -257,7 +258,8 @@ std::vector<size_t> s_partsBtns;
 // (Wunsch 27.11. 20:56 "A+B") Animations-Fenster: Drehpunkt, "haengt an", Bewegungs-Bausteine, Posen
 constexpr float AM_X = 262, AM_Y = 126, AM_W = 206, AM_H = 208;
 constexpr float ANB_X = CEN_X, ANB_Y = CEN_Y + CEN_H + 3, ANB_W = CEN_W, ANB_H = CEN_H;   // Knopf "Animate" unter "Centre"
-constexpr float JNB_Y = ANB_Y + ANB_H + 3, SPB_Y = JNB_Y + ANB_H + 3;                          // (27.11.) "Join", "Separate"
+constexpr float ALB_Y = ANB_Y + ANB_H + 3;                                                      // (27.11. 23:38) "Anim list"
+constexpr float JNB_Y = ALB_Y + ANB_H + 3, SPB_Y = JNB_Y + ANB_H + 3;                          // (27.11.) "Join", "Separate"
 std::vector<int> s_multi;       // (Wunsch 27.11. 21:27) Mehrfach-Auswahl (Shift-Klick), enthaelt s_sel; Verbund = gespeicherte Auswahl
 bool s_animOpen = false;
 bool s_pivotEdit = false;       // Verschieben wirkt auf den Drehpunkt des Teils
@@ -269,6 +271,21 @@ int s_animPlay = -1;            // Vorschau: -1 aus, sonst Ablauf (Fahren/Stehen
 uint32_t s_animPlayStart = 0;
 std::vector<size_t> s_animBtns;
 size_t s_axisBtn = SIZE_MAX, s_whenBtn = SIZE_MAX;   // Beschriftung zeigt den aktuellen Wert
+// (Wunsch 27.11. 23:19 "alle Animationen, auch ganze Animationssets, in einer aufploppenden Liste, die man gezielt raussuchen oder rausnehmen
+// kann - wie die Waffenslots oder Bodyliste" / 23:38 "auf jeden Fall speichern"): Fenster "ANIMATIONS" ueber der Ansicht, Knopf "Anim list"
+// unter "Animate". Reiter "On this hull" (was der Rumpf hat - Klick waehlt, Rechtsklick nimmt heraus) und "Library" (fertige Gangarten,
+// einzelne Animationen, eigene Saetze - Klick legt sie auf den Rumpf). Das ANIMATE-Fenster bleibt wie es ist.
+constexpr float AL_X = 172, AL_Y = 30, AL_W = 240, AL_H = 302;
+constexpr int AL_ROWS = 17;
+constexpr float AL_ROW_H = 13.f, AL_LIST_Y = AL_Y + 34;
+bool s_alOpen = false;
+int s_alTab = 0;                // 0 = auf dem Rumpf, 1 = Bibliothek
+int s_alScroll = 0;
+int s_alArmed = -1;             // eigener Satz: erster Rechtsklick merkt ihn, der zweite loescht
+std::vector<size_t> s_alBtns, s_alHullBtns, s_alLibBtns;
+bool s_alHasUndo = false;       // eine Stufe zurueck (letzte Aenderung aus der Liste)
+modcompbody::Def s_alUndo;
+std::vector<modcompbody::AnimSetInfo> s_alSets;   // eigene Saetze (beim Oeffnen und nach Aenderungen gelesen)
 constexpr float PM_X = 262, PM_Y = 178, PM_W = 206, PM_H = 156;   // Parts-Fenster (unten rechts in der Ansicht; (27.11.) hoeher: Antriebsplaetze)
 const float SHAPE_STEPS[3] = { 0.05f, 0.10f, 0.25f };
 int s_step = 1, s_angle = 1;
@@ -888,7 +905,7 @@ void animRemovePose()
 std::vector<glm::mat4> bayAnimW()
 {
 	std::vector<glm::mat4> W;
-	if (!s_animOpen || s_def.parts.empty()) { return W; }
+	if ((!s_animOpen && !s_alOpen) || s_def.parts.empty()) { return W; }   // (27.11. 23:19) auch die Animations-Liste spielt vor
 	using namespace modcompbody;
 	const int n = s_def.poseCount[s_animClip];
 	if (s_poseEdit && n > 0)
@@ -1388,10 +1405,12 @@ void shapeReset()
 
 void partsShow(bool on);
 void animShow(bool on);
+void alistShow(bool on);
 void shapeShow(bool on)
 {
 	if (on && s_partsOpen) { partsShow(false); }   // (27.11.) nur eines der beiden Fenster
 	if (on && s_animOpen) { animShow(false); }
+	if (on && s_alOpen) { alistShow(false); }
 	s_shapeOpen = on;
 	for (size_t k : s_shapeBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
 }
@@ -1400,6 +1419,7 @@ void partsShow(bool on)
 {
 	if (on && s_shapeOpen) { shapeShow(false); }
 	if (on && s_animOpen) { animShow(false); }
+	if (on && s_alOpen) { alistShow(false); }
 	s_partsOpen = on;
 	if (!on) { s_texPick = false; s_drivePick = false; }
 	for (size_t k : s_partsBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
@@ -1409,14 +1429,201 @@ void animShow(bool on)
 {
 	if (on && s_shapeOpen) { shapeShow(false); }
 	if (on && s_partsOpen) { partsShow(false); }
+	if (on && s_alOpen) { alistShow(false); }
 	s_animOpen = on;
 	if (!on) { s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; }
 	for (size_t k : s_animBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
 }
 
+// ---------------------------------------------------------------- (27.11. 23:19) Animations-Liste
+void alistRefresh()
+{
+	auto vis = [](const std::vector<size_t> &v, bool on) { for (size_t k : v) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } } };
+	vis(s_alBtns, s_alOpen);
+	vis(s_alHullBtns, s_alOpen && s_alTab == 0);
+	vis(s_alLibBtns, s_alOpen && s_alTab == 1);
+}
+
+void alistShow(bool on)
+{
+	if (on && s_shapeOpen) { shapeShow(false); }
+	if (on && s_partsOpen) { partsShow(false); }
+	if (on && s_animOpen) { animShow(false); }
+	s_alOpen = on;
+	s_alArmed = -1;
+	if (on) { s_alSets = modcompbody::animSets(); s_alScroll = 0; }
+	else if (!s_animOpen) { s_animPlay = -1; }
+	alistRefresh();
+}
+
+enum { AR_TEXT = 0, AR_CLIP, AR_KEYS, AR_MOTHEAD, AR_MOTION, AR_SECTION, AR_GAIT, AR_SINGLE, AR_SET };
+struct ARow { int kind = AR_TEXT; int part = -1; int clip = -1; int idx = -1; std::string a, b; };
+
+const char *clipTitle(int clip)
+{
+	return clip == modcompbody::CLIP_MOVING ? "Walk  (moving)" : (clip == modcompbody::CLIP_STANDING ? "Stand" : "Fire");
+}
+
+std::vector<ARow> alRows()
+{
+	using namespace modcompbody;
+	std::vector<ARow> v;
+	auto add = [&v](int kind, std::string a, std::string b = std::string(), int part = -1, int clip = -1, int idx = -1) {
+		ARow r; r.kind = kind; r.a = std::move(a); r.b = std::move(b); r.part = part; r.clip = clip; r.idx = idx; v.push_back(r);
+	};
+	if (s_alTab == 0)
+	{
+		for (int c = 0; c < CLIP_COUNT; ++c)
+		{
+			if (s_def.poseCount[c] <= 0) { continue; }
+			char b[48];
+			snprintf(b, sizeof(b), "%d pose%s  %.2f", s_def.poseCount[c], s_def.poseCount[c] == 1 ? "" : "s", static_cast<double>(s_def.poseSeconds[c]));
+			add(AR_CLIP, clipTitle(c), b, -1, c);
+			for (size_t i = 0; i < s_def.parts.size(); ++i)
+			{
+				const Part &p = s_def.parts[i];
+				if (p.keys[c].empty()) { continue; }
+				const std::string d = modanimlib::describeKeys(p, c);
+				if (d == "still") { continue; }
+				add(AR_KEYS, std::to_string(i + 1) + "  " + bodyName(p.body), d, static_cast<int>(i), c);
+			}
+		}
+		bool anyMot = false;
+		for (const Part &p : s_def.parts) { anyMot = anyMot || p.motion.type != MOT_NONE; }
+		if (anyMot)
+		{
+			add(AR_MOTHEAD, "Motions");
+			for (size_t i = 0; i < s_def.parts.size(); ++i)
+			{
+				const Part &p = s_def.parts[i];
+				if (p.motion.type == MOT_NONE) { continue; }
+				add(AR_MOTION, std::to_string(i + 1) + "  " + bodyName(p.body), modanimlib::describeMotion(p.motion), static_cast<int>(i));
+			}
+		}
+		if (v.empty()) { add(AR_TEXT, s_def.parts.empty() ? "No hull yet." : "No animation yet - pick one in the Library."); }
+	}
+	else
+	{
+		add(AR_SECTION, "Whole sets - they find the legs themselves");
+		for (int g = 0; g < modanimlib::GAIT_COUNT; ++g) { add(AR_GAIT, modanimlib::gaitName(g), modanimlib::gaitInfo(g), -1, -1, g); }
+		add(AR_SECTION, "Single animations - on the selected part");
+		for (int k = 0; k < modanimlib::ONE_COUNT; ++k) { add(AR_SINGLE, modanimlib::singleName(k), modanimlib::singleInfo(k), -1, -1, k); }
+		add(AR_SECTION, "Your sets");
+		for (size_t k = 0; k < s_alSets.size(); ++k) { add(AR_SET, s_alSets[k].name, std::to_string(s_alSets[k].parts) + " parts", -1, -1, static_cast<int>(k)); }
+		if (s_alSets.empty()) { add(AR_TEXT, "(none yet - \"Save as set\" on the first tab)"); }
+	}
+	return v;
+}
+
+void alBackup()
+{
+	s_alUndo = s_def;
+	s_alHasUndo = true;
+}
+
+void alUndo()
+{
+	if (!s_alHasUndo || s_alUndo.parts.size() != s_def.parts.size()) { s_alHasUndo = false; setStatus("Nothing to undo.", true); return; }
+	s_def = s_alUndo;
+	s_alHasUndo = false;
+	s_dirty = true;
+	s_animPlay = -1;
+	setStatus("Undone.");
+	play("mfclick_move.ogg");
+}
+
+void alPlay(int clip)
+{
+	s_animPlay = clip;
+	s_animPlayStart = realTime;
+}
+
+void alClick(int row, bool right)
+{
+	using namespace modcompbody;
+	const std::vector<ARow> rows = alRows();
+	const int i = s_alScroll + row;
+	if (i < 0 || i >= static_cast<int>(rows.size())) { return; }
+	const ARow &r = rows[static_cast<size_t>(i)];
+	std::string msg;
+	switch (r.kind)
+	{
+	case AR_CLIP:
+		if (right)
+		{
+			alBackup();
+			s_def.poseCount[r.clip] = 0;
+			for (Part &p : s_def.parts) { p.keys[r.clip].clear(); }
+			s_dirty = true; s_animPlay = -1;
+			setStatus(std::string("Removed: ") + clipTitle(r.clip) + " (Undo brings it back).");
+		}
+		else { s_animClip = r.clip; alPlay(r.clip); }
+		break;
+	case AR_KEYS:
+		if (right)
+		{
+			alBackup();
+			s_def.parts[static_cast<size_t>(r.part)].keys[r.clip].clear();
+			s_dirty = true;
+			setStatus("Removed from part " + std::to_string(r.part + 1) + " (Undo brings it back).");
+		}
+		else { selectPart(r.part); s_animClip = r.clip; alPlay(r.clip); }
+		break;
+	case AR_MOTION:
+		if (right)
+		{
+			alBackup();
+			s_def.parts[static_cast<size_t>(r.part)].motion = Motion();
+			s_dirty = true;
+			setStatus("Motion removed from part " + std::to_string(r.part + 1) + " (Undo brings it back).");
+		}
+		else
+		{
+			selectPart(r.part);
+			const int w = s_def.parts[static_cast<size_t>(r.part)].motion.when;
+			alPlay(w == WHEN_MOVING ? CLIP_MOVING : (w == WHEN_FIRING ? CLIP_FIRING : CLIP_STANDING));
+		}
+		break;
+	case AR_GAIT:
+		if (right) { return; }
+		alBackup();
+		if (modanimlib::applyGait(s_def, r.idx, msg)) { s_dirty = true; setStatus(msg); alPlay(CLIP_MOVING); play("mfui_clank.ogg"); }
+		else { s_alHasUndo = false; setStatus(msg, true); }
+		break;
+	case AR_SINGLE:
+		if (right) { return; }
+		alBackup();
+		if (modanimlib::applySingle(s_def, partSelected() ? animTarget() : -1, r.idx, msg)) { s_dirty = true; setStatus(msg); alPlay(modanimlib::singleClip(r.idx)); play("mfclick_move.ogg"); }
+		else { s_alHasUndo = false; setStatus(msg, true); }
+		break;
+	case AR_SET:
+	{
+		if (r.idx < 0 || r.idx >= static_cast<int>(s_alSets.size())) { return; }
+		const AnimSetInfo info = s_alSets[static_cast<size_t>(r.idx)];
+		if (right)
+		{
+			if (s_alArmed != i) { s_alArmed = i; setStatus("Right-click again to delete your set \"" + info.name + "\".", true); return; }
+			s_alArmed = -1;
+			if (modcompbody::deleteAnimSet(info.path)) { setStatus("Set \"" + info.name + "\" deleted."); }
+			else { setStatus("Could not delete the set.", true); }
+			s_alSets = modcompbody::animSets();
+			return;
+		}
+		Def set;
+		if (!modcompbody::loadAnimSet(info.path, set)) { setStatus("Could not read the set.", true); return; }
+		alBackup();
+		if (modanimlib::applySet(s_def, set, msg)) { s_dirty = true; setStatus(msg); alPlay(s_def.poseCount[CLIP_MOVING] > 0 ? CLIP_MOVING : CLIP_STANDING); play("mfui_clank.ogg"); }
+		else { s_alHasUndo = false; setStatus(msg, true); }
+		break;
+	}
+	default: break;
+	}
+}
+
 bool inShapePanel(int x, int y)
 {
 	const Ctx c = ctx();
+	if (s_alOpen && x >= c.X(AL_X) && x <= c.X(AL_X + AL_W) && y >= c.Y(AL_Y) && y <= c.Y(AL_Y + AL_H)) { return true; }   // (27.11. 23:19) Animations-Liste
 	if (s_animOpen && x >= c.X(AM_X) && x <= c.X(AM_X + AM_W) && y >= c.Y(AM_Y) && y <= c.Y(AM_Y + AM_H)) { return true; }   // (27.11.) Animations-Fenster
 	if (s_partsOpen && x >= c.X(PM_X) && x <= c.X(PM_X + PM_W) && y >= c.Y(PM_Y) && y <= c.Y(PM_Y + PM_H)) { return true; }   // (27.11.) Parts-Fenster
 	if (!s_shapeOpen) { return false; }
@@ -1462,6 +1669,7 @@ void newHull()
 	s_links.clear();
 	s_sel = -1; s_selMount = -1; s_selDrive = -1; s_drivePick = false; s_partScroll = 0; s_mountScroll = 0; s_loadIdx = -1;
 	s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; s_animPoseIdx = 0; s_multi.clear();   // (27.11.)
+	s_alHasUndo = false;   // (27.11. 23:19)
 	if (s_nameBox) { s_nameBox->setString(WzString::fromUtf8(s_def.name)); }
 	s_dirty = false;
 	setStatus("Click a hull on the left - the first one is the chassis.");
@@ -1479,6 +1687,7 @@ void loadCycle(int dir)
 	s_loadIdx = idx[static_cast<size_t>(pos)];
 	s_def = all[static_cast<size_t>(s_loadIdx)];
 	s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; s_animPoseIdx = 0; s_multi.clear();   // (27.11.)
+	s_alHasUndo = false;   // (27.11. 23:19)
 	// alte Entwuerfe ohne eigene Plaetze: die des Fahrgestells (wie im Spiel)
 	if (s_def.mounts.empty() && !s_def.parts.empty()) { s_def.mounts = modcompbody::defaultMounts(s_def.parts[0]); }
 	inferLinks();
@@ -2111,6 +2320,41 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		if (s_drivePick) { wzText("click a hull on the left: its drive size", c.X(PM_X + 6), c.Y(PM_Y + 124), pal_RGBA(120, 255, 170, 255), TK_ROW, S); }
 	}
 
+	// ---- (27.11. 23:19) Animations-Liste (Knoepfe und Zeilen-Rahmen zeichnen sich selbst darueber)
+	if (s_alOpen)
+	{
+		pie_UniTransBoxFill(c.X(AL_X), c.Y(AL_Y), c.X(AL_X + AL_W), c.Y(AL_Y + AL_H), pal_RGBA(6, 12, 28, 240));
+		groupFrame(c, AL_X, AL_Y, AL_W, AL_H, "ANIMATIONS");
+		const std::string hn = s_nameBox ? s_nameBox->getString().toStdString() : s_def.name;
+		const std::string hf = fitW(hn, c.L(AL_W - 90), TK_ROW, S);
+		wzText(hf, c.X(AL_X + AL_W - 6) - textW(hf, TK_ROW, S), c.Y(AL_Y + 3), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
+		listFrame(c.X(AL_X + 4), c.Y(AL_LIST_Y), c.L(AL_W - 8), c.L(AL_ROWS * AL_ROW_H + 2));
+		const std::vector<ARow> rows = alRows();
+		s_alScroll = std::clamp(s_alScroll, 0, std::max(0, static_cast<int>(rows.size()) - AL_ROWS));
+		const PIELIGHT gold = pal_RGBA(255, 214, 110, 255), dim = pal_RGBA(150, 170, 205, 230);
+		for (int i = 0; i < AL_ROWS; ++i)
+		{
+			const int ri = s_alScroll + i;
+			if (ri >= static_cast<int>(rows.size())) { break; }
+			const ARow &r = rows[static_cast<size_t>(ri)];
+			const int ry = c.Y(AL_LIST_Y + 1.f + i * AL_ROW_H);
+			const int x0 = c.X(AL_X + 5), x1 = c.X(AL_X + AL_W - 5);
+			bool hi = false;
+			if (r.kind == AR_CLIP) { hi = s_animPlay == r.clip; }
+			else if (r.kind == AR_KEYS || r.kind == AR_MOTION) { hi = r.part == s_sel && s_selMount < 0 && s_selDrive < 0; }
+			if (r.kind == AR_SET && ri == s_alArmed) { pie_UniTransBoxFill(x0, ry, x1, ry + c.L(AL_ROW_H) - 1, pal_RGBA(150, 90, 20, 170)); }
+			else if (hi) { pie_UniTransBoxFill(x0, ry, x1, ry + c.L(AL_ROW_H) - 1, pal_RGBA(40, 110, 190, 170)); }
+			const int bw = r.b.empty() ? 0 : textW(r.b, TK_ROW, S);
+			if (bw > 0) { wzText(r.b, x1 - c.L(4) - bw, ry + c.L(1), dim, TK_ROW, S); }
+			const bool head = r.kind == AR_CLIP || r.kind == AR_MOTHEAD || r.kind == AR_SECTION;
+			const int ix = c.X(AL_X + ((r.kind == AR_KEYS || r.kind == AR_MOTION) ? 20.f : 9.f));
+			const PIELIGHT col = head ? gold : (r.kind == AR_TEXT ? dim : WZCOL_FORM_TEXT);
+			wzText(fitW(r.a, x1 - ix - bw - c.L(8), TK_ROW, S), ix, ry + c.L(1), col, TK_ROW, S);
+		}
+		const char *hint = s_alTab == 0 ? "Click: select   Right-click: remove" : "Click: put it on this hull   Right-click: delete own set";
+		wzText(fitW(hint, c.L(AL_W - 12), TK_ROW, S), c.X(AL_X + 6), c.Y(AL_Y + AL_H - 34), dim, TK_ROW, S);
+	}
+
 	// ---- (27.11.) Animations-Fenster (die Knoepfe zeichnen sich selbst darueber)
 	if (s_animOpen)
 	{
@@ -2496,6 +2740,51 @@ void buildScreen()
 	// ---- (Wunsch 27.11. 21:27 "Parts joinen wie in Blender") Verbinden/Trennen
 	addBtn0(parent, ANB_X, JNB_Y, ANB_W, ANB_H, -1, "Join", "Join the selected parts into one piece (Shift+click adds parts) [Ctrl+J]", []() { joinSelected(); });
 	addBtn0(parent, ANB_X, SPB_Y, ANB_W, ANB_H, -1, "Separate", "Split a joined piece into its parts again [P]", []() { separateSelected(); });
+	// ---- (Wunsch 27.11. 23:19) Animations-Liste (anfangs verborgen)
+	addBtn0(parent, ANB_X, ALB_Y, ANB_W, ANB_H, -1, "Anim list", "All animations of this hull, and ready-made ones to put on it (Library)",
+	        []() { alistShow(!s_alOpen); play("mfclick_move.ogg"); }, []() { return s_alOpen; });
+	{
+		using namespace modcompbody;
+		size_t first = s_btns.size();
+		addBtn0(parent, AL_X + 6, AL_Y + 16, 62, 14, -1, "On this hull", "What this hull has - click: select, right-click: remove",
+		        []() { s_alTab = 0; s_alScroll = 0; s_alArmed = -1; alistRefresh(); }, []() { return s_alTab == 0; });
+		addBtn0(parent, AL_X + 70, AL_Y + 16, 50, 14, -1, "Library", "Ready-made animations and your own sets - click puts them on this hull",
+		        []() { s_alTab = 1; s_alScroll = 0; s_alArmed = -1; alistRefresh(); }, []() { return s_alTab == 1; });
+		static const char *const alPl[CLIP_COUNT] = { "Move", "Stand", "Fire" };
+		for (int k = 0; k < CLIP_COUNT; ++k)
+		{
+			addBtn0(parent, AL_X + 142 + k * 32.f, AL_Y + 16, 30, 14, -1, alPl[k], "Play the animation as if the unit moves / stands / fires",
+			        [k]() { if (s_animPlay == k) { s_animPlay = -1; } else { alPlay(k); } }, [k]() { return s_animPlay == k; });
+		}
+		for (int i = 0; i < AL_ROWS; ++i)
+		{
+			addBtn(parent, AL_X + 5, AL_LIST_Y + 1.f + i * AL_ROW_H, AL_W - 10, AL_ROW_H, -1, "", "Click: select / put on the hull   Right-click: remove",
+			       [i](bool right) { alClick(i, right); }, nullptr, hotDisplay, true);
+		}
+		addBtn0(parent, AL_X + AL_W - 82, AL_Y + AL_H - 19, 20, 15, FI_SCROLL_UP, "", "Scroll up", []() { s_alScroll = std::max(0, s_alScroll - (AL_ROWS - 2)); });
+		addBtn0(parent, AL_X + AL_W - 60, AL_Y + AL_H - 19, 20, 15, FI_SCROLL_DOWN, "", "Scroll down", []() {
+			s_alScroll = std::clamp(s_alScroll + (AL_ROWS - 2), 0, std::max(0, static_cast<int>(alRows().size()) - AL_ROWS)); });
+		addBtn0(parent, AL_X + AL_W - 38, AL_Y + AL_H - 19, 34, 15, -1, "Done", "Close the list", []() { alistShow(false); });
+		s_alBtns.clear();
+		for (size_t k = first; k < s_btns.size(); ++k) { s_alBtns.push_back(k); }
+		first = s_btns.size();
+		addBtn0(parent, AL_X + 4, AL_Y + AL_H - 19, 56, 15, -1, "Save as set", "Keep the whole animation of this hull as your own set (Library, \"Your sets\")", []() {
+			std::string err;
+			const std::string nm = s_nameBox ? s_nameBox->getString().toStdString() : s_def.name;
+			if (modcompbody::saveAnimSet(s_def, nm, err)) { s_alSets = modcompbody::animSets(); setStatus("Saved as set \"" + nm + "\" - in the Library under \"Your sets\"."); play("mfui_clank.ogg"); }
+			else { setStatus(err, true); }
+		});
+		addBtn0(parent, AL_X + 62, AL_Y + AL_H - 19, 50, 15, -1, "Remove all", "Take every animation off this hull (Undo brings it back)", []() {
+			alBackup(); modanimlib::clearAll(s_def); s_dirty = true; s_animPlay = -1; setStatus("All animations removed (Undo brings them back).");
+		});
+		addBtn0(parent, AL_X + 114, AL_Y + AL_H - 19, 34, 15, -1, "Undo", "Undo the last change made in this list", []() { alUndo(); });
+		s_alHullBtns.clear();
+		for (size_t k = first; k < s_btns.size(); ++k) { s_alHullBtns.push_back(k); }
+		first = s_btns.size();
+		addBtn0(parent, AL_X + 4, AL_Y + AL_H - 19, 34, 15, -1, "Undo", "Undo the last change made in this list", []() { alUndo(); });
+		s_alLibBtns.clear();
+		for (size_t k = first; k < s_btns.size(); ++k) { s_alLibBtns.push_back(k); }
+	}
 	// ---- (Wunsch 20:56 "A+B") Animations-Fenster (anfangs verborgen)
 	addBtn0(parent, ANB_X, ANB_Y, ANB_W, ANB_H, -1, "Animate", "Animate the parts: pivot, what each part hangs on, motions and poses",
 	        []() { if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; } s_selMount = -1; s_selDrive = -1; animShow(!s_animOpen); play("mfclick_move.ogg"); }, []() { return s_animOpen; });
@@ -2610,6 +2899,7 @@ void buildScreen()
 	shapeShow(s_shapeOpen);
 	partsShow(s_partsOpen);   // (27.11.)
 	animShow(s_animOpen);     // (27.11.)
+	alistShow(s_alOpen);      // (27.11. 23:19)
 }
 
 bool mouseInBay()
@@ -2814,7 +3104,11 @@ void tick()
 	const int mx = mouseX(), my = mouseY();
 	if (wheel.y != 0)
 	{
-		if (mouseInBay()) { s_zoom = std::clamp(s_zoom * (wheel.y > 0 ? 1.12f : 1.f / 1.12f), 0.3f, 6.f); }
+		if (s_alOpen && mx >= c.X(AL_X) && mx <= c.X(AL_X + AL_W) && my >= c.Y(AL_Y) && my <= c.Y(AL_Y + AL_H))   // (27.11. 23:19) Animations-Liste
+		{
+			s_alScroll = std::clamp(s_alScroll + (wheel.y > 0 ? -1 : 1), 0, std::max(0, static_cast<int>(alRows().size()) - AL_ROWS));
+		}
+		else if (mouseInBay()) { s_zoom = std::clamp(s_zoom * (wheel.y > 0 ? 1.12f : 1.f / 1.12f), 0.3f, 6.f); }
 		else if (mx >= c.X(LIST_X) && mx <= c.X(LIST_X + LIST_W) && my >= c.Y(LIST_Y) && my <= c.Y(LIST_Y + LIST_H))
 		{
 			s_listScroll = std::clamp(s_listScroll + (wheel.y > 0 ? -1 : 1), 0, maxListScroll());

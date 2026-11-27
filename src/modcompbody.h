@@ -212,6 +212,13 @@ Totals totals(const Def &d);
 bool save(Def &d, std::string &err);
 /// loeschen (Datei weg, Rumpf nicht mehr baubar)
 bool remove(const std::string &id, std::string &err);
+/// (Wunsch 27.11. 23:19 "alle Animationen, auch ganze Animationssets, in einer aufploppenden Liste"): eigene Saetze im Benutzerordner
+/// (userdata/animsets/<name>.json) - die ganze Animation eines Rumpfes (je Teil: haengt an, Drehpunkt, Baustein, Posen), Teile wie beim Speichern
+struct AnimSetInfo { std::string name, path; size_t parts = 0; };
+std::vector<AnimSetInfo> animSets();
+bool saveAnimSet(const Def &d, const std::string &name, std::string &err);
+bool loadAnimSet(const std::string &path, Def &out);
+bool deleteAnimSet(const std::string &path);
 /// (Wunsch 27.11. 19:16 "das Modell in der Hull Forge sollte am Ende zentriert werden, dass es fuer den Unit Designer passt"): Grundriss
 /// der Teile in die Mitte schieben (Teile, Waffen- und Antriebsplaetze gemeinsam, nur waagerecht); true = verschoben
 bool centerDef(Def &d);
