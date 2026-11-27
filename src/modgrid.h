@@ -43,9 +43,4 @@ int substations(int player, int &fed);
 /// (24.11.) warum Gebaeude ohne Strom sind: kein Mast/Umspannwerk in Reichweite (bzw. Netz ohne Quelle) / Netz ueberlastet
 /// (24.11. 17:01) noSub: Netz mit Kraftwerk/Solar, aber ohne Umspannwerk (Pflicht)
 void downReasons(int player, int &noGrid, int &overload, int &noSub);
-/// (Wunsch 27.11. 18:30 "warum sind so viele Forschungszentren ohne Strom, obwohl das Stromnetz laeuft und genug Masten da sind?"):
-/// das Gebaeude haette Strom, steht aber still, weil die Besatzung (Kasernen) nicht reicht - wird getrennt angezeigt, nicht als "ohne Strom"
-bool isCrewShort(const STRUCTURE *psStruct);
-/// Besatzungskonto: true, sobald der Spieler eine Kaserne hat; used = benoetigt, supply = vorhanden, off = abgeschaltete Gebaeude
-bool crewAccount(int player, int &used, int &supply, int &off);
 }
