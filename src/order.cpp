@@ -52,6 +52,7 @@
 #include "modupgrade.h"
 #include "modrecover.h"
 #include "modbuild.h"
+#include "modfacing.h"   // MOD (27.11.): Tastensteuerung
 #include "modtunnel.h"
 #include "modlayerdig.h"
 #include "modinvade.h"
@@ -491,6 +492,13 @@ bool orderUpdateDroid(DROID *psDroid)
 
 	// check for died objects in the list
 	orderCheckList(psDroid);
+
+	// MOD (Wunsch 27.11. "WASD ... haelt nicht mehr ab und zu an"): die per Tasten gefahrene Einheit hat keinen eigenen Befehlsablauf -
+	// sonst bekam sie ohne Befehl sofort "Bewachen" an der Stelle, wo sie gerade war, und zog zu diesem Wachpunkt zurueck
+	if (modfacing::isDriving(psDroid))
+	{
+		return true;
+	}
 
 	switch (psDroid->order.type)
 	{

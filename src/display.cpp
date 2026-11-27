@@ -1019,8 +1019,15 @@ void processMouseClickInput()
 		{
 			return;
 		}
+		// MOD (Wunsch 27.11.): Verfolgerkamera - linke Maustaste halten und ziehen = nach links/rechts schauen
+		if (!gestureActive && modfacing::processLook(overUi))
+		{
+			dragBox3D.status = DRAG_INACTIVE;   // kein Auswahlrahmen dazu
+			return;
+		}
 		// MOD (Wunsch 21.11. 20:22): gewaehlte Einheit anklicken und ziehen = alle gewaehlten Einheiten in diese Richtung ausrichten
-		if (!gestureActive && modfacing::processMouse(overUi, mousePos))
+		// (27.11.) nicht in der Verfolgerkamera - dort gehoert das Ziehen dem Umschauen
+		if (!gestureActive && !getWarCamStatus() && modfacing::processMouse(overUi, mousePos))
 		{
 			return;
 		}

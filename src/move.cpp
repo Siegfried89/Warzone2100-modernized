@@ -48,6 +48,7 @@
 #include "modoil.h"   // MOD
 #include "modtankguns.h"   // MOD
 #include "modinertia.h"
+#include "modfacing.h"   // MOD (27.11.): Tastensteuerung hat Vorrang
 #include "modmines.h"      // MOD: Minenraeumer    // MOD (17.11. 19:45): Anlassen + Traegheit
 #include "move.h"
 #include "modbridge.h"
@@ -283,6 +284,13 @@ static bool moveDroidToBase(DROID *psDroid, UDWORD x, UDWORD y, bool bFormation,
 
 	CHECK_DROID(psDroid);
 
+	// MOD (Wunsch 27.11. "WASD Kontrolle ... zu 100% vom Spieler steuern. Sie haelt nicht mehr ab und zu an"): die per Tasten gefahrene
+	// Einheit bewegt nur die Tastensteuerung (modfacing) - Angriffs-, Wach- und Mod-Logik duerfen sie nicht umlenken
+	if (modfacing::blocksMove(psDroid))
+	{
+		return false;
+	}
+
 	if (modrail::isTrain(psDroid))
 	{
 		// MOD (21.11.): Zuege fahren nur auf Schienen - Weg im Gleisnetz (modrail)
@@ -436,6 +444,7 @@ void moveDroidToDirect(DROID *psDroid, UDWORD x, UDWORD y)
  */
 void moveTurnDroid(DROID *psDroid, UDWORD x, UDWORD y)
 {
+	if (modfacing::blocksMove(psDroid)) { return; }   // MOD (27.11.): gefahrene Einheit dreht nur auf Tastendruck
 	uint16_t moveDir = calcDirection(psDroid->pos.x, psDroid->pos.y, x, y);
 
 	if (psDroid->rot.direction != moveDir)
@@ -590,6 +599,7 @@ static void moveShuffleDroid(DROID *psDroid, Vector2i s)
 void moveStopDroid(DROID *psDroid)
 {
 	CHECK_DROID(psDroid);
+	if (modfacing::blocksMove(psDroid)) { return; }   // MOD (27.11.): z. B. "Ziel weg -> nichts tun" hielt die gefahrene Einheit an
 	PROPULSION_STATS* psPropStats = psDroid->getPropulsionStats();
 	ASSERT_OR_RETURN(, psPropStats != nullptr, "invalid propulsion stats pointer");
 
@@ -610,6 +620,7 @@ void moveStopDroid(DROID *psDroid)
 void moveReallyStopDroid(DROID *psDroid)
 {
 	CHECK_DROID(psDroid);
+	if (modfacing::blocksMove(psDroid)) { return; }   // MOD (27.11.)
 
 	psDroid->sMove.Status = MOVEINACTIVE;
 	psDroid->sMove.speed = 0;
@@ -3222,6 +3233,7 @@ void moveUpdateDroid(DROID *psDroid)
 	// MOD (17.11. 19:45): Panzer lassen erst den Motor an (Startgeraeusch, Rumpf schuettelt sich) und fahren dann los
 	bool modEngineStarting = false;
 	if (psDroid->droidType != DROID_PERSON && !psDroid->isCyborg() && psPropStats->propulsionType != PROPULSION_TYPE_LIFT
+	    && !modfacing::isDriving(psDroid)   // (27.11.) per Tasten gefahren: sofort los, kein Anlassen
 	    && modinertia::holdStart(psDroid, bStarted))
 	{
 		modEngineStarting = true;
