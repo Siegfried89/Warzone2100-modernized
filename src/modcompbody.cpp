@@ -1766,6 +1766,69 @@ bool save(Def &d, std::string &err)
 	return true;
 }
 
+// ---------------------------------------------------------------- (27.11. 23:19) eigene Animations-Saetze
+namespace
+{
+constexpr const char *SET_DIR = "userdata/animsets";
+}
+
+std::vector<AnimSetInfo> animSets()
+{
+	std::vector<AnimSetInfo> out;
+	if (!PHYSFS_exists(SET_DIR)) { return out; }
+	std::vector<std::string> files;
+	WZ_PHYSFS_enumerateFiles(SET_DIR, [&](const char *f) -> bool {
+		const std::string n(f);
+		if (n.size() > 5 && n.compare(n.size() - 5, 5, ".json") == 0) { files.push_back(n); }
+		return true;
+	});
+	std::sort(files.begin(), files.end());
+	for (const std::string &f : files)
+	{
+		Def d;
+		const std::string path = std::string(SET_DIR) + "/" + f;
+		if (!loadAnimSet(path, d)) { continue; }
+		AnimSetInfo i; i.name = d.name.empty() ? f.substr(0, f.size() - 5) : d.name; i.path = path; i.parts = d.parts.size();
+		out.push_back(i);
+	}
+	return out;
+}
+
+bool saveAnimSet(const Def &d, const std::string &name, std::string &err)
+{
+	if (d.parts.empty()) { err = "Nothing to save - the hull has no parts."; return false; }
+	Def s = d;
+	s.name = name.empty() ? std::string("My set") : name;
+	s.id = "AnimSet_" + slug(s.name);
+	s.preset = false; s.deleted = false;
+	PHYSFS_mkdir("userdata");
+	PHYSFS_mkdir(SET_DIR);
+	const std::string path = std::string(SET_DIR) + "/" + slug(s.name) + ".json";
+	if (!saveJSONToFile(toJson(s), path.c_str())) { err = "Could not write " + path; return false; }
+	return true;
+}
+
+bool loadAnimSet(const std::string &path, Def &out)
+{
+	std::vector<char> buf;
+	if (!loadFileToBufferVector(path.c_str(), buf, false, true)) { return false; }
+	try
+	{
+		const nlohmann::json j = nlohmann::json::parse(buf.data());
+		return fromJson(j, out);
+	}
+	catch (const std::exception &e)
+	{
+		debug(LOG_ERROR, "Animations-Satz %s ist kein gueltiges JSON (%s)", path.c_str(), e.what());
+		return false;
+	}
+}
+
+bool deleteAnimSet(const std::string &path)
+{
+	return path.compare(0, std::strlen(SET_DIR), SET_DIR) == 0 && PHYSFS_delete(path.c_str()) != 0;
+}
+
 bool remove(const std::string &id, std::string &err)
 {
 	Def *d = nullptr;
