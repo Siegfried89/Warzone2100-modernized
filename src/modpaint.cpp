@@ -2521,7 +2521,7 @@ void mineSegs(std::vector<Seg> &out, std::vector<Seg> &cross, const std::vector<
 // MOD (Wunsch 22.11. 15:47/15:49): Striche jetzt aus sauberen Baendern (modglow) statt aus ueberlappenden Kapseln - durchgehend leuchtend
 // wie die Reichweitenringe, ohne Perlen und ohne "Zwischenraum". Pfeile: dicker Stamm, Spitze nur etwa doppelt so breit wie der Stamm und
 // mit der Pfeillaenge begrenzt (auf der verkleinerten Karte deckten die Spitzen alles zu). Verteidigungs-/Angriffslinien: kraeftige Linie
-// mit kurzen, dichten Querstrichen (wie auf Lagekarten), Abstand und Laenge in Bildpunkten - auf jeder Zoomstufe gleich.
+// mit Querstrichen (wie auf Lagekarten) - (27.11. 23:22) in festen Weltabstaenden, gleich viele auf jeder Zoomstufe.
 bool s_noTaper = false;   // Zweige eines gespaltenen Angriffspfeils beginnen in voller Breite am Stamm
 
 float pathLength(const std::vector<glm::vec2> &p)
@@ -2529,29 +2529,6 @@ float pathLength(const std::vector<glm::vec2> &p)
 	float L = 0.f;
 	for (size_t i = 1; i < p.size(); ++i) { L += glm::length(p[i] - p[i - 1]); }
 	return L;
-}
-
-/// Bildschirmseite der Feindseite: +1 = links der Laufrichtung (Normale (-dy, dx)), -1 = rechts; aus der Weltrichtung abgeleitet
-float screenSide(const std::vector<Vector2i> &pts, int side, const std::vector<glm::vec2> &sp, const glm::mat4 &m)
-{
-	const std::vector<glm::vec2> wp = smoothWorld(pts);
-	if (wp.size() < 2 || sp.size() < 2 || side == 0) { return 0.f; }
-	const size_t mi = wp.size() / 2;
-	glm::vec2 t = wp[std::min(wp.size() - 1, mi + 1)] - wp[mi > 0 ? mi - 1 : 0];
-	if (glm::length(t) < 0.01f) { return static_cast<float>(side); }
-	t = glm::normalize(t);
-	const glm::vec2 nW = glm::vec2(-t.y, t.x) * static_cast<float>(side);
-	glm::vec2 a, b;
-	if (!projectF(wp[mi], m, a) || !projectF(wp[mi] + nW * (DIST_TILE * 0.4f), m, b)) { return static_cast<float>(side); }
-	// naechster Bildschirmpunkt und dessen Normale
-	size_t best = 0;
-	float bd = 1e30f;
-	for (size_t i = 0; i < sp.size(); ++i) { const float d = glm::length(sp[i] - a); if (d < bd) { bd = d; best = i; } }
-	glm::vec2 ts = sp[std::min(sp.size() - 1, best + 1)] - sp[best > 0 ? best - 1 : 0];
-	if (glm::length(ts) < 0.01f) { return static_cast<float>(side); }
-	ts = glm::normalize(ts);
-	const glm::vec2 nS(-ts.y, ts.x);
-	return glm::dot(nS, b - a) >= 0.f ? 1.f : -1.f;
 }
 
 void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm::mat4 &m, const std::vector<Vector2i> *marks = nullptr, int side = 0, float widthScale = 1.f, bool head = true)
@@ -2612,30 +2589,40 @@ void drawStroke(const std::vector<Vector2i> &pts, int mode, int alpha, const glm
 		// werden (mehr Farbe im Inneren, nicht der weisse Anteil). Die Staebe sollen viel weiter im Abstand sein und viel weniger werden.
 		// Ausserdem kurz gehalten, aber laenger als jetzt - ganz im Sinne taktischer Verteidigungslinien-Symbole"): doppelt so dicker
 		// Streifen, Querstriche gut viermal so weit auseinander, etwas laenger und kraeftiger
-		const float hw = std::clamp(std::min(11.f * sc * widthScale, L * 0.08f), 3.f * sc, 40.f * sc);
+		// (Wunsch 27.11. 23:22 "der Streifen ist jetzt zu dick. Ausserdem sind die Staebe immer noch zu kurz und zu wenig. Die Anzahl der
+		// Staebe soll fix bleiben und sich nicht mit dem Zoomfaktor aendern"): Streifen schmaler (7 statt 11), Querstriche in festen
+		// Weltabstaenden entlang der Linie (eine halbe Kachel) - gleich viele auf jeder Zoomstufe -, gut 2,5-mal so lang
+		const float hw = std::clamp(std::min(7.f * sc * widthScale, L * 0.06f), 2.5f * sc, 30.f * sc);
 		const float glow = 3.f * sc + hw * 0.6f;
-		// wenige, kraeftige Querstriche zur Feindseite (in Bildpunkten): erst die Striche, dann die Linie darueber
-		const float sgn = screenSide(pts, side, p, m);
-		if (sgn != 0.f)
+		const std::vector<glm::vec2> wp = side != 0 ? smoothWorld(pts) : std::vector<glm::vec2>();
+		if (wp.size() >= 2)
 		{
+			constexpr float WSPACE = TILE_UNITS / 2.f;   // Weltabstand der Querstriche (Viertel-Raster: 32, sonst 64)
+			const float len = hw * 4.8f;
+			float WL = 0.f;
+			for (size_t i = 1; i < wp.size(); ++i) { WL += glm::length(wp[i] - wp[i - 1]); }
 			std::vector<std::pair<glm::vec2, glm::vec2>> ticks;
-			const float spacing = hw * 7.5f, len = hw * 1.9f;
-			float acc = 0.f, next = spacing * 0.5f;
-			for (size_t i = 1; i < p.size() && ticks.size() < 600; ++i)
+			float acc = 0.f, next = WSPACE * 0.5f;
+			for (size_t i = 1; i < wp.size() && ticks.size() < 1200; ++i)
 			{
-				const glm::vec2 a = p[i - 1], b = p[i];
+				const glm::vec2 a = wp[i - 1], b = wp[i];
 				const float seg = glm::length(b - a);
 				if (seg < 1e-3f) { continue; }
-				const glm::vec2 t = (b - a) / seg, nS = glm::vec2(-t.y, t.x) * sgn;
+				const glm::vec2 t = (b - a) / seg, nW = glm::vec2(-t.y, t.x) * static_cast<float>(side);
 				while (acc + seg >= next)
 				{
 					const glm::vec2 q = a + t * (next - acc);
-					if (next > spacing * 0.3f && next < L - spacing * 0.3f) { ticks.emplace_back(q + nS * (hw * 0.6f), q + nS * (hw + len)); }
-					next += spacing;
+					glm::vec2 qs, qn;
+					if (next > WSPACE * 0.3f && next < WL - WSPACE * 0.3f && projectF(q, m, qs) && projectF(q + nW * (TILE_UNITS * 0.4f), m, qn) && glm::length(qn - qs) > 0.5f)
+					{
+						const glm::vec2 nS = glm::normalize(qn - qs);
+						ticks.emplace_back(qs + nS * (hw * 0.6f), qs + nS * (hw + len));
+					}
+					next += WSPACE;
 				}
 				acc += seg;
 			}
-			modglow::bars(ticks, std::max(1.5f, hw * 0.30f), col, static_cast<float>(alpha) * 0.95f);
+			modglow::bars(ticks, std::max(2.f, hw * 0.42f), col, static_cast<float>(alpha) * 0.95f);
 		}
 		modglow::ribbon(p, hw, glow, col, static_cast<float>(alpha), false);
 		return;
