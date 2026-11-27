@@ -245,7 +245,7 @@ bool s_shapeOpen = false;
 bool s_shapeAll = false;        // ganzer Rumpf statt des gewaehlten Teils
 int s_shapeStep = 1;            // 5 %, 10 %, 25 %
 std::vector<size_t> s_shapeBtns; // Indizes der Knoepfe des Form-Fensters in s_btns
-constexpr float SH_X = 172, SH_Y = 226, SH_W = 250, SH_H = 108;   // Form-Fenster (unten links in der Ansicht)
+constexpr float SH_X = 172, SH_Y = 172, SH_W = 250, SH_H = 162;   // Form-Fenster (unten links in der Ansicht; (27.11.) hoeher: Schneiden)
 // MOD (Wunsch 27.11. 19:07 "die Moeglichkeit, die Textur von einem anderen Body zu nehmen ... der Knopf soll aufgeraeumt sein und keinen
 // zusaetzlichen Platz wegnehmen. Der Parts-Knopf rechts reagiert gar nicht - vielleicht koennen wir unter dem ein paar Funktionen
 // verstecken"): der Knopf "Parts" oeffnet ein kleines Fenster ueber der Ansicht (wie "Form") - Teile bearbeiten (bisherige Wirkung)
@@ -257,6 +257,8 @@ std::vector<size_t> s_partsBtns;
 // (Wunsch 27.11. 20:56 "A+B") Animations-Fenster: Drehpunkt, "haengt an", Bewegungs-Bausteine, Posen
 constexpr float AM_X = 262, AM_Y = 126, AM_W = 206, AM_H = 208;
 constexpr float ANB_X = CEN_X, ANB_Y = CEN_Y + CEN_H + 3, ANB_W = CEN_W, ANB_H = CEN_H;   // Knopf "Animate" unter "Centre"
+constexpr float JNB_Y = ANB_Y + ANB_H + 3, SPB_Y = JNB_Y + ANB_H + 3;                          // (27.11.) "Join", "Separate"
+std::vector<int> s_multi;       // (Wunsch 27.11. 21:27) Mehrfach-Auswahl (Shift-Klick), enthaelt s_sel; Verbund = gespeicherte Auswahl
 bool s_animOpen = false;
 bool s_pivotEdit = false;       // Verschieben wirkt auf den Drehpunkt des Teils
 bool s_parentPick = false;      // naechster Klick auf ein Teil: daran haengt das gewaehlte
@@ -637,10 +639,22 @@ int addNaturalSlots(int partIdx)
 }
 
 // ---------------------------------------------------------------- Befehle
+std::vector<int> groupOf(int i)
+{
+	std::vector<int> g;
+	if (i < 0 || i >= static_cast<int>(s_def.parts.size())) { return g; }
+	const int id = s_def.parts[static_cast<size_t>(i)].group;
+	if (id == 0) { g.push_back(i); return g; }
+	for (size_t j = 0; j < s_def.parts.size(); ++j) { if (s_def.parts[j].group == id) { g.push_back(static_cast<int>(j)); } }
+	return g;
+}
+
 void selectPart(int i)
 {
-	if (s_def.parts.empty()) { s_sel = -1; return; }
+	if (s_def.parts.empty()) { s_sel = -1; s_multi.clear(); return; }
 	s_sel = std::clamp(i, 0, static_cast<int>(s_def.parts.size()) - 1);
+	s_multi = groupOf(s_sel);   // (27.11.) ein Klick waehlt den ganzen Verbund
+	if (s_multi.size() < 2) { s_multi.clear(); }
 	s_selMount = -1;
 	s_selDrive = -1;
 	if (s_sel < s_partScroll) { s_partScroll = s_sel; }
@@ -649,6 +663,14 @@ void selectPart(int i)
 
 // ---------------------------------------------------------------- (Wunsch 27.11. 20:56 "A+B") Animation
 bool partSelected();
+
+std::vector<int> groupOf(int i);
+/// (27.11.) Animation eines Verbunds sitzt an seinem ersten Teil (Fuehrer)
+int animTarget()
+{
+	const std::vector<int> g = groupOf(s_sel);
+	return g.empty() ? s_sel : g.front();
+}
 
 /// Pose k des aktuellen Ablaufs fuer Teil i (Liste wird bei Bedarf aufgefuellt); nullptr = keine Pose
 modcompbody::PoseKey *poseKey(int i)
@@ -686,21 +708,129 @@ void setParent(int child, int parent)
 
 void selectPart(int i);
 /// Klick auf ein Teil (Liste oder Ansicht): beim Waehlen des "haengt an"-Teils dieses setzen, sonst das Teil waehlen
+/// (27.11.) aktuelle Auswahl (gewaehltes Teil, mit Shift-Klick dazugenommene, Verbund)
+std::vector<int> selSet()
+{
+	std::vector<int> v;
+	if (!partSelected()) { return v; }
+	if (std::find(s_multi.begin(), s_multi.end(), s_sel) != s_multi.end())
+	{
+		for (int k : s_multi) { if (k >= 0 && k < static_cast<int>(s_def.parts.size())) { v.push_back(k); } }
+	}
+	if (v.empty()) { v.push_back(s_sel); }
+	std::sort(v.begin(), v.end());
+	v.erase(std::unique(v.begin(), v.end()), v.end());
+	return v;
+}
+
 void clickPart(int i)
 {
 	if (s_parentPick && s_animOpen && partSelected())
 	{
 		s_parentPick = false;
-		setParent(s_sel, i);
+		setParent(animTarget(), groupOf(i).empty() ? i : groupOf(i).front());
+		return;
+	}
+	const bool add = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT) || keyDown(KEY_LCTRL) || keyDown(KEY_RCTRL);
+	if (add && partSelected() && i >= 0 && i < static_cast<int>(s_def.parts.size()))
+	{
+		std::vector<int> cur = selSet();
+		const std::vector<int> g = groupOf(i);
+		const bool all = std::all_of(g.begin(), g.end(), [&cur](int k) { return std::find(cur.begin(), cur.end(), k) != cur.end(); });
+		if (all && cur.size() > g.size())   // schon gewaehlt: wieder abwaehlen
+		{
+			cur.erase(std::remove_if(cur.begin(), cur.end(), [&g](int k) { return std::find(g.begin(), g.end(), k) != g.end(); }), cur.end());
+			s_sel = cur.front();
+		}
+		else if (!all)
+		{
+			cur.insert(cur.end(), g.begin(), g.end());
+			s_sel = i;
+		}
+		s_multi = cur;
+		s_selMount = -1; s_selDrive = -1;
+		const size_t n = selSet().size();
+		setStatus(std::to_string(n) + " parts selected - they move and turn together. \"Join\" (Ctrl+J) makes them one piece.");
 		return;
 	}
 	selectPart(i);
 }
 
+/// (27.11.) Drehung als Gieren/Nicken/Rollen (Part::rot) aus einer Drehmatrix (Reihenfolge wie partMatrix: y, x, z)
+glm::vec3 eulerYXZ(const glm::mat3 &m)
+{
+	const float sp = std::clamp(-m[2][1], -1.f, 1.f);
+	const float pitch = std::asin(sp);
+	float yaw, roll;
+	if (std::fabs(std::cos(pitch)) > 1e-5f) { yaw = std::atan2(m[2][0], m[2][2]); roll = std::atan2(m[0][1], m[1][1]); }
+	else { yaw = std::atan2(-m[0][2], m[0][0]); roll = 0.f; }
+	return glm::vec3(glm::degrees(yaw), glm::degrees(pitch), glm::degrees(roll));
+}
+
+void syncPart(int partIdx);
+/// (27.11.) Join: die gewaehlten Teile werden ein Verbund (zaehlen als ein Stueck)
+void joinSelected()
+{
+	const std::vector<int> v = selSet();
+	if (v.size() < 2) { setStatus("Shift+click more parts first, then Join.", true); return; }
+	int id = 0;
+	for (const Part &p : s_def.parts) { id = std::max(id, p.group); }
+	++id;
+	for (int k : v) { s_def.parts[static_cast<size_t>(k)].group = id; }
+	s_multi = v;
+	s_dirty = true;
+	play("mfui_clank.ogg");
+	setStatus("Joined " + std::to_string(v.size()) + " parts into one piece - a click selects them all. \"Separate\" (P) splits them again.");
+}
+
+void separateSelected()
+{
+	const std::vector<int> v = selSet();
+	bool any = false;
+	for (int k : v)
+	{
+		const int id = s_def.parts[static_cast<size_t>(k)].group;
+		if (id == 0) { continue; }
+		for (Part &p : s_def.parts) { if (p.group == id) { p.group = 0; any = true; } }
+	}
+	if (!any) { setStatus("These parts are not joined.", true); return; }
+	s_multi.clear();
+	s_dirty = true;
+	play("mfui_detach.ogg");
+	setStatus("Separated - every part on its own again.");
+}
+
+// ---------------------------------------------------------------- (Wunsch 27.11. 21:26) Schneiden
+void cutSet(int mode)
+{
+	if (s_shapeAll) { setStatus("Cutting works on one part - switch to \"Part\".", true); return; }
+	if (!partSelected()) { setStatus("Select a part first.", true); return; }
+	Part &p = s_def.parts[static_cast<size_t>(s_sel)];
+	p.cut = std::clamp(mode, 0, 3);
+	if (mode == 0) { p.cutAngle = 0.f; p.cutPos = 0.f; p.cutFlip = false; }
+	syncPart(s_sel);
+	s_dirty = true;
+	play("mfclick_move.ogg");
+	static const char *const T[4] = { "Whole again.", "Cut lengthwise - one side stays (\"Other half\" swaps).", "Cut across - front or back stays.", "Cut flat - top or bottom stays." };
+	setStatus(T[std::clamp(mode, 0, 3)]);
+}
+
+void cutChange(int what, float sign)
+{
+	if (s_shapeAll || !partSelected()) { setStatus("Select a part first (\"Part\").", true); return; }
+	Part &p = s_def.parts[static_cast<size_t>(s_sel)];
+	if (p.cut == 0) { setStatus("Choose Length, Width or Flat first.", true); return; }
+	const bool fine = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
+	if (what == 0) { p.cutAngle = std::remainder(p.cutAngle + (fine ? 5.f : 15.f) * sign, 360.f); }
+	else if (what == 1) { p.cutPos += (fine ? 0.5f : 2.f) * sign; }
+	else { p.cutFlip = !p.cutFlip; }
+	s_dirty = true;
+}
+
 void animSetMotion(int type)
 {
 	if (!partSelected()) { setStatus("Select a part first.", true); return; }
-	Part &p = s_def.parts[static_cast<size_t>(s_sel)];
+	Part &p = s_def.parts[static_cast<size_t>(animTarget())];
 	p.motion = modcompbody::defaultMotion(type);
 	if (glm::length(p.pivot) < 1e-4f)   // noch kein Drehpunkt: passender Vorschlag
 	{
@@ -906,13 +1036,13 @@ void move(int axis, float sign)
 	const float d = (fine ? STEPS[0] : STEPS[s_step]) * sign;
 	if (s_animOpen && partSelected() && (s_pivotEdit || s_poseEdit))   // (27.11.) Drehpunkt bzw. Pose statt Ruhelage
 	{
-		Part &p = s_def.parts[static_cast<size_t>(s_sel)];
+		Part &p = s_def.parts[static_cast<size_t>(animTarget())];
 		if (s_pivotEdit)
 		{
 			glm::vec3 wd(0.f); wd[axis] = d;
 			p.pivot += glm::inverse(glm::mat3(modcompbody::partMatrix(p))) * wd;
 		}
-		else if (modcompbody::PoseKey *k = poseKey(s_sel)) { k->pos[axis] += d; }
+		else if (modcompbody::PoseKey *k = poseKey(animTarget())) { k->pos[axis] += d; }
 		s_dirty = true;
 		return;
 	}
@@ -929,8 +1059,7 @@ void move(int axis, float sign)
 	}
 	else if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()))
 	{
-		s_def.parts[static_cast<size_t>(s_sel)].pos[axis] += d;
-		syncPart(s_sel);
+		for (int k : selSet()) { s_def.parts[static_cast<size_t>(k)].pos[axis] += d; syncPart(k); }   // (27.11.) Auswahl/Verbund gemeinsam
 	}
 	else { return; }
 	s_dirty = true;
@@ -942,7 +1071,7 @@ void rotate(int axis, float sign)
 	if (s_animOpen && partSelected() && s_pivotEdit) { setStatus("The pivot only moves - switch \"Move\" off to turn the part.", true); return; }
 	if (s_animOpen && partSelected() && s_poseEdit)   // (27.11.) Pose: um den Drehpunkt drehen
 	{
-		if (modcompbody::PoseKey *k = poseKey(s_sel))
+		if (modcompbody::PoseKey *k = poseKey(animTarget()))
 		{
 			float &a = k->rot[axis];
 			a = std::remainder(a + (fine ? 1.f : ANGLES[s_angle]) * sign, 360.f);
@@ -973,6 +1102,30 @@ void rotate(int axis, float sign)
 		return;
 	}
 	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size())) { return; }
+	{
+		const std::vector<int> set = selSet();
+		if (set.size() > 1)   // (27.11.) Auswahl/Verbund: gemeinsam um ihre Mitte (Welt-Achsen)
+		{
+			glm::vec3 mid(0.f);
+			for (int k : set) { mid += s_def.parts[static_cast<size_t>(k)].pos; }
+			mid /= static_cast<float>(set.size());
+			static const glm::vec3 AX[3] = { glm::vec3(0.f, 1.f, 0.f), glm::vec3(1.f, 0.f, 0.f), glm::vec3(0.f, 0.f, 1.f) };
+			const glm::mat4 Rd = glm::rotate(glm::mat4(1.f), glm::radians((fine ? 1.f : ANGLES[s_angle]) * sign), AX[axis]);
+			for (int k : set)
+			{
+				Part &q = s_def.parts[static_cast<size_t>(k)];
+				q.pos = mid + glm::vec3(Rd * glm::vec4(q.pos - mid, 0.f));
+				glm::mat4 r(1.f);
+				r = glm::rotate(r, glm::radians(q.rot.x), glm::vec3(0.f, 1.f, 0.f));
+				r = glm::rotate(r, glm::radians(q.rot.y), glm::vec3(1.f, 0.f, 0.f));
+				r = glm::rotate(r, glm::radians(q.rot.z), glm::vec3(0.f, 0.f, 1.f));
+				q.rot = eulerYXZ(glm::mat3(Rd * r));
+				syncPart(k);
+			}
+			s_dirty = true;
+			return;
+		}
+	}
 	float &a = s_def.parts[static_cast<size_t>(s_sel)].rot[axis];
 	a = std::fmod(a + (fine ? 1.f : ANGLES[s_angle]) * sign + 720.f, 360.f);
 	if (a > 180.f) { a -= 360.f; }
@@ -1005,6 +1158,57 @@ void duplicatePart(bool mirror)
 		return;
 	}
 	if (s_sel < 0 || s_sel >= static_cast<int>(s_def.parts.size())) { return; }
+	if (selSet().size() > 1)   // (27.11.) Auswahl/Verbund als Ganzes kopieren/spiegeln (Verbund bleibt Verbund)
+	{
+		const std::vector<int> set = selSet();
+		int newGroup = 0;
+		for (const Part &q : s_def.parts) { newGroup = std::max(newGroup, q.group); }
+		std::map<int, int> grpMap, idxMap;
+		std::vector<int> copies;
+		for (int k : set)
+		{
+			Part q = s_def.parts[static_cast<size_t>(k)];
+			if (mirror)
+			{
+				q.pos.x = -q.pos.x; q.rot.x = -q.rot.x; q.rot.z = -q.rot.z; q.flip ^= 1;
+				using namespace modcompbody;
+				if (q.motion.type == MOT_SPIN) { q.motion.speed = -q.motion.speed; }
+				else if (q.motion.type != MOT_NONE) { q.motion.phase = std::fmod(q.motion.phase + 0.5f, 1.f); }
+				for (auto &keys : q.keys) { for (PoseKey &pk : keys) { pk.rot.x = -pk.rot.x; pk.rot.z = -pk.rot.z; pk.pos.x = -pk.pos.x; } }
+			}
+			else { q.pos.x += 8.f; }
+			if (q.group != 0)
+			{
+				if (grpMap.find(q.group) == grpMap.end()) { grpMap[q.group] = ++newGroup; }
+				q.group = grpMap[q.group];
+			}
+			s_def.parts.push_back(q);
+			const int dst = static_cast<int>(s_def.parts.size()) - 1;
+			idxMap[k] = dst;
+			copies.push_back(dst);
+			const size_t nm = s_def.mounts.size();
+			for (size_t m = 0; m < nm; ++m)
+			{
+				if (m >= s_links.size() || s_links[m].part != k || s_def.mounts.size() >= modcompbody::MAX_SLOTS) { continue; }
+				Link l = s_links[m]; l.part = dst;
+				addSlot(s_def.mounts[m], l);
+				applyLink(s_def.mounts.size() - 1);
+			}
+		}
+		for (int dst : copies)   // haengt an einem mitkopierten Teil: an dessen Kopie
+		{
+			Part &q = s_def.parts[static_cast<size_t>(dst)];
+			const auto it = idxMap.find(q.parent);
+			if (it != idxMap.end()) { q.parent = it->second; }
+		}
+		s_sel = copies.front();
+		s_multi = copies;
+		s_selMount = -1; s_selDrive = -1;
+		s_dirty = true;
+		play("mfui_clank.ogg");
+		setStatus(std::string(mirror ? "Mirrored " : "Copied ") + std::to_string(copies.size()) + " parts.");
+		return;
+	}
 	const int src = s_sel;
 	Part p = s_def.parts[static_cast<size_t>(src)];
 	if (mirror) { p.pos.x = -p.pos.x; p.rot.x = -p.rot.x; p.rot.z = -p.rot.z; p.flip ^= 1; }   // echte Spiegelung an der Mittelebene
@@ -1054,6 +1258,7 @@ void removePart(int i)
 		}
 	}
 	s_parentPick = false;
+	s_multi.clear();
 	const std::string name = bodyName(s_def.parts[static_cast<size_t>(i)].body);
 	s_def.parts.erase(s_def.parts.begin() + i);
 	if (i == 0 && !s_def.parts.empty()) { setStatus("Removed " + name + " - new chassis: " + bodyName(s_def.parts[0].body)); }
@@ -1068,6 +1273,15 @@ void removePart(int i)
 void deleteSelected()
 {
 	if (driveSelected()) { removeDrive(s_selDrive); return; }   // (27.11.)
+	if (partSelected() && selSet().size() > 1)   // (27.11.) Auswahl/Verbund ganz
+	{
+		std::vector<int> set = selSet();
+		const size_t n = set.size();
+		for (size_t k = set.size(); k-- > 0;) { removePart(set[k]); }
+		s_multi.clear();
+		setStatus("Removed " + std::to_string(n) + " parts.");
+		return;
+	}
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
 		const int k = s_selMount;
@@ -1164,8 +1378,9 @@ void shapeChange(int axis, float sign)
 
 void shapeReset()
 {
-	if (s_shapeAll) { for (size_t i = 0; i < s_def.parts.size(); ++i) { s_def.parts[i].stretch = glm::vec3(1.f); syncPart(static_cast<int>(i)); } }
-	else if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size())) { s_def.parts[static_cast<size_t>(s_sel)].stretch = glm::vec3(1.f); syncPart(s_sel); }
+	auto whole = [](Part &q) { q.stretch = glm::vec3(1.f); q.cut = 0; q.cutAngle = 0.f; q.cutPos = 0.f; q.cutFlip = false; };   // (27.11.) samt Schnitt
+	if (s_shapeAll) { for (size_t i = 0; i < s_def.parts.size(); ++i) { whole(s_def.parts[i]); syncPart(static_cast<int>(i)); } }
+	else if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size())) { whole(s_def.parts[static_cast<size_t>(s_sel)]); syncPart(s_sel); }
 	else { return; }
 	s_dirty = true;
 	play("mfui_clank.ogg");
@@ -1246,7 +1461,7 @@ void newHull()
 	s_def.name = "New hull";
 	s_links.clear();
 	s_sel = -1; s_selMount = -1; s_selDrive = -1; s_drivePick = false; s_partScroll = 0; s_mountScroll = 0; s_loadIdx = -1;
-	s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; s_animPoseIdx = 0;   // (27.11.)
+	s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; s_animPoseIdx = 0; s_multi.clear();   // (27.11.)
 	if (s_nameBox) { s_nameBox->setString(WzString::fromUtf8(s_def.name)); }
 	s_dirty = false;
 	setStatus("Click a hull on the left - the first one is the chassis.");
@@ -1263,7 +1478,7 @@ void loadCycle(int dir)
 	if (s_loadIdx >= 0) { pos = (pos + dir + static_cast<int>(idx.size())) % static_cast<int>(idx.size()); }
 	s_loadIdx = idx[static_cast<size_t>(pos)];
 	s_def = all[static_cast<size_t>(s_loadIdx)];
-	s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; s_animPoseIdx = 0;   // (27.11.)
+	s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; s_animPoseIdx = 0; s_multi.clear();   // (27.11.)
 	// alte Entwuerfe ohne eigene Plaetze: die des Fahrgestells (wie im Spiel)
 	if (s_def.mounts.empty() && !s_def.parts.empty()) { s_def.mounts = modcompbody::defaultMounts(s_def.parts[0]); }
 	inferLinks();
@@ -1513,14 +1728,25 @@ void drawBay(const Ctx &c)
 		const BodyInfo *b = modcompbody::bodyInfo(p.body);
 		if (b == nullptr || b->model == nullptr || b->model->displayModel() == nullptr) { continue; }
 		const glm::mat4 pw = base * AW(static_cast<int>(i));
-		const iIMDShape *flipped = modcompbody::bakedShape(p.body, p.flip, p.texFrom);   // (27.11.) gespiegelt und/oder umgefaerbt
+		const iIMDShape *flipped = modcompbody::bakedShape(p);   // (27.11.) gespiegelt, umgefaerbt und/oder geschnitten
 		if (flipped != nullptr) { pie_Draw3DShape(flipped, 0, team, WZCOL_WHITE, pie_BUTTON, 0, pw * modcompbody::partMatrix(p, false), view); }
 		else { pie_Draw3DShape(b->model->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, pw * modcompbody::partMatrix(p), view); }
 	}
-	// gewaehltes Teil: Rahmen
-	if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0)
+	// gewaehltes Teil: Rahmen ((27.11.) alle gewaehlten; das aktive pulsiert)
+	for (int fsel : (partSelected() ? selSet() : std::vector<int>()))
 	{
 		glm::vec3 cr[8];
+		if (fsel != s_sel)
+		{
+			if (!partCorners(s_def.parts[static_cast<size_t>(fsel)], cr)) { continue; }
+			static const int edges2[12][2] = { {0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7} };
+			Vector2i sp2[8];
+			bool ok2 = true;
+			const glm::mat4 pw2 = base * AW(fsel);
+			for (int k = 0; k < 8; ++k) { ok2 = ok2 && project(pw2, cr[k], sp2[k]); }
+			if (ok2) { for (const auto &e : edges2) { iV_Line(sp2[e[0]].x, sp2[e[0]].y, sp2[e[1]].x, sp2[e[1]].y, pal_RGBA(255, 200, 90, 140)); } }
+			continue;
+		}
 		if (partCorners(s_def.parts[static_cast<size_t>(s_sel)], cr))
 		{
 			const unsigned char a = static_cast<unsigned char>(170 + 80 * std::sin(static_cast<float>(realTime) * 0.008f));
@@ -1756,10 +1982,16 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		if (idx >= static_cast<int>(s_def.parts.size())) { break; }
 		const int ry = c.Y(PARTS_Y + 1.f + i * LIST_ROW_H);
 		const bool sel = idx == s_sel && s_selMount < 0 && s_selDrive < 0;
+		const std::vector<int> cur = partSelected() ? selSet() : std::vector<int>();
+		const bool inSel = !sel && std::find(cur.begin(), cur.end(), idx) != cur.end();   // (27.11.) mit Shift dazugenommen / Verbund
 		if (sel) { pie_UniTransBoxFill(c.X(481), ry, c.X(633), ry + c.L(LIST_ROW_H) - 1, pal_RGBA(40, 110, 190, 170)); }
+		else if (inSel) { pie_UniTransBoxFill(c.X(481), ry, c.X(633), ry + c.L(LIST_ROW_H) - 1, pal_RGBA(40, 90, 150, 110)); }
 		int nSlots = 0;
 		for (const Link &l : s_links) { if (l.part == idx) { ++nSlots; } }
-		const std::string t = std::to_string(idx + 1) + "  " + bodyName(s_def.parts[static_cast<size_t>(idx)].body) + (nSlots > 0 ? "  [" + std::to_string(nSlots) + "]" : "");
+		const Part &lp = s_def.parts[static_cast<size_t>(idx)];
+		std::string t = std::to_string(idx + 1) + "  " + bodyName(lp.body) + (nSlots > 0 ? "  [" + std::to_string(nSlots) + "]" : "");
+		if (lp.group != 0) { t += "  J" + std::to_string(lp.group); }
+		if (lp.cut != 0) { t += "  cut"; }
 		wzText(fitW(t, c.L(146), TK_ROW, S), c.X(484), ry + c.L(1), sel ? pal_RGBA(255, 255, 255, 255) : WZCOL_FORM_TEXT, TK_ROW, S);
 	}
 
@@ -1832,6 +2064,20 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			}
 			wzText(v, c.X(SH_X + 126) - textW(v, TK_ROW, S) / 2, c.Y(ry + 2), pal_RGBA(255, 226, 140, 255), TK_ROW, S);
 		}
+		// (27.11.) Schneiden
+		wzText("Cut", c.X(SH_X + 6), c.Y(SH_Y + 94), WZCOL_TEXT_BRIGHT, TK_ROW, S);
+		wzText("Angle", c.X(SH_X + 6), c.Y(SH_Y + 112), WZCOL_TEXT_BRIGHT, TK_ROW, S);
+		wzText("Place", c.X(SH_X + 118), c.Y(SH_Y + 112), WZCOL_TEXT_BRIGHT, TK_ROW, S);
+		if (!s_shapeAll && havePart && s_def.parts[static_cast<size_t>(s_sel)].cut != 0)
+		{
+			const Part &cp = s_def.parts[static_cast<size_t>(s_sel)];
+			char cb[32];
+			snprintf(cb, sizeof(cb), "%.0f\xc2\xb0", cp.cutAngle);
+			wzText(cb, c.X(SH_X + 78) - textW(cb, TK_ROW, S) / 2, c.Y(SH_Y + 112), pal_RGBA(255, 226, 140, 255), TK_ROW, S);
+			snprintf(cb, sizeof(cb), "%.1f", cp.cutPos);
+			wzText(cb, c.X(SH_X + 188) - textW(cb, TK_ROW, S) / 2, c.Y(SH_Y + 112), pal_RGBA(255, 226, 140, 255), TK_ROW, S);
+		}
+		else if (s_shapeAll) { wzText("(cuts: one part at a time)", c.X(SH_X + 122), c.Y(SH_Y + 129), pal_RGBA(150, 195, 225, 200), TK_ROW, S); }
 	}
 
 	// ---- (27.11.) Parts-Fenster (die Knoepfe zeichnen sich selbst darueber)
@@ -1872,8 +2118,8 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		pie_UniTransBoxFill(c.X(AM_X), c.Y(AM_Y), c.X(AM_X + AM_W), c.Y(AM_Y + AM_H), pal_RGBA(6, 12, 28, 235));
 		groupFrame(c, AM_X, AM_Y, AM_W, AM_H, "ANIMATE");
 		const bool havePart = partSelected();
-		const Part *p = havePart ? &s_def.parts[static_cast<size_t>(s_sel)] : nullptr;
-		const std::string who = havePart ? "part " + std::to_string(s_sel + 1) + " " + bodyName(p->body) : std::string("select a part");
+		const Part *p = havePart ? &s_def.parts[static_cast<size_t>(animTarget())] : nullptr;
+		const std::string who = havePart ? "part " + std::to_string(animTarget() + 1) + " " + bodyName(p->body) + (p->group != 0 ? " (joined)" : "") : std::string("select a part");
 		wzText(fitW(who, c.L(AM_W - 70), TK_ROW, S), c.X(AM_X + 66), c.Y(AM_Y + 3), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
 		const PIELIGHT lab = WZCOL_TEXT_BRIGHT, val = pal_RGBA(255, 226, 140, 255);
 		wzText("Pivot", c.X(AM_X + 6), c.Y(AM_Y + 18), lab, TK_ROW, S);
@@ -2199,8 +2445,22 @@ void buildScreen()
 			addBtn0(parent, SH_X + 70, SH_Y + 34 + r * 18.f, 28, 16, -1, "-", minusTip[r], [ax]() { shapeChange(ax, -1.f); });
 			addBtn0(parent, SH_X + 154, SH_Y + 34 + r * 18.f, 28, 16, -1, "+", plusTip[r], [ax]() { shapeChange(ax, 1.f); });
 		}
-		addBtn0(parent, SH_X + 4, SH_Y + 89, 60, 16, -1, "Reset", "Back to the original shape", []() { shapeReset(); });
-		addBtn0(parent, SH_X + SH_W - 64, SH_Y + 89, 60, 16, -1, "Done", "Close the shape window", []() { shapeShow(false); });
+		// (Wunsch 27.11. 21:26) Schneiden: laengs / quer / waagerecht, Winkel, Lage, andere Haelfte
+		static const char *const cutL[4] = { "Off", "Length", "Width", "Flat" };
+		static const char *const cutTip[4] = { "Whole part (no cut)", "Cut lengthwise: left or right half stays", "Cut across: front or back half stays", "Cut flat: top or bottom half stays" };
+		for (int k = 0; k < 4; ++k)
+		{
+			addBtn0(parent, SH_X + 40 + k * 48.f, SH_Y + 92, 46, 14, -1, cutL[k], cutTip[k], [k]() { cutSet(k); },
+			        [k]() { return !s_shapeAll && partSelected() && s_def.parts[static_cast<size_t>(s_sel)].cut == k; });
+		}
+		addBtn0(parent, SH_X + 40, SH_Y + 110, 20, 14, -1, "-", "Turn the cut (15 degrees, Shift: 5)", []() { cutChange(0, -1.f); });
+		addBtn0(parent, SH_X + 96, SH_Y + 110, 20, 14, -1, "+", "Turn the cut (15 degrees, Shift: 5)", []() { cutChange(0, 1.f); });
+		addBtn0(parent, SH_X + 150, SH_Y + 110, 20, 14, -1, "-", "Move the cut (Shift: fine)", []() { cutChange(1, -1.f); });
+		addBtn0(parent, SH_X + 206, SH_Y + 110, 20, 14, -1, "+", "Move the cut (Shift: fine)", []() { cutChange(1, 1.f); });
+		addBtn0(parent, SH_X + 40, SH_Y + 127, 76, 14, -1, "Other half", "Keep the other half", []() { cutChange(2, 1.f); },
+		        []() { return !s_shapeAll && partSelected() && s_def.parts[static_cast<size_t>(s_sel)].cutFlip; });
+		addBtn0(parent, SH_X + 4, SH_Y + 144, 60, 15, -1, "Reset", "Back to the original shape (also undoes the cut)", []() { shapeReset(); });
+		addBtn0(parent, SH_X + SH_W - 64, SH_Y + 144, 60, 15, -1, "Done", "Close the shape window", []() { shapeShow(false); });
 		s_shapeBtns.clear();
 		for (size_t k = first; k < s_btns.size(); ++k) { s_shapeBtns.push_back(k); }
 	}
@@ -2233,13 +2493,16 @@ void buildScreen()
 		s_partsBtns.clear();
 		for (size_t k = first; k < s_btns.size(); ++k) { s_partsBtns.push_back(k); }
 	}
-	// ---- (Wunsch 27.11. 20:56 "A+B") Animations-Fenster (anfangs verborgen)
+	// ---- (Wunsch 27.11. 21:27 "Parts joinen wie in Blender") Verbinden/Trennen
+	addBtn0(parent, ANB_X, JNB_Y, ANB_W, ANB_H, -1, "Join", "Join the selected parts into one piece (Shift+click adds parts) [Ctrl+J]", []() { joinSelected(); });
+	addBtn0(parent, ANB_X, SPB_Y, ANB_W, ANB_H, -1, "Separate", "Split a joined piece into its parts again [P]", []() { separateSelected(); });
+	// ---- (Wunsch 20:56 "A+B") Animations-Fenster (anfangs verborgen)
 	addBtn0(parent, ANB_X, ANB_Y, ANB_W, ANB_H, -1, "Animate", "Animate the parts: pivot, what each part hangs on, motions and poses",
 	        []() { if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; } s_selMount = -1; s_selDrive = -1; animShow(!s_animOpen); play("mfclick_move.ogg"); }, []() { return s_animOpen; });
 	{
 		using namespace modcompbody;
 		const size_t first = s_btns.size();
-		auto selP = []() -> Part * { return partSelected() ? &s_def.parts[static_cast<size_t>(s_sel)] : nullptr; };
+		auto selP = []() -> Part * { return partSelected() ? &s_def.parts[static_cast<size_t>(animTarget())] : nullptr; };
 		// Drehpunkt
 		static const char *const pvl[3] = { "Bottom", "Middle", "Top" };
 		for (int k = 0; k < 3; ++k)
@@ -2258,7 +2521,7 @@ void buildScreen()
 			s_parentPick = !s_parentPick;
 			setStatus(s_parentPick ? "Click the part that part " + std::to_string(s_sel + 1) + " hangs on (Esc cancels)." : std::string("Cancelled."));
 		}, []() { return s_parentPick; });
-		addBtn0(parent, AM_X + 166, AM_Y + 34, 36, 14, -1, "None", "Hangs on the hull itself", []() { if (partSelected()) { setParent(s_sel, -1); } });
+		addBtn0(parent, AM_X + 166, AM_Y + 34, 36, 14, -1, "None", "Hangs on the hull itself", []() { if (partSelected()) { setParent(animTarget(), -1); } });
 		// Bewegungs-Bausteine
 		for (int k = 0; k < MOT_COUNT; ++k)
 		{
@@ -2360,7 +2623,7 @@ bool inBay(int x, int y)
 {
 	if (inShapePanel(x, y)) { return false; }   // (24.11.) Form-Fenster liegt ueber der Ansicht
 	const Ctx c = ctx();
-	if (x >= c.X(CEN_X) && x <= c.X(CEN_X + CEN_W) && y >= c.Y(CEN_Y) && y <= c.Y(ANB_Y + ANB_H)) { return false; }   // (27.11.) Zentrier- und Animate-Knopf
+	if (x >= c.X(CEN_X) && x <= c.X(CEN_X + CEN_W) && y >= c.Y(CEN_Y) && y <= c.Y(SPB_Y + ANB_H)) { return false; }   // (27.11.) Centre/Animate/Join/Separate
 	return x >= c.X(BAY_X) && x <= c.X(BAY_X + BAY_W) && y >= c.Y(BAY_Y) && y <= c.Y(BAY_Y + BAY_H);
 }
 
@@ -2582,6 +2845,9 @@ void tick()
 	if (keyPressed(KEY_C)) { rotate(2, 1.f); }
 	if (keyPressed(KEY_TAB) && !s_def.parts.empty()) { selectPart((s_sel + 1) % static_cast<int>(s_def.parts.size())); }
 	if (keyPressed(KEY_DELETE)) { deleteSelected(); }
+	// (27.11.) wie in Blender: Strg+J verbinden, P trennen
+	if (keyPressed(KEY_J) && (keyDown(KEY_LCTRL) || keyDown(KEY_RCTRL))) { joinSelected(); }
+	if (keyPressed(KEY_P)) { separateSelected(); }
 }
 
 void shutdown()

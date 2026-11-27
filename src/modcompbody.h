@@ -71,6 +71,14 @@ struct Part
 	glm::vec3 pivot = glm::vec3(0.f);  ///< Drehpunkt im Raum des Teils (wandert mit Verschieben/Drehen/Groesse des Teils mit)
 	Motion motion;
 	std::vector<PoseKey> keys[CLIP_COUNT];   ///< Posen je Ablauf (fehlende = Ruhelage)
+	/// (Wunsch 27.11. 21:26 "einen Rumpf der Laenge oder Breite nach (oder einen bestimmten Winkel einstellend) entzwei schneiden"):
+	/// 0 = ganz, 1 = laengs (Schnitt entlang der Laengsachse: linke/rechte Haelfte), 2 = quer (vorn/hinten), 3 = waagerecht (oben/unten).
+	/// Die Schnittflaeche wird geschlossen.
+	int cut = 0;
+	float cutAngle = 0.f;              ///< Grad: laengs/quer um die Hochachse gedreht, waagerecht nach vorn geneigt
+	float cutPos = 0.f;                ///< Versatz der Schnittebene von der Mitte (Teil-Raum)
+	bool cutFlip = false;              ///< die andere Haelfte behalten
+	int group = 0;                     ///< (Wunsch 27.11. 21:27 "Parts joinen wie in Blender") Verbund-Nummer; 0 = einzeln
 };
 
 struct Mount
@@ -195,6 +203,10 @@ float liftOf(const Def &d);
 /// gespiegelte und/oder umgefaerbte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
 /// (zeichnen mit partMatrix(p, false))
 const iIMDShape *bakedShape(const std::string &bodyId, int flipMask, const std::string &texFrom);
+/// (27.11.) dasselbe fuer ein Teil samt Schnitt
+const iIMDShape *bakedShape(const Part &p);
+/// (27.11.) Schnittebene eines Teils im Raum des Teils: Normale n (zeigt auf die bleibende Haelfte), Punkt c; false = nicht geschnitten
+bool cutPlane(const Part &p, glm::vec3 &n, glm::vec3 &c);
 Totals totals(const Def &d);
 /// speichern (Datei im Benutzerordner) und - im Spiel - sofort als Rumpf anmelden bzw. aktualisieren; d.id wird bei neuen Entwuerfen vergeben
 bool save(Def &d, std::string &err);
