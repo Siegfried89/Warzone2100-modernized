@@ -10,6 +10,7 @@
 #include "lib/ivis_opengl/ivisdef.h"
 
 #include "droid.h"
+#include "modcompbody.h"   // (27.11.) Antriebsplaetze
 #include "research.h"
 #include "stats.h"
 
@@ -289,6 +290,15 @@ void fitToBody(DROID_TEMPLATE &t, unsigned player)
 {
 	const unsigned n = slotCount(t);
 	const bool hadSys = t.modSlots.numSys > 0;
+	// (27.11.) Antriebsplaetze: nur so viele, wie der Rumpf hat; unbekannte Antriebe zurueck auf den Hauptantrieb
+	{
+		const size_t nd = std::min<size_t>(modcompbody::driveCount(t.asParts[COMP_BODY]), MOD_MAX_DRIVES);
+		if (t.modSlots.numDrive > nd) { t.modSlots.numDrive = static_cast<uint8_t>(nd); }
+		for (unsigned i = 0; i < MOD_MAX_DRIVES; ++i)
+		{
+			if (i >= t.modSlots.numDrive || t.modSlots.driveProp[i] >= asPropulsionStats.size()) { t.modSlots.driveProp[i] = 0; }
+		}
+	}
 	if (!usable(t))
 	{
 		// ohne freie Belegung: ein Bau-/Reparaturturm aus der Belegung bleibt nur, wenn keine Waffen da sind (bisherige Form)

@@ -1248,7 +1248,52 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	glm::mat4 hullShake(1.f), propShake(1.f);
 	const bool shaking = !bButton && modrecoil::shake(psDroid, graphicsTime, hullShake, propShake);
 	if (shaking) { propMatrix = propMatrix * propShake; }
-	const iIMDBaseShape *psShapeProp = (leftFirst ? getLeftPropulsionIMD(psDroid) : getRightPropulsionIMD(psDroid));
+	// MOD (Wunsch 27.11. 19:16 "mehrere Propulsion-Slots ... gemischte Antriebe"): Verbundrumpf mit Antriebsplaetzen - je Platz ein Laufwerk
+	// (beide Seiten) mit seinem Antrieb (modslots driveProp, sonst der Hauptantrieb) in der Groesse seines Rumpfes; Lauf-Beine stehen dort
+	// als Stand-Modell. Das eine Laufwerk unter dem Fahrgestell entfaellt dann.
+	const size_t modDrives = modWalker ? 0 : modcompbody::driveCount(psDroid->asBits[COMP_BODY]);
+	if (modDrives > 0)
+	{
+		const glm::mat4 driveBase = shaking ? modifiedModelMatrix * propShake : modifiedModelMatrix;
+		const ModSlots &dms = psDroid->modSlots;
+		for (size_t di = 0; di < modDrives && di < MOD_MAX_DRIVES; ++di)
+		{
+			glm::mat4 dm(1.f);
+			size_t sizeBody = 0;
+			if (!modcompbody::driveInfo(psDroid->asBits[COMP_BODY], di, dm, sizeBody) || sizeBody >= asBodyStats.size()) { continue; }
+			size_t prop = psDroid->asBits[COMP_PROPULSION];
+			if (di > 0 && di < dms.numDrive && dms.driveProp[di] > 0 && dms.driveProp[di] < asPropulsionStats.size()) { prop = dms.driveProp[di]; }
+			if (prop >= asPropulsionStats.size()) { continue; }
+			const PROPULSION_STATS &dps = asPropulsionStats[prop];
+			const BODY_STATS &sb = asBodyStats[sizeBody];
+			const glm::mat4 mm = driveBase * dm;
+			const iIMDBaseShape *models[2] = { nullptr, nullptr };
+			if (dps.walkerIMD != nullptr) { models[0] = dps.walkerIMD; }
+			else
+			{
+				for (int side = 0; side < 2; ++side)
+				{
+					const size_t k = prop * NUM_PROP_SIDES + static_cast<size_t>(side == 0 ? LEFT_PROP : RIGHT_PROP);
+					models[side] = k < sb.ppIMDList.size() ? sb.ppIMDList[k] : nullptr;
+				}
+				if (models[0] == nullptr && models[1] == nullptr) { models[0] = dps.pIMD; }   // Rumpf ohne dieses Laufwerk: Modell des Antriebs
+			}
+			for (const iIMDBaseShape *dmodel : models)
+			{
+				const iIMDShape *dshape = dmodel != nullptr ? dmodel->displayModel() : nullptr;
+				if (dshape == nullptr) { continue; }
+				if (pie_Draw3DShape(dshape, modTrackFrame(psDroid, dshape, bButton), colour, brightness, pieFlag, iPieData, mm, viewMatrix, -(psDroid->heightAboveMap)))
+				{
+					didDrawSomething = true;
+				}
+				if (!bButton && psDroid->shieldPoints > 0)
+				{
+					pie_Draw3DShape(dshape, modTrackFrame(psDroid, dshape, bButton), colour, brightness, shieldPieFlag, iShieldPieData, mm, viewMatrix, -(psDroid->heightAboveMap));
+				}
+			}
+		}
+	}
+	const iIMDBaseShape *psShapeProp = modDrives > 0 ? nullptr : (leftFirst ? getLeftPropulsionIMD(psDroid) : getRightPropulsionIMD(psDroid));
 	if (psShapeProp)
 	{
 		if (pie_Draw3DShape(psShapeProp->displayModel(), modTrackFrame(psDroid, psShapeProp->displayModel(), bButton), colour, brightness, pieFlag, iPieData, propMatrix, viewMatrix, -(psDroid->heightAboveMap)))
@@ -1826,7 +1871,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	}
 
 	// now render the other propulsion side
-	psShapeProp = (leftFirst ? getRightPropulsionIMD(psDroid) : getLeftPropulsionIMD(psDroid));
+	psShapeProp = modDrives > 0 ? nullptr : (leftFirst ? getRightPropulsionIMD(psDroid) : getLeftPropulsionIMD(psDroid));   // MOD (27.11.): Antriebsplaetze schon gezeichnet
 	if (psShapeProp)
 	{
 		if (pie_Draw3DShape(psShapeProp->displayModel(), modTrackFrame(psDroid, psShapeProp->displayModel(), bButton), colour, brightness, pieFlag, iPieData, modifiedModelMatrix, viewMatrix, -(psDroid->heightAboveMap)))

@@ -54,6 +54,8 @@ struct Slot
 	std::vector<size_t> partIdx;                     // Teil-Rumpfe (fuer die Verfuegbarkeit)
 	std::vector<float> yaw;                          // Blickrichtung je Anschluss (Grad)
 	std::vector<float> pitch, roll;                  // (27.11.) Neigung je Anschluss (Grad)
+	std::vector<glm::mat4> driveM;                   // (27.11.) Antriebsplaetze: Lage
+	std::vector<size_t> driveBody;                   // (27.11.) Antriebsplaetze: Rumpf (asBodyStats), dessen Laufwerk-Modelle sie tragen
 };
 std::vector<Slot> s_slots;
 size_t s_first = 0;
@@ -110,6 +112,20 @@ nlohmann::json toJson(const Def &d)
 		mounts.push_back(e);
 	}
 	j["mounts"] = mounts;
+	if (!d.drives.empty())   // (27.11.) Antriebsplaetze
+	{
+		nlohmann::json drives = nlohmann::json::array();
+		for (const Drive &dr : d.drives)
+		{
+			nlohmann::json e = nlohmann::json::object();
+			e["pos"] = vec3(dr.pos);
+			if (std::fabs(dr.yaw) > 1e-3f) { e["yaw"] = dr.yaw; }
+			if (std::fabs(dr.scale - 1.f) > 1e-4f) { e["scale"] = dr.scale; }
+			if (!dr.body.empty()) { e["body"] = dr.body; }
+			drives.push_back(e);
+		}
+		j["drives"] = drives;
+	}
 	if (d.deleted) { j["deleted"] = true; }
 	return j;
 }
@@ -120,7 +136,7 @@ bool fromJson(const nlohmann::json &j, Def &d)
 	d.id = j.value("id", std::string());
 	d.name = j.value("name", d.id);
 	d.deleted = j.value("deleted", false);
-	d.parts.clear(); d.mounts.clear();
+	d.parts.clear(); d.mounts.clear(); d.drives.clear();
 	for (const auto &e : j["parts"])
 	{
 		if (!e.is_object() || !e.contains("body")) { continue; }
@@ -146,6 +162,19 @@ bool fromJson(const nlohmann::json &j, Def &d)
 				mm.roll = std::remainder(m[5].get<float>(), 360.f);
 			}
 			d.mounts.push_back(mm);
+		}
+	}
+	if (j.contains("drives") && j["drives"].is_array())   // (27.11.) Antriebsplaetze
+	{
+		for (const auto &e : j["drives"])
+		{
+			if (!e.is_object() || d.drives.size() >= MAX_DRIVES) { continue; }
+			Drive dr;
+			if (e.contains("pos")) { dr.pos = vec3(e["pos"]); }
+			dr.yaw = std::remainder(e.value("yaw", 0.f), 360.f);
+			dr.scale = std::clamp(e.value("scale", 1.f), 0.25f, 4.f);
+			dr.body = e.value("body", std::string());
+			d.drives.push_back(dr);
 		}
 	}
 	return !d.id.empty() && !d.parts.empty();
@@ -352,6 +381,14 @@ void buildFromStats(Catalog &c)
 		b.size = static_cast<int>(s.size);
 		b.designable = s.designable;
 		b.statIdx = i;
+		// (27.11.) Laufwerk fuer die Vorschau der Antriebsplaetze: Ketten, sonst Halbketten, Raeder, Hover
+		for (const char *pid : { "tracked01", "HalfTrack", "wheeled01", "hover01" })
+		{
+			const int pi = getCompFromID(COMP_PROPULSION, WzString::fromUtf8(pid));
+			if (pi < 0) { continue; }
+			const size_t k = static_cast<size_t>(pi) * NUM_PROP_SIDES + LEFT_PROP;
+			if (k < s.ppIMDList.size() && s.ppIMDList[k] != nullptr) { b.driveModel = s.ppIMDList[k]; break; }
+		}
 		classify(b, cls, model);
 		c.all.push_back(b);
 	}
@@ -384,6 +421,18 @@ void buildFromJson(Catalog &c)
 		b.size = sizeFromText(e.value("size", std::string("LIGHT")));
 		auto des = e.find("designable");
 		b.designable = des != e.end() && ((des->is_number() && des->get<double>() != 0.0) || (des->is_boolean() && des->get<bool>()));
+		auto pem = e.find("propulsionExtraModels");   // (27.11.) Laufwerk fuer die Vorschau der Antriebsplaetze
+		if (pem != e.end() && pem->is_object())
+		{
+			for (const char *pid : { "tracked01", "HalfTrack", "wheeled01", "hover01" })
+			{
+				auto pe = pem->find(pid);
+				if (pe == pem->end() || !pe->is_object()) { continue; }
+				const std::string lm = pe->value("left", std::string());
+				iIMDBaseShape *dm = lm.empty() ? nullptr : modelGet(WzString::fromUtf8(lm));
+				if (dm != nullptr) { b.driveModel = dm; break; }
+			}
+		}
 		classify(b, cls, model);
 		c.all.push_back(b);
 	}
@@ -701,7 +750,16 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 	sl.prop = partMatrix(d.parts[0]);
 	sl.propShift = (glm::length(d.parts[0].pos) > 1e-3f || glm::length(d.parts[0].rot) > 1e-3f || std::fabs(d.parts[0].scale - 1.f) > 1e-3f
 	               || glm::length(d.parts[0].stretch - glm::vec3(1.f)) > 1e-3f);
-	sl.lift = liftOf(d);
+	sl.lift = d.drives.empty() ? liftOf(d) : 0.f;   // (27.11.) Antriebsplaetze stehen da, wo sie gesetzt sind
+	sl.driveM.clear(); sl.driveBody.clear();
+	for (const Drive &dr : d.drives)
+	{
+		if (sl.driveM.size() >= MAX_DRIVES) { break; }
+		const BODY_STATS *db = bodyByIdMutable(dr.body.empty() ? d.parts[0].body : dr.body);
+		if (db == nullptr) { db = chassis; }
+		sl.driveM.push_back(driveMatrix(dr));
+		sl.driveBody.push_back(db->index);
+	}
 	sl.yaw.clear(); sl.pitch.clear(); sl.roll.clear();
 	{
 		std::vector<Mount> mounts = d.mounts;
@@ -790,6 +848,53 @@ bool isComposite(size_t bodyIdx)
 {
 	if (bodyIdx < s_first || bodyIdx >= s_first + s_slots.size()) { return false; }
 	return !s_slots[bodyIdx - s_first].defId.empty();
+}
+
+size_t driveCount(size_t bodyIdx)
+{
+	if (!isComposite(bodyIdx)) { return 0; }
+	return s_slots[bodyIdx - s_first].driveM.size();
+}
+
+bool driveInfo(size_t bodyIdx, size_t i, glm::mat4 &m, size_t &sizeBodyIdx)
+{
+	if (!isComposite(bodyIdx)) { return false; }
+	const Slot &sl = s_slots[bodyIdx - s_first];
+	if (i >= sl.driveM.size() || i >= sl.driveBody.size() || sl.driveBody[i] >= asBodyStats.size()) { return false; }
+	m = sl.driveM[i];
+	sizeBodyIdx = sl.driveBody[i];
+	return true;
+}
+
+glm::mat4 driveMatrix(const Drive &dr)
+{
+	return glm::translate(glm::mat4(1.f), dr.pos) * glm::rotate(glm::mat4(1.f), glm::radians(-dr.yaw), glm::vec3(0.f, 1.f, 0.f))
+	     * glm::scale(glm::mat4(1.f), glm::vec3(std::clamp(dr.scale, 0.25f, 4.f)));
+}
+
+bool centerDef(Def &d)
+{
+	float x0 = 1e9f, x1 = -1e9f, z0 = 1e9f, z1 = -1e9f;
+	for (const Part &p : d.parts)
+	{
+		const BodyInfo *b = bodyInfo(p.body);
+		const iIMDShape *m = (b != nullptr && b->model != nullptr) ? b->model->displayModel() : nullptr;
+		if (m == nullptr) { continue; }
+		const glm::mat4 pm = partMatrix(p);
+		for (int c = 0; c < 8; ++c)
+		{
+			const glm::vec4 v = pm * glm::vec4((c & 1) ? m->max.x : m->min.x, (c & 2) ? m->max.y : m->min.y, (c & 4) ? m->max.z : m->min.z, 1.f);
+			x0 = std::min(x0, v.x); x1 = std::max(x1, v.x); z0 = std::min(z0, v.z); z1 = std::max(z1, v.z);
+		}
+	}
+	if (x1 < x0 || z1 < z0) { return false; }
+	const float cx = std::round((x0 + x1) * 0.5f * 2.f) / 2.f, cz = std::round((z0 + z1) * 0.5f * 2.f) / 2.f;   // halbe Einheiten
+	if (std::fabs(cx) < 0.5f && std::fabs(cz) < 0.5f) { return false; }
+	const glm::vec3 sh(cx, 0.f, cz);
+	for (Part &p : d.parts) { p.pos -= sh; }
+	for (Mount &m : d.mounts) { m.pos -= sh; }
+	for (Drive &dr : d.drives) { dr.pos -= sh; }
+	return true;
 }
 
 float propLift(size_t bodyIdx)
@@ -1066,6 +1171,8 @@ bool save(Def &d, std::string &err)
 	if (bodyInfo(d.parts[0].body) == nullptr) { err = "Unknown chassis."; return false; }
 	if (d.name.empty()) { d.name = "Neuer Rumpf"; }
 	if (d.mounts.size() > MAX_SLOTS) { d.mounts.resize(MAX_SLOTS); }
+	if (d.drives.size() > MAX_DRIVES) { d.drives.resize(MAX_DRIVES); }
+	centerDef(d);   // (Wunsch 27.11. 19:16) Grundriss mittig - passt dann im Einheiten-Designer und im Spiel
 	if (d.id.empty())
 	{
 		const std::string base = "CompBody_" + slug(d.name);

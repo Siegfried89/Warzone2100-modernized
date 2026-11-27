@@ -1771,6 +1771,22 @@ DROID_TYPE droidTemplateType(const DROID_TEMPLATE *psTemplate)
 	return type;
 }
 
+/// MOD (Wunsch 27.11. 19:16 "mehrere Propulsion-Slots"): die weiteren Antriebsplaetze eines Verbundrumpfes (Platz 2 .. n) mit ihrem Antrieb
+/// (modslots driveProp, sonst der Hauptantrieb). Jeder bringt den Anteil seines Antriebs an Gewicht, Kosten, Bauzeit und Lebenspunkten mit
+/// (wie das Laufwerk unter dem Fahrgestell, ohne den Rumpf noch einmal); dafuer ziehen mehr Laufwerke kraeftiger (calcDroidBaseSpeed).
+template <typename Fn>
+static void modForEachExtraDrive(const uint16_t (&asParts)[DROID_MAXCOMP], const ModSlots &modSlots, Fn fn)
+{
+	const size_t n = std::min<size_t>(modcompbody::driveCount(asParts[COMP_BODY]), MOD_MAX_DRIVES);
+	for (size_t i = 1; i < n; ++i)
+	{
+		size_t p = asParts[COMP_PROPULSION];
+		if (i < modSlots.numDrive && modSlots.driveProp[i] > 0 && modSlots.driveProp[i] < asPropulsionStats.size()) { p = modSlots.driveProp[i]; }
+		if (p < asPropulsionStats.size()) { fn(p); }
+	}
+}
+static const PROPULSION_STATS s_modNoProp;   // neutraler Antrieb (alle Anteile 0, Prozentwerte 100) - Bezug fuer den Anteil eines Antriebs
+
 template <typename F, typename G>
 static unsigned calcSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, const uint32_t (&asWeaps)[MAX_WEAPONS], const ModSlots &modSlots, F func, G propulsionFunc)
 {
@@ -1791,6 +1807,12 @@ static unsigned calcSum(const uint16_t (&asParts)[DROID_MAXCOMP], int numWeaps, 
 		else if (comp == COMP_ECM && stat < asECMStats.size()) { sum += func(asECMStats[stat]); }
 		else if (comp == COMP_CONSTRUCT && stat < asConstructStats.size()) { sum += func(asConstructStats[stat]); }
 		else if (comp == COMP_REPAIRUNIT && stat < asRepairStats.size()) { sum += func(asRepairStats[stat]); }
+	});
+	// MOD (27.11.): weitere Antriebsplaetze - nur der Anteil des Antriebs (ohne den Rumpf)
+	modForEachExtraDrive(asParts, modSlots, [&](size_t p) {
+		const BODY_STATS &b = asBodyStats[asParts[COMP_BODY]];
+		const auto full = propulsionFunc(b, asPropulsionStats[p]), none = propulsionFunc(b, s_modNoProp);
+		if (full > none) { sum += static_cast<unsigned>(full - none); }
 	});
 	return sum;
 }
@@ -1824,6 +1846,12 @@ static unsigned calcUpgradeSum(const uint16_t (&asParts)[DROID_MAXCOMP], int num
 		else if (comp == COMP_ECM && stat < asECMStats.size()) { sum += func(asECMStats[stat].upgrade[player]); }
 		else if (comp == COMP_CONSTRUCT && stat < asConstructStats.size()) { sum += func(asConstructStats[stat].upgrade[player]); }
 		else if (comp == COMP_REPAIRUNIT && stat < asRepairStats.size()) { sum += func(asRepairStats[stat].upgrade[player]); }
+	});
+	// MOD (27.11.): weitere Antriebsplaetze - nur der Anteil des Antriebs (ohne den Rumpf)
+	modForEachExtraDrive(asParts, modSlots, [&](size_t p) {
+		const auto &bu = asBodyStats[asParts[COMP_BODY]].upgrade[player];
+		const auto full = propulsionFunc(bu, asPropulsionStats[p].upgrade[player]), none = propulsionFunc(bu, s_modNoProp.base);
+		if (full > none) { sum += static_cast<unsigned>(full - none); }
 	});
 	return sum;
 }
@@ -1923,8 +1951,11 @@ static UDWORD calcDroidBaseBody(DROID *psDroid)
 /* Calculate the base speed of a droid from it's template */
 UDWORD calcDroidBaseSpeed(const DROID_TEMPLATE *psTemplate, UDWORD weight, UBYTE player)
 {
+	// MOD (27.11.): mehrere Antriebsplaetze ziehen kraeftiger - je weiterem Laufwerk 35 % mehr Zugkraft (Gewicht zaehlt entsprechend weniger)
+	const size_t modDrives = std::min<size_t>(modcompbody::driveCount(psTemplate->asParts[COMP_BODY]), MOD_MAX_DRIVES);
+	const UDWORD pullWeight = modDrives > 1 ? static_cast<UDWORD>(static_cast<double>(weight) / (1.0 + 0.35 * static_cast<double>(modDrives - 1))) : weight;
 	unsigned speed = asPropulsionTypes[psTemplate->getPropulsionStats()->propulsionType].powerRatioMult *
-				 bodyPower(*psTemplate->getBodyStats(), player) / MAX(1, weight);
+				 bodyPower(*psTemplate->getBodyStats(), player) / MAX(1, pullWeight);
 
 	// reduce the speed of medium/heavy VTOLs
 	if (psTemplate->getPropulsionStats()->propulsionType == PROPULSION_TYPE_LIFT)
