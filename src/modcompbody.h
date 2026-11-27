@@ -64,7 +64,7 @@ struct Part
 	/// (x = Breite, y = Hoehe/Dicke, z = Laenge), zusaetzlich zu scale
 	glm::vec3 stretch = glm::vec3(1.f);
 	/// (Wunsch 27.11. 19:07 "die Moeglichkeit, die Textur von einem anderen Body zu nehmen"): ID des Rumpfes, dessen Farben das Teil traegt
-	/// (die Textur des Teils wird in dessen Farbverlauf umgefaerbt, Muster und Details bleiben); leer = eigene Textur
+	/// ((27.11. 23:58) UV-Uebertragung: das Teil zeigt Textur, Muster und Teamfarbe des anderen Rumpfes an den passenden Stellen); leer = eigene Textur
 	std::string texFrom;
 	// (27.11.) Animation
 	int parent = -1;                   ///< Teil, an dem dieses haengt (-1 = am Rumpf selbst)
@@ -200,7 +200,7 @@ const Def *find(const std::string &id);
 glm::mat4 partMatrix(const Part &p, bool withFlip = true);
 /// Hub des Rumpfes ueber dem Laufwerk (unterstes Teil sitzt auf dem Laufwerk wie sonst das Fahrgestell), siehe propLift
 float liftOf(const Def &d);
-/// gespiegelte und/oder umgefaerbte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
+/// gespiegelte und/oder in fremder Textur gezeigte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
 /// (zeichnen mit partMatrix(p, false))
 const iIMDShape *bakedShape(const std::string &bodyId, int flipMask, const std::string &texFrom);
 /// (27.11.) dasselbe fuer ein Teil samt Schnitt
