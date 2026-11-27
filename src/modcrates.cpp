@@ -14,8 +14,6 @@
 #include "lib/gamelib/gtime.h"
 #include "lib/ivis_opengl/imd.h"
 #include "lib/ivis_opengl/ivisdef.h"
-#include "lib/sound/audio.h"
-#include "lib/sound/audio_id.h"
 
 #include "action.h"
 #include "display.h"
@@ -297,7 +295,7 @@ void effects(int x, int y, int z, int n)
 		addEffect(&p, EFFECT_FIRE, FIRE_TYPE_SMOKY, false, nullptr, 0);
 	}
 	shakeStart(300 + 60 * static_cast<unsigned>(m));
-	audio_PlayStaticTrack(x, y, ID_SOUND_EXPLOSION);
+	modshockwave::bigBoomSound(x, y, m, true);   // MOD (27.11. 16:43): gewaltiger, geschichteter Klang statt eines einzelnen Knalls
 	if (n >= 3) { modshockwave::spawn(x, y, z, std::min(10, 2 + n / 3)); }   // MOD (22.11. 21:19): Druckwelle bei grossen Munitionsexplosionen
 }
 

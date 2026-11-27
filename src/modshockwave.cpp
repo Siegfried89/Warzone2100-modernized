@@ -15,6 +15,8 @@
 #include "lib/ivis_opengl/ivisdef.h"
 #include "lib/ivis_opengl/piedef.h"
 #include "lib/ivis_opengl/piepalette.h"
+#include "lib/sound/audio.h"
+#include "lib/sound/audio_id.h"
 
 #include "display.h"
 #include "effects.h"
@@ -40,6 +42,34 @@ struct Wave
 };
 std::vector<Wave> s_waves;
 constexpr float DUST_AT[3] = { 0.30f, 0.58f, 0.86f };   // Staubringe bei diesen Anteilen des Endradius
+
+/// verzoegerte Klaenge der Nachexplosionen (Grafikzeit)
+struct DelayedSound
+{
+	unsigned at = 0;
+	int x = 0, y = 0;
+	int track = 0;
+};
+std::vector<DelayedSound> s_sounds;
+
+void playDueSounds()
+{
+	if (s_sounds.empty()) { return; }
+	const unsigned now = graphicsTime;
+	for (size_t i = 0; i < s_sounds.size();)
+	{
+		if (s_sounds[i].at <= now)
+		{
+			audio_PlayStaticTrack(s_sounds[i].x, s_sounds[i].y, s_sounds[i].track);
+			s_sounds[i] = s_sounds.back();
+			s_sounds.pop_back();
+		}
+		else
+		{
+			++i;
+		}
+	}
+}
 
 /// Staub am Boden rund um den Kreis (Vanilla-Rauch, laeuft mit der Welle nach aussen)
 void dustRing(const Wave &w, float r, int k)
@@ -77,8 +107,46 @@ void spawn(int worldX, int worldY, int worldZ, int strength)
 	shakeStart(350u + 60u * static_cast<unsigned>(m));
 }
 
+void bigBoomSound(int worldX, int worldY, int strength, bool ammo)
+{
+	const int s = std::clamp(strength, 1, 10);
+	const unsigned now = graphicsTime;
+	// sofort: grosser Knall, tiefer Donner (Nexus-Explosion), Grollen einstuerzender Teile - verschiedene Klaenge, damit keiner von der
+	// Gleich-Klang-Grenze der Tonausgabe (hoechstens 2 gleiche nahe beieinander) verschluckt wird
+	audio_PlayStaticTrack(worldX, worldY, ID_SOUND_EXPLOSION);
+	audio_PlayStaticTrack(worldX, worldY, ID_SOUND_NEXUS_EXPLOSION);
+	audio_PlayStaticTrack(worldX, worldY, ID_SOUND_BUILDING_FALL);
+	s_sounds.push_back({ now + 140, worldX, worldY, ID_SOUND_EXPLOSION_ANTITANK });
+	s_sounds.push_back({ now + 420, worldX, worldY, ID_SOUND_EXPLOSION });   // zweiter Feuerball
+	if (ammo)
+	{
+		// Munition geht hoch: knatternde Detonationen und Querschlaeger ueber gut zwei Sekunden
+		static const int POPS[5] = { ID_SOUND_EXPLOSION_SMALL, ID_SOUND_RICOCHET_1, ID_SOUND_EXPLOSION_ANTITANK, ID_SOUND_RICOCHET_2, ID_SOUND_RICOCHET_3 };
+		const int n = 4 + s;
+		for (int i = 0; i < n; ++i)
+		{
+			const unsigned at = now + 300 + static_cast<unsigned>(i) * (2400u / static_cast<unsigned>(n)) + static_cast<unsigned>(rand() % 140);
+			const int ox = rand() % 200 - 100, oy = rand() % 200 - 100;
+			s_sounds.push_back({ at, worldX + ox, worldY + oy, POPS[i % 5] });
+		}
+		if (s >= 3) { s_sounds.push_back({ now + 1100, worldX, worldY, ID_SOUND_EXPLOSION }); }
+	}
+	else
+	{
+		// Oel: weitere Tanks platzen - Feuerbaelle nacheinander, bei grossen Lagern noch einmal der tiefe Donner
+		const int n = 1 + s / 3;
+		for (int i = 0; i < n; ++i)
+		{
+			s_sounds.push_back({ now + 800 + static_cast<unsigned>(i) * 520u + static_cast<unsigned>(rand() % 160), worldX + rand() % 160 - 80, worldY + rand() % 160 - 80,
+			                     (i % 2 == 0) ? ID_SOUND_EXPLOSION : ID_SOUND_EXPLOSION_ANTITANK });
+		}
+		if (s >= 5) { s_sounds.push_back({ now + 1500, worldX, worldY, ID_SOUND_NEXUS_EXPLOSION }); }
+	}
+}
+
 void draw3D(const glm::mat4 &viewMatrix)
 {
+	playDueSounds();
 	if (s_waves.empty()) { return; }
 	static iIMDBaseShape *dome = nullptr, *ring = nullptr;
 	static unsigned gen = 0;
@@ -129,5 +197,6 @@ void draw3D(const glm::mat4 &viewMatrix)
 void reset()
 {
 	s_waves.clear();
+	s_sounds.clear();
 }
 }
