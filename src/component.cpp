@@ -785,6 +785,53 @@ static bool modGaitMoving(const DROID *psDroid)
 	return it != s_modGait.end() && it->second.moved != 0 && graphicsTime - it->second.moved < 300;
 }
 
+// MOD (Wunsch 27.11. 20:56 "A+B"): Animation der Verbundrumpfe aus der Hull Forge (Bewegungs-Bausteine und Posen) - nur Anzeige.
+// Zustand je Einheit: faehrt sie (aus der gemessenen Bewegung), gefahrener Weg, Zeit im Stand, Feuern.
+struct ModCompAnim
+{
+	int32_t x = 0, y = 0;
+	uint32_t seen = 0;
+	float spd = 0.f, moveW = 0.f, moveClock = 0.f, standClock = 0.f, fireW = 0.f, fireClock = 0.f, fireAge = 1e9f;
+};
+static std::unordered_map<uint32_t, ModCompAnim> s_modCompAnim;
+static uint32_t s_modCompAnimPrune = 0;
+static modcompbody::AnimCtx modCompAnimCtx(const DROID *psDroid, bool bButton)
+{
+	modcompbody::AnimCtx c;
+	c.time = static_cast<float>(graphicsTime % 3600000u) / 1000.f;
+	if (bButton) { c.standClock = c.time; return c; }   // Design-Bildschirm: steht
+	ModCompAnim &a = s_modCompAnim[psDroid->id];
+	if (a.seen != graphicsTime)
+	{
+		const float dt = a.seen == 0 ? 0.f : std::min(0.25f, static_cast<float>(graphicsTime - a.seen) / 1000.f);
+		const double dx = static_cast<double>(psDroid->pos.x - a.x), dy = static_cast<double>(psDroid->pos.y - a.y);
+		const float step = static_cast<float>(std::sqrt(dx * dx + dy * dy));
+		if (a.seen != 0 && dt > 0.f && step < 512.f)   // Spruenge (Transport, Laden) zaehlen nicht
+		{
+			a.spd += (step / dt - a.spd) * (1.f - std::exp(-dt / 0.2f));
+			const float target = a.spd > 12.f ? 1.f : 0.f;
+			a.moveW += (target - a.moveW) * (1.f - std::exp(-dt / 0.18f));
+			a.moveClock += step / 128.f;
+			a.standClock += dt * (1.f - a.moveW);
+		}
+		uint32_t last = 0;
+		for (unsigned w = 0; w < psDroid->numWeaps; ++w) { last = std::max<uint32_t>(last, psDroid->asWeaps[w].lastFired); }
+		a.fireAge = (last != 0 && graphicsTime >= last) ? static_cast<float>(graphicsTime - last) / 1000.f : 1e9f;
+		a.fireW = a.fireAge < 0.15f ? 1.f : std::max(0.f, 1.f - (a.fireAge - 0.15f) / 0.5f);
+		if (a.fireW > 0.f) { a.fireClock += dt; }
+		a.x = psDroid->pos.x; a.y = psDroid->pos.y; a.seen = graphicsTime;
+		if (graphicsTime - s_modCompAnimPrune > 10000)
+		{
+			s_modCompAnimPrune = graphicsTime;
+			for (auto it = s_modCompAnim.begin(); it != s_modCompAnim.end();) { if (graphicsTime - it->second.seen > 10000) { it = s_modCompAnim.erase(it); } else { ++it; } }
+		}
+	}
+	const ModCompAnim &b = s_modCompAnim[psDroid->id];
+	c.moveW = b.moveW; c.moveClock = b.moveClock; c.standClock = b.standClock;
+	c.fireW = b.fireW; c.fireClock = b.fireClock; c.fireAge = b.fireAge;
+	return c;
+}
+
 // MOD (Wunsch 22.11. 18:36 "deutlich geringere Low-Poly-Variante unserer neuen Infanteristen" + "alles so effizient wie moeglich"):
 // Infanteristen, die klein im Bild sind, zeichnen die Low-Poly-Fassung <modell>_lp.pie (rodinscav.py --lp: rund 1/4 der Dreiecke, gleiche
 // Ebenen und Animationen). Nah bleibt das volle Modell. Die Fassung wird beim ersten Bedarf geladen und je Modell gemerkt.
@@ -1156,6 +1203,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	UDWORD				colour;
 	size_t	i = 0;
 	bool				didDrawSomething = false;
+	// MOD (27.11.): animierter Verbundrumpf - Lage je Teil (Ebenen und Waffenplaetze folgen ihrem Teil)
+	std::vector<glm::mat4> modAnimW;
+	const size_t modBodyIdx = psDroid->asBits[COMP_BODY];
+	const bool modAnim = modcompbody::animated(modBodyIdx) && modcompbody::animate(modBodyIdx, modCompAnimCtx(psDroid, bButton), modAnimW);
+	auto modPartMatrix = [&](int part, const glm::mat4 &m) { return (modAnim && part >= 0 && part < static_cast<int>(modAnimW.size())) ? m * modAnimW[static_cast<size_t>(part)] : m; };
 
 	if (!bButton && psDroid->shieldPoints > 0 && droidGetMaxShieldPoints(psDroid) > 0)
 	{
@@ -1399,15 +1451,18 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 			bodyMatrix = modifiedModelMatrix * glm::rotate(glm::radians(wobblePitch), glm::vec3(1.f, 0.f, 0.f)) * glm::rotate(glm::radians(wobbleRoll), glm::vec3(0.f, 0.f, 1.f));
 		}
 		const UDWORD bodyAnimStart = bButton ? psDroid->timeAnimationStarted : modGaitAnimStart(psDroid, strImd, psDroid->timeAnimationStarted);   // MOD (19.11.)
+		const bool modAnimBody = modAnim && strImd == psShapeBody;   // MOD (27.11.): Ebenen des Verbundrumpfes = seine Teile
+		size_t modLevel = 0;
 		while (strImd)
 		{
-			if (drawShape(strImd, bodyAnimStart, colour, brightness, pieFlag, iPieData, bodyMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+			const glm::mat4 lvlMatrix = modAnimBody ? modPartMatrix(modcompbody::levelPart(modBodyIdx, modLevel), bodyMatrix) : bodyMatrix;
+			if (drawShape(strImd, bodyAnimStart, colour, brightness, pieFlag, iPieData, lvlMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 			{
 				didDrawSomething = true;
 			}
 			if (!bButton && psDroid->shieldPoints > 0)
 			{
-				if (drawShape(strImd, psDroid->timeAnimationStarted, colour, brightness, shieldPieFlag, iShieldPieData, bodyMatrix, viewMatrix, -(psDroid->heightAboveMap)))
+				if (drawShape(strImd, psDroid->timeAnimationStarted, colour, brightness, shieldPieFlag, iShieldPieData, lvlMatrix, viewMatrix, -(psDroid->heightAboveMap)))
 				{
 					didDrawSomething = true;
 				}
@@ -1415,6 +1470,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 			// MOD (19.11.): mit Ebenen-Animation (Blaetter/Skelett) hat drawShape schon alle Ebenen gezeichnet - nicht jede Ebene erneut
 			if (strImd->next && strImd->next->objanimframes > 0) { break; }
 			strImd = strImd->next.get();
+			++modLevel;
 		}
 		// MOD (18.11. 19:09): GDI-Artillerie - Hydraulikstuetzen an den Beinen (nur beim Verankern/verankert)
 		if (!bButton && modgdiart::drawStruts(psDroid, bodyMatrix, viewMatrix, static_cast<int>(colour), brightness, pieFlag, psDroid->heightAboveMap))
@@ -1538,6 +1594,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 
 					//to skip number of VTOL_CONNECTOR_START ground unit connectors
 					size_t bodyConnectorIndex = (iConnector < VTOL_CONNECTOR_START) ? static_cast<size_t>(psDroid->modSlots.conn(i)) : iConnector + i;   // MOD (23.11. 02:16): frei belegte Plaetze
+					if (iConnector < VTOL_CONNECTOR_START) { localModelMatrix = modPartMatrix(modcompbody::mountPart(modBodyIdx, bodyConnectorIndex), localModelMatrix); }   // MOD (27.11.)
 					if (bodyConnectorIndex < connBody->connectors.size())
 					{
 						localModelMatrix *= glm::translate(glm::vec3(connBody->connectors[bodyConnectorIndex].xzy()));
@@ -1752,6 +1809,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					localModelMatrix *= glm::rotate(UNDEG(65536 / 2), glm::vec3(0.f, 0.f, 1.f));
 				}
 
+				if (iConnector < VTOL_CONNECTOR_START) { localModelMatrix = modPartMatrix(modcompbody::mountPart(modBodyIdx, 0), localModelMatrix); }   // MOD (27.11.)
 				localModelMatrix *= glm::translate(glm::vec3(psShapeBody->connectors[0].xzy()));
 				localHeightAboveTerrain += psShapeBody->connectors[0].z;
 
