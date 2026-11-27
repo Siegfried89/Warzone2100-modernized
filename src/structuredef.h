@@ -140,9 +140,6 @@ struct STRUCTURE_STATS : public BASE_STATS
 	bool trainDepot = false;		// MOD (21.11.): Lokschuppen - Fabrik, die nur Schienenfahrzeuge baut (modrail)
 	bool barracks = false;			// MOD (20.11. 19:06): Kaserne (Cyborg-Fabrik-Typ) - bildet die Infanterie aus (Personen und Cyborgs), die Fabrik nicht mehr
 	bool mobileCore = false;		// MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik (Fatboy, modmobilefactory) - liegt auf keinem Feld, unsichtbar, faehrt mit
-	int crewCost = 0;				// MOD (MF): bindet so viel Besatzung (Besatzungskonto, siehe modgrid)
-	int crewProvide = 0;			// MOD (MF): stellt bis zu so viel Besatzung (Kryo-Farm)
-	int crewStart = 0;				// MOD (MF): Besatzung direkt nach dem Fertigstellen; waechst danach um 1/s bis crewProvide; > 0 schaltet das Besatzungskonto ein
 	int storageProvide = 0;			// MOD (MF): erhoeht die Energie-Obergrenze um so viel MJ (Energiebank 1000, Matter Converter 1750), siehe modlava
 	int incomeProvide = 0;			// MOD (MF): bringt so viel MJ je Sekunde (Solarpaneel 1; unter Tage nur ein Viertel), siehe modlava
 

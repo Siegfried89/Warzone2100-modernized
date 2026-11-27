@@ -823,9 +823,6 @@ bool loadStructureStats(WzConfig &ini)
 		psStats->barracks = ini.value("barracks", false).toBool();   // MOD (20.11. 19:06): Kaserne
 		psStats->trainDepot = ini.value("trainDepot", false).toBool();   // MOD (21.11.): Lokschuppen
 		psStats->mobileCore = ini.value("mobileFactoryCore", false).toBool();   // MOD (18.11.): Fabrik-Kern einer fahrenden Fabrik
-		psStats->crewCost = std::max(0, ini.value("crewCost", 0).toInt());   // MOD: Besatzungskonto
-		psStats->crewProvide = std::max(0, ini.value("crewProvide", 0).toInt());   // MOD: Besatzungskonto
-		psStats->crewStart = std::max(0, ini.value("crewStart", 0).toInt());   // MOD: Besatzungskonto
 		psStats->storageProvide = std::max(0, ini.value("storageProvide", 0).toInt());   // MOD: Energie-Obergrenze
 		psStats->incomeProvide = std::max(0, ini.value("incomeProvide", 0).toInt());   // MOD: Energie je Sekunde
 		psStats->infantryPassable = ini.value("infantryPassable", false).toBool();   // MOD

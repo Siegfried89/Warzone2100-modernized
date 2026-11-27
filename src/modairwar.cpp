@@ -13,7 +13,6 @@
 #include "droid.h"
 #include "game_world.h"
 #include "geometry.h"
-#include "modcrew.h"
 #include "modlayer.h"
 #include "modlayermap.h"
 #include "order.h"
@@ -107,7 +106,7 @@ DROID *nearestAirTarget(DROID *d)
 		if (q == static_cast<unsigned>(d->player) || aiCheckAlliances(d->player, q)) { continue; }
 		for (DROID *e : gameWorld.objects.droids[q])
 		{
-			if (e->died || e->visible[d->player] < UBYTE_MAX || !airborne(e) || !modlayer::canInteract(d, e) || modcrew::crewless(e)) { continue; }
+			if (e->died || e->visible[d->player] < UBYTE_MAX || !airborne(e) || !modlayer::canInteract(d, e)) { continue; }
 			const int64_t dx = e->pos.x - d->pos.x, dy = e->pos.y - d->pos.y, dd = dx * dx + dy * dy;
 			if (dd >= bestD) { continue; }
 			bool any = false;

@@ -637,7 +637,7 @@ private:
 		static const CatInfo CATS[] = {
 			{ -2, "All", "All buildings", "All buildings", IMAGE_RES_STRUCTURETECH },
 			{ 0, "Eco", "Economy", "Economy: power, oil derricks, refinery, pipelines, power poles", IMAGE_RES_POWERTECH },
-			{ 1, "Prod", "Production", "Factories, research, crew and combot buildings", IMAGE_RES_DROIDTECH },
+			{ 1, "Prod", "Production", "Factories, research and combot buildings", IMAGE_RES_DROIDTECH },
 			{ 2, "Supply", "Supply", "Supply: fuel station (repair facility), ammo, outposts, sensors", IMAGE_RES_SYSTEMTECH },
 			{ 3, "Walls", "Walls & trenches", "Walls, gates, tank traps, trenches, pits", IMAGE_RES_MAJOR_PLASCRETE },
 			{ 4, "Def", "Defenses", "Defenses: towers, bunkers, nests, emplacements", IMAGE_RES_DEFENCE },

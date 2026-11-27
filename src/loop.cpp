@@ -138,7 +138,6 @@
 #include "modfort.h"
 #include "modmobilefactory.h"
 #include "modairwar.h"
-#include "modcrew.h"
 #include "modgdiart.h"
 #include "modshield.h"
 #include "modcrates.h"
@@ -636,7 +635,6 @@ static void gameStateUpdate()
 	modshield::tick();           // MOD (18.11.): Schildkuppeln aufladen / Ausfall
 	modmobilefactory::update();  // MOD (18.11.): fahrende Fabrik (Fatboy) - Fabrik-Kern anlegen / mitfuehren / entfernen
 	modairwar::tick();           // MOD (18.11. 17:52): Luftkampf zwischen allen Fliegern (Vorbeiflug-Feuer, untaetige Flieger greifen an)
-	modcrew::tick();             // MOD (18.11. 17:52): MF-Besatzung (Piloten mit Stufen, Aussteigen, neutrale Combots)
 	modgdiart::tick();           // MOD (18.11. 19:09): GDI-Artillerie verankert sich zum Feuern (Juggernaut)
 	modferry::tick(gameWorld);   // MOD: Transport-Dauerschleife zwischen den Leuchtfeuern
 	modtunnel::tick(gameWorld);  // MOD (22.11.): Tunnel wie Nydus-Kanaele (Bohrer graebt, Einheiten reisen durch, Einsturz)

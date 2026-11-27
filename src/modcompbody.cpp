@@ -204,7 +204,7 @@ bool contains(const std::string &s, const char *p) { return s.find(p) != std::st
 /// taugt der Rumpf als Teil? (keine Infanterie, Cyborgs, Platzhalter, Stellvertreter-Modelle, Verbundrumpfe)
 bool usableAsPart(const std::string &id, const std::string &cls, const std::string &model)
 {
-	if (id.empty() || startsWith(id, "ZNULL") || startsWith(id, "CompBody") || startsWith(id, "B1") || startsWith(id, "MFT_") || id == "MFCrewBody") { return false; }
+	if (id.empty() || startsWith(id, "ZNULL") || startsWith(id, "CompBody") || startsWith(id, "B1") || startsWith(id, "MFT_")) { return false; }
 	if (cls == "Cyborgs" || cls == "Babas_Person") { return false; }
 	if (model.empty() || model == "mfproxy.pie" || startsWith(model, "exbloke")) { return false; }
 	return true;
