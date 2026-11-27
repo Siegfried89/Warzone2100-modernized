@@ -35,6 +35,9 @@ bool charred(const FEATURE *f);
 void tick(GameWorld &world);
 /// beim Spielende / Ladevorgang
 void reset();
+/// (Wunsch 27.11. 22:05) Kachel ist nur von Wracks gesperrt: Fahrzeuge (Rad/Kette/Halbkette/Luftkissen) duerfen hinein und schieben
+/// das Wrack beiseite (modwreck::tick); Infanterie und Cyborgs bleiben ausgesperrt. Nur fuer die Oberflaechenkarte.
+bool pushableTile(int tileX, int tileY);
 
 /// (17.11., Wunsch 25 "Bergen") Bauplan des zerstoerten Fahrzeugs, das im Wrack steckt - ein Abschlepp-Lkw kann es zur Reparaturstation
 /// bringen, dort wird daraus wieder ein (stark beschaedigtes) Fahrzeug fuer den Spieler, der es geborgen hat.

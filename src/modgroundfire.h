@@ -9,6 +9,7 @@
 #pragma once
 
 #include "lib/framework/vector.h"
+#include <glm/fwd.hpp>
 
 struct BASE_OBJECT;
 struct DROID;
@@ -42,8 +43,11 @@ bool orderSelected(unsigned player, int worldX, int worldY);
 
 /// Strg (ohne Umschalt) gehalten?
 bool keysForGroundFire();
-/// jedes Bild: roten Streukreis bei worldPos zeigen (wanted) bzw. ausblenden. Radius = groesster Streuradius der gewaehlten Einheiten.
+/// jedes Bild: Vorschau bei worldPos zeigen (wanted) bzw. ausblenden: rotes Fadenkreuz fuer alle, die Boden beschiessen koennen;
+/// dazu der rote Streukreis (groesster Streuradius) nur fuer Fahrzeuge/Panzer und Splash-Waffen (nicht Infanterie/Cyborgs ohne Splash)
 void updatePreview(bool wanted, const Vector2i &worldPos);
+/// (Wunsch 27.11. 22:05) rote Fadenkreuze: Vorschau am Mauszeiger + schon befohlene Bodenziele der gewaehlten Einheiten/Tuerme
+void drawOverlay(const glm::mat4 &viewMatrix);
 
 /// Beschriftung am Mauszeiger, solange der rote Streukreis zu sehen ist (sonst nullptr): "Area Bombardment: Attack Area"
 const char *activeLabel();

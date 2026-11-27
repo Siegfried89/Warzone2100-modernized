@@ -6425,6 +6425,7 @@ void display3d_recordSceneOverlays(const gfx_api::RenderPassContext&)
 	modtunnel::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix); // MOD (22.11.): eigene Tunnel / Grabungen
 	modtactical::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);   // MOD (17.11. 18:48): taktische Symbole statt Modelle
 	modmines::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD (17.11. 18:48): Shift = gelbe Minen-Zeichen
+	modgroundfire::drawOverlay(pie_GetInGame3DFrameContext().perspectiveViewMatrix);  // MOD (27.11. 22:05): rote Fadenkreuze "Boden beschiessen"
 	drawDroidAndStructureSelections();
 	modbigmap::draw();   // MOD (17.11. 18:48): strategische Karte (ganzer Bildschirm oder linke Haelfte)
 
