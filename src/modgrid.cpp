@@ -87,6 +87,7 @@ struct Marker
 };
 
 std::unordered_map<uint32_t, bool> s_powered;
+std::unordered_map<uint32_t, bool> s_gridOk;         // (27.11.) Strom aus dem Netz vorhanden (vor der Besatzungspruefung)
 std::unordered_map<uint32_t, unsigned> s_upAt;       // PowerDown: Zeitpunkt, ab dem ein wieder versorgtes Gebaeude hochgefahren ist
 std::unordered_map<uint32_t, bool> s_down;           // PowerDown: Gebaeude ist (laut Gate) abgeschaltet
 bool s_hasSub[MAX_PLAYERS] = {};                   // (20:35) Spieler hat ein Umspannwerk
@@ -235,6 +236,7 @@ void reset()
 	s_standby.clear();
 	for (int p = 0; p < MAX_PLAYERS; p++) { s_hasSub[p] = false; s_solarConnected[p] = 0; s_subCount[p] = 0; s_subFed[p] = 0; }
 	s_powered.clear();
+	s_gridOk.clear();
 	s_cables.clear();
 	s_markers.clear();
 	s_have = false;
@@ -250,6 +252,7 @@ void update()
 	s_lastTime = gameTime;
 	s_lastSec = gameTime / 1000;
 	s_powered.clear();
+	s_gridOk.clear();
 	s_cables.clear();
 	s_markers.clear();
 	s_crewOff.clear();
@@ -578,7 +581,9 @@ void update()
 			}
 			else if (net >= 0 && subMode && !hasSub[net] && (solarCap[net] > 0 || genCapC[net] > 0)) { s_downNoSub[p]++; }   // (24.11. 17:01)
 			else { s_downNoGrid[p]++; }
-			if (s_crewOff.find(c.id) != s_crewOff.end()) { ok = false; }   // Besatzungsmangel: wie ohne Strom abgeschaltet
+			s_gridOk[c.id] = ok;   // (27.11.) Netz liefert - eine Abschaltung danach liegt an der Besatzung, nicht am Strom
+			const bool gridOk = ok;
+			if (s_crewOff.find(c.id) != s_crewOff.end()) { ok = false; }   // Besatzungsmangel: abgeschaltet (Anzeige getrennt von "ohne Strom")
 			// PowerDown: kehrt die Versorgung zurueck, faehrt das Gebaeude nach Reihenfolge (ein Gebaeude je 1,2 s) wieder hoch
 			const auto wasDown = s_down.find(c.id);
 			if (ok && wasDown != s_down.end() && wasDown->second && s_upAt.find(c.id) == s_upAt.end())
@@ -586,7 +591,7 @@ void update()
 				s_upAt[c.id] = gameTime + RESTART_STAGGER_MS * (++restartIndex);
 			}
 			s_powered[c.id] = ok;
-			if (show) { s_markers.push_back({p, c.x, c.y, c.z, ok, false}); }
+			if (show) { s_markers.push_back({p, c.x, c.y, c.z, gridOk, false}); }   // Stromnetz-Ansicht: zeigt den Strom, nicht die Besatzung
 		}
 	}
 }
@@ -612,6 +617,22 @@ int substations(int player, int &fed)
 bool generatorStandby(const STRUCTURE *psGen)
 {
 	return psGen != nullptr && s_standby.count(psGen->id) != 0;
+}
+
+bool isCrewShort(const STRUCTURE *psStruct)
+{
+	if (psStruct == nullptr || s_crewOff.find(psStruct->id) == s_crewOff.end()) { return false; }
+	const auto it = s_gridOk.find(psStruct->id);
+	return it != s_gridOk.end() && it->second;
+}
+
+bool crewAccount(int player, int &used, int &supply, int &off)
+{
+	const bool ok = player >= 0 && player < MAX_PLAYERS;
+	used = ok ? s_crewUsed[player] : 0;
+	supply = ok ? s_crewSupply[player] : 0;
+	off = ok ? s_crewOffCount[player] : 0;
+	return ok && s_crewActive[player];
 }
 
 bool isSubstation(const STRUCTURE_STATS *psStats)
@@ -659,7 +680,8 @@ bool powerDownGate(STRUCTURE *s)
 			s_upAt.erase(s->id);
 			if (s->player == selectedPlayer)
 			{
-				addConsoleMessage(("PowerDown: " + std::string(getStatsName(st)) + (s_crewOff.count(s->id) ? " (Besatzung)" : "")).c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+				addConsoleMessage((isCrewShort(s) ? "Besatzung fehlt (mehr Kasernen bauen): " + std::string(getStatsName(st)) + " steht still"
+				                               : "PowerDown (kein Strom): " + std::string(getStatsName(st))).c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 			}
 			if (s->isFactory() && s->pFunctionality->factory.psSubject && !s->pFunctionality->factory.timeStartHold)
 			{

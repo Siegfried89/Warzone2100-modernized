@@ -127,6 +127,9 @@ struct EconomyView
 	int stations = 0, stationBarrels = 0, stationCap = 0;
 	int power = 0, powerMax = 0, incomeLastMinute = 0, wastedLastMinute = 0;
 	int buildingsDown = 0;
+	// (27.11.) Besatzung: Gebaeude mit Strom, die mangels Besatzung (Kasernen) stillstehen - nicht in buildingsDown
+	int crewDown = 0, crewUsed = 0, crewSupply = 0;
+	bool crewActive = false;
 };
 EconomyView economyView(int player);
 /// (20.11.) Kraftwerk mit wenig Oel (hoechstens 3 Minuten) - fuer die Warnanzeige

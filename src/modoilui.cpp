@@ -78,6 +78,27 @@ void iconNoPower(int cx, int cy, int r, int alpha)
 	}
 }
 
+/// (27.11.) Personen-Sinnbild (Kopf + Schultern), z. B. fuer die Besatzung
+void drawPerson(int cx, int cy, int r, PIELIGHT col)
+{
+	const int hr = std::max(2, r * 3 / 10);
+	modui::disc(cx, cy - r / 3, hr, col);
+	const int bw = std::max(4, r * 9 / 10), bh = std::max(3, r / 2);
+	pie_UniTransBoxFill(cx - bw / 2, cy + r / 10, cx + bw / 2, cy + r / 10 + bh, col);
+	modui::disc(cx, cy + r / 10 + 1, bw / 2, col);
+}
+
+/// (Wunsch 27.11. 18:30) "Besatzung fehlt": das Gebaeude haette Strom, aber die Kasernen stellen nicht genug Besatzung - orange Plakette
+/// mit Person, rot durchgestrichen (statt des Blitzes, der faelschlich "kein Strom" meldete)
+void iconNoCrew(int cx, int cy, int r, int alpha)
+{
+	badge(cx, cy, r, pal_RGBA(255, 150, 30, 255), alpha);
+	drawPerson(cx, cy, r * 3 / 4, withAlpha(pal_RGBA(255, 214, 120, 255), alpha));
+	const PIELIGHT red = withAlpha(pal_RGBA(255, 40, 30, 255), alpha);
+	const int d = r * 7 / 10;
+	for (int o = -1; o <= 1; ++o) { iV_Line(cx - d + o, cy + d, cx + d + o, cy - d, red); }
+}
+
 /// "Wenig Oel": Oelfass (wie in der Tankstellen-Anzeige) in einer Plakette
 void iconLowOil(int cx, int cy, int r, bool empty, int alpha)
 {
@@ -118,7 +139,7 @@ constexpr int PANEL_W = PAD * 2 + COLS * TILE + (COLS - 1) * TGAP;
 constexpr int ROWS = 2;
 constexpr int PANEL_H = PAD * 2 + TITLE_H + ROWS * (TILE + VAL_H + 3) + PROB_H;
 enum OilImg { OI_DERRICK = 0, OI_PICKUP, OI_REFINERY, OI_TANKER, OI_STORE, OI_POWERGEN, OI_SUBSTATION, OI_SOLAR, OI_STATION, OI_COUNT,
-              OI_POWER = 100, OI_NOPOWER };   // POWER/NOPOWER: WZ-Blitz aus der Oberflaeche
+              OI_POWER = 100, OI_NOPOWER, OI_CREW };   // (27.11.) CREW: Besatzung (Personen-Sinnbild, selbst gezeichnet)   // POWER/NOPOWER: WZ-Blitz aus der Oberflaeche
 
 std::shared_ptr<W_SCREEN> s_screen;
 std::shared_ptr<W_CLICKFORM> s_panel;
@@ -278,6 +299,17 @@ std::vector<Tile> tilesFor(const modoil::EconomyView &v)
 		const std::string tip = "Geb\xC3\xA4ude ohne Strom: " + (v.buildingsDown == 0 ? std::string("keine") : std::to_string(v.buildingsDown) + " (stehen still: " + why + ")");
 		t.push_back({l, OI_NOPOWER, std::to_string(v.buildingsDown), tip, std::to_string(v.buildingsDown) + " Geb\xC3\xA4ude ohne Strom", 7});
 	}
+	if (v.crewActive)
+	{
+		// (Wunsch 27.11. 18:30) Besatzungskonto sichtbar: jede Kaserne stellt bis zu 40 Besatzung (waechst nach dem Bau um 1 je Sekunde);
+		// Forschungszentrum 30, Fabrik/Zugdepot/Hubschrauberfabrik 11, Aussenposten 12, Cyborgfabrik 8, Raffinerie 6, MF-Einheiten je Rumpf
+		const Lamp l = v.crewDown > 0 ? L_BAD : (v.crewUsed * 10 > v.crewSupply * 9 ? L_WARN : L_OK);
+		std::string tip = "Besatzung: " + std::to_string(v.crewUsed) + " ben\xC3\xB6tigt / " + std::to_string(v.crewSupply) + " vorhanden"
+		                  " (jede Kaserne stellt bis zu 40; Forschungszentrum 30, Fabrik 11, Au\xC3\x9F" "enposten 12, Raffinerie 6)";
+		if (v.crewDown > 0) { tip += " | " + std::to_string(v.crewDown) + " Geb\xC3\xA4ude stehen still: mehr Kasernen bauen"; }
+		t.push_back({l, OI_CREW, std::to_string(v.crewUsed) + "/" + std::to_string(v.crewSupply), tip,
+		             std::to_string(v.crewDown) + " Geb\xC3\xA4ude ohne Besatzung (Kasernen)", 6});
+	}
 	return t;
 }
 
@@ -303,6 +335,12 @@ void drawIcon(int icon, int x, int y, int w, int h, bool dim)
 			const PIELIGHT red = withAlpha(pal_RGBA(255, 50, 40, 255), a);
 			for (int o = -1; o <= 1; ++o) { iV_Line(x + 4 + o, y + h - 4, x + w - 4 + o, y + 4, red); }
 		}
+		return;
+	}
+	if (icon == OI_CREW)
+	{
+		const int r = std::min(w, h) / 2 - 2;
+		drawPerson(x + w / 2, y + h / 2, r, withAlpha(pal_RGBA(255, 214, 120, 255), a));
 		return;
 	}
 	IMAGEFILE *img = oilImages();
@@ -392,7 +430,7 @@ void ensureScreen()
 	panel->displayFunction = drawPanel;
 	panel->setTransparentToClicks(true);
 	s_tiles.clear();
-	for (int i = 0; i < 11; ++i)
+	for (int i = 0; i < 2 * COLS; ++i)   // (27.11.) 12 Kacheln: die Besatzung ist die zwoelfte
 	{
 		auto tb = std::make_shared<W_BUTTON>();
 		panel->attach(tb);
@@ -477,7 +515,12 @@ void drawWorldIcons(const glm::mat4 &m)
 		if (sp.x < -40 || sp.y < -40 || sp.x > static_cast<int>(pie_GetVideoBufferWidth()) + 40 || sp.y > static_cast<int>(pie_GetVideoBufferHeight()) + 40) { continue; }
 		int cx = sp.x;
 		if (down && hungry) { cx -= r + 2; }
-		if (down) { iconNoPower(cx, sp.y, r, pulse); cx += 2 * r + 4; }
+		if (down)
+		{
+			if (modgrid::isCrewShort(s)) { iconNoCrew(cx, sp.y, r, pulse); }
+			else { iconNoPower(cx, sp.y, r, pulse); }
+			cx += 2 * r + 4;
+		}
 		if (hungry)
 		{
 			const bool empty = modoil::generatorFuel(s) <= 0;

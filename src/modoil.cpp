@@ -618,7 +618,15 @@ EconomyView economyView(int p)
 			v.stations++; v.stationBarrels += stationBarrels(s); v.stationCap += STATION_CAP;
 		}
 		else if (isPipe(st) && !isBroken(st)) { pipes.push_back(s); }
-		if (modgrid::isPoweredDown(s)) { v.buildingsDown++; }
+		if (modgrid::isPoweredDown(s))
+		{
+			if (modgrid::isCrewShort(s)) { v.crewDown++; }   // (27.11.) hat Strom, aber keine Besatzung
+			else { v.buildingsDown++; }
+		}
+	}
+	{
+		int off = 0;
+		v.crewActive = modgrid::crewAccount(p, v.crewUsed, v.crewSupply, off);
 	}
 	// Oeltuerme mit Rohr direkt daneben (grobe Anzeige)
 	for (const STRUCTURE *s : gameWorld.objects.structures[p])
