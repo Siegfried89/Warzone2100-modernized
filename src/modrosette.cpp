@@ -37,6 +37,7 @@
 #include "modpaint.h"
 #include "modrecover.h"
 #include "modui.h"
+#include "modwzhd.h"   // (27.11.) Befehlsknoepfe im WZ-Stil (wz_o_*)
 #include "order.h"
 #include "radar.h"
 #include "range_rings.h"
@@ -77,7 +78,12 @@ const Pos kHexPos[H_COUNT] = {
 const int kHexOf[H_COUNT] = { H_CENTER, H_PLAN, H_RINGS, H_FIRE, H_LAYERS, H_INFANTRY, H_FORMATION };
 bool hexHidden(int h) { return h == H_FIRE || h == H_INFANTRY; }
 
-constexpr int CMD_W = 44, CMD_H = 32, CMD_GAP = 4, BAR_PAD = 5, BAR_TITLE = 12;
+// (Wunsch 27.11. "bitte durch welche im WZ Stil!!!! ersetzen"): Befehlsknoepfe in der Groesse der WZ-Befehlsknoepfe (36 x 24), Bilder
+// "wz_o_*" aus wzhd.py (Pixelkunst auf dem WZ-Rahmen, HD wie alle WZ-Knoepfe); die alten Bilder (44 x 32) nur noch als Rueckfall
+constexpr int CMD_W = 36, CMD_H = 24, CMD_GAP = 4, BAR_PAD = 5, BAR_TITLE = 12;
+const char *const kCmdWz[C_COUNT] = { "wz_o_f_ring", "wz_o_f_line", "wz_o_f_wedge", "wz_o_f_column", "wz_o_f_arty", "wz_o_cover", "wz_o_spread",
+                                      "wz_o_salvage", "wz_o_recover", "wz_o_spade", nullptr, "wz_o_l_orbit", "wz_o_l_surface", "wz_o_l_under",
+                                      "wz_o_leave", "wz_o_auto", "wz_o_mines", "wz_o_unload", "wz_o_eject" };
 
 IMAGEFILE *s_img = nullptr;
 bool s_tried = false;
@@ -96,6 +102,18 @@ void drawImg(int id, int x, int y, int w, int h, unsigned char alpha = 255)
 {
 	if (!imagesReady()) { return; }
 	iV_DrawImageFileAnisotropic(s_img, static_cast<UWORD>(id), x, y, Vector2f(static_cast<float>(w), static_cast<float>(h)), defaultProjectionMatrix(), alpha);
+}
+
+/// (27.11.) Befehlsknopf zeichnen: WZ-Stil (wz_o_*, gedrueckt "h", Maus darueber mit Lichthof wie die WZ-Knoepfe), sonst das alte Bild
+void drawCmdImage(int img, bool down, bool hover, int x0, int y0, int w, int h)
+{
+	if (img >= 0 && img < C_COUNT && kCmdWz[img] != nullptr)
+	{
+		const std::string name = std::string(kCmdWz[img]) + (down ? "h" : "");
+		if (modwzhd::drawNamed(name.c_str(), x0, y0, w, h, hover || down)) { return; }
+	}
+	drawImg(cmdImg(img, down), x0, y0, w, h);
+	if (hover) { iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, WZCOL_FORM_HILITE); }
 }
 
 struct Item
@@ -363,17 +381,13 @@ void drawCmd(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const bool hl = (b->getState() & WBUT_HIGHLIGHT) != 0;
 	if (it.wzUp >= 0)
 	{
-		// WZ-Befehlsbild (36 x 24) mittig auf dunklem Grund
-		const int w = psWidget->width(), h = psWidget->height();
-		pie_UniTransBoxFill(x0, y0, x0 + w, y0 + h, pal_RGBA(20, 24, 60, 200));
-		iV_DrawImageTint(IntImages, static_cast<UWORD>(down ? it.wzDown : it.wzUp), x0 + (w - 36 * w / CMD_W) / 2, y0 + (h - 24 * h / CMD_H) / 2,
-		                 pal_RGBA(255, 255, 255, 255), Vector2f{static_cast<float>(36 * w / CMD_W), static_cast<float>(24 * h / CMD_H)});
+		// WZ-Befehlsbild (36 x 24), HD wie im WZ-Befehlsfenster
+		modwzhd::drawIntfac(static_cast<unsigned>(down ? it.wzDown : it.wzUp), x0, y0, psWidget->width(), psWidget->height(), hl || down);
 	}
 	else
 	{
-		drawImg(cmdImg(it.img, down), x0, y0, psWidget->width(), psWidget->height());
+		drawCmdImage(it.img, down, hl, x0, y0, psWidget->width(), psWidget->height());
 	}
-	if (hl) { iV_Box(x0, y0, x0 + psWidget->width() - 1, y0 + psWidget->height() - 1, WZCOL_FORM_HILITE); }
 }
 
 void openBar(int hex)
@@ -543,8 +557,7 @@ void drawOrderCmd(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const W_BUTTON *b = static_cast<const W_BUTTON *>(psWidget);
 	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
 	const bool down = (b->getState() & WBUT_DOWN) != 0 || (it.isOn && it.isOn());
-	drawImg(cmdImg(it.img, down), x0, y0, psWidget->width(), psWidget->height());
-	if ((b->getState() & WBUT_HIGHLIGHT) != 0) { iV_Box(x0, y0, x0 + psWidget->width() - 1, y0 + psWidget->height() - 1, WZCOL_FORM_HILITE); }
+	drawCmdImage(it.img, down, (b->getState() & WBUT_HIGHLIGHT) != 0, x0, y0, psWidget->width(), psWidget->height());
 }
 } // namespace
 
@@ -570,8 +583,9 @@ int addOrderButtons(const std::shared_ptr<WIDGET> &form, int x, int y, int width
 		if (fits) { s_orderItems.push_back(it); }
 	}
 	if (s_orderItems.empty()) { return 0; }
-	constexpr int BW = 40, BH = 29, GAP = 4;
-	const int cols = std::max(1, (width + GAP) / (BW + GAP));
+	// (27.11.) wie die WZ-Knopfzeilen darueber: Knoepfe 36 x 24, Abstand 4, hoechstens drei je Zeile, mittig
+	constexpr int BW = CMD_W, BH = CMD_H, GAP = 4;
+	const int cols = std::clamp((width + GAP) / (BW + GAP), 1, 3);
 	const int n = static_cast<int>(s_orderItems.size());
 	const int rows = (n + cols - 1) / cols;
 	for (int i = 0; i < n; ++i)

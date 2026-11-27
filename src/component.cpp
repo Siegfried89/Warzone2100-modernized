@@ -1532,7 +1532,11 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					}
 
 					/* Get the mount graphic */
-					const iIMDBaseShape *psBaseShape = WEAPON_MOUNT_IMD(psDroid, i);
+					// MOD (Wunsch 27.11. "die Scav Fahrzeuge haben sichtbare MGs.... das war nie so"): Rumpfe mit eingebauter Waffe
+					// (body.json "hiddenWeapons": Scav-Trike/-Buggy/-Jeep) zeigen weder Halterung noch Waffe - seit ihre Modelle fuer das
+					// Muendungsfeuer einen Anschluss haben, wurde dort sonst z. B. das MG der Scav-Fassung des Viper gezeichnet
+					const bool modHiddenWeapon = psDroid->getBodyStats()->hiddenWeapons;
+					const iIMDBaseShape *psBaseShape = modHiddenWeapon ? nullptr : WEAPON_MOUNT_IMD(psDroid, i);
 					const iIMDShape *psShape = (psBaseShape) ? psBaseShape->displayModel() : nullptr;
 
 					int recoilValue = getRecoil(psDroid->asWeaps[i]);
@@ -1580,7 +1584,7 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					}
 
 					/* Get the weapon (gun?) graphic */
-					psBaseShape = WEAPON_IMD(psDroid, i);
+					psBaseShape = modHiddenWeapon ? nullptr : WEAPON_IMD(psDroid, i);
 					psShape = (psBaseShape) ? psBaseShape->displayModel() : nullptr;
 
 					// We have a weapon so we draw it and a muzzle flash from weapon connector

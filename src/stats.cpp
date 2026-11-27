@@ -729,6 +729,7 @@ bool loadBodyStats(WzConfig &ini)
 		psStats->gaitStride = std::clamp(ini.value("gaitStride", 0).toInt(), 0, 4096);   // MOD (19.11.): Fuesse bleiben beim Laufen am Boden
 		psStats->gaitRunStride = std::clamp(ini.value("gaitRunStride", 0).toInt(), 0, 4096);   // MOD (19.11. 22:33): Rennen
 		psStats->gaitBlends = std::clamp(ini.value("gaitBlends", 1).toInt(), 1, 16);
+		psStats->hiddenWeapons = ini.value("hiddenWeapons", false).toBool();   // MOD (27.11.): eingebaute Waffe, kein Waffenmodell zeichnen
 		if (ini.contains("headlight"))   // MOD (18.11.): Scheinwerfer (modheadlights)
 		{
 			const nlohmann::json hl = ini.json("headlight");

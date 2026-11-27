@@ -142,7 +142,8 @@ STRUCTSTRENGTH_MODIFIER		asStructStrengthModifier[WE_NUMEFFECTS][NUM_STRUCT_STRE
 static std::vector<bool>       factoryNumFlag[MAX_PLAYERS][NUM_FLAG_TYPES];
 
 // the number of different (types of) droids that can be put into a production run
-#define MAX_IN_RUN		9
+#define MAX_IN_RUN		100   // MOD (Wunsch 27.11.): bis 100 Stueck je Vorlage statt 9
+#define MAX_LOOP_SETTING	9   // Schleifen-Zaehler der Fabrik wie im Original (1-8, danach INFINITE_PRODUCTION)
 
 //the list of what to build - only for selectedPlayer
 std::vector<ProductionRun> asProductionRun[NUM_FACTORY_TYPES];
@@ -7097,10 +7098,16 @@ void factoryProdAdjust(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate, bool 
 	}
 	else
 	{
+		// MOD (27.11.): Rechtsklick auf eine leere Vorlage stellte im Original gleich die Hoechstzahl ein - bei 100 statt 9 waere das ein
+		// teurer Fehlklick, darum passiert dann nichts
+		if (!add)
+		{
+			return;
+		}
 		//start off a new template
 		ProductionRunEntry tmplEntry;
 		tmplEntry.psTemplate = psTemplate;
-		tmplEntry.quantity = add ? 1 : MAX_IN_RUN; //wrap around to max value
+		tmplEntry.quantity = 1;
 		tmplEntry.built = 0;
 		productionRun.push_back(tmplEntry);
 	}
@@ -7279,7 +7286,7 @@ void factoryLoopAdjust(STRUCTURE *psStruct, bool add)
 	if (add)
 	{
 		//check for wrapping to infinite production
-		if (psFactory->productionLoops == MAX_IN_RUN)
+		if (psFactory->productionLoops == MAX_LOOP_SETTING)
 		{
 			psFactory->productionLoops = 0;
 		}
@@ -7288,7 +7295,7 @@ void factoryLoopAdjust(STRUCTURE *psStruct, bool add)
 			//increment the count
 			psFactory->productionLoops++;
 			//check for limit - this caters for when on infinite production and want to wrap around
-			if (psFactory->productionLoops > MAX_IN_RUN)
+			if (psFactory->productionLoops > MAX_LOOP_SETTING)
 			{
 				psFactory->productionLoops = INFINITE_PRODUCTION;
 			}
@@ -7306,6 +7313,45 @@ void factoryLoopAdjust(STRUCTURE *psStruct, bool add)
 			psFactory->productionLoops--;
 		}
 	}
+}
+
+// MOD (Wunsch 27.11. "shift + linksklick bei einheitenproduktion = 5. jedes weitere +5"): count Stueck mehr, hoechstens MAX_IN_RUN
+// (anders als ein einzelner Klick ueber der Hoechstzahl springt das nicht auf 0 zurueck); negativ = weniger
+void factoryProdAdjustCount(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate, int count)
+{
+	ASSERT_OR_RETURN(, psStructure != nullptr && psTemplate != nullptr, "NULL structure or template");
+	for (int k = 0; k < std::abs(count); ++k)
+	{
+		const ProductionRunEntry cur = getProduction(psStructure, psTemplate);
+		if (count > 0 && cur.isValid() && cur.quantity >= MAX_IN_RUN)
+		{
+			break;
+		}
+		if (count < 0 && !cur.isValid())
+		{
+			break;
+		}
+		factoryProdAdjust(psStructure, psTemplate, count > 0);
+	}
+}
+
+// MOD (Wunsch 27.11. "steuerung + linksklick setzt auf unendlich/Schleife"): die Vorlage kommt in die Liste (falls noch nicht drin) und
+// die Fabrik baut ihre Liste endlos; ein zweiter Strg-Klick schaltet die Endlos-Schleife wieder aus
+void factoryLoopToggleInfinite(STRUCTURE *psStruct, DROID_TEMPLATE *psTemplate)
+{
+	ASSERT_OR_RETURN(, psStruct && psStruct->isFactory(), "structure is not a factory");
+	ASSERT_OR_RETURN(, psStruct->player == selectedPlayer, "should only be called for selectedPlayer");
+	FACTORY *psFactory = &psStruct->pFunctionality->factory;
+	if (psFactory->productionLoops == INFINITE_PRODUCTION)
+	{
+		psFactory->productionLoops = 0;
+		return;
+	}
+	if (psTemplate != nullptr && !getProduction(psStruct, psTemplate).isValid())
+	{
+		factoryProdAdjust(psStruct, psTemplate, true);
+	}
+	psFactory->productionLoops = INFINITE_PRODUCTION;
 }
 
 
