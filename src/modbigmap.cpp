@@ -566,6 +566,11 @@ void layout()
 		rx = radar->x() + std::max(0, (radar->width() - (2 * bw + gap)) / 2);
 		ry = radar->y() - bh - gap - m;
 	}
+	// (Wunsch 27.11. "Fehler beim Karten UI und den buttons ganz rechts unten: sie rutschen komplett aus dem Bild und sind nicht mehr
+	// klickbar"): bei einer schmalen, hohen Karte (cam1a) ist die Minikarte schmaler als die Knopfzeile - die Zeile begann an ihrem linken
+	// Rand und ragte rechts aus dem Bild ("Symbols" ganz, "Map" halb). Die Zeile bleibt jetzt immer im Bild.
+	rx = std::clamp(rx, 4, std::max(4, W - (2 * bw + gap) - 6));
+	ry = std::max(4, ry);
 	// (22.11.) Bildknoepfe: etwas hoeher und schmaler als die Textknoepfe, rechtsbuendig in derselben Zeile
 	const int iw = static_cast<int>(34 * s), ih = static_cast<int>(22 * s);
 	s_btn[B_MAP]->setGeometry(rx + 2 * bw + gap - 2 * iw - gap, ry - (ih - bh), iw, ih);

@@ -40,6 +40,7 @@
 #include "profiling.h"
 
 #include "action.h"
+#include "modwreck.h"   // (27.11.) Wracks unter der Maus
 #include "display.h"
 #include "modmobilefactory.h"
 #include "modsound.h"
@@ -1951,6 +1952,12 @@ BASE_OBJECT *mouseTarget()
 	{
 		psReturn = getTileBlueprintStructure(mouseTileX, mouseTileY);
 	}
+	if (psReturn == nullptr)
+	{
+		// MOD (Wunsch 27.11. "alle Wracks wegschiessen mit allen Waffen" / "durch die Bagger Wracks bergen"): Wracks liegen frei, ohne
+		// Kachel-Zuordnung - die Maus fand sie nie, ein Klick darauf war ein Fahrbefehl
+		psReturn = modwreck::wreckAtTile(gameWorld, mouseTileX, mouseTileY);
+	}
 
 	/* Send the result back - if it's null then we clicked on an area of terrain */
 	return psReturn;
@@ -3179,6 +3186,10 @@ static MOUSE_TARGET	itemUnderMouse(BASE_OBJECT **ppObjectUnderMouse)
 	if (psNotDroid == nullptr)
 	{
 		psNotDroid = getTileBlueprintStructure(mouseTileX, mouseTileY);
+	}
+	if (psNotDroid == nullptr)
+	{
+		psNotDroid = modwreck::wreckAtTile(gameWorld, mouseTileX, mouseTileY);   // MOD (27.11.): Wracks (ohne Kachel-Zuordnung) - Zielkreuz
 	}
 
 	if (psNotDroid != nullptr)

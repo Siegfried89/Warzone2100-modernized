@@ -49,6 +49,11 @@ void recoverWithSelection(const std::vector<DROID *> &units);
 bool isTowTruck(const DROID *psDroid);
 /// kann dieses Feature abgeschleppt werden? (gelandetes Wrack mit Bauplan)
 bool isTowable(const FEATURE *psFeature);
+/// (Wunsch 27.11. "durch die Bagger Wracks bergen") Bagger raeumen Wracks weg: Befehl "Bergen" (Rechtsklick auf ein Wrack), am Wrack
+/// angekommen verschwindet es, die Kachel ist wieder frei, der Schrott bringt etwas Energie (Einnahmen-Buch "Bergung")
+bool isWreckClearer(const DROID *psDroid);
+/// liegendes Wrack, das ein Bagger wegraeumen kann (auch ohne Bauplan, z. B. aus alten Spielstaenden)
+bool isClearableWreck(const FEATURE *psFeature);
 /// (17.11.) Spielstand: Abschlepp-Lkw mit geladenem Wrack
 std::vector<std::pair<uint32_t, modwreck::WreckInfo>> saveTows();
 void loadTows(const std::vector<std::pair<uint32_t, modwreck::WreckInfo>> &tows);

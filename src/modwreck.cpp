@@ -23,6 +23,7 @@
 #include "projectile.h"
 #include "random.h"
 #include "stats.h"
+#include "template.h"   // (27.11.) calcTemplatePower - Schrottwert beim Wegraeumen
 
 #include <algorithm>
 #include <cmath>
@@ -731,6 +732,53 @@ void loadState(const std::vector<SavedWreck> &wrecks, GameWorld &world)
 		featureSetWreckPose(f, f->rot.direction, finalRoll, map_Height(world.map, w.xe, w.ye) + lift);
 		s_wrecks.push_back(w);
 	}
+}
+
+FEATURE *wreckAtTile(GameWorld &world, int tileX, int tileY)
+{
+	for (const Wreck &w : s_wrecks)
+	{
+		if (gameTime - w.born < w.dur || map_coord(w.xe) != tileX || map_coord(w.ye) != tileY) { continue; }
+		FEATURE *f = static_cast<FEATURE *>(getBaseObjFromId(world.objects.features[0], w.id));
+		if (f != nullptr && !f->died) { return f; }
+	}
+	return nullptr;
+}
+
+bool landed(const FEATURE *f)
+{
+	if (f == nullptr || f->died) { return false; }
+	for (const Wreck &w : s_wrecks)
+	{
+		if (w.id == f->id) { return gameTime - w.born >= w.dur; }
+	}
+	return true;
+}
+
+int clearWreck(FEATURE *f, GameWorld &world)
+{
+	if (f == nullptr || f->died || !isWreckStats(f->psStats)) { return -1; }
+	int scrap = 15;
+	for (auto w = s_wrecks.begin(); w != s_wrecks.end(); ++w)
+	{
+		if (w->id != f->id) { continue; }
+		if (gameTime - w->born < w->dur) { return -1; }   // fliegt/rollt noch
+		if (w->hasInfo && w->info.parts[COMP_BODY] < asBodyStats.size() && w->info.parts[COMP_PROPULSION] < asPropulsionStats.size())
+		{
+			DROID_TEMPLATE templ;
+			for (int c = 0; c < DROID_MAXCOMP; ++c) { templ.asParts[c] = static_cast<uint16_t>(w->info.parts[c]); }
+			templ.numWeaps = static_cast<int8_t>(std::min<unsigned>(w->info.numWeaps, MAX_WEAPONS));
+			for (int i = 0; i < templ.numWeaps; ++i) { templ.asWeaps[i] = w->info.weaps[i]; }
+			templ.droidType = static_cast<DROID_TYPE>(w->info.droidType);
+			templ.modSlots = w->info.slots;
+			scrap = std::max(5, static_cast<int>(calcTemplatePower(&templ)) / 10);
+		}
+		releaseBlock(world, *w);
+		s_wrecks.erase(w);
+		break;
+	}
+	removeFeature(f, world);
+	return scrap;
 }
 
 bool takeWreck(FEATURE *f, GameWorld &world, WreckInfo &out)

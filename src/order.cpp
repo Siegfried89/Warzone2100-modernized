@@ -3104,6 +3104,11 @@ DroidOrder chooseOrderObj(DROID *psDroid, BASE_OBJECT *psObj, bool altOrder)
 	{
 		order = DroidOrder(DORDER_RECOVER, psObj);
 	}
+	// MOD (Wunsch 27.11. "Die Moeglichkeit durch die Bagger Wracks zu bergen"): Bagger + Wrack = hinfahren und wegraeumen (modrecover)
+	else if (psObj->type == OBJ_FEATURE && modrecover::isWreckClearer(psDroid) && modrecover::isClearableWreck(static_cast<FEATURE *>(psObj)))
+	{
+		order = DroidOrder(DORDER_RECOVER, psObj);
+	}
 	// go to recover an artifact/oil drum - don't allow VTOL's to get this order
 	else if (psObj->type == OBJ_FEATURE &&
 	         (((FEATURE *)psObj)->psStats->subType == FEAT_GEN_ARTE ||

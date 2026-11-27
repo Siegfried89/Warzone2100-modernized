@@ -5,6 +5,9 @@
 #include "modcrates.h"
 #include "modrecover.h"
 #include "modwreck.h"
+#include "modbuild.h"   // (27.11.) Bagger raeumen Wracks
+#include "modoil.h"     // (27.11.) Einnahmen-Buch "Bergung"
+#include "power.h"
 
 #include "lib/framework/frame.h"
 #include "lib/framework/fixedpoint.h"
@@ -204,6 +207,16 @@ bool isTowable(const FEATURE *psFeature)
 	return modwreck::wreckInfo(psFeature, info);
 }
 
+bool isWreckClearer(const DROID *psDroid)
+{
+	return psDroid != nullptr && modbuild::isExcavator(psDroid);
+}
+
+bool isClearableWreck(const FEATURE *psFeature)
+{
+	return psFeature != nullptr && !psFeature->died && modwreck::isWreckStats(psFeature->psStats) && modwreck::landed(psFeature);
+}
+
 std::vector<std::pair<uint32_t, modwreck::WreckInfo>> saveTows()
 {
 	std::vector<std::pair<uint32_t, modwreck::WreckInfo>> out;
@@ -367,6 +380,35 @@ void tick()
 			t.nextOrder = gameTime + 8000;
 			s_tow[d->id] = t;
 			sendToFacility(d, d->player, d->pos.xy());
+		}
+	}
+	// (Wunsch 27.11.) Bagger mit dem Befehl "Bergen" am Wrack: wegraeumen (Staub), Kachel frei, Schrott als Energie
+	for (unsigned pl = 0; pl < MAX_PLAYERS; ++pl)
+	{
+		for (DROID *d : gameWorld.objects.droids[pl])
+		{
+			if (d->died || d->order.type != DORDER_RECOVER || d->order.psObj == nullptr || d->order.psObj->type != OBJ_FEATURE) { continue; }
+			if (!isWreckClearer(d)) { continue; }
+			FEATURE *f = static_cast<FEATURE *>(d->order.psObj);
+			if (!isClearableWreck(f) || dist2(d->pos.xy(), f->pos.xy()) > static_cast<int64_t>(TOW_REACH) * TOW_REACH) { continue; }
+			Vector3i at(f->pos.x, f->pos.z + 8, f->pos.y);
+			const int scrap = modwreck::clearWreck(f, gameWorld);
+			if (scrap < 0) { continue; }
+			for (int k = 0; k < 3; ++k)
+			{
+				Vector3i p(at.x + (k - 1) * 18, at.y, at.z + ((k * 7) % 3 - 1) * 14);
+				addEffect(&p, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_HIGH, false, nullptr, 0, gameTime - deltaGameTime + 1);
+			}
+			const int power = scrap * modoil::INCOME_MULT;   // (24.11. 15:19) alle Einnahmen x3
+			addPower(static_cast<int>(pl), power);
+			modoil::noteIncome(static_cast<int>(pl), modoil::INC_SALVAGE, power);
+			if (pl == selectedPlayer)
+			{
+				char msg[120];
+				snprintf(msg, sizeof(msg), _("Wreck cleared: +%d power from scrap"), power);
+				addConsoleMessage(msg, DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+			}
+			orderDroid(d, DORDER_NONE, ModeImmediate);
 		}
 	}
 	for (auto it = s_tow.begin(); it != s_tow.end();)

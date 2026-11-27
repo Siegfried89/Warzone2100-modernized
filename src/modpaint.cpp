@@ -1377,7 +1377,7 @@ void startSalvage(const Vector2i &c, int r)
 	const size_t wantCol = pickups.empty() ? 0 : std::min<size_t>(2, (pickups.size() + 2) / 3);
 	for (DROID *d : pool)
 	{
-		if (modrecover::isTowTruck(d))
+		if (modrecover::isTowTruck(d) || modrecover::isWreckClearer(d))   // (27.11.) Bagger raeumen Wracks weg
 		{
 			if (s_op.towers.size() < wantTow) { s_op.towers.push_back(d->id); }
 			else if (s_op.collectors.size() < wantCol) { s_op.collectors.push_back(d->id); }
@@ -1390,7 +1390,7 @@ void startSalvage(const Vector2i &c, int r)
 	if (s_op.towers.empty() && s_op.collectors.empty())
 	{
 		addConsoleMessage(wrecks.empty() ? _("Salvage: no free trucks or repair units for a salvage team")
-		                                 : _("Salvage: no free trucks - wrecks need a flatbed truck (scavenger truck with cargo bed)"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
+		                                 : _("Salvage: no free trucks - wrecks need a flatbed truck (scavenger truck with cargo bed) or an excavator"), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 		s_op = SalvageOp();
 		return;
 	}

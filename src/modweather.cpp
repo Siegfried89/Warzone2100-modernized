@@ -63,6 +63,15 @@ const Def kDefs[M_COUNT] = {
 
 constexpr float NIGHT_AMB[3] = {0.40f, 0.48f, 0.80f};
 constexpr float NIGHT_DIF[3] = {0.20f, 0.26f, 0.52f};
+// (Wunsch 27.11. "waehrend der Daemmerung ... der Boden leuchtet sehr schoen, aber nur kurz ... ich moechte dass es tagsueber immer so
+// aussieht"): in der Daemmerung gehen die Nachtlichter an (modnightlights: bis zu 36 Lichter an den Gebaeuden), die Sonne ist noch fast
+// voll da - die Lichter beleuchten den Boden gleichmaessig von oben, die Bilder zeigen ihn in der Basis rund 1,5-mal so hell (auf der
+// Linear-Skala gut 2-mal so viel Licht), die Haenge abseits der Sonne werden nicht mehr dunkel. Sobald die Lichter aus sind (Morgen),
+// war es wieder das matte Tageslicht: wenig Umgebungslicht (Karte 0,5) und alles Uebrige nur aus der Sonnenrichtung. Tagsueber jetzt
+// mehr Umgebungslicht und etwas mehr Sonne, ganz leicht warm; zur Nacht hin geht es wie bisher in NIGHT_* ueber (Nacht unveraendert).
+// Nur an der Oberflaeche (Untergrund und Orbit wie bisher).
+constexpr float DAY_AMB[3] = {2.60f, 2.50f, 2.30f};
+constexpr float DAY_DIF[3] = {1.25f, 1.20f, 1.12f};
 const char *const NIGHT_SKY_KEY = "sky-night";
 // (Wunsch 17.11. 20:21) "Den Nighttime-Mod auch reinnehmen": Sternenhimmel von Berg aus "wz2100 nighttime 3.2.3" (Mod-Paket nighttime.py);
 // statt abgedunkelter Texturen dunkelt die Engine das Licht ab (gilt so auch fuer alle Mod-Modelle). Einstellung "Tageszeit".
@@ -193,9 +202,14 @@ void applyLighting(float level, float flash)
 	float amb[3] = {lerp(1.f, d.ambR, l), lerp(1.f, d.ambG, l), lerp(1.f, d.ambB, l)};
 	float dif[3] = {lerp(1.f, d.difR, l), lerp(1.f, d.difG, l), lerp(1.f, d.difB, l)};
 	const float nk = s_night ? 1.f : smooth(s_nightK);
-	if (nk > 0.f)
+	const bool dayBoost = modlayer::current() == modlayer::SURFACE && !s_night;   // (27.11.) Tageslicht wie in der Daemmerung
+	if (nk > 0.f || dayBoost)
 	{
-		for (int i = 0; i < 3; i++) { amb[i] *= lerp(1.f, NIGHT_AMB[i], nk); dif[i] *= lerp(1.f, NIGHT_DIF[i], nk); }
+		for (int i = 0; i < 3; i++)
+		{
+			amb[i] *= lerp(dayBoost ? DAY_AMB[i] : 1.f, NIGHT_AMB[i], nk);
+			dif[i] *= lerp(dayBoost ? DAY_DIF[i] : 1.f, NIGHT_DIF[i], nk);
+		}
 	}
 	if (flash > 0.f)
 	{
