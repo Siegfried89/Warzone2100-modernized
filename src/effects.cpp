@@ -75,6 +75,7 @@
 #include "modgrid.h"
 #include "modoil.h"
 #include "effects.h"
+#include <set>
 
 #include "miscimd.h"
 #include "lighting.h"
@@ -493,7 +494,19 @@ void addEffect(const Vector3i *pos, EFFECT_GROUP group, EFFECT_TYPE type, bool s
 		effect.specific = 0;
 	}
 
-	ASSERT(effect.imd != nullptr || group == EFFECT_DESTRUCTION || group == EFFECT_FIRE || group == EFFECT_SAT_LASER, "null effect imd");
+	// MOD (Absturz 27.11. 03:19 nach 17 Meldungen "null effect imd"): ein Effekt ohne Modell wurde trotzdem angelegt - beim Zeichnen
+	// (oder in updateEffect, imd->max.y) las das Spiel dann aus dem leeren Modell. Jetzt wird er verworfen; die erste Fundstelle je
+	// Gruppe/Typ steht im Log, damit die Quelle gefunden werden kann.
+	if (effect.imd == nullptr && group != EFFECT_DESTRUCTION && group != EFFECT_FIRE && group != EFFECT_SAT_LASER)
+	{
+		static std::set<std::pair<int, int>> s_modReported;
+		if (s_modReported.insert(std::make_pair(static_cast<int>(group), static_cast<int>(type))).second)
+		{
+			debug(LOG_INFO, "MOD: Effekt ohne Modell verworfen (Gruppe %d, Typ %d, Spezial-Modell %s)", static_cast<int>(group), static_cast<int>(type),
+			      imd != nullptr ? "ja" : "nein");
+		}
+		return;
+	}
 
 	gActiveEffects.emplace(std::move(effect));
 }
@@ -1477,6 +1490,12 @@ static bool updateFire(EFFECT *psEffect, LightingData& lightData)
 void renderEffect(const EFFECT *psEffect, const glm::mat4 &viewMatrix)
 {
 	WZ_PERF_SCOPE(T_renderEffects);
+	// MOD (27.11.): ohne Modell nichts zeichnen (Absturz 03:19); Zerstoerung/Feuer/Lasersatellit zeichnen nichts Eigenes
+	if (psEffect == nullptr || (psEffect->imd == nullptr && psEffect->group != EFFECT_DESTRUCTION && psEffect->group != EFFECT_FIRE
+	                            && psEffect->group != EFFECT_SAT_LASER))
+	{
+		return;
+	}
 	/* What type of effect are we dealing with? */
 	switch (psEffect->group)
 	{
