@@ -4,6 +4,8 @@
 //    drehen sich (auf der Stelle) in diese Richtung. Faehrt eine Einheit gerade, dreht sie sich nach der Ankunft.
 //  - Taste "Ausrichten" (L): die gewaehlten Einheiten drehen sich zum Punkt unter dem Mauszeiger.
 //  - Verfolgerkamera (Leertaste): W/S fahren vor/zurueck, A/D lenken (allein: auf der Stelle drehen) - statt die Kamera zu schieben.
+//    (27.11.) Die gefahrene Einheit gehoert ganz den Tasten (keine anderen Bewegungen, kein Anhalten durch andere Logik); linke Maustaste
+//    halten und ziehen = umschauen (beim Loslassen wieder geradeaus).
 #pragma once
 
 #include "lib/framework/vector.h"
@@ -25,5 +27,14 @@ void faceCursor();
 bool drive(int forward, int turn);
 /// loop.cpp: ausstehende Drehungen anwenden, Fahren beenden, wenn keine Taste mehr gehalten wird
 void tick();
+/// (Wunsch 27.11. "WASD Kontrolle bei einer Einheit laesst sich zu 100% vom Spieler steuern. Sie haelt nicht mehr ab und zu an"):
+/// faehrt diese Einheit gerade per Tasten? Dann ruhen ihre Befehlslogik (Bewachen, Rueckkehr zum Wachpunkt ...) und das Anlassen.
+bool isDriving(const DROID *psDroid);
+/// move.cpp: true = Bewegungsbefehl an die gefahrene Einheit verwerfen (nur die Tastensteuerung selbst darf sie bewegen/anhalten)
+bool blocksMove(const DROID *psDroid);
+/// warcam.cpp: Blick nach links/rechts in der Verfolgerkamera (16-Bit-Winkel, 0 = genau hinter dem Fahrzeug)
+int lookYaw();
+/// display.cpp: linke Maustaste gedrueckt halten und ziehen = in der Verfolgerkamera nach links/rechts schauen; true = Maus verbraucht
+bool processLook(bool overUi);
 void reset();
 }

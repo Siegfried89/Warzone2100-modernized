@@ -69,6 +69,11 @@ uint32_t s_driveId = 0;
 int s_drivePlayer = 0;
 int s_fwd = 0, s_turn = 0, s_lastFwd = 9, s_lastTurn = 9;
 UDWORD s_seen = 0, s_lastSet = 0;
+bool s_steering = false;   // (27.11.) die Tastensteuerung bewegt gerade selbst (move.cpp laesst das durch)
+// (27.11.) Umschauen in der Verfolgerkamera
+bool s_lookArmed = false, s_looking = false;
+int s_lookPressX = 0;
+int s_lookYaw = 0;
 
 DROID *findOwn(int player, uint32_t id)
 {
@@ -155,6 +160,8 @@ void stopDriving()
 
 void steerNow(DROID *d)
 {
+	s_steering = true;
+	struct Reset { ~Reset() { s_steering = false; } } reset;
 	const uint16_t h = d->rot.direction;
 	const Vector2i pos = d->pos.xy();
 	const auto ahead = [](uint16_t a, int r) { return Vector2i(iSinR(a, r), iCosR(a, r)); };
@@ -403,10 +410,12 @@ bool drive(int forward, int turn)
 void tick()
 {
 	// Fahren endet, sobald keine Fahrtaste mehr kommt (oder die Verfolgerkamera aus ist)
-	if (s_driving && (realTime - s_seen > 150 || !getWarCamStatus()))
+	// (27.11.) 350 statt 150 ms: ein kurzes Ruckeln des Bildes galt sonst als "Taste losgelassen" - die Einheit hielt kurz an
+	if (s_driving && (realTime - s_seen > 350 || !getWarCamStatus()))
 	{
 		stopDriving();
 	}
+	if (!getWarCamStatus()) { s_lookArmed = s_looking = false; s_lookYaw = 0; }
 	for (auto it = s_pending.begin(); it != s_pending.end();)
 	{
 		const Pending &p = it->second;
@@ -464,8 +473,63 @@ void tick()
 	}
 }
 
+bool isDriving(const DROID *psDroid)
+{
+	return s_driving && psDroid != nullptr && psDroid->id == s_driveId && static_cast<int>(psDroid->player) == s_drivePlayer;
+}
+
+bool blocksMove(const DROID *psDroid)
+{
+	return !s_steering && isDriving(psDroid);
+}
+
+int lookYaw()
+{
+	return s_lookYaw;
+}
+
+bool processLook(bool overUi)
+{
+	if (!getWarCamStatus())
+	{
+		s_lookArmed = s_looking = false;
+		s_lookYaw = 0;
+		return false;
+	}
+	if (!s_lookArmed)
+	{
+		if (!mousePressed(MOUSE_LMB) || mouseDClicked(MOUSE_LMB) || overUi || ctrlShiftDown()) { return false; }
+		s_lookArmed = true;
+		s_looking = false;
+		s_lookPressX = mouseX();
+		return false;   // noch ein moeglicher Klick - WZ sieht den Druck wie gewohnt
+	}
+	const int dx = mouseX() - s_lookPressX;
+	if (!s_looking && std::abs(dx) >= 6)   // vor dem Auswahlrahmen von WZ (ab 6 Punkten)
+	{
+		s_looking = true;
+	}
+	if (s_looking)
+	{
+		// eine Bildschirmbreite ziehen = eine halbe Drehung; nach rechts ziehen = nach rechts schauen
+		const int w = std::max(1, static_cast<int>(pie_GetVideoBufferWidth()));
+		s_lookYaw = std::clamp(-dx * DEG(180) / w, -DEG(170), DEG(170));
+	}
+	if (mouseReleased(MOUSE_LMB) || !mouseDown(MOUSE_LMB))
+	{
+		const bool was = s_looking;
+		s_lookArmed = s_looking = false;
+		s_lookYaw = 0;   // losgelassen: wieder geradeaus hinter dem Fahrzeug
+		return was;      // nur ein Klick: WZ behandelt ihn wie gewohnt
+	}
+	return s_looking;   // waehrend des Umschauens kein Auswahlrahmen
+}
+
 void reset()
 {
+	s_lookArmed = s_looking = false;
+	s_lookYaw = 0;
+	s_steering = false;
 	s_pending.clear();
 	s_armed = s_active = false;
 	s_rArmed = s_rActive = false;

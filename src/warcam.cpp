@@ -39,6 +39,7 @@
 #include "lib/gamelib/gtime.h"
 
 #include "warcam.h"
+#include "modfacing.h"   // MOD (27.11.): Umschauen in der Verfolgerkamera
 #include "uiobjectrefs.h"
 
 #include "objects.h"
@@ -905,6 +906,24 @@ static bool camTrackCamera()
 	{
 		updateCameraRotationVelocity(CAM_X_AND_Y);
 		updateCameraRotationPosition(CAM_X_AND_Y);
+	}
+
+	// MOD (Wunsch 27.11. "die Kamera dreht sich zu 100% direkt mit dem Fahrzeug. Ohne Traegheit und ohne Verzoegerung. Ausserdem soll man
+	// die Kamera mit der gedrueckten und gezogenen linken Maustaste noch nach rechts und links gucken koennen"): eine einzelne
+	// Bodeneinheit verfolgt die Kamera ohne Feder - Position und Blickrichtung kommen direkt aus der geglaetteten Lage des Fahrzeugs
+	// (Bildzeit, sonst ruckelt sie im Takt der Spiellogik); dazu der Blickversatz aus dem Umschauen (modfacing). VTOL und Gruppen wie bisher.
+	if (!bFlying && getNumDroidsSelected() <= 2)
+	{
+		const Spacetime st = interpolateObjectSpacetime(trackingCamera.target, graphicsTime);
+		const uint16_t yaw = static_cast<uint16_t>(st.rot.direction + modfacing::lookYaw());
+		const Vector2i ahead = iSinCosR(yaw, MOD_CHASE_AHEAD);
+		trackingCamera.position = Vector3f(static_cast<float>(st.pos.x + ahead.x), static_cast<float>(st.pos.z + MOD_CHASE_LIFT), static_cast<float>(st.pos.y + ahead.y));
+		trackingCamera.velocity = Vector3f(0.f, 0.f, 0.f);
+		trackingCamera.acceleration = Vector3f(0.f, 0.f, 0.f);
+		trackingCamera.rotation.y = static_cast<float>(static_cast<uint16_t>(yaw + DEG(180)));
+		trackingCamera.rotation.x = static_cast<float>(static_cast<uint16_t>(-DEG(MOD_CHASE_PITCH_DEG)));
+		trackingCamera.rotVel = Vector3f(0.f, 0.f, 0.f);
+		trackingCamera.rotAccel = Vector3f(0.f, 0.f, 0.f);
 	}
 
 	/* Update the position that's now stored in trackingCamera.position */
