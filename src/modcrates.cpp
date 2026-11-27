@@ -21,6 +21,7 @@
 #include "display.h"
 #include "droid.h"
 #include "effects.h"
+#include "miscimd.h"
 #include "feature.h"
 #include "game_world.h"
 #include "map.h"
@@ -279,7 +280,13 @@ void effects(int x, int y, int z, int n)
 		}
 		else
 		{
-			addEffect(&p, EFFECT_GRAVITON, GRAVITON_TYPE_EMITTING_DR, false, nullptr, 0);
+			// MOD (Abstuerze 27.11. 03:19 und 16:41 "als gerade ein Ammo-Depot in die Luft ging"): hier flog ein Truemmerteil OHNE Modell
+			// los (Effekt ohne Modell -> Absturz beim Zeichnen). Jetzt wie im Originalspiel ein zufaelliges Truemmerteil mit Rauchspur.
+			const iIMDBaseShape *debris = getRandomDebrisImd();
+			if (debris != nullptr)
+			{
+				addEffect(&p, EFFECT_GRAVITON, GRAVITON_TYPE_EMITTING_DR, true, debris->displayModel(), 0, graphicsTime, nullptr, &vel);
+			}
 		}
 	}
 	for (int i = 0; i < 2 + m / 2; ++i)
