@@ -35,6 +35,7 @@
 #include "qtscript.h"
 #include "lib/ivis_opengl/tex.h"
 #include "lib/ivis_opengl/piestate.h"
+#include "lib/ivis_opengl/piepalette.h" // MOD_NUM_PLAYER_COLOURS
 
 #include "action.h"
 #include "clparse.h"
@@ -725,12 +726,12 @@ bool wzapi::replaceTexture(WZAPI_PARAMS(std::string oldFilename, std::string new
 //--
 //-- Change a player's colour slot. The current player colour can be read from the ```playerData``` array. Available colours
 //-- are green, orange, gray, black, red, blue, pink, cyan, yellow, purple, white, bright blue, neon green, infrared,
-//-- ultraviolet, and brown, represented by the integers 0 - 15 respectively.
+//-- ultraviolet, brown and desert camouflage (MOD), represented by the integers 0 - 16 respectively.
 //--
 bool wzapi::changePlayerColour(WZAPI_PARAMS(int player, int colour))
 {
 	SCRIPT_ASSERT_PLAYER(false, context, player);
-	SCRIPT_ASSERT(false, context, colour >= 0 && colour < 16, "Invalid color: %d", colour);
+	SCRIPT_ASSERT(false, context, colour >= 0 && colour < MOD_NUM_PLAYER_COLOURS, "Invalid color: %d", colour);
 	return setPlayerColour(player, colour);
 }
 

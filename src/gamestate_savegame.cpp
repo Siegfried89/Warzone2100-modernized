@@ -163,7 +163,7 @@ static void readPlayers(const nlohmann::ordered_json &jplayers, SetupHeaderInfo 
 			throw StateError("setup.players position out of range");
 		}
 		pl.colour = jp.at("colour").get<int32_t>();
-		if (pl.colour < 0 || pl.colour >= 16)  // as setPlayerColour() allows
+		if (pl.colour < 0 || pl.colour >= MOD_NUM_PLAYER_COLOURS)  // as setPlayerColour() allows (MOD: 17 Farben, 16 = Wuestentarn)
 		{
 			throw StateError("setup.players colour out of range");
 		}
