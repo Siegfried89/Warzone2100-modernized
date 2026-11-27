@@ -56,6 +56,10 @@ struct Slot
 	std::vector<float> pitch, roll;                  // (27.11.) Neigung je Anschluss (Grad)
 	std::vector<glm::mat4> driveM;                   // (27.11.) Antriebsplaetze: Lage
 	std::vector<size_t> driveBody;                   // (27.11.) Antriebsplaetze: Rumpf (asBodyStats), dessen Laufwerk-Modelle sie tragen
+	bool anim = false;                               // (27.11.) Animation (Bewegungs-Bausteine/Posen)
+	Def animDef;                                     // Teile samt Animation (nur wenn anim)
+	std::vector<int> levelPart;                      // Teil je Modell-Ebene
+	std::vector<int> mountPart;                      // Teil je Anschluss (-1 = am Rumpf)
 };
 std::vector<Slot> s_slots;
 size_t s_first = 0;
@@ -99,6 +103,27 @@ nlohmann::json toJson(const Def &d)
 		if (p.flip != 0) { e["flip"] = p.flip; }
 		if (glm::length(p.stretch - glm::vec3(1.f)) > 1e-4f) { e["stretch"] = vec3(p.stretch); }   // (24.11.) Form
 		if (!p.texFrom.empty() && p.texFrom != p.body) { e["tex"] = p.texFrom; }                  // (27.11.) Farben eines anderen Rumpfes
+		// (27.11.) Animation
+		if (p.parent >= 0) { e["parent"] = p.parent; }
+		if (glm::length(p.pivot) > 1e-4f) { e["pivot"] = vec3(p.pivot); }
+		if (p.motion.type != MOT_NONE)
+		{
+			e["motion"] = { { "type", p.motion.type }, { "axis", p.motion.axis }, { "when", p.motion.when }, { "amount", p.motion.amount },
+			                { "speed", p.motion.speed }, { "phase", p.motion.phase } };
+		}
+		bool anyKey = false;
+		for (int c = 0; c < CLIP_COUNT; ++c) { anyKey = anyKey || !p.keys[c].empty(); }
+		if (anyKey)
+		{
+			nlohmann::json ks = nlohmann::json::array();
+			for (int c = 0; c < CLIP_COUNT; ++c)
+			{
+				nlohmann::json kc = nlohmann::json::array();
+				for (const PoseKey &k : p.keys[c]) { kc.push_back({ { "r", vec3(k.rot) }, { "p", vec3(k.pos) } }); }
+				ks.push_back(kc);
+			}
+			e["keys"] = ks;
+		}
 		parts.push_back(e);
 	}
 	j["parts"] = parts;
@@ -112,6 +137,21 @@ nlohmann::json toJson(const Def &d)
 		mounts.push_back(e);
 	}
 	j["mounts"] = mounts;
+	{
+		bool anyPart = false;
+		for (const Mount &m : d.mounts) { anyPart = anyPart || m.part >= 0; }
+		if (anyPart)   // (27.11.) Teil je Waffenplatz (Animation)
+		{
+			nlohmann::json mp = nlohmann::json::array();
+			for (const Mount &m : d.mounts) { mp.push_back(m.part); }
+			j["mountParts"] = mp;
+		}
+	}
+	if (d.poseCount[0] > 0 || d.poseCount[1] > 0 || d.poseCount[2] > 0)   // (27.11.) Posen
+	{
+		j["poses"] = { d.poseCount[0], d.poseCount[1], d.poseCount[2] };
+		j["poseSeconds"] = { d.poseSeconds[0], d.poseSeconds[1], d.poseSeconds[2] };
+	}
 	if (!d.drives.empty())   // (27.11.) Antriebsplaetze
 	{
 		nlohmann::json drives = nlohmann::json::array();
@@ -148,6 +188,35 @@ bool fromJson(const nlohmann::json &j, Def &d)
 		p.flip = std::clamp(e.value("flip", 0), 0, 7);
 		if (e.contains("stretch")) { p.stretch = glm::clamp(vec3(e["stretch"]), glm::vec3(0.25f), glm::vec3(4.f)); }
 		p.texFrom = e.value("tex", std::string());
+		// (27.11.) Animation
+		p.parent = e.value("parent", -1);
+		if (e.contains("pivot")) { p.pivot = vec3(e["pivot"]); }
+		if (e.contains("motion") && e["motion"].is_object())
+		{
+			const auto &m = e["motion"];
+			p.motion.type = std::clamp(m.value("type", 0), 0, MOT_COUNT - 1);
+			p.motion.axis = std::clamp(m.value("axis", 0), 0, 2);
+			p.motion.when = std::clamp(m.value("when", 1), 0, WHEN_COUNT - 1);
+			p.motion.amount = std::clamp(m.value("amount", 0.f), -360.f, 360.f);
+			p.motion.speed = std::clamp(m.value("speed", 1.f), -20.f, 20.f);
+			p.motion.phase = m.value("phase", 0.f);
+		}
+		if (e.contains("keys") && e["keys"].is_array())
+		{
+			for (size_t c = 0; c < e["keys"].size() && c < static_cast<size_t>(CLIP_COUNT); ++c)
+			{
+				const auto &kc = e["keys"][c];
+				if (!kc.is_array()) { continue; }
+				for (const auto &k : kc)
+				{
+					if (p.keys[c].size() >= static_cast<size_t>(MAX_POSES)) { break; }
+					PoseKey pk;
+					if (k.is_object() && k.contains("r")) { pk.rot = vec3(k["r"]); }
+					if (k.is_object() && k.contains("p")) { pk.pos = vec3(k["p"]); }
+					p.keys[c].push_back(pk);
+				}
+			}
+		}
 		d.parts.push_back(p);
 	}
 	if (j.contains("mounts") && j["mounts"].is_array())
@@ -164,6 +233,38 @@ bool fromJson(const nlohmann::json &j, Def &d)
 			d.mounts.push_back(mm);
 		}
 	}
+	if (j.contains("mountParts") && j["mountParts"].is_array())   // (27.11.)
+	{
+		for (size_t k = 0; k < j["mountParts"].size() && k < d.mounts.size(); ++k)
+		{
+			if (j["mountParts"][k].is_number_integer()) { d.mounts[k].part = j["mountParts"][k].get<int>(); }
+		}
+	}
+	if (j.contains("poses") && j["poses"].is_array())   // (27.11.) Posen
+	{
+		for (size_t c = 0; c < j["poses"].size() && c < static_cast<size_t>(CLIP_COUNT); ++c)
+		{
+			if (j["poses"][c].is_number_integer()) { d.poseCount[c] = std::clamp(j["poses"][c].get<int>(), 0, MAX_POSES); }
+		}
+		if (j.contains("poseSeconds") && j["poseSeconds"].is_array())
+		{
+			for (size_t c = 0; c < j["poseSeconds"].size() && c < static_cast<size_t>(CLIP_COUNT); ++c)
+			{
+				if (j["poseSeconds"][c].is_number()) { d.poseSeconds[c] = std::clamp(j["poseSeconds"][c].get<float>(), 0.1f, 30.f); }
+			}
+		}
+	}
+	for (Part &p : d.parts)   // Kreise/ungueltige Eltern verhindern
+	{
+		if (p.parent < 0 || p.parent >= static_cast<int>(d.parts.size())) { p.parent = -1; }
+	}
+	for (size_t i = 0; i < d.parts.size(); ++i)
+	{
+		int q = d.parts[i].parent, guard = 0;
+		while (q >= 0 && guard++ < 64) { if (q == static_cast<int>(i)) { d.parts[i].parent = -1; break; } q = d.parts[static_cast<size_t>(q)].parent; }
+		if (guard >= 64) { d.parts[i].parent = -1; }
+	}
+	for (Mount &m : d.mounts) { if (m.part >= static_cast<int>(d.parts.size())) { m.part = -1; } }
 	if (j.contains("drives") && j["drives"].is_array())   // (27.11.) Antriebsplaetze
 	{
 		for (const auto &e : j["drives"])
@@ -622,12 +723,13 @@ void texLines(std::ostringstream &o, const iIMDShape &lvl, const std::string &te
 	}
 }
 
-std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
+std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut, std::vector<int> *levelPartOut = nullptr)
 {
-	struct Lv { const iIMDShape *s; glm::mat4 m; bool mirrored; std::string tex; };
+	struct Lv { const iIMDShape *s; glm::mat4 m; bool mirrored; std::string tex; int part; };
 	std::vector<Lv> levels;
-	for (const Part &p : d.parts)
+	for (size_t pi = 0; pi < d.parts.size(); ++pi)
 	{
+		const Part &p = d.parts[pi];
 		const BodyInfo *b = bodyInfo(p.body);
 		if (b == nullptr || b->model == nullptr || b->model->displayModel() == nullptr) { continue; }
 		const glm::mat4 m = partMatrix(p);
@@ -637,9 +739,11 @@ std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 		{
 			if (lvl->points.empty() || lvl->polys.empty()) { continue; }
 			if (lvl->tilesetTextureFiles[0].texfile.empty()) { continue; }
-			levels.push_back({ lvl, m, mirrored, texSrc != nullptr ? recoloredPage(*b, lvl->tilesetTextureFiles[0].texfile, *texSrc) : std::string() });
+			levels.push_back({ lvl, m, mirrored, texSrc != nullptr ? recoloredPage(*b, lvl->tilesetTextureFiles[0].texfile, *texSrc) : std::string(),
+			                   static_cast<int>(pi) });
 		}
 	}
+	if (levelPartOut != nullptr) { levelPartOut->clear(); for (const Lv &lv : levels) { levelPartOut->push_back(lv.part); } }
 	std::ostringstream o;
 	o.setf(std::ios::fixed); o.precision(3);
 	if (levels.empty()) { return std::string(); }
@@ -693,6 +797,144 @@ std::string buildPie(const Def &d, std::vector<Vector3i> &connectorsOut)
 	return o.str();
 }
 
+// ---------------------------------------------------------------- (Wunsch 27.11. 20:56 "A+B") Animation ohne Skelett
+namespace
+{
+/// Teil, in dessen (Ruhe-)Umriss der Punkt liegt - das kleinste; -1 = keins
+int partContaining(const Def &d, const glm::vec3 &pt)
+{
+	int best = -1;
+	float bestVol = 1e30f;
+	for (size_t i = 0; i < d.parts.size(); ++i)
+	{
+		const BodyInfo *b = bodyInfo(d.parts[i].body);
+		const iIMDShape *m = (b != nullptr && b->model != nullptr) ? b->model->displayModel() : nullptr;
+		if (m == nullptr) { continue; }
+		const glm::mat4 Mi = glm::inverse(partMatrix(d.parts[i]));
+		const glm::vec3 q = glm::vec3(Mi * glm::vec4(pt, 1.f));
+		const float pad = 3.f;
+		if (q.x < m->min.x - pad || q.x > m->max.x + pad || q.y < m->min.y - pad || q.y > m->max.y + pad || q.z < m->min.z - pad || q.z > m->max.z + pad) { continue; }
+		const glm::mat3 M3(partMatrix(d.parts[i]));
+		const float vol = std::fabs(glm::determinant(M3)) * std::max(1.f, static_cast<float>(m->max.x - m->min.x)) * std::max(1.f, static_cast<float>(m->max.y - m->min.y))
+		                  * std::max(1.f, static_cast<float>(m->max.z - m->min.z));
+		if (vol < bestVol) { bestVol = vol; best = static_cast<int>(i); }
+	}
+	return best;
+}
+
+glm::mat4 rotYXZ(const glm::vec3 &r)
+{
+	glm::mat4 m(1.f);
+	m = glm::rotate(m, glm::radians(r.x), glm::vec3(0.f, 1.f, 0.f));
+	m = glm::rotate(m, glm::radians(r.y), glm::vec3(1.f, 0.f, 0.f));
+	m = glm::rotate(m, glm::radians(r.z), glm::vec3(0.f, 0.f, 1.f));
+	return m;
+}
+
+float smooth01(float x)
+{
+	x = std::clamp(x, 0.f, 1.f);
+	return x * x * (3.f - 2.f * x);
+}
+
+float whenWeight(int when, const AnimCtx &c)
+{
+	switch (when)
+	{
+	case WHEN_MOVING: return c.moveW;
+	case WHEN_STANDING: return 1.f - c.moveW;
+	case WHEN_FIRING: return c.fireW;
+	default: return 1.f;
+	}
+}
+
+float whenClock(int when, const AnimCtx &c)
+{
+	switch (when)
+	{
+	case WHEN_MOVING: return c.moveClock;
+	case WHEN_STANDING: return c.standClock;
+	case WHEN_FIRING: return c.fireClock;
+	default: return c.time;
+	}
+}
+
+/// Bewegungs-Baustein: Drehung (Grad wie PoseKey::rot) und Verschiebung
+void motionDelta(const Motion &m, const AnimCtx &c, glm::vec3 &rot, glm::vec3 &pos)
+{
+	if (m.type == MOT_NONE) { return; }
+	const float w = whenWeight(m.when, c);
+	const float t = whenClock(m.when, c);
+	const float ph = 6.2831853f * (t * m.speed + m.phase);
+	const int ax = std::clamp(m.axis, 0, 2);
+	auto addRot = [&rot, ax](float deg) {
+		if (ax == 0) { rot.y += deg; }        // um x: nicken
+		else if (ax == 1) { rot.x += deg; }   // um y: drehen
+		else { rot.z += deg; }                // um z: rollen
+	};
+	switch (m.type)
+	{
+	case MOT_LEG:
+	case MOT_SWAY:
+		if (w > 1e-3f) { addRot(m.amount * std::sin(ph) * w); }
+		break;
+	case MOT_SPIN:   // laeuft nur mit seiner Uhr weiter (bleibt beim Anhalten stehen, ohne Sprung)
+		addRot(std::fmod(360.f * (t * m.speed + m.phase), 360.f));
+		break;
+	case MOT_BOB:
+		if (w > 1e-3f) { pos[ax] += m.amount * std::sin(ph) * w; }
+		break;
+	case MOT_PUMP:
+		if (w > 1e-3f) { pos[ax] += m.amount * (0.5f - 0.5f * std::cos(ph)) * w; }
+		break;
+	default: break;
+	}
+}
+
+PoseKey keyAt(const Part &p, int clip, int k)
+{
+	return (k >= 0 && k < static_cast<int>(p.keys[clip].size())) ? p.keys[clip][static_cast<size_t>(k)] : PoseKey();
+}
+
+/// Posen-Beitrag eines Ablaufs
+void poseDelta(const Def &d, const Part &p, int clip, const AnimCtx &c, glm::vec3 &rot, glm::vec3 &pos)
+{
+	const int n = std::clamp(d.poseCount[clip], 0, MAX_POSES);
+	if (n <= 0) { return; }
+	const float secs = std::max(0.1f, d.poseSeconds[clip]);
+	PoseKey a, b;
+	float f = 0.f, w = 1.f;
+	if (clip == CLIP_FIRING)
+	{
+		// einmal je Schuss: Ruhe -> Pose 1 -> ... -> Pose n -> Ruhe
+		const float u = c.fireAge / secs;
+		if (u >= 1.f || u < 0.f) { return; }
+		const float sgm = u * static_cast<float>(n + 1);
+		const int k = std::min(static_cast<int>(sgm), n);
+		a = k == 0 ? PoseKey() : keyAt(p, clip, k - 1);
+		b = k >= n ? PoseKey() : keyAt(p, clip, k);
+		f = smooth01(sgm - static_cast<float>(k));
+	}
+	else
+	{
+		w = clip == CLIP_MOVING ? c.moveW : 1.f - c.moveW;
+		if (w <= 1e-3f) { return; }
+		if (n == 1) { a = b = keyAt(p, clip, 0); }
+		else
+		{
+			const float u = (clip == CLIP_MOVING ? c.moveClock : c.standClock) / secs;
+			const float sgm = (u - std::floor(u)) * static_cast<float>(n);
+			const int k = std::min(static_cast<int>(sgm), n - 1);
+			a = keyAt(p, clip, k);
+			b = keyAt(p, clip, (k + 1) % n);
+			f = smooth01(sgm - static_cast<float>(k));
+		}
+	}
+	rot += glm::mix(a.rot, b.rot, f) * w;
+	pos += glm::mix(a.pos, b.pos, f) * w;
+}
+} // namespace
+
 // ---------------------------------------------------------------- Werte
 void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 {
@@ -739,7 +981,8 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 	}
 	// Modell
 	std::vector<Vector3i> conns;
-	const std::string pie = buildPie(d, conns);
+	std::vector<int> lvlPart;
+	const std::string pie = buildPie(d, conns, &lvlPart);
 	if (!pie.empty())
 	{
 		const WzString modelName = WzString::fromUtf8("compbody_" + slug(d.id) + ".pie");
@@ -778,6 +1021,17 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 		const BODY_STATS *b = bodyByIdMutable(p.body);
 		if (b != nullptr) { sl.partIdx.push_back(b->index); }
 	}
+	// (27.11.) Animation: Teil je Ebene und je Anschluss
+	sl.anim = hasAnim(d);
+	sl.levelPart.clear(); sl.mountPart.clear(); sl.animDef = Def();
+	if (sl.anim)
+	{
+		sl.animDef = d;
+		sl.levelPart = lvlPart;
+		std::vector<Mount> mounts = d.mounts;
+		if (mounts.empty() && !d.parts.empty()) { mounts = defaultMounts(d.parts[0]); mounts.resize(std::min<size_t>(mounts.size(), MAX_SLOTS)); for (Mount &m : mounts) { m.part = 0; } }
+		for (const Mount &m : mounts) { sl.mountPart.push_back(m.part >= 0 ? m.part : partContaining(d, m.pos)); }
+	}
 }
 
 void makeFree(BODY_STATS &out, size_t k, const BODY_STATS *tmpl)
@@ -799,6 +1053,119 @@ void makeFree(BODY_STATS &out, size_t k, const BODY_STATS *tmpl)
 }
 
 } // namespace
+
+// ---------------------------------------------------------------- (27.11.) Animation: oeffentliche Schnittstelle
+bool hasAnim(const Def &d)
+{
+	for (const Part &p : d.parts)
+	{
+		if (p.motion.type != MOT_NONE) { return true; }
+		for (int c = 0; c < CLIP_COUNT; ++c)
+		{
+			if (d.poseCount[c] <= 0) { continue; }
+			for (const PoseKey &k : p.keys[c]) { if (glm::length(k.rot) > 1e-3f || glm::length(k.pos) > 1e-3f) { return true; } }
+		}
+	}
+	return false;
+}
+
+glm::vec3 pivotOf(const Part &p)
+{
+	return glm::vec3(partMatrix(p) * glm::vec4(p.pivot, 1.f));
+}
+
+glm::vec3 pivotPreset(const Part &p, int where)
+{
+	const BodyInfo *b = bodyInfo(p.body);
+	const iIMDShape *m = (b != nullptr && b->model != nullptr) ? b->model->displayModel() : nullptr;
+	if (m == nullptr) { return glm::vec3(0.f); }
+	const float cx = (m->min.x + m->max.x) * 0.5f, cz = (m->min.z + m->max.z) * 0.5f;
+	const float y = where <= 0 ? static_cast<float>(m->min.y) : (where == 1 ? (m->min.y + m->max.y) * 0.5f : static_cast<float>(m->max.y));
+	return glm::vec3(cx, y, cz);
+}
+
+Motion defaultMotion(int type)
+{
+	Motion m;
+	m.type = std::clamp(type, 0, MOT_COUNT - 1);
+	switch (m.type)
+	{
+	case MOT_LEG: m.axis = 0; m.when = WHEN_MOVING; m.amount = 25.f; m.speed = 1.f; break;
+	case MOT_SPIN: m.axis = 1; m.when = WHEN_ALWAYS; m.amount = 0.f; m.speed = 0.25f; break;
+	case MOT_BOB: m.axis = 1; m.when = WHEN_MOVING; m.amount = 2.f; m.speed = 2.f; break;
+	case MOT_PUMP: m.axis = 2; m.when = WHEN_FIRING; m.amount = 4.f; m.speed = 3.f; break;
+	case MOT_SWAY: m.axis = 2; m.when = WHEN_STANDING; m.amount = 4.f; m.speed = 0.3f; break;
+	default: break;
+	}
+	return m;
+}
+
+const char *motionName(int type)
+{
+	static const char *const N[MOT_COUNT] = { "None", "Leg", "Spin", "Bob", "Pump", "Sway" };
+	return N[std::clamp(type, 0, MOT_COUNT - 1)];
+}
+
+const char *whenName(int when)
+{
+	static const char *const N[WHEN_COUNT] = { "Always", "Moving", "Standing", "Firing" };
+	return N[std::clamp(when, 0, WHEN_COUNT - 1)];
+}
+
+void evalAnim(const Def &d, const AnimCtx &c, std::vector<glm::mat4> &partW)
+{
+	const size_t n = d.parts.size();
+	std::vector<glm::mat4> L(n, glm::mat4(1.f));
+	for (size_t i = 0; i < n; ++i)
+	{
+		const Part &p = d.parts[i];
+		glm::vec3 rot(0.f), pos(0.f);
+		for (int k = 0; k < CLIP_COUNT; ++k) { poseDelta(d, p, k, c, rot, pos); }
+		motionDelta(p.motion, c, rot, pos);
+		if (glm::length(rot) < 1e-4f && glm::length(pos) < 1e-4f) { continue; }
+		const glm::vec3 P = pivotOf(p);
+		L[i] = glm::translate(glm::mat4(1.f), P + pos) * rotYXZ(rot) * glm::translate(glm::mat4(1.f), -P);
+	}
+	partW.assign(n, glm::mat4(1.f));
+	for (size_t i = 0; i < n; ++i)
+	{
+		glm::mat4 w = L[i];
+		int q = d.parts[i].parent, guard = 0;
+		while (q >= 0 && q < static_cast<int>(n) && q != static_cast<int>(i) && guard++ < 32)
+		{
+			w = L[static_cast<size_t>(q)] * w;
+			q = d.parts[static_cast<size_t>(q)].parent;
+		}
+		partW[i] = w;
+	}
+}
+
+bool animated(size_t bodyIdx)
+{
+	return isComposite(bodyIdx) && s_slots[bodyIdx - s_first].anim;
+}
+
+bool animate(size_t bodyIdx, const AnimCtx &c, std::vector<glm::mat4> &partW)
+{
+	if (!animated(bodyIdx)) { return false; }
+	evalAnim(s_slots[bodyIdx - s_first].animDef, c, partW);
+	return true;
+}
+
+int levelPart(size_t bodyIdx, size_t level)
+{
+	if (!isComposite(bodyIdx)) { return -1; }
+	const Slot &sl = s_slots[bodyIdx - s_first];
+	return level < sl.levelPart.size() ? sl.levelPart[level] : -1;
+}
+
+int mountPart(size_t bodyIdx, size_t connector)
+{
+	if (!isComposite(bodyIdx)) { return -1; }
+	const Slot &sl = s_slots[bodyIdx - s_first];
+	return connector < sl.mountPart.size() ? sl.mountPart[connector] : -1;
+}
+
 
 // ---------------------------------------------------------------- Stats-Laden
 size_t prepare()

@@ -254,6 +254,19 @@ bool s_partsOpen = false;
 bool s_texAll = false;          // Farben fuer den ganzen Rumpf statt fuer das gewaehlte Teil
 bool s_texPick = false;         // naechster Klick auf einen Rumpf links waehlt die Farben (statt ein Teil anzufuegen)
 std::vector<size_t> s_partsBtns;
+// (Wunsch 27.11. 20:56 "A+B") Animations-Fenster: Drehpunkt, "haengt an", Bewegungs-Bausteine, Posen
+constexpr float AM_X = 262, AM_Y = 126, AM_W = 206, AM_H = 208;
+constexpr float ANB_X = CEN_X, ANB_Y = CEN_Y + CEN_H + 3, ANB_W = CEN_W, ANB_H = CEN_H;   // Knopf "Animate" unter "Centre"
+bool s_animOpen = false;
+bool s_pivotEdit = false;       // Verschieben wirkt auf den Drehpunkt des Teils
+bool s_parentPick = false;      // naechster Klick auf ein Teil: daran haengt das gewaehlte
+bool s_poseEdit = false;        // Verschieben/Drehen wirkt auf die Pose (statt auf die Ruhelage)
+int s_animClip = modcompbody::CLIP_MOVING;
+int s_animPoseIdx = 0;
+int s_animPlay = -1;            // Vorschau: -1 aus, sonst Ablauf (Fahren/Stehen/Feuern)
+uint32_t s_animPlayStart = 0;
+std::vector<size_t> s_animBtns;
+size_t s_axisBtn = SIZE_MAX, s_whenBtn = SIZE_MAX;   // Beschriftung zeigt den aktuellen Wert
 constexpr float PM_X = 262, PM_Y = 178, PM_W = 206, PM_H = 156;   // Parts-Fenster (unten rechts in der Ansicht; (27.11.) hoeher: Antriebsplaetze)
 const float SHAPE_STEPS[3] = { 0.05f, 0.10f, 0.25f };
 int s_step = 1, s_angle = 1;
@@ -584,6 +597,11 @@ void inferLinks()
 			}
 		}
 	}
+	for (size_t k = 0; k < s_def.mounts.size(); ++k)   // (27.11.) sonst das gespeicherte Teil (Animation)
+	{
+		const int mp = s_def.mounts[k].part;
+		if (s_links[k].part < 0 && mp >= 0 && mp < static_cast<int>(s_def.parts.size())) { s_links[k].part = mp; relink(k); }
+	}
 }
 
 void addSlot(const Mount &m, const Link &l)
@@ -627,6 +645,152 @@ void selectPart(int i)
 	s_selDrive = -1;
 	if (s_sel < s_partScroll) { s_partScroll = s_sel; }
 	if (s_sel >= s_partScroll + PART_ROWS) { s_partScroll = s_sel - PART_ROWS + 1; }
+}
+
+// ---------------------------------------------------------------- (Wunsch 27.11. 20:56 "A+B") Animation
+bool partSelected();
+
+/// Pose k des aktuellen Ablaufs fuer Teil i (Liste wird bei Bedarf aufgefuellt); nullptr = keine Pose
+modcompbody::PoseKey *poseKey(int i)
+{
+	const int n = s_def.poseCount[s_animClip];
+	if (i < 0 || i >= static_cast<int>(s_def.parts.size()) || n <= 0 || s_animPoseIdx < 0 || s_animPoseIdx >= n) { return nullptr; }
+	auto &keys = s_def.parts[static_cast<size_t>(i)].keys[s_animClip];
+	if (keys.size() < static_cast<size_t>(n)) { keys.resize(static_cast<size_t>(n)); }
+	return &keys[static_cast<size_t>(s_animPoseIdx)];
+}
+
+/// haengt parent (mittelbar) schon an child? (Kreis)
+bool wouldCycle(int child, int parent)
+{
+	int q = parent, guard = 0;
+	while (q >= 0 && q < static_cast<int>(s_def.parts.size()) && guard++ < 64)
+	{
+		if (q == child) { return true; }
+		q = s_def.parts[static_cast<size_t>(q)].parent;
+	}
+	return false;
+}
+
+void setParent(int child, int parent)
+{
+	if (child < 0 || child >= static_cast<int>(s_def.parts.size())) { return; }
+	if (parent == child) { setStatus("A part cannot hang on itself.", true); return; }
+	if (parent >= 0 && wouldCycle(child, parent)) { setStatus("Part " + std::to_string(parent + 1) + " already hangs on part " + std::to_string(child + 1) + ".", true); return; }
+	s_def.parts[static_cast<size_t>(child)].parent = parent;
+	s_dirty = true;
+	play("mfclick_move.ogg");
+	setStatus(parent < 0 ? "Part " + std::to_string(child + 1) + " hangs on the hull itself." :
+	          "Part " + std::to_string(child + 1) + " now hangs on part " + std::to_string(parent + 1) + " " + bodyName(s_def.parts[static_cast<size_t>(parent)].body) + " - it moves with it.");
+}
+
+void selectPart(int i);
+/// Klick auf ein Teil (Liste oder Ansicht): beim Waehlen des "haengt an"-Teils dieses setzen, sonst das Teil waehlen
+void clickPart(int i)
+{
+	if (s_parentPick && s_animOpen && partSelected())
+	{
+		s_parentPick = false;
+		setParent(s_sel, i);
+		return;
+	}
+	selectPart(i);
+}
+
+void animSetMotion(int type)
+{
+	if (!partSelected()) { setStatus("Select a part first.", true); return; }
+	Part &p = s_def.parts[static_cast<size_t>(s_sel)];
+	p.motion = modcompbody::defaultMotion(type);
+	if (glm::length(p.pivot) < 1e-4f)   // noch kein Drehpunkt: passender Vorschlag
+	{
+		if (type == modcompbody::MOT_LEG || type == modcompbody::MOT_SWAY) { p.pivot = modcompbody::pivotPreset(p, 2); }
+		else if (type == modcompbody::MOT_SPIN) { p.pivot = modcompbody::pivotPreset(p, 1); }
+	}
+	s_dirty = true;
+	if (s_animPlay < 0 && type != modcompbody::MOT_NONE) { s_animPlay = p.motion.when == modcompbody::WHEN_ALWAYS ? modcompbody::CLIP_STANDING : p.motion.when - 1; s_animPlayStart = realTime; }
+	play("mfclick_move.ogg");
+	static const char *const TIP[modcompbody::MOT_COUNT] = { "No motion.", "Leg: swings back and forth while moving (pivot at the top = hip).",
+		"Spin: turns all the time (radar, rotor).", "Bob: goes up and down while moving.", "Pump: slides back and forth when firing (piston, recoil).",
+		"Sway: rocks slowly while standing." };
+	setStatus(TIP[std::clamp(type, 0, modcompbody::MOT_COUNT - 1)]);
+}
+
+void animAddPose()
+{
+	int &n = s_def.poseCount[s_animClip];
+	if (n >= modcompbody::MAX_POSES) { setStatus("At most " + std::to_string(modcompbody::MAX_POSES) + " poses.", true); return; }
+	const int at = n == 0 ? 0 : s_animPoseIdx + 1;
+	for (Part &p : s_def.parts)
+	{
+		auto &keys = p.keys[s_animClip];
+		if (keys.size() < static_cast<size_t>(n)) { keys.resize(static_cast<size_t>(n)); }
+		const modcompbody::PoseKey copy = (n > 0 && s_animPoseIdx < static_cast<int>(keys.size())) ? keys[static_cast<size_t>(s_animPoseIdx)] : modcompbody::PoseKey();
+		keys.insert(keys.begin() + at, copy);   // neue Pose = Kopie der aktuellen (dann aendern)
+	}
+	++n;
+	s_animPoseIdx = at;
+	s_poseEdit = true; s_pivotEdit = false; s_animPlay = -1;
+	s_dirty = true;
+	play("mfui_clank.ogg");
+	setStatus("Pose " + std::to_string(at + 1) + " - now move and turn the parts with the buttons (they turn around their pivot).");
+}
+
+void animRemovePose()
+{
+	int &n = s_def.poseCount[s_animClip];
+	if (n <= 0) { return; }
+	const int k = std::clamp(s_animPoseIdx, 0, n - 1);
+	for (Part &p : s_def.parts)
+	{
+		auto &keys = p.keys[s_animClip];
+		if (k < static_cast<int>(keys.size())) { keys.erase(keys.begin() + k); }
+	}
+	--n;
+	s_animPoseIdx = std::clamp(k, 0, std::max(0, n - 1));
+	if (n == 0) { s_poseEdit = false; }
+	s_dirty = true;
+	play("mfui_detach.ogg");
+	setStatus(n == 0 ? std::string("No poses left in this action.") : "Pose removed - " + std::to_string(n) + " left.");
+}
+
+/// Lage jedes Teils fuer die Ansicht (Pose bearbeiten: diese Pose; Vorschau: laufender Ablauf); leer = Ruhelage
+std::vector<glm::mat4> bayAnimW()
+{
+	std::vector<glm::mat4> W;
+	if (!s_animOpen || s_def.parts.empty()) { return W; }
+	using namespace modcompbody;
+	const int n = s_def.poseCount[s_animClip];
+	if (s_poseEdit && n > 0)
+	{
+		Def tmp = s_def;
+		for (Part &p : tmp.parts) { p.motion.type = MOT_NONE; }
+		for (int c = 0; c < CLIP_COUNT; ++c) { if (c != s_animClip) { tmp.poseCount[c] = 0; } }
+		AnimCtx c;
+		const float secs = std::max(0.1f, tmp.poseSeconds[s_animClip]);
+		const int k = std::clamp(s_animPoseIdx, 0, n - 1);
+		if (s_animClip == CLIP_MOVING) { c.moveW = 1.f; c.moveClock = secs * static_cast<float>(k) / static_cast<float>(n); }
+		else if (s_animClip == CLIP_STANDING) { c.moveW = 0.f; c.standClock = secs * static_cast<float>(k) / static_cast<float>(n); }
+		else { c.fireW = 1.f; c.fireAge = secs * (static_cast<float>(k + 1) + 0.0001f) / static_cast<float>(n + 1); }
+		evalAnim(tmp, c, W);
+		return W;
+	}
+	if (s_animPlay < 0) { return W; }
+	AnimCtx c;
+	const float t = static_cast<float>(realTime - s_animPlayStart) / 1000.f;
+	c.time = t;
+	if (s_animPlay == CLIP_MOVING) { c.moveW = 1.f; c.moveClock = t; }   // wie 128 Einheiten je Sekunde
+	else if (s_animPlay == CLIP_STANDING) { c.moveW = 0.f; c.standClock = t; }
+	else
+	{
+		const float period = std::max(1.2f, s_def.poseSeconds[CLIP_FIRING] + 0.4f);   // ein Schuss je Takt
+		c.fireAge = std::fmod(t, period);
+		c.fireW = c.fireAge < 0.15f ? 1.f : std::max(0.f, 1.f - (c.fireAge - 0.15f) / 0.5f);
+		c.fireClock = t;
+		c.standClock = t;
+	}
+	evalAnim(s_def, c, W);
+	return W;
 }
 
 void selectMount(int k)
@@ -740,6 +904,18 @@ void move(int axis, float sign)
 {
 	const bool fine = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
 	const float d = (fine ? STEPS[0] : STEPS[s_step]) * sign;
+	if (s_animOpen && partSelected() && (s_pivotEdit || s_poseEdit))   // (27.11.) Drehpunkt bzw. Pose statt Ruhelage
+	{
+		Part &p = s_def.parts[static_cast<size_t>(s_sel)];
+		if (s_pivotEdit)
+		{
+			glm::vec3 wd(0.f); wd[axis] = d;
+			p.pivot += glm::inverse(glm::mat3(modcompbody::partMatrix(p))) * wd;
+		}
+		else if (modcompbody::PoseKey *k = poseKey(s_sel)) { k->pos[axis] += d; }
+		s_dirty = true;
+		return;
+	}
 	if (driveSelected())   // (27.11.)
 	{
 		s_def.drives[static_cast<size_t>(s_selDrive)].pos[axis] += d;
@@ -763,6 +939,17 @@ void move(int axis, float sign)
 void rotate(int axis, float sign)
 {
 	const bool fine = keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT);
+	if (s_animOpen && partSelected() && s_pivotEdit) { setStatus("The pivot only moves - switch \"Move\" off to turn the part.", true); return; }
+	if (s_animOpen && partSelected() && s_poseEdit)   // (27.11.) Pose: um den Drehpunkt drehen
+	{
+		if (modcompbody::PoseKey *k = poseKey(s_sel))
+		{
+			float &a = k->rot[axis];
+			a = std::remainder(a + (fine ? 1.f : ANGLES[s_angle]) * sign, 360.f);
+			s_dirty = true;
+		}
+		return;
+	}
 	if (driveSelected())   // (27.11.) Antriebsplatz: nur um die Hochachse
 	{
 		if (axis != 0) { setStatus("Drives only turn left/right.", true); return; }
@@ -822,6 +1009,13 @@ void duplicatePart(bool mirror)
 	Part p = s_def.parts[static_cast<size_t>(src)];
 	if (mirror) { p.pos.x = -p.pos.x; p.rot.x = -p.rot.x; p.rot.z = -p.rot.z; p.flip ^= 1; }   // echte Spiegelung an der Mittelebene
 	else { p.pos.x += 8.f; }
+	if (mirror)   // (27.11.) Animation gespiegelt: das andere Bein tritt im Gegentakt, Drehungen laufen andersherum
+	{
+		using namespace modcompbody;
+		if (p.motion.type == MOT_SPIN) { p.motion.speed = -p.motion.speed; }
+		else if (p.motion.type != MOT_NONE) { p.motion.phase = std::fmod(p.motion.phase + 0.5f, 1.f); }
+		for (auto &keys : p.keys) { for (PoseKey &k : keys) { k.rot.x = -k.rot.x; k.rot.z = -k.rot.z; k.pos.x = -k.pos.x; } }
+	}
 	s_def.parts.push_back(p);
 	const int dst = static_cast<int>(s_def.parts.size()) - 1;
 	// die Waffenplaetze des Teils wandern mit (gespiegelt ueber die gespiegelte Teil-Lage)
@@ -851,6 +1045,15 @@ void removePart(int i)
 		if (k < s_links.size() && s_links[k].part == i) { removeSlot(k); }
 	}
 	for (Link &l : s_links) { if (l.part > i) { --l.part; } }
+	{
+		const int up = s_def.parts[static_cast<size_t>(i)].parent;   // (27.11.) Kinder haengen danach am Eltern-Teil des geloeschten
+		for (Part &q : s_def.parts)
+		{
+			if (q.parent == i) { q.parent = up; }
+			if (q.parent > i) { --q.parent; }
+		}
+	}
+	s_parentPick = false;
 	const std::string name = bodyName(s_def.parts[static_cast<size_t>(i)].body);
 	s_def.parts.erase(s_def.parts.begin() + i);
 	if (i == 0 && !s_def.parts.empty()) { setStatus("Removed " + name + " - new chassis: " + bodyName(s_def.parts[0].body)); }
@@ -969,9 +1172,11 @@ void shapeReset()
 }
 
 void partsShow(bool on);
+void animShow(bool on);
 void shapeShow(bool on)
 {
 	if (on && s_partsOpen) { partsShow(false); }   // (27.11.) nur eines der beiden Fenster
+	if (on && s_animOpen) { animShow(false); }
 	s_shapeOpen = on;
 	for (size_t k : s_shapeBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
 }
@@ -979,14 +1184,25 @@ void shapeShow(bool on)
 void partsShow(bool on)
 {
 	if (on && s_shapeOpen) { shapeShow(false); }
+	if (on && s_animOpen) { animShow(false); }
 	s_partsOpen = on;
 	if (!on) { s_texPick = false; s_drivePick = false; }
 	for (size_t k : s_partsBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
 }
 
+void animShow(bool on)
+{
+	if (on && s_shapeOpen) { shapeShow(false); }
+	if (on && s_partsOpen) { partsShow(false); }
+	s_animOpen = on;
+	if (!on) { s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; }
+	for (size_t k : s_animBtns) { if (k < s_btns.size()) { if (on) { s_btns[k].w->show(); } else { s_btns[k].w->hide(); } } }
+}
+
 bool inShapePanel(int x, int y)
 {
 	const Ctx c = ctx();
+	if (s_animOpen && x >= c.X(AM_X) && x <= c.X(AM_X + AM_W) && y >= c.Y(AM_Y) && y <= c.Y(AM_Y + AM_H)) { return true; }   // (27.11.) Animations-Fenster
 	if (s_partsOpen && x >= c.X(PM_X) && x <= c.X(PM_X + PM_W) && y >= c.Y(PM_Y) && y <= c.Y(PM_Y + PM_H)) { return true; }   // (27.11.) Parts-Fenster
 	if (!s_shapeOpen) { return false; }
 	return x >= c.X(SH_X) && x <= c.X(SH_X + SH_W) && y >= c.Y(SH_Y) && y <= c.Y(SH_Y + SH_H);
@@ -1030,6 +1246,7 @@ void newHull()
 	s_def.name = "New hull";
 	s_links.clear();
 	s_sel = -1; s_selMount = -1; s_selDrive = -1; s_drivePick = false; s_partScroll = 0; s_mountScroll = 0; s_loadIdx = -1;
+	s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; s_animPoseIdx = 0;   // (27.11.)
 	if (s_nameBox) { s_nameBox->setString(WzString::fromUtf8(s_def.name)); }
 	s_dirty = false;
 	setStatus("Click a hull on the left - the first one is the chassis.");
@@ -1046,6 +1263,7 @@ void loadCycle(int dir)
 	if (s_loadIdx >= 0) { pos = (pos + dir + static_cast<int>(idx.size())) % static_cast<int>(idx.size()); }
 	s_loadIdx = idx[static_cast<size_t>(pos)];
 	s_def = all[static_cast<size_t>(s_loadIdx)];
+	s_pivotEdit = false; s_parentPick = false; s_poseEdit = false; s_animPlay = -1; s_animPoseIdx = 0;   // (27.11.)
 	// alte Entwuerfe ohne eigene Plaetze: die des Fahrgestells (wie im Spiel)
 	if (s_def.mounts.empty() && !s_def.parts.empty()) { s_def.mounts = modcompbody::defaultMounts(s_def.parts[0]); }
 	inferLinks();
@@ -1060,6 +1278,7 @@ void doSave()
 	if (s_nameBox) { s_def.name = s_nameBox->getString().toStdString(); }
 	std::string err;
 	const bool centred = modcompbody::centerDef(s_def);   // (Wunsch 27.11. 19:16) Grundriss mittig - passt im Einheiten-Designer
+	for (size_t k = 0; k < s_def.mounts.size(); ++k) { s_def.mounts[k].part = linkValid(k) ? s_links[k].part : -1; }   // (27.11.) Animation
 	const bool ok = modcompbody::save(s_def, err);
 	if (!err.empty()) { setStatus(err, !ok); }
 	else if (ok) { setStatus("Saved: \"" + s_def.name + (s_menu ? "\" - ready in every game." : "\" - ready to build.") + (centred ? " (centred)" : "")); }
@@ -1285,14 +1504,18 @@ void drawBay(const Ctx &c)
 		Vector2i a, b2;
 		if (project(base, glm::vec3(0.f, 0.f, -g * 0.6f), a) && project(base, glm::vec3(0.f, 0.f, -g - 10.f), b2)) { iV_Line(a.x, a.y, b2.x, b2.y, pal_RGBA(120, 255, 170, 200)); }
 	}
+	// (27.11.) Animation: Lage je Teil (Pose bearbeiten oder Vorschau); leer = Ruhelage
+	const std::vector<glm::mat4> animW = bayAnimW();
+	auto AW = [&animW](int i) { return (i >= 0 && i < static_cast<int>(animW.size())) ? animW[static_cast<size_t>(i)] : glm::mat4(1.f); };
 	for (size_t i = 0; i < s_def.parts.size(); ++i)
 	{
 		const Part &p = s_def.parts[i];
 		const BodyInfo *b = modcompbody::bodyInfo(p.body);
 		if (b == nullptr || b->model == nullptr || b->model->displayModel() == nullptr) { continue; }
+		const glm::mat4 pw = base * AW(static_cast<int>(i));
 		const iIMDShape *flipped = modcompbody::bakedShape(p.body, p.flip, p.texFrom);   // (27.11.) gespiegelt und/oder umgefaerbt
-		if (flipped != nullptr) { pie_Draw3DShape(flipped, 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p, false), view); }
-		else { pie_Draw3DShape(b->model->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, base * modcompbody::partMatrix(p), view); }
+		if (flipped != nullptr) { pie_Draw3DShape(flipped, 0, team, WZCOL_WHITE, pie_BUTTON, 0, pw * modcompbody::partMatrix(p, false), view); }
+		else { pie_Draw3DShape(b->model->displayModel(), 0, team, WZCOL_WHITE, pie_BUTTON, 0, pw * modcompbody::partMatrix(p), view); }
 	}
 	// gewaehltes Teil: Rahmen
 	if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()) && s_selMount < 0)
@@ -1301,12 +1524,36 @@ void drawBay(const Ctx &c)
 		if (partCorners(s_def.parts[static_cast<size_t>(s_sel)], cr))
 		{
 			const unsigned char a = static_cast<unsigned char>(170 + 80 * std::sin(static_cast<float>(realTime) * 0.008f));
-			const PIELIGHT col = pal_RGBA(255, 220, 90, a);
+			const PIELIGHT col = s_poseEdit && s_animOpen ? pal_RGBA(120, 220, 255, a) : pal_RGBA(255, 220, 90, a);
 			static const int edges[12][2] = { {0,1},{2,3},{4,5},{6,7},{0,2},{1,3},{4,6},{5,7},{0,4},{1,5},{2,6},{3,7} };
 			Vector2i sp[8];
 			bool ok = true;
-			for (int k = 0; k < 8; ++k) { ok = ok && project(base, cr[k], sp[k]); }
+			const glm::mat4 pw = base * AW(s_sel);
+			for (int k = 0; k < 8; ++k) { ok = ok && project(pw, cr[k], sp[k]); }
 			if (ok) { for (const auto &e : edges) { iV_Line(sp[e[0]].x, sp[e[0]].y, sp[e[1]].x, sp[e[1]].y, col); } }
+		}
+	}
+	// (27.11.) Skelett: Drehpunkte und "haengt an"-Linien (nur mit offenem Animations-Fenster)
+	if (s_animOpen)
+	{
+		for (size_t i = 0; i < s_def.parts.size(); ++i)
+		{
+			const Part &p = s_def.parts[i];
+			const glm::vec3 pv = glm::vec3(AW(static_cast<int>(i)) * glm::vec4(modcompbody::pivotOf(p), 1.f));
+			Vector2i a2;
+			if (!project(base, pv, a2)) { continue; }
+			if (p.parent >= 0 && p.parent < static_cast<int>(s_def.parts.size()))
+			{
+				const glm::vec3 qv = glm::vec3(AW(p.parent) * glm::vec4(modcompbody::pivotOf(s_def.parts[static_cast<size_t>(p.parent)]), 1.f));
+				Vector2i b2;
+				if (project(base, qv, b2)) { iV_Line(a2.x, a2.y, b2.x, b2.y, pal_RGBA(120, 220, 255, 190)); }
+			}
+			const bool sel = static_cast<int>(i) == s_sel && s_selMount < 0 && s_selDrive < 0;
+			const int r = sel ? c.L(5) : c.L(2);
+			const PIELIGHT pc = sel ? (s_pivotEdit ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(120, 255, 255, 255)) : pal_RGBA(120, 220, 255, 220);
+			iV_Line(a2.x - r, a2.y, a2.x + r, a2.y, pc);
+			iV_Line(a2.x, a2.y - r, a2.x, a2.y + r, pc);
+			if (sel) { iV_Box(a2.x - r, a2.y - r, a2.x + r, a2.y + r, pc); }
 		}
 	}
 	// (27.11.) Antriebsplaetze: das Laufwerk (Ketten) des gewaehlten Rumpfes; gewaehlter Platz mit gruenem Rahmen
@@ -1343,7 +1590,8 @@ void drawBay(const Ctx &c)
 	{
 		const Mount &m = s_def.mounts[i];
 		const bool sel = static_cast<int>(i) == s_selMount;
-		const glm::mat4 mm = base * glm::translate(glm::mat4(1.f), m.pos) * glm::rotate(glm::mat4(1.f), glm::radians(-m.yaw), glm::vec3(0.f, 1.f, 0.f))
+		const glm::mat4 mbase = base * AW(linkValid(i) ? s_links[i].part : -1);   // (27.11.) folgt der Animation seines Teils
+		const glm::mat4 mm = mbase * glm::translate(glm::mat4(1.f), m.pos) * glm::rotate(glm::mat4(1.f), glm::radians(-m.yaw), glm::vec3(0.f, 1.f, 0.f))
 		                     * glm::rotate(glm::mat4(1.f), glm::radians(m.pitch), glm::vec3(1.f, 0.f, 0.f))   // (27.11.) geneigter Platz
 		                     * glm::rotate(glm::mat4(1.f), glm::radians(m.roll), glm::vec3(0.f, 0.f, 1.f));
 		if (nt != nullptr)
@@ -1354,7 +1602,7 @@ void drawBay(const Ctx &c)
 			if (ng != nullptr) { pie_Draw3DShape(ng, 0, team, WZCOL_WHITE, pie_BUTTON, 0, gm, view); }
 		}
 		Vector2i sp;
-		if (!project(base, m.pos + glm::vec3(0.f, 3.f, 0.f), sp)) { continue; }
+		if (!project(mbase, m.pos + glm::vec3(0.f, 3.f, 0.f), sp)) { continue; }
 		if (nt == nullptr)
 		{
 			const int r = sel ? 6 : 4;
@@ -1365,8 +1613,8 @@ void drawBay(const Ctx &c)
 		{
 			const glm::vec3 fwd = dirFromYaw(m.yaw), side(-fwd.z, 0.f, fwd.x);
 			Vector2i a, l, rr;
-			if (project(base, m.pos + fwd * 18.f, a)) { iV_Line(sp.x, sp.y, a.x, a.y, pal_RGBA(255, 240, 120, 255)); }
-			if (project(base, m.pos + side * 14.f, rr) && project(base, m.pos - side * 14.f, l))
+			if (project(mbase, m.pos + fwd * 18.f, a)) { iV_Line(sp.x, sp.y, a.x, a.y, pal_RGBA(255, 240, 120, 255)); }
+			if (project(mbase, m.pos + side * 14.f, rr) && project(mbase, m.pos - side * 14.f, l))
 			{
 				iV_Line(sp.x, sp.y, rr.x, rr.y, pal_RGBA(255, 240, 120, 120));
 				iV_Line(sp.x, sp.y, l.x, l.y, pal_RGBA(255, 240, 120, 120));
@@ -1617,6 +1865,61 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		if (s_drivePick) { wzText("click a hull on the left: its drive size", c.X(PM_X + 6), c.Y(PM_Y + 124), pal_RGBA(120, 255, 170, 255), TK_ROW, S); }
 	}
 
+	// ---- (27.11.) Animations-Fenster (die Knoepfe zeichnen sich selbst darueber)
+	if (s_animOpen)
+	{
+		using namespace modcompbody;
+		pie_UniTransBoxFill(c.X(AM_X), c.Y(AM_Y), c.X(AM_X + AM_W), c.Y(AM_Y + AM_H), pal_RGBA(6, 12, 28, 235));
+		groupFrame(c, AM_X, AM_Y, AM_W, AM_H, "ANIMATE");
+		const bool havePart = partSelected();
+		const Part *p = havePart ? &s_def.parts[static_cast<size_t>(s_sel)] : nullptr;
+		const std::string who = havePart ? "part " + std::to_string(s_sel + 1) + " " + bodyName(p->body) : std::string("select a part");
+		wzText(fitW(who, c.L(AM_W - 70), TK_ROW, S), c.X(AM_X + 66), c.Y(AM_Y + 3), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
+		const PIELIGHT lab = WZCOL_TEXT_BRIGHT, val = pal_RGBA(255, 226, 140, 255);
+		wzText("Pivot", c.X(AM_X + 6), c.Y(AM_Y + 18), lab, TK_ROW, S);
+		wzText("Hangs on", c.X(AM_X + 6), c.Y(AM_Y + 36), lab, TK_ROW, S);
+		std::string par = "-";
+		if (p != nullptr) { par = p->parent >= 0 && p->parent < static_cast<int>(s_def.parts.size()) ? std::to_string(p->parent + 1) + " " + bodyName(s_def.parts[static_cast<size_t>(p->parent)].body) : std::string("the hull"); }
+		if (s_parentPick) { par = "click a part..."; }
+		wzText(fitW(par, c.L(72), TK_ROW, S), c.X(AM_X + 54), c.Y(AM_Y + 36), s_parentPick ? pal_RGBA(120, 255, 170, 255) : val, TK_ROW, S);
+		char buf[64];
+		if (p != nullptr && p->motion.type != MOT_NONE)
+		{
+			const bool rotType = p->motion.type == MOT_LEG || p->motion.type == MOT_SWAY || p->motion.type == MOT_SPIN;
+			static const char *const axR[3] = { "nod", "turn", "roll" }, *const axT[3] = { "side", "up", "fwd" };
+			if (s_axisBtn < s_btns.size()) { s_btns[s_axisBtn].label = rotType ? axR[std::clamp(p->motion.axis, 0, 2)] : axT[std::clamp(p->motion.axis, 0, 2)]; }
+			if (s_whenBtn < s_btns.size()) { s_btns[s_whenBtn].label = whenName(p->motion.when); }
+			if (p->motion.type == MOT_SPIN) { snprintf(buf, sizeof(buf), "-"); }
+			else { snprintf(buf, sizeof(buf), (p->motion.type == MOT_BOB || p->motion.type == MOT_PUMP) ? "%.0f" : "%.0f\xc2\xb0", p->motion.amount); }
+			wzText(buf, c.X(AM_X + 165) - textW(buf, TK_ROW, S) / 2, c.Y(AM_Y + 72), val, TK_ROW, S);
+			snprintf(buf, sizeof(buf), "%.2f", p->motion.speed);
+			wzText(buf, c.X(AM_X + 68) - textW(buf, TK_ROW, S) / 2, c.Y(AM_Y + 90), val, TK_ROW, S);
+			snprintf(buf, sizeof(buf), "%.2f", p->motion.phase);
+			wzText(buf, c.X(AM_X + 170) - textW(buf, TK_ROW, S) / 2, c.Y(AM_Y + 90), val, TK_ROW, S);
+		}
+		else
+		{
+			if (s_axisBtn < s_btns.size()) { s_btns[s_axisBtn].label = "Axis"; }
+			if (s_whenBtn < s_btns.size()) { s_btns[s_whenBtn].label = "When"; }
+		}
+		wzText("Speed", c.X(AM_X + 6), c.Y(AM_Y + 90), lab, TK_ROW, S);
+		wzText("Phase", c.X(AM_X + 106), c.Y(AM_Y + 90), lab, TK_ROW, S);
+		wzText("POSES", c.X(AM_X + 6), c.Y(AM_Y + 110), pal_RGBA(255, 214, 110, 255), TK_ROW, S);
+		const int n = s_def.poseCount[s_animClip];
+		snprintf(buf, sizeof(buf), n > 0 ? "Pose %d/%d" : "no poses", std::clamp(s_animPoseIdx + 1, 1, std::max(1, n)), n);
+		wzText(buf, c.X(AM_X + 51) - textW(buf, TK_ROW, S) / 2, c.Y(AM_Y + 128), val, TK_ROW, S);
+		wzText(s_animClip == CLIP_FIRING ? "Once" : "Loop", c.X(AM_X + 74), c.Y(AM_Y + 146), lab, TK_ROW, S);
+		snprintf(buf, sizeof(buf), "%.1fs", s_def.poseSeconds[s_animClip]);
+		wzText(buf, c.X(AM_X + 141) - textW(buf, TK_ROW, S) / 2, c.Y(AM_Y + 146), val, TK_ROW, S);
+		std::string hint;
+		if (s_pivotEdit) { hint = "Move buttons move the pivot (white cross)."; }
+		else if (s_poseEdit) { hint = "Move/turn buttons change this pose of the part."; }
+		else if (s_animPlay >= 0) { hint = "Playing - press the button again to stop."; }
+		else { hint = "Parts hang on parts: children follow."; }
+		wzText(fitW(hint, c.L(AM_W - 12), TK_ROW, S), c.X(AM_X + 6), c.Y(AM_Y + 167), pal_RGBA(150, 195, 225, 230), TK_ROW, S);
+		wzText("Play", c.X(AM_X + 6), c.Y(AM_Y + 190), lab, TK_ROW, S);
+	}
+
 	// ---- Auswahl-Zeile
 	{
 		std::string t;
@@ -1779,7 +2082,7 @@ void buildScreen()
 	root->backgroundColor = pal_RGBA(0, 0, 0, 0);
 	root->displayFunction = drawScreen;
 	root->onClickedFunc = []() {};
-	root->onCancelPressed = []() { widgScheduleTask([]() { if (s_texPick || s_drivePick) { s_texPick = false; s_drivePick = false; setStatus("Cancelled."); return; } requestClose(); }); };
+	root->onCancelPressed = []() { widgScheduleTask([]() { if (s_texPick || s_drivePick || s_parentPick) { s_texPick = false; s_drivePick = false; s_parentPick = false; setStatus("Cancelled."); return; } requestClose(); }); };
 	screen->psForm->attach(root);
 	const std::shared_ptr<WIDGET> parent = root;
 	s_btns.clear();
@@ -1819,7 +2122,7 @@ void buildScreen()
 		addBtn(parent, 481, PARTS_Y + 1.f + i * LIST_ROW_H, 152, LIST_ROW_H, -1, "", "Click: select   Right-click: remove", [i](bool right) {
 			const int idx = s_partScroll + i;
 			if (idx >= static_cast<int>(s_def.parts.size())) { return; }
-			if (right) { removePart(idx); } else { selectPart(idx); }
+			if (right) { removePart(idx); } else { clickPart(idx); }   // (27.11.) clickPart: auch "haengt an" waehlen
 		}, nullptr, hotDisplay, true);
 	}
 	// ---- Waffenplaetze (Links = waehlen, Rechts = entfernen)
@@ -1930,6 +2233,90 @@ void buildScreen()
 		s_partsBtns.clear();
 		for (size_t k = first; k < s_btns.size(); ++k) { s_partsBtns.push_back(k); }
 	}
+	// ---- (Wunsch 27.11. 20:56 "A+B") Animations-Fenster (anfangs verborgen)
+	addBtn0(parent, ANB_X, ANB_Y, ANB_W, ANB_H, -1, "Animate", "Animate the parts: pivot, what each part hangs on, motions and poses",
+	        []() { if (s_sel < 0 && !s_def.parts.empty()) { s_sel = 0; } s_selMount = -1; s_selDrive = -1; animShow(!s_animOpen); play("mfclick_move.ogg"); }, []() { return s_animOpen; });
+	{
+		using namespace modcompbody;
+		const size_t first = s_btns.size();
+		auto selP = []() -> Part * { return partSelected() ? &s_def.parts[static_cast<size_t>(s_sel)] : nullptr; };
+		// Drehpunkt
+		static const char *const pvl[3] = { "Bottom", "Middle", "Top" };
+		for (int k = 0; k < 3; ++k)
+		{
+			addBtn0(parent, AM_X + 40 + k * 42.f, AM_Y + 16, 40, 14, -1, pvl[k], "Put the pivot (the joint the part turns around) there", [k, selP]() {
+				if (Part *p = selP()) { p->pivot = pivotPreset(*p, k); s_dirty = true; setStatus(std::string("Pivot: ") + pvl[k] + "."); }
+			});
+		}
+		addBtn0(parent, AM_X + 166, AM_Y + 16, 36, 14, -1, "Move", "Move the pivot with the move buttons (Left/Right/Up/Down/Fwd/Back)", []() {
+			s_pivotEdit = !s_pivotEdit; if (s_pivotEdit) { s_poseEdit = false; }
+			setStatus(s_pivotEdit ? "Pivot: use the move buttons - the white cross is the joint." : "Pivot set.");
+		}, []() { return s_pivotEdit; });
+		// haengt an
+		addBtn0(parent, AM_X + 128, AM_Y + 34, 36, 14, -1, "Pick", "Then click the part it hangs on (list on the right or in the view); Esc cancels", []() {
+			if (!partSelected()) { setStatus("Select a part first.", true); return; }
+			s_parentPick = !s_parentPick;
+			setStatus(s_parentPick ? "Click the part that part " + std::to_string(s_sel + 1) + " hangs on (Esc cancels)." : std::string("Cancelled."));
+		}, []() { return s_parentPick; });
+		addBtn0(parent, AM_X + 166, AM_Y + 34, 36, 14, -1, "None", "Hangs on the hull itself", []() { if (partSelected()) { setParent(s_sel, -1); } });
+		// Bewegungs-Bausteine
+		for (int k = 0; k < MOT_COUNT; ++k)
+		{
+			addBtn0(parent, AM_X + 4 + k * 33.5f, AM_Y + 52, 32, 14, -1, motionName(k), "Motion of the selected part", [k]() { animSetMotion(k); },
+			        [k, selP]() { const Part *p = selP(); return p != nullptr && p->motion.type == k; });
+		}
+		s_axisBtn = s_btns.size();
+		addBtn0(parent, AM_X + 4, AM_Y + 70, 48, 14, -1, "Axis", "Axis of the motion (turn around / slide along)", [selP]() {
+			if (Part *p = selP()) { p->motion.axis = (p->motion.axis + 1) % 3; s_dirty = true; }
+		});
+		s_whenBtn = s_btns.size();
+		addBtn0(parent, AM_X + 54, AM_Y + 70, 72, 14, -1, "When", "When the motion plays", [selP]() {
+			if (Part *p = selP()) { p->motion.when = (p->motion.when + 1) % WHEN_COUNT; s_dirty = true; }
+		});
+		auto amountStep = [](const Part &p) { return (p.motion.type == MOT_BOB || p.motion.type == MOT_PUMP) ? 1.f : 5.f; };
+		addBtn0(parent, AM_X + 128, AM_Y + 70, 20, 14, -1, "-", "Smaller motion", [selP, amountStep]() { if (Part *p = selP()) { p->motion.amount -= amountStep(*p); s_dirty = true; } });
+		addBtn0(parent, AM_X + 182, AM_Y + 70, 20, 14, -1, "+", "Bigger motion", [selP, amountStep]() { if (Part *p = selP()) { p->motion.amount += amountStep(*p); s_dirty = true; } });
+		addBtn0(parent, AM_X + 36, AM_Y + 88, 20, 14, -1, "-", "Slower", [selP]() { if (Part *p = selP()) { p->motion.speed /= 1.25f; s_dirty = true; } });
+		addBtn0(parent, AM_X + 80, AM_Y + 88, 20, 14, -1, "+", "Faster", [selP]() { if (Part *p = selP()) { p->motion.speed *= 1.25f; s_dirty = true; } });
+		addBtn0(parent, AM_X + 138, AM_Y + 88, 20, 14, -1, "-", "Phase: start earlier in the beat (0.5 = the opposite leg)", [selP]() {
+			if (Part *p = selP()) { p->motion.phase = std::fmod(p->motion.phase + 0.75f, 1.f); s_dirty = true; } });
+		addBtn0(parent, AM_X + 182, AM_Y + 88, 20, 14, -1, "+", "Phase: start later in the beat (0.5 = the opposite leg)", [selP]() {
+			if (Part *p = selP()) { p->motion.phase = std::fmod(p->motion.phase + 0.25f, 1.f); s_dirty = true; } });
+		// Posen
+		static const char *const cl[CLIP_COUNT] = { "Moving", "Standing", "Firing" };
+		static const float cx[CLIP_COUNT] = { 50, 102, 156 }, cw[CLIP_COUNT] = { 50, 52, 46 };
+		for (int k = 0; k < CLIP_COUNT; ++k)
+		{
+			addBtn0(parent, AM_X + cx[k], AM_Y + 108, cw[k], 14, -1, cl[k], "Poses for this action", [k]() {
+				s_animClip = k; s_animPoseIdx = 0; if (s_def.poseCount[k] == 0) { s_poseEdit = false; }
+			}, [k]() { return s_animClip == k; });
+		}
+		addBtn0(parent, AM_X + 4, AM_Y + 126, 20, 14, -1, "<", "Previous pose", []() {
+			const int n = s_def.poseCount[s_animClip]; if (n > 0) { s_animPoseIdx = (s_animPoseIdx + n - 1) % n; } });
+		addBtn0(parent, AM_X + 78, AM_Y + 126, 20, 14, -1, ">", "Next pose", []() {
+			const int n = s_def.poseCount[s_animClip]; if (n > 0) { s_animPoseIdx = (s_animPoseIdx + 1) % n; } });
+		addBtn0(parent, AM_X + 102, AM_Y + 126, 48, 14, -1, "+ Pose", "New pose (a copy of this one) - then move and turn the parts", []() { animAddPose(); });
+		addBtn0(parent, AM_X + 152, AM_Y + 126, 50, 14, -1, "- Pose", "Remove this pose", []() { animRemovePose(); });
+		addBtn0(parent, AM_X + 4, AM_Y + 144, 64, 14, -1, "Edit pose", "On: the move and turn buttons change this pose (around the pivot) instead of the part itself", []() {
+			if (s_def.poseCount[s_animClip] == 0) { animAddPose(); return; }
+			s_poseEdit = !s_poseEdit; if (s_poseEdit) { s_pivotEdit = false; s_animPlay = -1; }
+		}, []() { return s_poseEdit; });
+		addBtn0(parent, AM_X + 104, AM_Y + 144, 20, 14, -1, "-", "Shorter loop (faster)", []() {
+			float &sec = s_def.poseSeconds[s_animClip]; sec = std::max(0.2f, sec - (sec > 2.f ? 0.5f : 0.1f)); s_dirty = true; });
+		addBtn0(parent, AM_X + 158, AM_Y + 144, 20, 14, -1, "+", "Longer loop (slower)", []() {
+			float &sec = s_def.poseSeconds[s_animClip]; sec = std::min(20.f, sec + (sec >= 2.f ? 0.5f : 0.1f)); s_dirty = true; });
+		// Vorschau
+		static const char *const pl[CLIP_COUNT] = { "Move", "Stand", "Fire" };
+		for (int k = 0; k < CLIP_COUNT; ++k)
+		{
+			addBtn0(parent, AM_X + 34 + k * 44.f, AM_Y + 188, 42, 15, -1, pl[k], "Play the whole animation as if the unit moves / stands / fires", [k]() {
+				s_animPlay = s_animPlay == k ? -1 : k; s_animPlayStart = realTime; if (s_animPlay >= 0) { s_poseEdit = false; s_pivotEdit = false; }
+			}, [k]() { return s_animPlay == k; });
+		}
+		addBtn0(parent, AM_X + AM_W - 38, AM_Y + 188, 34, 15, -1, "Done", "Close the animation window", []() { animShow(false); });
+		s_animBtns.clear();
+		for (size_t k = first; k < s_btns.size(); ++k) { s_animBtns.push_back(k); }
+	}
 	// ---- UEBER-RUMPF
 	addBtn0(parent, 168, ROW_B + 13, 52, 42, FI_NEW, "New", "New hull", []() { newHull(); });
 	addBtn0(parent, 222, ROW_B + 13, 52, 42, FI_LOAD_PREV, "Prev", "Previous saved hull", []() { loadCycle(-1); });
@@ -1959,6 +2346,7 @@ void buildScreen()
 	s_root = root;
 	shapeShow(s_shapeOpen);
 	partsShow(s_partsOpen);   // (27.11.)
+	animShow(s_animOpen);     // (27.11.)
 }
 
 bool mouseInBay()
@@ -1972,7 +2360,7 @@ bool inBay(int x, int y)
 {
 	if (inShapePanel(x, y)) { return false; }   // (24.11.) Form-Fenster liegt ueber der Ansicht
 	const Ctx c = ctx();
-	if (x >= c.X(CEN_X) && x <= c.X(CEN_X + CEN_W) && y >= c.Y(CEN_Y) && y <= c.Y(CEN_Y + CEN_H)) { return false; }   // (27.11.) Zentrier-Knopf
+	if (x >= c.X(CEN_X) && x <= c.X(CEN_X + CEN_W) && y >= c.Y(CEN_Y) && y <= c.Y(ANB_Y + ANB_H)) { return false; }   // (27.11.) Zentrier- und Animate-Knopf
 	return x >= c.X(BAY_X) && x <= c.X(BAY_X + BAY_W) && y >= c.Y(BAY_Y) && y <= c.Y(BAY_Y + BAY_H);
 }
 
@@ -2012,7 +2400,7 @@ void dragEnd(int x, int y)
 				// (27.11.) Antriebsplaetze vor den Teilen (liegen meist darunter/daneben)
 				const int dr = driveAt(x, y);
 				if (dr >= 0) { selectDrive(dr); }
-				else { const int p = partAt(x, y); if (p >= 0) { selectPart(p); } }
+				else { const int p = partAt(x, y); if (p >= 0) { clickPart(p); } }
 			}
 		}
 		else if (s_dragBtn == 1 && m >= 0)

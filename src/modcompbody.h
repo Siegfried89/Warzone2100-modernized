@@ -30,6 +30,29 @@ bool isWzFactionBody(const std::string &id);
 /// Waffenplaetze je Verbundrumpf (Wunsch 23.11. 02:16: bis 30 - Turm-Plaetze-Leiste im Design-Bildschirm, MAX_WEAPONS)
 constexpr unsigned MAX_SLOTS = 30;
 
+// ---------------------------------------------------------------- (Wunsch 27.11. 20:38/20:56 "A+B") Animation ohne Skelett
+// Jedes Teil haengt an einem anderen Teil (parent) und dreht sich um seinen Drehpunkt (pivot) - ein unsichtbares Skelett aus starren Teilen.
+// B: Bewegungs-Bausteine je Teil (Bein, Drehen, Wippen, Pumpen, Pendeln); A: Posen je Ablauf (Fahren, Stehen, Feuern), weich ineinander
+// uebergeblendet. Alles nur Anzeige - Werte und Spiellogik bleiben unberuehrt.
+enum AnimClip { CLIP_MOVING = 0, CLIP_STANDING, CLIP_FIRING, CLIP_COUNT };
+enum MotionType { MOT_NONE = 0, MOT_LEG, MOT_SPIN, MOT_BOB, MOT_PUMP, MOT_SWAY, MOT_COUNT };
+enum MotionWhen { WHEN_ALWAYS = 0, WHEN_MOVING, WHEN_STANDING, WHEN_FIRING, WHEN_COUNT };
+constexpr int MAX_POSES = 8;
+struct Motion
+{
+	int type = MOT_NONE;
+	int axis = 0;            ///< 0 = x (quer: nicken), 1 = y (hoch: drehen), 2 = z (laengs: rollen) - bei Wippen/Pumpen die Schieberichtung
+	int when = WHEN_MOVING;  ///< MotionWhen
+	float amount = 0.f;      ///< Ausschlag in Grad (Bein/Pendeln) bzw. Weg in Modell-Einheiten (Wippen/Pumpen); Drehen: unbenutzt
+	float speed = 1.f;       ///< Takte je Sekunde (beim Fahren: je 128 Einheiten Weg); Drehen: Umdrehungen
+	float phase = 0.f;       ///< Versatz im Takt (0..1) - z.B. 0,5 fuer das gegenueberliegende Bein
+};
+struct PoseKey
+{
+	glm::vec3 rot = glm::vec3(0.f);    ///< Grad wie Part::rot: Gieren (um y), Nicken (um x), Rollen (um z) - um den Drehpunkt
+	glm::vec3 pos = glm::vec3(0.f);    ///< Verschiebung (Modellachsen)
+};
+
 struct Part
 {
 	std::string body;                 ///< ID des Teil-Rumpfes
@@ -43,6 +66,11 @@ struct Part
 	/// (Wunsch 27.11. 19:07 "die Moeglichkeit, die Textur von einem anderen Body zu nehmen"): ID des Rumpfes, dessen Farben das Teil traegt
 	/// (die Textur des Teils wird in dessen Farbverlauf umgefaerbt, Muster und Details bleiben); leer = eigene Textur
 	std::string texFrom;
+	// (27.11.) Animation
+	int parent = -1;                   ///< Teil, an dem dieses haengt (-1 = am Rumpf selbst)
+	glm::vec3 pivot = glm::vec3(0.f);  ///< Drehpunkt im Raum des Teils (wandert mit Verschieben/Drehen/Groesse des Teils mit)
+	Motion motion;
+	std::vector<PoseKey> keys[CLIP_COUNT];   ///< Posen je Ablauf (fehlende = Ruhelage)
 };
 
 struct Mount
@@ -53,6 +81,7 @@ struct Mount
 	// Teilen) und um die Laengsachse (Rollen) des Platzes in Grad - die Waffe sitzt schraeg/seitlich/kopfueber und schwenkt um die geneigte Achse
 	float pitch = 0.f;
 	float roll = 0.f;
+	int part = -1;                     ///< (27.11.) Teil, an dem der Platz sitzt (bewegt sich mit dessen Animation); -1 = unbekannt
 };
 
 /// (Wunsch 27.11. 19:16 "um so eine Einheit wie den Fatboy zu machen, braeuchten wir mehrere Propulsion-Slots ... bis zu 8"): Antriebsplaetze
@@ -77,6 +106,8 @@ struct Def
 	/// (27.11.) Antriebsplaetze (bis MAX_DRIVES): mit ihnen zeichnet das Spiel statt des einen Laufwerks unter dem Fahrgestell je Platz ein
 	/// Laufwerk (eigener Antrieb je Platz moeglich: modslots driveProp); leer = wie bisher
 	std::vector<Drive> drives;
+	int poseCount[CLIP_COUNT] = { 0, 0, 0 };          ///< (27.11.) Posen je Ablauf
+	float poseSeconds[CLIP_COUNT] = { 1.f, 3.f, 0.6f };   ///< (27.11.) Dauer eines Durchlaufs (Fahren: je 128 Einheiten Weg)
 	bool preset = false;              ///< Vorlage aus dem Mod-Paket (noch nicht im Benutzerordner)
 	bool deleted = false;             ///< geloescht: bleibt fuer alte Spielstaende angemeldet, aber nicht mehr baubar
 };
@@ -174,5 +205,34 @@ bool remove(const std::string &id, std::string &err);
 bool centerDef(Def &d);
 /// Standard-Waffenplaetze aus den Anschluessen des Fahrgestells
 std::vector<Mount> defaultMounts(const Part &chassis);
+
+// ---------------------------------------------------------------- (27.11.) Animation
+/// Zustand einer Einheit fuer die Animation (Sekunden bzw. Takte)
+struct AnimCtx
+{
+	float time = 0.f;        ///< laufende Zeit
+	float moveW = 0.f;       ///< 0 = steht, 1 = faehrt
+	float moveClock = 0.f;   ///< gefahrener Weg / 128
+	float standClock = 0.f;  ///< Zeit im Stand
+	float fireW = 0.f;       ///< 1 kurz nach einem Schuss, klingt ab
+	float fireClock = 0.f;   ///< Zeit beim Feuern (laeuft nur waehrend fireW > 0)
+	float fireAge = 1e9f;    ///< Sekunden seit dem letzten Schuss
+};
+bool hasAnim(const Def &d);
+/// Drehpunkt des Teils im Modellraum (Ruhelage)
+glm::vec3 pivotOf(const Part &p);
+/// Drehpunkt-Vorgabe im Raum des Teils: 0 = unten Mitte, 1 = Mitte, 2 = oben Mitte (Mitte des Grundrisses)
+glm::vec3 pivotPreset(const Part &p, int where);
+/// Bewegungs-Baustein mit sinnvollen Vorgaben
+Motion defaultMotion(int type);
+const char *motionName(int type);
+const char *whenName(int when);
+/// Lage jedes Teils (Modellraum: Ruhelage -> animiert) fuer den Zustand c
+void evalAnim(const Def &d, const AnimCtx &c, std::vector<glm::mat4> &partW);
+/// im Spiel: animierter Verbundrumpf? partW je Teil, dazu Teil je Modell-Ebene und je Anschluss
+bool animated(size_t bodyIdx);
+bool animate(size_t bodyIdx, const AnimCtx &c, std::vector<glm::mat4> &partW);
+int levelPart(size_t bodyIdx, size_t level);
+int mountPart(size_t bodyIdx, size_t connector);
 
 }
