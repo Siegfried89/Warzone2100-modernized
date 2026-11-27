@@ -26,5 +26,7 @@ void ExchndlShutdown();
 void ResetRPTDirectory(wchar_t *newPath);
 // MOD (17.11. 14:40): Ablauf-Protokoll neben der Programmdatei (Start-/Beenden-Schritte + Absturzstelle als Modul+Versatz)
 void ExchndlBreadcrumb(const char *step);
+// MOD (27.11.): ist der vorige Start in den ersten Sekunden abgestuerzt (still beendet)? Dann zeigt das Hauptmenue einen Hinweis.
+bool ExchndlPreviousStartCrashed();
 
 #endif // __INCLUDED_LIB_EXCEPTIONHANDLER_EXCHNDL_H__

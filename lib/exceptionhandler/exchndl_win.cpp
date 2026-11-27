@@ -511,9 +511,20 @@ void GenerateExceptionReport(HANDLE hReportFile, PEXCEPTION_POINTERS pExceptionI
 // Deshalb ein kleines Ablauf-Protokoll direkt neben der Programmdatei (MOD-Ablauf-<exe>.txt; der vorige Lauf bleibt als ...-vorher.txt):
 // jeder Start-/Beenden-Schritt eine Zeile, bei einem Absturz Ausnahmecode, Adresse und die Aufrufkette als Modul+Versatz.
 static wchar_t s_crumbPath[MAX_PATH] = {0};
+// MOD (Wunsch 27.11. 18:26 "wenn ich das anderen zugaenglich mache, soll es keine verwirrenden Crashs oder Meldungen geben"): Virenscanner wie
+// Avast lassen ein neues Programm beim allerersten Start zuerst in einem abgeschotteten Testbereich laufen - dort stuerzte das Spiel ab (kein
+// richtiger Grafikzugriff) und zeigte zwei englische Absturzfenster, obwohl danach der echte Start normal lief. Ein Absturz in den ersten
+// Sekunden nach dem Start beendet das Spiel jetzt still (Bericht, Mini-Dump und Ablauf-Protokoll werden trotzdem geschrieben, nur keine
+// Fenster); beim naechsten echten Start zeigt das Hauptmenue einen kurzen deutschen Hinweis. Im Testbereich geschriebene Dateien verwirft der
+// Virenscanner - dann erscheint auch kein Hinweis.
+static const char *const STARTCRASH_MARK = "STARTABSTURZ (still beendet)";
+constexpr ULONGLONG STARTCRASH_WINDOW_MS = 30000;
+static ULONGLONG s_crumbStartTick = 0;
+static bool s_prevStartCrashed = false;
 static void crumbInit()
 {
 	if (s_crumbPath[0] != 0) { return; }
+	s_crumbStartTick = GetTickCount64();
 	wchar_t exe[MAX_PATH] = {0};
 	if (GetModuleFileNameW(NULL, exe, MAX_PATH) == 0) { return; }
 	wchar_t dir[MAX_PATH]; wcsncpy_s(dir, MAX_PATH, exe, _TRUNCATE); PathRemoveFileSpecW(dir);
@@ -522,7 +533,22 @@ static void crumbInit()
 	wchar_t prev[MAX_PATH];
 	_snwprintf_s(s_crumbPath, MAX_PATH, _TRUNCATE, L"%s\\MOD-Ablauf-%s.txt", dir, stem);
 	_snwprintf_s(prev, MAX_PATH, _TRUNCATE, L"%s\\MOD-Ablauf-%s-vorher.txt", dir, stem);
+	// vor dem Umbenennen: endete der vorige Lauf mit einem stillen Startabsturz?
+	{
+		FILE *pf = nullptr;
+		if (_wfopen_s(&pf, s_crumbPath, L"r") == 0 && pf != nullptr)
+		{
+			char ln[512];
+			while (fgets(ln, sizeof(ln), pf) != nullptr) { if (strstr(ln, STARTCRASH_MARK) != nullptr) { s_prevStartCrashed = true; } }
+			fclose(pf);
+		}
+	}
 	MoveFileExW(s_crumbPath, prev, MOVEFILE_REPLACE_EXISTING);
+}
+bool ExchndlPreviousStartCrashed()
+{
+	crumbInit();
+	return s_prevStartCrashed;
 }
 static void crumbWrite(const char *line)
 {
@@ -636,6 +662,15 @@ LONG WINAPI TopLevelExceptionFilter(PEXCEPTION_POINTERS pExceptionInfo)
 
 			GenerateExceptionReport(hReportFile, pExceptionInfo);
 			CloseHandle(hReportFile);
+
+			// MOD (27.11.): Absturz in den ersten Sekunden: still beenden (Mini-Dump ohne Nachfrage), Hinweis beim naechsten Start
+			if (s_crumbStartTick != 0 && GetTickCount64() - s_crumbStartTick < STARTCRASH_WINDOW_MS)
+			{
+				OutputMiniDump(szMinidumpFileName, pExceptionInfo);
+				crumbWrite(STARTCRASH_MARK);
+				SetErrorMode(fuOldErrorMode | SEM_NOGPFAULTERRORBOX);
+				return EXCEPTION_EXECUTE_HANDLER;   // Prozess endet ohne weitere Fenster (auch ohne Windows-Fehlerbericht)
+			}
 
 			bool savedMiniDump = false;
 			if (MessageBoxW(NULL, L"Warzone crashed unexpectedly, would you like to save a \"mini-dump\" diagnostic file?\r\n(A standard report log .RPT will always be saved.)", L"Warzone 2100", MB_YESNO | MB_ICONEXCLAMATION) == IDYES)

@@ -26,5 +26,7 @@ extern bool OverrideRPTDirectory(const char *newPath);
 
 /// MOD (17.11. 14:40): Schritt ins Ablauf-Protokoll neben der Programmdatei schreiben (nur Windows, sonst ohne Wirkung)
 extern void modBreadcrumb(const char *step);
+/// MOD (27.11.): der vorige Start ist in den ersten Sekunden abgestuerzt und wurde still beendet (nur Windows, sonst false)
+extern bool modPreviousStartCrashed();
 
 #endif // __INCLUDED_LIB_EXCEPTIONHANDLER_EXCEPTIONHANDLER_H__
