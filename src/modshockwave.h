@@ -16,6 +16,10 @@ namespace modshockwave
 {
 /// grosse Explosion bei (Welt-x, Welt-y, Hoehe z); strength 1..10 (Faesser / Kisten), nur wenn sichtbar
 void spawn(int worldX, int worldY, int worldZ, int strength);
+/// MOD (Wunsch 27.11. 16:43 "der Sound muss gewaltiger sein, wenn ein Ammo-Depot oder Oeltanker oder Oellager in die Luft geht"):
+/// geschichteter Explosionsklang - sofort grosser Knall + tiefer Nexus-Donner + Einsturz-Grollen, danach Nachexplosionen (Munition:
+/// knatternde Detonationen und Querschlaeger, Oel: weitere Feuerbaelle). strength 1..10 wie bei spawn.
+void bigBoomSound(int worldX, int worldY, int strength, bool ammo);
 /// display3d: im 3D-Durchgang nach den Schildkuppeln
 void draw3D(const glm::mat4 &viewMatrix);
 void reset();
