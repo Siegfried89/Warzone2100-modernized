@@ -1502,6 +1502,17 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 					{
 						debug(LOG_INFO, "Model lacks sufficient connectors?: %s", psShapeBody->modelName.toUtf8().c_str());
 					}
+					// MOD (Wunsch 27.11. 18:48): geneigter Waffenplatz eines Verbundrumpfes (Nase/Rollen aus der Hull Forge) - die Waffe sitzt schraeg und
+					// schwenkt um die geneigte Achse; ungeneigt bleibt alles wie bisher
+					{
+						float mYaw = 0.f, mPitch = 0.f, mRoll = 0.f;
+						if (iConnector < VTOL_CONNECTOR_START && modcompbody::mountTilt(psDroid->asBits[COMP_BODY], static_cast<int>(bodyConnectorIndex), mYaw, mPitch, mRoll))
+						{
+							localModelMatrix *= modcompbody::tiltMatrix(mYaw, mPitch, mRoll);
+							// Schwenk/Hoehe in die Achsen des geneigten Platzes umrechnen - das Rohr zeigt weiter genau aufs Ziel
+							modcompbody::tiltedAim(psDroid->asBits[COMP_BODY], static_cast<int>(bodyConnectorIndex), rot.direction, rot.pitch);
+						}
+					}
 					if (!bButton)
 					{
 						float twist = 0.f, lean = 0.f;

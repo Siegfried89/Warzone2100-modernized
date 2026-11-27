@@ -659,9 +659,13 @@ void rotate(int axis, float sign)
 	// (Wunsch 23.11. 03:05) Waffenplatz: Gieren dreht seine Blickrichtung - die Waffe schwenkt 180 Grad um sie
 	if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 	{
-		if (axis != 0) { setStatus("Weapon slots only turn left/right."); return; }
-		float &y = s_def.mounts[static_cast<size_t>(s_selMount)].yaw;
-		y = std::remainder(y - (fine ? 1.f : ANGLES[s_angle]) * sign, 360.f);
+		// (Wunsch 27.11. 18:48 "Auch Weapon Slots sollen in jegliche Richtung rotieren koennen"): Drehen = Blickrichtung, Nase/Rollen = Neigung
+		// des Platzes (wie bei den Teilen); die Waffe schwenkt im Spiel um die geneigte Achse
+		Mount &mt = s_def.mounts[static_cast<size_t>(s_selMount)];
+		const float stepDeg = (fine ? 1.f : ANGLES[s_angle]) * sign;
+		if (axis == 0) { mt.yaw = std::remainder(mt.yaw - stepDeg, 360.f); }
+		else if (axis == 1) { mt.pitch = std::remainder(mt.pitch + stepDeg, 360.f); }
+		else { mt.roll = std::remainder(mt.roll + stepDeg, 360.f); }
 		relink(static_cast<size_t>(s_selMount));
 		s_dirty = true;
 		return;
@@ -680,7 +684,7 @@ void duplicatePart(bool mirror)
 	{
 		if (s_def.mounts.size() >= modcompbody::MAX_SLOTS) { setStatus("At most " + std::to_string(modcompbody::MAX_SLOTS) + " weapon slots.", true); return; }
 		Mount m = s_def.mounts[static_cast<size_t>(s_selMount)];
-		if (mirror) { m.pos.x = -m.pos.x; m.yaw = -m.yaw; } else { m.pos.x += STEPS[s_step]; }
+		if (mirror) { m.pos.x = -m.pos.x; m.yaw = -m.yaw; m.roll = -m.roll; } else { m.pos.x += STEPS[s_step]; }
 		addSlot(m, Link());
 		selectMount(static_cast<int>(s_def.mounts.size()) - 1);
 		s_dirty = true;
@@ -768,6 +772,7 @@ void resetSelected()
 			applyLink(k);
 		}
 		else { s_def.mounts[k].pos = glm::vec3(0.f, 20.f, 0.f); s_def.mounts[k].yaw = 0.f; }
+		s_def.mounts[k].pitch = 0.f; s_def.mounts[k].roll = 0.f;   // (27.11.) Neigung zuruecksetzen
 		s_dirty = true;
 		return;
 	}
@@ -1113,7 +1118,9 @@ void drawBay(const Ctx &c)
 	{
 		const Mount &m = s_def.mounts[i];
 		const bool sel = static_cast<int>(i) == s_selMount;
-		const glm::mat4 mm = base * glm::translate(glm::mat4(1.f), m.pos) * glm::rotate(glm::mat4(1.f), glm::radians(-m.yaw), glm::vec3(0.f, 1.f, 0.f));
+		const glm::mat4 mm = base * glm::translate(glm::mat4(1.f), m.pos) * glm::rotate(glm::mat4(1.f), glm::radians(-m.yaw), glm::vec3(0.f, 1.f, 0.f))
+		                     * glm::rotate(glm::mat4(1.f), glm::radians(m.pitch), glm::vec3(1.f, 0.f, 0.f))   // (27.11.) geneigter Platz
+		                     * glm::rotate(glm::mat4(1.f), glm::radians(m.roll), glm::vec3(0.f, 0.f, 1.f));
 		if (nt != nullptr)
 		{
 			pie_Draw3DShape(nt, 0, team, WZCOL_WHITE, pie_BUTTON, 0, mm, view);
@@ -1336,7 +1343,8 @@ void drawScreen(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		if (s_selMount >= 0 && s_selMount < static_cast<int>(s_def.mounts.size()))
 		{
 			const glm::vec3 &p = s_def.mounts[static_cast<size_t>(s_selMount)].pos;
-			snprintf(buf, sizeof(buf), "Weapon slot %d    x %.1f   y %.1f   z %.1f    facing %.0f", s_selMount + 1, p.x, p.y, p.z, s_def.mounts[static_cast<size_t>(s_selMount)].yaw);
+			const Mount &mt = s_def.mounts[static_cast<size_t>(s_selMount)];
+			snprintf(buf, sizeof(buf), "Weapon slot %d    x %.1f   y %.1f   z %.1f    facing %.0f   nose %.0f   roll %.0f", s_selMount + 1, p.x, p.y, p.z, mt.yaw, mt.pitch, mt.roll);
 			t = buf;
 		}
 		else if (s_sel >= 0 && s_sel < static_cast<int>(s_def.parts.size()))

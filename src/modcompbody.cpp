@@ -51,6 +51,7 @@ struct Slot
 	float lift = 0.f;                                // (24.11.) Rumpf ueber das Laufwerk heben (Teile unter dem Fahrgestell)
 	std::vector<size_t> partIdx;                     // Teil-Rumpfe (fuer die Verfuegbarkeit)
 	std::vector<float> yaw;                          // Blickrichtung je Anschluss (Grad)
+	std::vector<float> pitch, roll;                  // (27.11.) Neigung je Anschluss (Grad)
 };
 std::vector<Slot> s_slots;
 size_t s_first = 0;
@@ -100,7 +101,9 @@ nlohmann::json toJson(const Def &d)
 	for (const Mount &m : d.mounts)
 	{
 		nlohmann::json e = vec3(m.pos);
-		if (std::fabs(m.yaw) > 1e-3f) { e.push_back(m.yaw); }   // [x, y, z, Blickrichtung]
+		const bool tilt = std::fabs(m.pitch) > 1e-3f || std::fabs(m.roll) > 1e-3f;
+		if (std::fabs(m.yaw) > 1e-3f || tilt) { e.push_back(m.yaw); }   // [x, y, z, Blickrichtung]
+		if (tilt) { e.push_back(m.pitch); e.push_back(m.roll); }        // (27.11.) [..., Nase, Rollen]
 		mounts.push_back(e);
 	}
 	j["mounts"] = mounts;
@@ -133,6 +136,11 @@ bool fromJson(const nlohmann::json &j, Def &d)
 		{
 			Mount mm; mm.pos = vec3(m);
 			if (m.is_array() && m.size() >= 4 && m[3].is_number()) { mm.yaw = std::remainder(m[3].get<float>(), 360.f); }
+			if (m.is_array() && m.size() >= 6 && m[4].is_number() && m[5].is_number())
+			{
+				mm.pitch = std::remainder(m[4].get<float>(), 360.f);
+				mm.roll = std::remainder(m[5].get<float>(), 360.f);
+			}
 			d.mounts.push_back(mm);
 		}
 	}
@@ -541,11 +549,11 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 	sl.propShift = (glm::length(d.parts[0].pos) > 1e-3f || glm::length(d.parts[0].rot) > 1e-3f || std::fabs(d.parts[0].scale - 1.f) > 1e-3f
 	               || glm::length(d.parts[0].stretch - glm::vec3(1.f)) > 1e-3f);
 	sl.lift = liftOf(d);
-	sl.yaw.clear();
+	sl.yaw.clear(); sl.pitch.clear(); sl.roll.clear();
 	{
 		std::vector<Mount> mounts = d.mounts;
 		if (mounts.empty() && !d.parts.empty()) { mounts = defaultMounts(d.parts[0]); }
-		for (const Mount &m : mounts) { sl.yaw.push_back(m.yaw); }
+		for (const Mount &m : mounts) { sl.yaw.push_back(m.yaw); sl.pitch.push_back(m.pitch); sl.roll.push_back(m.roll); }
 	}
 	sl.partIdx.clear();
 	for (const Part &p : d.parts)
@@ -675,6 +683,39 @@ bool mountYaw(size_t bodyIdx, int connector, float &yawDeg)
 	if (!isComposite(bodyIdx)) { return false; }
 	const Slot &sl = s_slots[bodyIdx - s_first];
 	yawDeg = (connector >= 0 && static_cast<size_t>(connector) < sl.yaw.size()) ? sl.yaw[static_cast<size_t>(connector)] : 0.f;
+	return true;
+}
+
+bool mountTilt(size_t bodyIdx, int connector, float &yawDeg, float &pitchDeg, float &rollDeg)
+{
+	if (!isComposite(bodyIdx) || connector < 0) { return false; }
+	const Slot &sl = s_slots[bodyIdx - s_first];
+	const size_t c = static_cast<size_t>(connector);
+	if (c >= sl.pitch.size() || c >= sl.roll.size() || c >= sl.yaw.size()) { return false; }
+	yawDeg = sl.yaw[c]; pitchDeg = sl.pitch[c]; rollDeg = sl.roll[c];
+	return std::fabs(pitchDeg) > 1e-3f || std::fabs(rollDeg) > 1e-3f;
+}
+
+glm::mat4 tiltMatrix(float yawDeg, float pitchDeg, float rollDeg)
+{
+	return glm::rotate(glm::mat4(1.f), glm::radians(-yawDeg), glm::vec3(0.f, 1.f, 0.f))
+	     * glm::rotate(glm::mat4(1.f), glm::radians(pitchDeg), glm::vec3(1.f, 0.f, 0.f))
+	     * glm::rotate(glm::mat4(1.f), glm::radians(rollDeg), glm::vec3(0.f, 0.f, 1.f))
+	     * glm::rotate(glm::mat4(1.f), glm::radians(yawDeg), glm::vec3(0.f, 1.f, 0.f));
+}
+
+bool tiltedAim(size_t bodyIdx, int connector, uint16_t &dir, uint16_t &pitch)
+{
+	float y = 0.f, p = 0.f, r = 0.f;
+	if (!mountTilt(bodyIdx, connector, y, p, r)) { return false; }
+	constexpr float K = 6.28318530718f / 65536.f;
+	const float d = static_cast<float>(dir) * K, q = static_cast<float>(static_cast<int16_t>(pitch)) * K;
+	// Rohr-Richtung im Rumpf (Zeichnen: Schwenk R_y(-d), Hoehe R_x(+q), Rohr nach -z) in die Achsen des Platzes drehen
+	const glm::vec3 A(std::sin(d) * std::cos(q), std::sin(q), -std::cos(d) * std::cos(q));
+	const glm::vec3 L = glm::transpose(glm::mat3(tiltMatrix(y, p, r))) * A;
+	const float q2 = std::asin(std::clamp(L.y, -1.f, 1.f)), d2 = std::atan2(L.x, -L.z);
+	dir = static_cast<uint16_t>(static_cast<int>(std::lround(d2 / K)) & 0xFFFF);
+	pitch = static_cast<uint16_t>(static_cast<int>(std::lround(q2 / K)) & 0xFFFF);
 	return true;
 }
 

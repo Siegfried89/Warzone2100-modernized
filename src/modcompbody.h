@@ -46,6 +46,10 @@ struct Mount
 {
 	glm::vec3 pos = glm::vec3(0.f);    ///< Waffenplatz (Modellkoordinaten)
 	float yaw = 0.f;                   ///< Blickrichtung in Grad (0 = vorn, 90 = rechts; Wunsch 23.11. 03:05: Waffen schwenken nur 180 Grad um sie)
+	// (Wunsch 27.11. 18:48 "Auch Weapon Slots sollen in jegliche Richtung rotieren koennen"): Neigung um die Querachse (Nase, wie bei den
+	// Teilen) und um die Laengsachse (Rollen) des Platzes in Grad - die Waffe sitzt schraeg/seitlich/kopfueber und schwenkt um die geneigte Achse
+	float pitch = 0.f;
+	float roll = 0.f;
 };
 
 /// Schwenkbereich der Waffen auf Verbundrumpfen: halber Winkel um die Blickrichtung des Platzes (Wunsch 23.11. 03:05: "maximal 180 Grad")
@@ -85,6 +89,13 @@ const glm::mat4 *propOffset(size_t bodyIdx);
 float propLift(size_t bodyIdx);
 /// Blickrichtung des Platzes (Anschluss) eines Verbundrumpfes in Grad; false = kein Verbundrumpf (Waffe dreht frei)
 bool mountYaw(size_t bodyIdx, int connector, float &yawDeg);
+/// (27.11.) Neigung des Platzes (Anschluss) eines Verbundrumpfes; false = kein Verbundrumpf oder nicht geneigt
+bool mountTilt(size_t bodyIdx, int connector, float &yawDeg, float &pitchDeg, float &rollDeg);
+/// (27.11.) Drehung der Neigung als Matrix (Zeichnen: nach dem Verschieben zum Anschluss, vor dem Schwenken der Waffe)
+glm::mat4 tiltMatrix(float yawDeg, float pitchDeg, float rollDeg);
+/// (27.11.) Zielrichtung der Waffe (Schwenk/Hoehe relativ zum Rumpf, 16-Bit-Winkel) in die Achsen des geneigten Platzes umrechnen, damit das
+/// Rohr auf einem geneigten Platz trotzdem genau aufs Ziel zeigt; false = Platz nicht geneigt (Winkel unveraendert)
+bool tiltedAim(size_t bodyIdx, int connector, uint16_t &dir, uint16_t &pitch);
 /// Waffe weaponSlot eines Fahrzeugs auf einem Verbundrumpf (kein VTOL): Blickrichtung ihres Platzes als 16-Bit-Winkel (relativ zum Rumpf).
 /// false = Waffe dreht frei wie bisher
 bool weaponArc(const BASE_OBJECT *psObj, int weaponSlot, uint16_t &yaw);
