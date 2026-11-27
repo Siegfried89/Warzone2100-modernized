@@ -19,6 +19,9 @@ struct DROID;
 struct SENSOR_STATS;
 
 constexpr unsigned MOD_MAX_SYS = 16;  ///< Systemtuerme neben Waffen je Fahrzeug (24.11.: 16, Rumpfe haben bis 30 Plaetze)
+/// MOD (Wunsch 27.11. 19:16 "um so eine Einheit wie den Fatboy zu machen, braeuchten wir mehrere Propulsion-Slots ... bis zu 8 ... gemischte
+/// Antriebe"): Antriebsplaetze eines Hull-Forge-Rumpfes; je Platz ein eigener Antrieb
+constexpr unsigned MOD_MAX_DRIVES = 8;
 
 struct ModSlots
 {
@@ -27,9 +30,18 @@ struct ModSlots
 	uint8_t sysComp[MOD_MAX_SYS];     ///< COMP_SENSOR, COMP_ECM, COMP_CONSTRUCT oder COMP_REPAIRUNIT (Bau/Reparatur hoechstens einer)
 	uint16_t sysStat[MOD_MAX_SYS];    ///< Index in asSensorStats / asECMStats / asConstructStats / asRepairStats
 	int8_t sysConn[MOD_MAX_SYS];      ///< Anschluss
+	uint8_t numDrive = 0;             ///< (27.11.) belegte Antriebsplaetze (0 = Antrieb aus asParts an allen Plaetzen des Rumpfes)
+	uint16_t driveProp[MOD_MAX_DRIVES]; ///< (27.11.) Antrieb je Antriebsplatz (Index in asPropulsionStats)
 
 	ModSlots() { reset(); }
 	void reset()
+	{
+		resetTurrets();
+		numDrive = 0;
+		for (unsigned i = 0; i < MOD_MAX_DRIVES; ++i) { driveProp[i] = 0; }
+	}
+	/// (27.11.) nur die Turm-Belegung zuruecksetzen - die Antriebe der Antriebsplaetze bleiben
+	void resetTurrets()
 	{
 		for (unsigned i = 0; i < MAX_WEAPONS; ++i) { weapConn[i] = -1; }
 		numSys = 0;
@@ -37,7 +49,7 @@ struct ModSlots
 	}
 	bool isDefault() const
 	{
-		if (numSys != 0) { return false; }
+		if (numSys != 0 || numDrive != 0) { return false; }
 		for (unsigned i = 0; i < MAX_WEAPONS; ++i) { if (weapConn[i] >= 0 && weapConn[i] != static_cast<int>(i)) { return false; } }
 		return true;
 	}
@@ -45,7 +57,8 @@ struct ModSlots
 	int conn(int weapon) const { return (weapon >= 0 && weapon < static_cast<int>(MAX_WEAPONS) && weapConn[weapon] >= 0) ? weapConn[weapon] : weapon; }
 	bool operator==(const ModSlots &o) const
 	{
-		if (numSys != o.numSys) { return false; }
+		if (numSys != o.numSys || numDrive != o.numDrive) { return false; }
+		for (unsigned i = 0; i < numDrive && i < MOD_MAX_DRIVES; ++i) { if (driveProp[i] != o.driveProp[i]) { return false; } }
 		for (unsigned i = 0; i < MAX_WEAPONS; ++i) { if (conn(static_cast<int>(i)) != o.conn(static_cast<int>(i))) { return false; } }
 		for (unsigned i = 0; i < numSys; ++i)
 		{

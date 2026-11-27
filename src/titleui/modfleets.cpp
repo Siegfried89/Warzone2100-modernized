@@ -41,7 +41,9 @@
 #include "../modwzhd.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -792,6 +794,8 @@ struct DesignPart
 	nlohmann::json extra;      // Rumpf: propulsionExtraModels
 	glm::mat4 propM = glm::mat4(1.f);   // Verbundrumpf: Lage des Fahrgestells (Laufwerk folgt ihm)
 	float lift = 0.f;                   // Verbundrumpf: Hub ueber dem Laufwerk (modcompbody::liftOf)
+	std::vector<glm::vec3> tilt;        // (27.11.) Verbundrumpf: je Platz Blickrichtung/Nase/Rolle in Grad (Hull Forge)
+	bool noProp = false;                // (27.11.) SupCom-Einheit (bzw. Verbundrumpf mit ihr als Fahrgestell): Laufwerk steckt im Modell
 	std::string source;                 // Rumpf: Herkunft/Fraktion wie im Rumpf-Baukasten ("Scavengers", "Project", "Metal Fatigue" ...)
 	int sourceRank = 99;                // Reihenfolge der Fraktions-Reiter
 	std::string brainWeapon;            // Kommandoturm: seine Waffe (CommandTurret1)
@@ -824,10 +828,15 @@ struct DesignState
 	DesignState() { for (int &v : slot) { v = -1; } }
 };
 DesignState s_ds;
+// (Wunsch 27.11. 19:24 "im Unit Designer sehe ich keine Waffenslots leuchten ... aus- und abschaltbar, einzeln aufschaltbar ... ein Button fuer
+// alle anzeigen/ausblenden, standardmaessig eingeblendet"): welche Plaetze im Vorschaufenster leuchten
+bool s_slotShow[MAX_DSLOTS];
+const bool s_slotShowInit = []() { for (bool &b : s_slotShow) { b = true; } return true; }();
 constexpr unsigned ID_D_TAB = 4599600, ID_D_ITEM = 4599620, ID_D_PREV = 4599660, ID_D_NEXT = 4599661, ID_D_SAVE = 4599662, ID_D_BACK = 4599663;
 constexpr unsigned ID_D_NAME = 4599664, ID_D_VIEW = 4599665, ID_D_INFO = 4599666, ID_D_HEAD = 4599700, ID_D_SUB = 4599680;
 constexpr unsigned ID_D_FORGE = 4599667;   // (23.11. 04:23) Rumpf-Baukasten
 constexpr unsigned ID_D_SLOT = 4599800, ID_D_SPREV = 4599840, ID_D_SNEXT = 4599841, ID_D_SCLEAR = 4599842, ID_D_SFILL = 4599843;
+constexpr unsigned ID_D_SLOTEYE = 4599844;   // (27.11.) alle Plaetze anzeigen/ausblenden
 constexpr unsigned ID_D_FACTION = 4599850;   // + Index (Fraktions-Reiter)
 constexpr int D_TOP = 84;                    // Oberkante der Reiter/Vorschau (darueber die Fraktions-Reiter)
 constexpr int D_ROWS = 12;
@@ -1037,6 +1046,8 @@ void refreshCompositeParts()
 		p.size = modcompbody::sizeText(t.size);
 		p.propM = modcompbody::partMatrix(d.parts[0]);   // (24.11.) Laufwerk unter dem Fahrgestell wie im Spiel
 		p.lift = modcompbody::liftOf(d);
+		p.noProp = d.parts[0].body.rfind("SC_", 0) == 0;
+		for (const modcompbody::Mount &mt : d.mounts) { p.tilt.emplace_back(mt.yaw, mt.pitch, mt.roll); }
 		p.source = "Custom"; p.sourceRank = -1;   // (Wunsch 24.11. 14:20 "Alle eigenen Builds kommen unter einen Custom-Reiter")
 		for (const DesignPart &q : s_parts) { if (q.kind == PK_BODY && q.id == d.parts[0].body) { p.extra = q.extra; break; } }
 		add.push_back(p);
@@ -1173,6 +1184,7 @@ bool turretValid(int slot, const DesignPart &t)
 /// ausser bei Rumpfen mit eingebautem Fahrwerk (Pluenderer-Autos ...: kein einziges Boden-Laufwerk) fuer Raeder/Ketten
 const iIMDShape *fallbackProp(const DesignPart &b, const DesignPart &p)
 {
+	if (b.noProp || b.id.rfind("SC_", 0) == 0) { return nullptr; }   // (27.11.) SupCom-Einheiten bringen Ketten/Beine/Rumpf im Modell mit
 	if (!p.walker.empty()) { return nullptr; }
 	if (b.extra.is_object() && b.extra.contains(p.id)) { return nullptr; }
 	const bool ground = p.ptype == "Wheeled" || p.ptype == "Half-Tracked" || p.ptype == "Tracked" || p.ptype == "Legged";
@@ -1390,6 +1402,92 @@ DesignNumbers numbers()
 	return r;
 }
 
+/// (Wunsch 27.11. 19:24) leuchtende Markierung eines Turm-Platzes im Vorschaufenster
+struct SlotMark { glm::mat4 m; int slot; bool empty; };
+
+/// (27.11.) Neigung eines Platzes (Verbundrumpf aus der Hull Forge); aimYaw/aimPitch: Ruhestellung des Turms in den Achsen des Platzes
+/// (Bogenmass), damit das Rohr wie im Spiel nach vorn zeigt
+glm::mat4 slotTilt(const DesignPart &b, int s, float &aimYaw, float &aimPitch)
+{
+	aimYaw = 0.f; aimPitch = 0.f;
+	if (s < 0 || static_cast<size_t>(s) >= b.tilt.size()) { return glm::mat4(1.f); }
+	const glm::vec3 &t = b.tilt[static_cast<size_t>(s)];
+	if (std::fabs(t.y) < 1e-3f && std::fabs(t.z) < 1e-3f) { return glm::mat4(1.f); }
+	const glm::mat4 T = modcompbody::tiltMatrix(t.x, t.y, t.z);
+	const glm::vec3 L = glm::transpose(glm::mat3(T)) * glm::vec3(0.f, 0.f, -1.f);
+	aimPitch = std::asin(std::clamp(L.y, -1.f, 1.f));
+	aimYaw = std::atan2(L.x, -L.z);
+	return T;
+}
+
+bool projectUI(const glm::mat4 &m, const glm::vec3 &p, Vector2i &out)
+{
+	const glm::mat4 mm = pie_UIPerspectiveGet() * m * glm::translate(p);
+	const Vector3i zero(0, 0, 0);
+	return pie_RotateProjectWithPerspective(&zero, mm, &out) > 0 && out.x != LONG_WAY;
+}
+
+WzText &slotNumberText(int n)
+{
+	static std::map<int, WzText> cache;
+	auto it = cache.find(n);
+	if (it == cache.end()) { it = cache.emplace(n, WzText(WzString::fromUtf8(std::to_string(n)), font_small)).first; }
+	return it->second;
+}
+
+/// leere Plaetze: der gelbe WZ-Platzhalter-Turm (wie in der Hull Forge); jeder angezeigte Platz: pulsierender goldener Leuchtring + Nummer,
+/// der gewaehlte Platz (Reiter Tuerme) weiss
+void drawSlotMarks(const std::vector<SlotMark> &marks, float pxPerModelUnit)
+{
+	if (marks.empty()) { return; }
+	const iIMDShape *nt = shapeOf("znullturret.pie"), *ng = shapeOf("znullgun.pie");
+	const float pulse = 0.5f + 0.5f * std::sin(static_cast<float>(realTime) * 0.006f);
+	for (const SlotMark &mk : marks)
+	{
+		if (mk.empty && nt != nullptr)
+		{
+			drawShape(nt, mk.m);
+			glm::mat4 gm = mk.m;
+			if (!nt->connectors.empty()) { gm *= glm::translate(glm::vec3(nt->connectors[0].xzy())); }
+			if (ng != nullptr) { drawShape(ng, gm); }
+		}
+	}
+	// Ringe und Nummern ueber dem Modell (2D, in Bildpunkten)
+	const float r3 = 9.f / std::max(pxPerModelUnit, 1e-3f);   // Ring-Halbmesser im Modell: etwa 9 Bildpunkte
+	for (const SlotMark &mk : marks)
+	{
+		const bool sel = s_ds.tab == 2 && mk.slot == s_ds.cur;
+		constexpr int N = 28;
+		Vector2i pts[N];
+		bool ok = true;
+		for (int k = 0; k < N && ok; ++k)
+		{
+			const float a = 6.2831853f * static_cast<float>(k) / static_cast<float>(N);
+			ok = projectUI(mk.m, glm::vec3(std::cos(a) * r3, 1.f, std::sin(a) * r3), pts[k]);
+		}
+		Vector2i c;
+		if (!ok || !projectUI(mk.m, glm::vec3(0.f, 1.f, 0.f), c)) { continue; }
+		const uint8_t base = static_cast<uint8_t>(sel ? 255 : 150 + static_cast<int>(90.f * pulse));
+		const PIELIGHT core = sel ? pal_RGBA(255, 255, 255, base) : pal_RGBA(255, 214, 90, base);
+		// weicher Lichthof: dieselbe Linie 1 und 2 Bildpunkte versetzt, schwaecher; darauf die helle Linie
+		for (int g = 2; g >= 0; --g)
+		{
+			const PIELIGHT col = g == 0 ? core : pal_RGBA(core.byte.r, core.byte.g, static_cast<uint8_t>(core.byte.b / 2), static_cast<uint8_t>(base / (2 * g + 1)));
+			for (int k = 0; k < N; ++k)
+			{
+				const Vector2i &p0 = pts[k], &p1 = pts[(k + 1) % N];
+				if (g == 0) { iV_Line(p0.x, p0.y, p1.x, p1.y, col); continue; }
+				iV_Line(p0.x, p0.y - g, p1.x, p1.y - g, col);
+				iV_Line(p0.x, p0.y + g, p1.x, p1.y + g, col);
+			}
+		}
+		WzText &t = slotNumberText(mk.slot + 1);
+		const int tx = c.x + 8, ty = c.y - 14;
+		pie_UniTransBoxFill(static_cast<float>(tx - 2), static_cast<float>(ty - 1), static_cast<float>(tx + t.width() + 2), static_cast<float>(ty + t.lineSize() + 1), pal_RGBA(0, 0, 0, 120));
+		t.render(tx, ty - t.aboveBase(), sel ? pal_RGBA(255, 255, 255, 255) : pal_RGBA(255, 220, 110, 255));
+	}
+}
+
 class DesignView : public WIDGET
 {
 public:
@@ -1464,26 +1562,38 @@ public:
 		if (legs) { drawShape(legs, base); }
 		if (firstProp) { drawShape(firstProp, propBase); }
 		drawShape(bs, bodyBase);
+		std::vector<SlotMark> marks;
 		for (int s = 0; s < bodySlots(); ++s)
 		{
 			const DesignPart *t = partAt(s_ds.slot[s]);
-			if (t == nullptr) { continue; }
 			glm::mat4 m = bodyBase;
+			glm::mat4 markAt = bodyBase * glm::translate(glm::vec3(0.f, static_cast<float>(bs->max.y), 0.f));
 			if (!bs->connectors.empty())
 			{
 				const size_t ci = bs->connectors.size() > static_cast<size_t>(s) ? static_cast<size_t>(s) : 0;
 				m *= glm::translate(glm::vec3(bs->connectors[ci].xzy()));
+				markAt = m;
 			}
+			// (27.11.) geneigter Platz aus der Hull Forge: Turm in den Achsen des Platzes, Rohr in Ruhe weiter nach vorn
+			float aimYaw = 0.f, aimPitch = 0.f;
+			const glm::mat4 tilt = slotTilt(*b, s, aimYaw, aimPitch);
+			m *= tilt;
+			markAt *= tilt;
+			if (s < MAX_DSLOTS && s_slotShow[s]) { marks.push_back({markAt, s, t == nullptr}); }
+			if (t == nullptr) { continue; }
+			m *= glm::rotate(-aimYaw, glm::vec3(0.f, 1.f, 0.f));
 			const iIMDShape *mount = shapeOf(t->mount);
 			if (mount != nullptr)
 			{
 				drawShape(mount, m);
 				if (!mount->connectors.empty()) { m *= glm::translate(glm::vec3(mount->connectors[0].xzy())); }
 			}
+			m *= glm::rotate(aimPitch, glm::vec3(1.f, 0.f, 0.f));
 			const iIMDShape *gun = shapeOf(t->model);
 			if (gun != nullptr && gun != mount) { drawShape(gun, m); }
 		}
 		if (secondProp) { drawShape(secondProp, propBase); }
+		drawSlotMarks(marks, pxPerUnit * scale);
 	}
 };
 
@@ -1496,13 +1606,57 @@ void displaySlotButton(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	const int slot = static_cast<int>(psWidget->UserData);
 	const bool sel = slot == s_ds.cur;
 	const bool down = (b->getState() & WBUT_DOWN) != 0;
-	modwzhd::textButton(x0, y0, w, h, std::to_string(slot + 1), sel, b->isMouseOverWidget(), down);
+	const bool shown = slot >= 0 && slot < MAX_DSLOTS && s_slotShow[slot];
+	// (Wunsch 27.11. 19:24) golden = dieser Platz leuchtet im Vorschaufenster
+	if (shown)
+	{
+		for (int g = 3; g >= 1; --g)
+		{
+			pie_UniTransBoxFill(static_cast<float>(x0 - g), static_cast<float>(y0 - g), static_cast<float>(x0 + w + g), static_cast<float>(y0 + h + g), pal_RGBA(255, 200, 70, static_cast<uint8_t>(36 * (4 - g))));
+		}
+	}
+	modwzhd::textButton(x0, y0, w, h, std::string(), sel, b->isMouseOverWidget(), down);
+	if (shown) { iV_Box(x0, y0, x0 + w - 1, y0 + h - 1, pal_RGBA(255, 210, 90, 255)); }
+	{
+		static std::map<int, WzText> nums;
+		auto it = nums.find(slot + 1);
+		if (it == nums.end()) { it = nums.emplace(slot + 1, WzText(WzString::fromUtf8(std::to_string(slot + 1)), font_regular)).first; }
+		WzText &tx = it->second;
+		const PIELIGHT col = shown ? pal_RGBA(255, 222, 120, 255) : (sel ? pal_RGBA(235, 240, 255, 255) : pal_RGBA(150, 156, 196, 255));
+		tx.render(x0 + (w - tx.width()) / 2, y0 + (h - tx.lineSize()) / 2 - tx.aboveBase(), col);
+	}
 	const DesignPart *t = (slot >= 0 && slot < MAX_DSLOTS) ? partAt(s_ds.slot[slot]) : nullptr;
 	if (t != nullptr)
 	{
 		const PIELIGHT col = t->kind == PK_WEAPON ? pal_RGBA(255, 170, 60, 255) : pal_RGBA(110, 230, 140, 255);
 		pie_UniTransBoxFill(x0 + 3, y0 + h - 5, x0 + w - 3, y0 + h - 2, col);
 	}
+}
+/// (Wunsch 27.11. 19:24) Auge-Knopf im Vorschaufenster: alle Plaetze anzeigen/ausblenden (golden = alle an, blasser = einige, durchgestrichen = keiner)
+void displaySlotEye(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	W_BUTTON *b = static_cast<W_BUTTON *>(psWidget);
+	const int x0 = static_cast<int>(xOffset) + psWidget->x(), y0 = static_cast<int>(yOffset) + psWidget->y();
+	const int w = psWidget->width(), h = psWidget->height();
+	int on = 0;
+	const int n = std::max(1, std::min(bodySlots(), MAX_DSLOTS));
+	for (int k = 0; k < n; ++k) { on += s_slotShow[k] ? 1 : 0; }
+	modwzhd::textButton(x0, y0, w, h, std::string(), false, b->isMouseOverWidget(), (b->getState() & WBUT_DOWN) != 0);
+	const PIELIGHT col = on == n ? pal_RGBA(255, 214, 90, 255) : (on > 0 ? pal_RGBA(220, 190, 120, 255) : pal_RGBA(140, 150, 190, 255));
+	// Auge: Lid oben und unten (Boegen), Pupille
+	const float cx = static_cast<float>(x0) + static_cast<float>(w) * 0.5f, cy = static_cast<float>(y0) + static_cast<float>(h) * 0.5f;
+	const float rx = static_cast<float>(w) * 0.36f, ry = static_cast<float>(h) * 0.26f;
+	constexpr int N = 16;
+	for (int k = 0; k < N; ++k)
+	{
+		const float a0 = 3.14159265f * static_cast<float>(k) / N, a1 = 3.14159265f * static_cast<float>(k + 1) / N;
+		const int xa = static_cast<int>(cx - std::cos(a0) * rx), xb = static_cast<int>(cx - std::cos(a1) * rx);
+		iV_Line(xa, static_cast<int>(cy - std::sin(a0) * ry), xb, static_cast<int>(cy - std::sin(a1) * ry), col);
+		iV_Line(xa, static_cast<int>(cy + std::sin(a0) * ry), xb, static_cast<int>(cy + std::sin(a1) * ry), col);
+	}
+	const float pr = std::max(2.f, ry * 0.7f);
+	if (on > 0) { pie_UniTransBoxFill(cx - pr, cy - pr, cx + pr, cy + pr, col); }
+	else { iV_Line(x0 + 4, y0 + h - 4, x0 + w - 4, y0 + 4, col); }
 }
 } // namespace
 
@@ -1679,10 +1833,12 @@ void WzUnitDesignTitleUI::build()
 			init.height = static_cast<unsigned short>(bh);
 			init.pDisplay = displaySlotButton;
 			init.UserData = static_cast<UDWORD>(k);
+			init.style |= WBUT_SECONDARY;   // (27.11.) Rechtsklick: nur die Anzeige des Platzes an/aus
 			auto btn = std::make_shared<W_BUTTON>(&init);
 			form->attach(btn);
 			const DesignPart *t = partAt(s_ds.slot[k]);
-			btn->setTip(t ? astringf(_("Slot %d: %s"), k + 1, t->name.c_str()) : astringf(_("Slot %d: empty"), k + 1));
+			btn->setTip((t ? astringf(_("Slot %d: %s"), k + 1, t->name.c_str()) : astringf(_("Slot %d: empty"), k + 1))
+			            + "\n" + _("Click: choose (click again: show/hide its marker) - right click: show/hide its marker"));
 			x += step;
 		}
 		if (paged) { wzNamedButton(form, ID_D_SNEXT, x, listY, 18, bh, "wz_right", _("Next slots"), IC_RIGHT); x += 22; }
@@ -1731,6 +1887,20 @@ void WzUnitDesignTitleUI::build()
 	view->id = ID_D_VIEW;
 	view->setGeometry(250, D_TOP, PANEL_W - 266, 298 - D_TOP);
 	view->setTransparentToClicks(true);
+	{
+		// (Wunsch 27.11. 19:24) Auge oben links im Vorschaufenster: alle Waffenplaetze anzeigen/ausblenden
+		W_BUTINIT init;
+		init.formID = FRONTEND_BOTFORM;
+		init.id = ID_D_SLOTEYE;
+		init.x = 256;
+		init.y = static_cast<short>(D_TOP + 6);
+		init.width = 30;
+		init.height = 20;
+		init.pDisplay = displaySlotEye;
+		auto eye = std::make_shared<W_BUTTON>(&init);
+		form->attach(eye);
+		eye->setTip(_("Show/hide all weapon slot markers"));
+	}
 
 	// ---- Werte
 	const DesignNumbers n = numbers();
@@ -1867,8 +2037,22 @@ TITLECODE WzUnitDesignTitleUI::run()
 	else if (id >= ID_D_SUB && id < ID_D_SUB + 4) { s_ds.sub[std::clamp(s_ds.tab, 0, 2)] = static_cast<int>(id - ID_D_SUB); s_ds.page = 0; }
 	else if (id >= ID_D_SLOT && id < ID_D_SLOT + MAX_DSLOTS)
 	{
-		s_ds.cur = static_cast<int>(id - ID_D_SLOT); s_ds.page = 0;
-		s_ds.sub[2] = subOfCurrent(2);
+		// (Wunsch 27.11. 19:24) Klick: Platz waehlen und anzeigen; Klick auf den schon gewaehlten Platz: Anzeige an/aus; Rechtsklick: nur Anzeige an/aus
+		const int k = static_cast<int>(id - ID_D_SLOT);
+		if (widgGetButtonKey_DEPRECATED(psWScreen) == WKEY_SECONDARY) { s_slotShow[k] = !s_slotShow[k]; }
+		else if (k == s_ds.cur) { s_slotShow[k] = !s_slotShow[k]; }
+		else
+		{
+			s_ds.cur = k; s_ds.page = 0;
+			s_ds.sub[2] = subOfCurrent(2);
+			s_slotShow[k] = true;
+		}
+	}
+	else if (id == ID_D_SLOTEYE)
+	{
+		bool any = false;
+		for (int k = 0; k < std::min(bodySlots(), MAX_DSLOTS); ++k) { any = any || s_slotShow[k]; }
+		for (bool &v : s_slotShow) { v = !any; }
 	}
 	else if (id == ID_D_SPREV || id == ID_D_SNEXT)
 	{

@@ -263,7 +263,20 @@ void classify(BodyInfo &b, const std::string &cls, const std::string &model)
 	}
 	if (id == "RigBody" || id == "PitbullBody" || id == "MammothBody" || id == "HarvesterBody") { b.source = "C&C 3"; b.sourceRank = 8; b.group = "GDI"; return; }
 	if (startsWith(id, "NTWShip") || id == "Body101") { b.source = "Naval"; b.sourceRank = 9; b.group = "Ships"; return; }   // (24.11.) Zerstoerer (morefort) zu den Schiffen
-	if (startsWith(id, "UEF")) { b.source = "Supreme Commander"; b.sourceRank = 10; b.group = "UEF transports"; return; }
+	if (startsWith(id, "UEF")) { b.source = "Supreme Commander"; b.sourceRank = 10; b.group = "UEF - Air"; b.groupRank = 1; return; }
+	// (Wunsch 27.11. 19:27 "saemtliche 3d Einheiten, Modelle von SupCom in den SupCom-Ordner in der Hull Forge") Kennung "SC_" + SupCom-Code
+	// (z.B. SC_UEL0401 = Fatboy): 2. Buchstabe Fraktion (E UEF, A Aeon, R Cybran, X Kampagne), 3. Buchstabe Art (L Land, A Luft, S See)
+	if (startsWith(id, "SC_") && id.size() >= 6)
+	{
+		static const char *const FAC[4] = { "UEF", "Aeon", "Cybran", "Campaign" };
+		static const char *const KIND[3] = { "Land", "Air", "Naval" };
+		const char f = id[4], t = id[5];
+		const int fi = f == 'E' ? 0 : (f == 'A' ? 1 : (f == 'R' ? 2 : 3));
+		const int ti = t == 'A' ? 1 : (t == 'S' ? 2 : 0);
+		b.source = "Supreme Commander"; b.sourceRank = 10;
+		b.group = std::string(FAC[fi]) + " - " + KIND[ti]; b.groupRank = fi * 3 + ti;
+		return;
+	}
 	if (cls == "Babas" || endsWith(id, "-Scav") || endsWith(id, "-Ultimate") || startsWith(id, "Scav") || startsWith(id, "B2") || startsWith(id, "B3body")
 	    || startsWith(id, "B4body") || id == "BusBody" || id == "FireBody" || contains(id, "Chopper") || startsWith(id, "Train"))
 	{

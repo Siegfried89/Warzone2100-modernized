@@ -2648,7 +2648,7 @@ static void setTemplateStat(DROID_TEMPLATE *psTemplate, COMPONENT_STATS *psStats
 	auto clearTurret = [&] {
 		clearNonWeapons();
 		clearWeapons(0);
-		psTemplate->modSlots.reset();   // MOD (23.11. 02:16)
+		psTemplate->modSlots.resetTurrets();   // MOD (23.11. 02:16); (27.11.) Antriebe bleiben
 	};
 	// MOD (23.11. 02:16): Rumpf mit mehreren Plaetzen - Waffen, Sensoren und Stoersender kommen auf den gewaehlten Platz
 	const bool useSlots = modslots::usable(*psTemplate) && (desCompMode == IDES_TURRET || desCompMode == IDES_SYSTEM);

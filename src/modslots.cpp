@@ -116,7 +116,7 @@ void toSlotForm(DROID_TEMPLATE &t)
 		t.asParts[COMP_BRAIN] = 0;
 		t.numWeaps = 0;
 		for (unsigned i = 0; i < MAX_WEAPONS; ++i) { t.asWeaps[i] = 0; }
-		t.modSlots.reset();
+		t.modSlots.resetTurrets();   // (27.11.) Antriebe bleiben
 	}
 	if (t.modSlots.numSys == 0 && t.numWeaps == 0)
 	{
@@ -297,7 +297,7 @@ void fitToBody(DROID_TEMPLATE &t, unsigned player)
 			const int c = t.modSlots.sysComp[i];
 			if (isRole(c) && t.numWeaps > 0) { if (c == COMP_CONSTRUCT) { t.asParts[COMP_CONSTRUCT] = 0; } else if (isTurretRepair(t)) { t.asParts[COMP_REPAIRUNIT] = 0; } }
 		}
-		t.modSlots.reset();
+		t.modSlots.resetTurrets();   // (27.11.) Antriebe bleiben
 		if (t.numWeaps > static_cast<int>(n))
 		{
 			for (unsigned i = n; i < MAX_WEAPONS; ++i) { t.asWeaps[i] = 0; }
@@ -501,6 +501,14 @@ nlohmann::json toJson(const ModSlots &s)
 		sys.push_back(e);
 	}
 	if (!sys.empty()) { j["systems"] = sys; }
+	// (27.11.) Antrieb je Antriebsplatz (als ID - Indizes aendern sich mit dem Paket)
+	nlohmann::json drv = nlohmann::json::array();
+	for (unsigned i = 0; i < s.numDrive && i < MOD_MAX_DRIVES; ++i)
+	{
+		const unsigned st = s.driveProp[i];
+		drv.push_back(st < asPropulsionStats.size() ? asPropulsionStats[st].id.toUtf8() : std::string());
+	}
+	if (!drv.empty()) { j["drives"] = drv; }
 	return j;
 }
 
@@ -532,6 +540,18 @@ bool fromJson(const nlohmann::json &j, ModSlots &s)
 			s.sysStat[s.numSys] = static_cast<uint16_t>(idx);
 			s.sysConn[s.numSys] = static_cast<int8_t>(slot);
 			s.numSys = static_cast<uint8_t>(s.numSys + 1);
+		}
+	}
+	const auto drv = j.find("drives");
+	if (drv != j.end() && drv->is_array())
+	{
+		for (const auto &e : *drv)
+		{
+			if (s.numDrive >= MOD_MAX_DRIVES) { break; }
+			int idx = e.is_string() ? getCompFromID(COMP_PROPULSION, WzString::fromUtf8(e.get<std::string>())) : -1;
+			if (idx < 0) { idx = 0; }   // unbekannter Antrieb: Platz nimmt den Hauptantrieb (beim Zeichnen/Rechnen)
+			s.driveProp[s.numDrive] = static_cast<uint16_t>(idx);
+			s.numDrive = static_cast<uint8_t>(s.numDrive + 1);
 		}
 	}
 	return true;
