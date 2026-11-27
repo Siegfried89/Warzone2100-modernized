@@ -11,6 +11,7 @@
 #include "lib/ivis_opengl/ivisdef.h"
 #include "lib/sound/audio.h"
 #include "lib/sound/audio_id.h"
+#include "lib/netplay/sync_debug.h"
 
 #include "droid.h"
 #include "effects.h"
@@ -18,7 +19,10 @@
 #include "fpath.h"
 #include "game_world.h"
 #include "map.h"
+#include "mapgrid.h"
 #include "modlayer.h"
+#include "modlayermap.h"
+#include "move.h"
 #include "objmem.h"
 #include "projectile.h"
 #include "random.h"
@@ -66,6 +70,9 @@ struct Wreck
 	int height = 0;        // Gipfelhoehe der Flugbahn ueber dem Boden
 	int halfL = 12;        // halbe Laenge (Ueberschlag nach vorn)
 	int h0 = 0, hE = 0;    // Bodenhoehe am Start / an der Landestelle
+	// (Wunsch 27.11. 22:05) von einem Fahrzeug beiseitegeschoben: Rutschen von (px0, py0, pz0) zur neuen Lage ab pushT
+	unsigned pushT = 0;
+	int px0 = 0, py0 = 0, pz0 = 0;
 };
 
 // der toedliche Treffer (noteKill) - nur fuer genau dieses Fahrzeug in genau diesem Spielschritt
@@ -123,11 +130,55 @@ void loadStats()
 }
 
 // MOD (Wunsch 14.11.): ein gelandetes Wrack sperrt seine Kachel fuer Bodeneinheiten (Panzerwrack blockiert die Fahrer dahinter)
+// (27.11. 22:05) seit Fahrzeuge Wracks schieben: Zaehler je Kachel (mehrere Wracks koennen auf einer Kachel liegen); die Sperre
+// faellt erst, wenn das letzte Wrack die Kachel verlaesst. Fuer Fahrzeuge sind Wrack-Kacheln befahrbar (pushableTile, fpath.cpp),
+// fuer Infanterie und Cyborgs bleiben sie gesperrt.
+std::vector<uint8_t> s_tileCnt;
+int s_cntW = 0, s_cntH = 0;
+constexpr unsigned PUSH_MS = 550;          // Rutschen beim Schieben (nur Anzeige)
+constexpr unsigned PUSH_PAUSE = 600;       // dasselbe Wrack fruehestens so oft erneut schieben (nach dem Rutschen)
+
+uint8_t *tileCount(const GameWorld &world, int tx, int ty)
+{
+	if (s_cntW != world.map.width || s_cntH != world.map.height)
+	{
+		s_cntW = world.map.width; s_cntH = world.map.height;
+		s_tileCnt.assign(static_cast<size_t>(std::max(0, s_cntW)) * static_cast<size_t>(std::max(0, s_cntH)), 0);
+	}
+	if (tx < 0 || ty < 0 || tx >= s_cntW || ty >= s_cntH) { return nullptr; }
+	return &s_tileCnt[static_cast<size_t>(tx) + static_cast<size_t>(ty) * static_cast<size_t>(s_cntW)];
+}
+
+/// Kachel des Wracks sperren (wenn sie frei ist oder schon ein anderes Wrack sie sperrt)
+void claimBlock(GameWorld &world, Wreck &w)
+{
+	if (w.ownBlock) { return; }
+	const int tx = map_coord(w.xe), ty = map_coord(w.ye);
+	if (tx <= 0 || ty <= 0 || tx >= world.map.width - 1 || ty >= world.map.height - 1) { return; }
+	uint8_t *c = tileCount(world, tx, ty);
+	if (c == nullptr) { return; }
+	if (*c > 0)
+	{
+		if (*c < 255) { ++*c; w.ownBlock = true; }
+		return;
+	}
+	if (!fpathBlockingTile(world.map, tx, ty, PROPULSION_TYPE_WHEELED))
+	{
+		auxSetBlocking(world.map, tx, ty, FEATURE_BLOCKED);
+		*c = 1;
+		w.ownBlock = true;
+	}
+}
+
 void releaseBlock(GameWorld &world, Wreck &w)
 {
 	if (!w.ownBlock) { return; }
 	w.ownBlock = false;
-	auxClearBlocking(world.map, map_coord(w.xe), map_coord(w.ye), FEATURE_BLOCKED);
+	const int tx = map_coord(w.xe), ty = map_coord(w.ye);
+	uint8_t *c = tileCount(world, tx, ty);
+	if (c != nullptr && *c > 1) { --*c; return; }
+	if (c != nullptr) { *c = 0; }
+	auxClearBlocking(world.map, tx, ty, FEATURE_BLOCKED);
 }
 
 void playNamed(const char *file, int &cache, int x, int y)
@@ -405,6 +456,18 @@ bool pose(const FEATURE *f, unsigned renderTime, Placement &out)
 	{
 		if (w.id != f->id) { continue; }
 		const unsigned t = renderTime > w.born ? renderTime - w.born : 0;
+		if (w.pushT != 0 && t >= w.dur && renderTime < w.pushT + PUSH_MS)
+		{
+			// (27.11. 22:05) beiseitegeschoben: rutscht in die neue Lage (die Spiellage steht schon im Feature)
+			const float u = renderTime <= w.pushT ? 0.f : static_cast<float>(renderTime - w.pushT) / static_cast<float>(PUSH_MS);
+			const float e = 1.f - (1.f - u) * (1.f - u);
+			out.x = w.px0 + static_cast<int>(static_cast<float>(w.xe - w.px0) * e);
+			out.y = w.py0 + static_cast<int>(static_cast<float>(w.ye - w.py0) * e);
+			out.z = w.pz0 + static_cast<int>(static_cast<float>(f->pos.z - w.pz0) * e + 4.f * std::sin(u * 3.14159f));
+			out.pitch = f->rot.pitch;
+			out.roll = f->rot.roll;
+			return true;
+		}
 		if (t >= w.dur) { return false; }
 		const Pose p = poseAt(w, t);
 		out.x = p.x; out.y = p.y; out.z = p.z; out.pitch = p.pitch; out.roll = p.roll;
@@ -554,9 +617,159 @@ bool onDroidDestroyed(const DROID *psDel, GameWorld &world)
 	return true;
 }
 
+namespace
+{
+// (Wunsch 27.11. 22:05 "Alle Fahrzeuge und Panzereinheiten sollen ... Wracks beiseite schieben. Damit es bei Engpaessen keine
+// Totalblockaden gibt. Nur Infanterie nicht und Cyborgs.") Ein fahrendes Bodenfahrzeug (Rad, Kette, Halbkette, Luftkissen), das auf ein
+// liegendes Wrack zufaehrt, schiebt es eine Kachel zur Seite (zuerst zur Seite, auf der das Wrack liegt, dann zur anderen, dann schraeg
+// nach vorn, zuletzt geradeaus). Ist ringsum kein Platz (Engpass zwischen Felsen), wird es plattgefahren. Alles im Spielschritt aus
+// synchronen Werten (Lage, Fahrtrichtung) - auf allen Rechnern gleich. Die Einheiten-Schieberei (Shuffle) bleibt aus.
+bool pusher(const DROID *d)
+{
+	if (d == nullptr || d->died || d->droidType == DROID_PERSON || d->isCyborg() || d->isVtol() || d->isTransporter()) { return false; }
+	if (modlayer::layerOf(d) != modlayer::SURFACE || d->getPropulsionStats() == nullptr) { return false; }
+	const PROPULSION_TYPE p = modlayer::effectivePropulsion(d, d->getPropulsionStats()->propulsionType);
+	return p == PROPULSION_TYPE_WHEELED || p == PROPULSION_TYPE_TRACKED || p == PROPULSION_TYPE_HALF_TRACKED || p == PROPULSION_TYPE_HOVER;
+}
+
+/// darf ein Wrack auf diese Kachel? (frei fuer Raeder, kein anderes Wrack, kein Bauwerk/Feature, kein Wasser/Steilhang, keine Bodeneinheit)
+bool freeForWreck(GameWorld &world, int tx, int ty, int fromZ)
+{
+	if (tx <= 1 || ty <= 1 || tx >= world.map.width - 2 || ty >= world.map.height - 2) { return false; }
+	const uint8_t *c = tileCount(world, tx, ty);
+	if (c == nullptr || *c > 0) { return false; }
+	if (fpathBlockingTile(world.map, tx, ty, PROPULSION_TYPE_WHEELED)) { return false; }
+	MAPTILE *t = mapTile(world.map, tx, ty);
+	if (t == nullptr || t->psObject != nullptr) { return false; }
+	const unsigned char tt = terrainType(t);
+	if (tt == TER_WATER || tt == TER_CLIFFFACE) { return false; }
+	const int cx = world_coord(tx) + TILE_UNITS / 2, cy = world_coord(ty) + TILE_UNITS / 2;
+	if (std::abs(map_Height(world.map, cx, cy) - fromZ) > 90) { return false; }
+	for (const Wreck &o : s_wrecks)
+	{
+		if (map_coord(o.xe) == tx && map_coord(o.ye) == ty) { return false; }
+	}
+	for (BASE_OBJECT *o : gridStartIterate(cx, cy, TILE_UNITS * 3 / 4))
+	{
+		if (o->type == OBJ_DROID && !o->died && map_coord(o->pos.x) == tx && map_coord(o->pos.y) == ty
+		    && !static_cast<const DROID *>(o)->isVtol() && modlayer::layerOf(o) == modlayer::SURFACE)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+/// Richtung (Weltmass) auf einen Nachbar-Schritt (-1/0/1 je Achse) runden
+void snapDir(float x, float y, int &dx, int &dy)
+{
+	const float l = std::sqrt(x * x + y * y);
+	if (l < 0.001f) { dx = dy = 0; return; }
+	x /= l; y /= l;
+	dx = x > 0.38f ? 1 : (x < -0.38f ? -1 : 0);
+	dy = y > 0.38f ? 1 : (y < -0.38f ? -1 : 0);
+}
+
+/// Wrack w vom Fahrzeug d wegschieben. false = kein Platz (dann plattfahren)
+bool pushWreck(GameWorld &world, Wreck &w, FEATURE *f, const DROID *d)
+{
+	const float fx = static_cast<float>(iSinR(static_cast<uint16_t>(d->sMove.moveDir), 1024)) / 1024.f;
+	const float fy = static_cast<float>(iCosR(static_cast<uint16_t>(d->sMove.moveDir), 1024)) / 1024.f;
+	const float rx = static_cast<float>(w.xe - d->pos.x), ry = static_cast<float>(w.ye - d->pos.y);
+	// auf welcher Seite der Fahrlinie liegt das Wrack? (genau auf der Linie: nach der Wrack-Kennung)
+	const float cross = fx * ry - fy * rx;
+	const float sgn = cross > 1.f ? 1.f : (cross < -1.f ? -1.f : ((w.id & 1) ? 1.f : -1.f));
+	const float lx = -fy * sgn, ly = fx * sgn;   // Seitenrichtung zum Wrack hin
+	const float cand[5][2] = {{lx, ly}, {lx + fx, ly + fy}, {-lx, -ly}, {-lx + fx, -ly + fy}, {fx, fy}};
+	const int fromZ = map_Height(world.map, w.xe, w.ye);
+	const int tx0 = map_coord(w.xe), ty0 = map_coord(w.ye);
+	for (const auto &c : cand)
+	{
+		int sx = 0, sy = 0;
+		snapDir(c[0], c[1], sx, sy);
+		if (sx == 0 && sy == 0) { continue; }
+		if (!freeForWreck(world, tx0 + sx, ty0 + sy, fromZ)) { continue; }
+		// verschieben: Kachel-Sperre mitnehmen, Lage ins Feature schreiben
+		releaseBlock(world, w);
+		w.px0 = w.xe; w.py0 = w.ye; w.pz0 = f->pos.z;
+		w.xe += sx * TILE_UNITS; w.ye += sy * TILE_UNITS;   // eine Kachel weiter (Viertel-Raster: 64)
+		f->pos.x = w.xe; f->pos.y = w.ye;
+		const int lift = std::abs(iCosR(f->rot.roll, w.halfH)) + std::abs(iSinR(f->rot.roll, w.halfW)) + 1;
+		f->pos.z = map_Height(world.map, w.xe, w.ye) + (w.hull ? liftFor(w.halfH, w.halfW, f->rot.roll) : lift);
+		w.pushT = gameTime;
+		claimBlock(world, w);
+		syncDebug("wreckPush %u -> (%d,%d) by %u", w.id, w.xe, w.ye, d->id);
+		if (visibleAt(w.xe, w.ye))
+		{
+			Vector3i dp(w.px0 + (w.xe - w.px0) / 2, map_Height(world.map, w.xe, w.ye) + 6, w.py0 + (w.ye - w.py0) / 2);
+			const unsigned it = gameTime - deltaGameTime / 2 + 1;
+			addEffect(&dp, EFFECT_EXPLOSION, EXPLOSION_TYPE_KICKUP, false, nullptr, 0, it);
+			playNamed("wreckcrash_a.ogg", s_trackCrash[0], w.xe, w.ye);
+		}
+		return true;
+	}
+	return false;
+}
+
+void pushTick(GameWorld &world)
+{
+	std::vector<uint32_t> crush;
+	for (Wreck &w : s_wrecks)
+	{
+		if (!w.blockDone || gameTime - w.born < w.dur) { continue; }   // fliegt/rollt noch
+		if (w.pushT != 0 && gameTime - w.pushT < PUSH_PAUSE) { continue; }
+		FEATURE *f = static_cast<FEATURE *>(getBaseObjFromId(world.objects.features[0], w.id));
+		if (f == nullptr || f->died) { continue; }
+		const DROID *by = nullptr;
+		for (BASE_OBJECT *o : gridStartIterate(w.xe, w.ye, 200))
+		{
+			if (o->type != OBJ_DROID) { continue; }
+			const DROID *d = static_cast<const DROID *>(o);
+			if (!pusher(d) || d->sMove.speed < 16) { continue; }
+			const int dx = w.xe - d->pos.x, dy = w.ye - d->pos.y;
+			const int dist = iHypot(dx, dy);
+			if (dist > moveObjRadius(d) + 44) { continue; }
+			// faehrt darauf zu (hoechstens 70 Grad neben der Fahrtrichtung)?
+			const int64_t dot = int64_t(dx) * iSinR(static_cast<uint16_t>(d->sMove.moveDir), 1024) + int64_t(dy) * iCosR(static_cast<uint16_t>(d->sMove.moveDir), 1024);
+			if (dist > 8 && dot * 100 < int64_t(dist) * 1024 * 34) { continue; }
+			by = d;
+			break;
+		}
+		if (by == nullptr) { continue; }
+		if (!pushWreck(world, w, f, by))
+		{
+			crush.push_back(w.id);   // kein Platz ringsum: plattgefahren
+		}
+	}
+	for (uint32_t id : crush)
+	{
+		FEATURE *f = static_cast<FEATURE *>(getBaseObjFromId(world.objects.features[0], id));
+		if (f == nullptr || f->died) { continue; }
+		syncDebug("wreckCrush %u", id);
+		if (visibleAt(f->pos.x, f->pos.y))
+		{
+			Vector3i dp(f->pos.x, map_Height(world.map, f->pos.x, f->pos.y) + 6, f->pos.y);
+			const unsigned it = gameTime - deltaGameTime / 2 + 1;
+			addEffect(&dp, EFFECT_EXPLOSION, EXPLOSION_TYPE_KICKUP, false, nullptr, 0, it);
+			addEffect(&dp, EFFECT_EXPLOSION, EXPLOSION_TYPE_SMALL, false, nullptr, 0, it);
+			playNamed("wreckcrash_b.ogg", s_trackCrash[1], f->pos.x, f->pos.y);
+		}
+		clearWreck(f, world);
+	}
+}
+} // namespace
+
+bool pushableTile(int tx, int ty)
+{
+	if (s_tileCnt.empty() || modlayermap::resident() != modlayer::SURFACE) { return false; }
+	if (tx < 0 || ty < 0 || tx >= s_cntW || ty >= s_cntH) { return false; }
+	return s_tileCnt[static_cast<size_t>(tx) + static_cast<size_t>(ty) * static_cast<size_t>(s_cntW)] > 0;
+}
+
 void tick(GameWorld &world)
 {
 	if (s_wrecks.empty()) { return; }
+	pushTick(world);
 	const bool newSecond = !(s_have && gameTime / 1000 == s_lastSec);
 	if (newSecond) { s_have = true; s_lastSec = gameTime / 1000; }
 	const unsigned it = gameTime - deltaGameTime / 2 + 1;
@@ -567,12 +780,7 @@ void tick(GameWorld &world)
 		{
 			// gelandet: Kachel sperren, falls sie nicht ohnehin gesperrt ist (Gebaeude, Fels, Wasser)
 			w->blockDone = true;
-			const int tx = map_coord(w->xe), ty = map_coord(w->ye);
-			if (tx > 0 && ty > 0 && tx < world.map.width - 1 && ty < world.map.height - 1 && !fpathBlockingTile(world.map, tx, ty, PROPULSION_TYPE_WHEELED))
-			{
-				auxSetBlocking(world.map, tx, ty, FEATURE_BLOCKED);
-				w->ownBlock = true;
-			}
+			claimBlock(world, *w);
 		}
 		// ---- Todesanimation: Anzeige-Effekte in jedem Spielschritt (nur lokal, aendert den Spielzustand nicht)
 		if (age <= w->dur + 100)
@@ -800,6 +1008,8 @@ bool takeWreck(FEATURE *f, GameWorld &world, WreckInfo &out)
 void reset()
 {
 	s_wrecks.clear();
+	s_tileCnt.clear();
+	s_cntW = s_cntH = 0;
 	s_cached = false;
 	s_cachedNum = 0;
 	s_have = false;

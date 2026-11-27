@@ -46,6 +46,7 @@
 #include "modoil.h"
 #include "modfort.h"
 #include "modterrain.h"
+#include "modwreck.h"
 #include "pathfinding_backend.h"
 #include "congestion_overlay.h"
 #include "profiling.h"
@@ -409,7 +410,16 @@ bool fpathBaseBlockingTile(const WorldMapState& mapState, SDWORD x, SDWORD y, PR
 	}
 
 	// the MAX hack below is because blockTile() range does not include player-specific versions...
-	const unsigned blocked = blockTile(mapState, x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits;  // finally check if move is blocked by propulsion related factors
+	unsigned blocked = blockTile(mapState, x, y, MAX(0, mapIndex - MAX_PLAYERS)) & unitbits;  // finally check if move is blocked by propulsion related factors
+	// MOD (Wunsch 27.11. 22:05): Fahrzeuge (Rad, Kette, Halbkette, Luftkissen) schieben Wracks beiseite - eine nur von Wracks gesperrte
+	// Kachel ist fuer sie frei (modwreck::tick schiebt das Wrack weg, wenn eines darauf zufaehrt); Infanterie und Cyborgs bleiben draussen
+	if ((blocked & FEATURE_BLOCKED) != 0 && &mapState == &gameWorld.map
+	    && (propulsion == PROPULSION_TYPE_WHEELED || propulsion == PROPULSION_TYPE_TRACKED || propulsion == PROPULSION_TYPE_HALF_TRACKED
+	        || propulsion == PROPULSION_TYPE_HOVER)
+	    && modwreck::pushableTile(x, y))
+	{
+		blocked &= ~static_cast<unsigned>(FEATURE_BLOCKED);
+	}
 	if (heavyOverFort && (blocked & ~static_cast<unsigned>(FEATURE_BLOCKED)) == 0)
 	{
 		return false;

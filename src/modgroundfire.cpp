@@ -31,8 +31,13 @@
 #include "lib/netplay/sync_debug.h"
 #include "statsdef.h"
 #include "modlayermap.h"
+#include "modui.h"
+#include "lib/ivis_opengl/pieblitfunc.h"
+#include "lib/ivis_opengl/piematrix.h"
+#include "lib/ivis_opengl/piepalette.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <vector>
 
@@ -50,6 +55,15 @@ size_t s_cachedNum = static_cast<size_t>(-1);
 const FEATURE_STATS *s_cachedData = nullptr;
 unsigned s_nextClean = 0;
 bool s_ringOn = false;
+bool s_preview = false;          // (Wunsch 27.11. 22:05) Fadenkreuz am Mauszeiger, solange "Boden beschiessen" bereit ist
+Vector2i s_previewPos(0, 0);
+
+/// Splash-Waffe (Flaechenschaden oder Brand im Umkreis)?
+bool hasSplash(const WEAPON_STATS &ws, unsigned player)
+{
+	const auto &u = ws.upgrade[player < MAX_PLAYERS ? player : 0];
+	return u.radius > 0 && (u.radiusDamage > 0 || u.periodicalDamage > 0);
+}
 
 FEATURE_STATS *markerStats()
 {
@@ -264,24 +278,40 @@ bool keysForGroundFire()
 
 void updatePreview(bool wanted, const Vector2i &worldPos)
 {
+	// (Wunsch 27.11. 22:05) rotes Fadenkreuz genau am Zielpunkt fuer alle, die Boden beschiessen koennen; der rote Streukreis dazu
+	// nur bei Panzern/Fahrzeugen (nicht Infanterie/Cyborgs) und bei allen Splash-Waffen (Flaechenschaden/Brand)
 	int radius = 0;
+	bool any = false;
 	if (wanted && selectedPlayer < MAX_PLAYERS && markerStats() != nullptr)
 	{
 		for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
 		{
-			if (d != nullptr && d->selected && canFireOnGround(d))
+			if (d == nullptr || !d->selected) { continue; }
+			const bool tel = modicbm::isTelDroid(d);
+			if (!canFireOnGround(d) && !tel) { continue; }
+			any = true;
+			const WEAPON_STATS *ws = d->getWeaponStats(0);
+			if (ws == nullptr) { continue; }
+			const bool vehicle = d->droidType != DROID_PERSON && !d->isCyborg();
+			if (vehicle || tel || hasSplash(*ws, d->player))
 			{
-				radius = std::max(radius, scatterRadius(*d->getWeaponStats(0)));
+				radius = std::max(radius, scatterRadius(*ws));
 			}
 		}
 		for (const STRUCTURE *s : gameWorld.objects.structures[selectedPlayer])
 		{
 			if (s != nullptr && s->selected && canStructureFireOnGround(s))
 			{
-				radius = std::max(radius, scatterRadius(*s->getWeaponStats(0)));
+				any = true;
+				if (hasSplash(*s->getWeaponStats(0), s->player))
+				{
+					radius = std::max(radius, scatterRadius(*s->getWeaponStats(0)));
+				}
 			}
 		}
 	}
+	s_preview = any;
+	s_previewPos = worldPos;
 	if (radius > 0)
 	{
 		range_rings::setDebugRange(static_cast<float>(worldPos.x), static_cast<float>(worldPos.y), static_cast<float>(radius));
@@ -294,9 +324,99 @@ void updatePreview(bool wanted, const Vector2i &worldPos)
 	}
 }
 
+namespace
+{
+/// Balken zwischen zwei Bildschirmpunkten
+void bar(float x0, float y0, float x1, float y1, float thick, PIELIGHT c)
+{
+	const float dx = x1 - x0, dy = y1 - y0;
+	const float len = std::sqrt(dx * dx + dy * dy);
+	if (len < 0.5f) { return; }
+	pie_DrawSoftRoundedBoxRotated((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, len + thick, thick, std::atan2(dy, dx), c, thick * 0.5f, 1.f);
+}
+
+bool project(int wx, int wy, const glm::mat4 &m, float &sx, float &sy)
+{
+	const int wz = (wx >= 0 && wy >= 0 && worldOnMap(gameWorld.map, wx, wy)) ? map_Height(gameWorld.map, wx, wy) : 0;
+	const Vector3i pos(wx, wz + 4, -wy);
+	Vector2i sp(0, 0);
+	if (pie_RotateProjectWithPerspective(&pos, m, &sp) <= 0) { return false; }
+	sx = static_cast<float>(sp.x); sy = static_cast<float>(sp.y);
+	return true;
+}
+
+/// rotes Fadenkreuz flach auf dem Gelaende bei (wx, wy); bright = Vorschau am Mauszeiger, sonst schon befohlenes Ziel
+void crosshair(int wx, int wy, const glm::mat4 &m, bool bright)
+{
+	float cx = 0.f, cy = 0.f;
+	if (!project(wx, wy, m, cx, cy)) { return; }
+	const float W = static_cast<float>(pie_GetVideoBufferWidth()), H = static_cast<float>(pie_GetVideoBufferHeight());
+	if (cx < -80.f || cy < -80.f || cx > W + 80.f || cy > H + 80.f) { return; }
+	const float sc = modui::uiScale();
+	// Arme in Weltmass (liegen auf dem Boden); weit herausgezoomt mindestens gut lesbare Pixelgroesse
+	float R = 44.f;
+	float px = 0.f, py = 0.f;
+	if (project(wx + static_cast<int>(R), wy, m, px, py))
+	{
+		const float d = std::sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+		const float minPx = (bright ? 16.f : 12.f) * sc;
+		if (d > 0.5f && d < minPx) { R *= std::min(6.f, minPx / d); }
+	}
+	const float gap = R * 0.3f;
+	const int a = bright ? 255 : 200;
+	const PIELIGHT red = pal_RGBA(255, 36, 24, static_cast<UBYTE>(a));
+	const PIELIGHT dark = pal_RGBA(20, 0, 0, static_cast<UBYTE>(a * 3 / 4));
+	const float thick = std::max(2.f, (bright ? 2.6f : 2.f) * sc);
+	static const int DIRS[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+	float ends[4][4];
+	bool ok[4];
+	for (int i = 0; i < 4; ++i)
+	{
+		ok[i] = project(wx + static_cast<int>(DIRS[i][0] * gap), wy + static_cast<int>(DIRS[i][1] * gap), m, ends[i][0], ends[i][1])
+		        && project(wx + static_cast<int>(DIRS[i][0] * R), wy + static_cast<int>(DIRS[i][1] * R), m, ends[i][2], ends[i][3]);
+	}
+	for (int pass = 0; pass < 2; ++pass)   // erst dunkler Rand, dann Rot
+	{
+		const float t = pass == 0 ? thick + 2.f : thick;
+		const PIELIGHT c = pass == 0 ? dark : red;
+		for (int i = 0; i < 4; ++i)
+		{
+			if (ok[i]) { bar(ends[i][0], ends[i][1], ends[i][2], ends[i][3], t, c); }
+		}
+		const float r = (pass == 0 ? 2.6f : 1.7f) * sc;
+		pie_DrawSoftRoundedBox(cx - r, cy - r, cx + r, cy + r, c, r, 1.f);
+	}
+}
+} // namespace
+
+void drawOverlay(const glm::mat4 &m)
+{
+	if (selectedPlayer >= MAX_PLAYERS || markerStats() == nullptr || modlayermap::viewLayer() != modlayer::SURFACE) { return; }
+	// schon befohlene Bodenziele der gewaehlten Einheiten und Tuerme
+	std::vector<const BASE_OBJECT *> done;
+	auto mark = [&](const BASE_OBJECT *t)
+	{
+		if (t == nullptr || t->died || !isMarker(t)) { return; }
+		if (std::find(done.begin(), done.end(), t) != done.end()) { return; }
+		done.push_back(t);
+		crosshair(t->pos.x, t->pos.y, m, false);
+	};
+	for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
+	{
+		if (d == nullptr || !d->selected || d->died) { continue; }
+		mark(d->order.psObj);
+		mark(d->psActionTarget[0]);
+	}
+	for (const STRUCTURE *s : gameWorld.objects.structures[selectedPlayer])
+	{
+		if (s != nullptr && s->selected && !s->died) { mark(structureGroundTarget(s)); }
+	}
+	if (s_preview) { crosshair(s_previewPos.x, s_previewPos.y, m, true); }
+}
+
 const char *activeLabel()
 {
-	return s_ringOn ? "Area Bombardment: Attack Area" : nullptr;
+	return (s_ringOn || s_preview) ? "Area Bombardment: Attack Area" : nullptr;
 }
 
 void tick(GameWorld &world)
@@ -328,6 +448,7 @@ void reset()
 	s_cachedNum = static_cast<size_t>(-1);
 	s_cachedData = nullptr;
 	s_nextClean = 0;
+	s_preview = false;
 	if (s_ringOn)
 	{
 		range_rings::setDebugRange(0.f, 0.f, 0.f);
