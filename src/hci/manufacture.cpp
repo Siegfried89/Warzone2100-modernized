@@ -17,6 +17,8 @@
 	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 */
 
+#include "lib/framework/frame.h"
+#include "lib/framework/input.h"   // MOD (27.11.): Shift/Strg beim Klick
 #include "lib/widget/button.h"
 #include "lib/widget/label.h"
 #include "lib/widget/bar.h"
@@ -60,7 +62,7 @@ static std::shared_ptr<W_LABEL> makeProductionRunSizeLabel()
 	auto init = W_LABINIT();
 	init.x = OBJ_TEXTX;
 	init.y = OBJ_T1TEXTY;
-	init.width = 16;
+	init.width = 44;   // MOD (27.11.): bis "100/100" (vorher 16 = eine Ziffer)
 	init.height = 16;
 	auto label = std::make_shared<W_LABEL>(&init);
 	label->setTransparentToMouse(true);
@@ -82,6 +84,21 @@ void ManufactureController::adjustFactoryProduction(DROID_TEMPLATE *manufactureO
 void ManufactureController::adjustFactoryLoop(bool add)
 {
 	factoryLoopAdjust(getHighlightedObject(), add);
+}
+
+void ManufactureController::adjustFactoryProductionCount(DROID_TEMPLATE *manufactureOption, int count)
+{
+	factoryProdAdjustCount(getHighlightedObject(), manufactureOption, count);   // MOD (27.11.): Shift-Klick
+}
+
+void ManufactureController::toggleFactoryInfinite(DROID_TEMPLATE *manufactureOption)
+{
+	STRUCTURE *factory = getHighlightedObject();
+	if (factory == nullptr)
+	{
+		return;
+	}
+	factoryLoopToggleInfinite(factory, manufactureOption);   // MOD (27.11.): Strg-Klick
 }
 
 void ManufactureController::releaseFactoryProduction(STRUCTURE *structure)
@@ -585,24 +602,54 @@ private:
 		return psTemplate ? calcTemplatePower(psTemplate) : 0;
 	}
 
+	std::string getTip() override
+	{
+		// MOD (27.11.): die neuen Klicks im Tooltip
+		return BaseWidget::getTip() + "\n" + _("Shift+click: 5 more (up to 100) - Ctrl+click: build in an endless loop");
+	}
+
+	// MOD (Wunsch 27.11.): Shift+Klick = 5 Stueck mehr (jeder weitere +5, Shift+Rechtsklick 5 weniger), Strg+Klick = Endlos-Schleife
+	// an/aus; ohne Taste wie im Original je 1
 	void clickPrimary() override
 	{
-		adjustFactoryProduction(true);
+		if (keyDown(KEY_LCTRL) || keyDown(KEY_RCTRL))
+		{
+			toggleInfinite();
+			return;
+		}
+		adjustFactoryProduction((keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT)) ? 5 : 1);
 	}
 
 	void clickSecondary(bool synthesizedFromHold) override
 	{
-		adjustFactoryProduction(false);
+		adjustFactoryProduction((!synthesizedFromHold && (keyDown(KEY_LSHIFT) || keyDown(KEY_RSHIFT))) ? -5 : -1);
 	}
 
-	void adjustFactoryProduction(bool add)
+	void adjustFactoryProduction(int count)
 	{
 		auto clickedStats = controller->getStatsAt(manufactureOptionIndex);
 		ASSERT_NOT_NULLPTR_OR_RETURN(, clickedStats);
 
 		auto controllerRef = controller;
-		widgScheduleTask([add, clickedStats, controllerRef]() {
-			controllerRef->adjustFactoryProduction(clickedStats, add);
+		widgScheduleTask([count, clickedStats, controllerRef]() {
+			if (count == 1 || count == -1)
+			{
+				controllerRef->adjustFactoryProduction(clickedStats, count > 0);
+			}
+			else
+			{
+				controllerRef->adjustFactoryProductionCount(clickedStats, count);
+			}
+		});
+	}
+
+	void toggleInfinite()
+	{
+		auto clickedStats = controller->getStatsAt(manufactureOptionIndex);
+		ASSERT_NOT_NULLPTR_OR_RETURN(, clickedStats);
+		auto controllerRef = controller;
+		widgScheduleTask([clickedStats, controllerRef]() {
+			controllerRef->toggleFactoryInfinite(clickedStats);
 		});
 	}
 

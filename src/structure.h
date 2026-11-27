@@ -269,6 +269,8 @@ DROID_TEMPLATE *factoryProdUpdate(STRUCTURE *psStructure, DROID_TEMPLATE *psTemp
 
 //increment the production run for this type
 void factoryProdAdjust(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate, bool add);
+void factoryProdAdjustCount(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate, int count);   // MOD (27.11.): Shift-Klick +5
+void factoryLoopToggleInfinite(STRUCTURE *psStruct, DROID_TEMPLATE *psTemplate);   // MOD (27.11.): Strg-Klick = Endlos-Schleife
 
 //returns the quantity of a specific template in the production list
 ProductionRunEntry getProduction(STRUCTURE *psStructure, DROID_TEMPLATE *psTemplate);

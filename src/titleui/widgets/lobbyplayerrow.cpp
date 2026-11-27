@@ -346,7 +346,8 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			subText += buf;
 		}
 
-		bool dummy = stat.played < 5;
+		// MOD (Wunsch 27.11. "Diesen Schnuller ... ganz LOESCHEN"): kein Schnuller-Symbol (IMAGE_MEDAL_DUMMY) mehr fuer Spieler mit
+		// weniger als 5 Partien - der Eintrag in frend.h bleibt nur als Platzhalter, weil er die Bildnummern danach festlegt
 		uint8_t star[3] = {0, 0, 0};
 		uint8_t medal = 0;
 
@@ -397,10 +398,6 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		if ((game.blindMode != BLIND_MODE::NONE) && (!NetPlay.isHost || NetPlay.hostPlayer < MAX_PLAYER_SLOTS))
 		{
 			iV_DrawImage(FrontImages, IMAGE_WEE_GUY, x + 4, y + 13);
-		}
-		else if (dummy)
-		{
-			iV_DrawImage(FrontImages, IMAGE_MEDAL_DUMMY, x + 4, y + 13);
 		}
 		else
 		{

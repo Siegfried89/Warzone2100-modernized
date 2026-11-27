@@ -70,6 +70,8 @@ public:
 	void updateData();
 	void adjustFactoryProduction(DROID_TEMPLATE *manufactureOption, bool add);
 	void adjustFactoryLoop(bool add);
+	void adjustFactoryProductionCount(DROID_TEMPLATE *manufactureOption, int count);   // MOD (27.11.): Shift-Klick +/-5
+	void toggleFactoryInfinite(DROID_TEMPLATE *manufactureOption);   // MOD (27.11.): Strg-Klick Endlos-Schleife
 	void releaseFactoryProduction(STRUCTURE *structure);
 	void cancelFactoryProduction(STRUCTURE *structure);
 	void startDeliveryPointPosition();

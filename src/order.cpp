@@ -2840,6 +2840,51 @@ void orderSelectedLoc(uint32_t player, uint32_t x, uint32_t y, bool add)
 			}
 		}
 	}
+	// MOD (Wunsch 27.11. "Einheiten sollen sich besser kontrollieren lassen - zurueckziehen, wenn sie einmal in einen Kampf verwickelt sind.
+	// Sie stuermen immer weiter nach vorne und lassen sich nicht mehr zurueckpfeifen"): Kampfeinheiten ruecken per Klick standardmaessig
+	// vor (Erkunden: greifen an, was unterwegs in Sicht kommt, und fahren darauf zu) - ein Rueckzugsklick wurde so zum naechsten Angriff.
+	// Ist eine der gewaehlten Einheiten gerade im Gefecht (greift an, hat in den letzten 5 s geschossen oder wurde getroffen), wird der
+	// Klick fuer die ganze Gruppe eine reine Fahrt (sie schiessen unterwegs weiter, halten aber nicht an), und wer auf "Verfolgen" steht
+	// (der Schlachtplan stellt das ein), steht danach auf "Bewachen" - sonst jagten sie nach der Ankunft sofort wieder dem Feind nach.
+	if (!specialOrderKeyDown())
+	{
+		const auto modEngaged = [](const DROID *d) {
+			if (d->action == DACTION_ATTACK || d->action == DACTION_MOVETOATTACK || d->action == DACTION_ROTATETOATTACK
+			    || d->action == DACTION_MOVEFIRE || d->order.type == DORDER_ATTACK || d->order.type == DORDER_ATTACKTARGET)
+			{
+				return true;
+			}
+			if (d->timeLastHit != 0 && d->timeLastHit != UDWORD_MAX && gameTime - d->timeLastHit < 5000)
+			{
+				return true;
+			}
+			for (unsigned w = 0; w < d->numWeaps; ++w)
+			{
+				if (d->asWeaps[w].lastFired != 0 && gameTime - d->asWeaps[w].lastFired < 5000)
+				{
+					return true;
+				}
+			}
+			return false;
+		};
+		bool modGroupEngaged = false;
+		for (const auto &t : todo)
+		{
+			if (t.second == DORDER_SCOUT && modEngaged(t.first)) { modGroupEngaged = true; break; }
+		}
+		if (modGroupEngaged)
+		{
+			for (auto &t : todo)
+			{
+				if (t.second != DORDER_SCOUT || t.first->isVtol()) { continue; }
+				t.second = DORDER_MOVE;
+				if (secondaryGetState(t.first, DSO_HALTTYPE, ModeQueue) == DSS_HALT_PURSUE)
+				{
+					secondarySetState(t.first, gameWorld.objects, DSO_HALTTYPE, DSS_HALT_GUARD);
+				}
+			}
+		}
+	}
 	std::vector<Vector2i> dest(todo.size(), Vector2i(x, y));
 	{
 		std::vector<size_t> movers;

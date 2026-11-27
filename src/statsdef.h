@@ -554,6 +554,7 @@ struct BODY_STATS : public COMPONENT_STATS
 	int gaitStride = 0;             ///< MOD (19.11.): Laufanimation folgt der zurueckgelegten Strecke - Weg je Schrittzyklus (0 = nach Zeit wie bisher)
 	int gaitRunStride = 0;          ///< MOD (19.11. 22:33): Weg je Zyklus beim Rennen (0 = wie gaitStride)
 	int gaitBlends = 1;             ///< MOD (19.11. 22:33): Stufen Gehen->Rennen in der Lauf-Animation (je Stufe gleich viele Bilder hintereinander)
+	bool hiddenWeapons = false;     ///< MOD (27.11.): Waffe im Rumpfmodell eingebaut (Scav-Trike/-Buggy/-Jeep) - nur Muendungsfeuer, kein Waffenmodell
 	bool hasHeadlight = false;      ///< MOD (18.11.): Scheinwerfer-Position aus body.json ("headlight": [x, y, z], Modell; links = -x gespiegelt)
 	float headlight[3] = {0.f, 0.f, 0.f};
 

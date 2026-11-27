@@ -483,13 +483,22 @@ static std::vector<AVORDER> buildStructureOrderList(STRUCTURE *psStructure)
 {
 	ASSERT_OR_RETURN(std::vector<AVORDER>(), psStructure && psStructure->isFactory(), "BuildStructureOrderList: structure is not a factory");
 
-	//this can be hard-coded!
-	std::vector<AVORDER> orders(4);
-	orders[0].OrderIndex = 0;//DSO_ATTACK_RANGE;
-	orders[1].OrderIndex = 1;//DSO_REPAIR_LEVEL;
-	orders[2].OrderIndex = 2;//DSO_ATTACK_LEVEL;
-	orders[3].OrderIndex = 6;//DSO_HALTTYPE;
-
+	// MOD (27.11.): nach dem Befehl suchen statt fester Nummern - seit den eingefuegten Mod-Knoepfen zeigte Nummer 6 "Kreisen" statt
+	// "Verfolgen/Bewachen/Halten"
+	std::vector<AVORDER> orders;
+	for (SECONDARY_ORDER want : {DSO_ATTACK_RANGE, DSO_REPAIR_LEVEL, DSO_ATTACK_LEVEL, DSO_HALTTYPE})
+	{
+		for (unsigned i = 0; i < NUM_ORDERS; ++i)
+		{
+			if (OrderButtons[i].Order == want)
+			{
+				AVORDER o;
+				o.OrderIndex = static_cast<UWORD>(i);
+				orders.push_back(o);
+				break;
+			}
+		}
+	}
 	return orders;
 }
 
