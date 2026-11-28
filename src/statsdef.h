@@ -352,6 +352,7 @@ struct PROPULSION_STATS : public COMPONENT_STATS
 	int shieldEnergy = 0;           ///< MOD (MF): Schild der Beine gegen Energieschaden
 	bool alwaysFlying = false;      ///< MOD: Schwebe-Antrieb (MF-Hoverjet): gilt immer als Lufteinheit (Landwaffen koennen sie nicht anvisieren), bewegt sich wie ein Flieger
 	int hoverHeight = 0;            ///< MOD: Schwebehoehe ueber dem Boden (nur mit alwaysFlying)
+	bool ownLegs = false;           ///< MOD (28.11.): "Own Legs" - unsichtbar, der Verbundrumpf laeuft auf seinen eigenen (animierten) Beinen
 	iIMDBaseShape *walkerIMD = nullptr;   ///< MOD (23.11. 01:35): Lauf-Beine (z.B. Mech-Beine mit Huehnergang) - der Rumpf sitzt auf ihrem Anschluss 1 (Huefte)
 	int gaitStride = 0;             ///< MOD (23.11.): Weg je Schrittzyklus der Lauf-Beine
 	int gaitRunStride = 0;          ///< MOD (23.11.): Weg je Zyklus beim Rennen

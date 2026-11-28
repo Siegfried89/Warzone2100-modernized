@@ -36,6 +36,7 @@
 #include "../modfleetdesigner.h"
 #include "../modcompbody.h"
 #include "../modhullforge.h"
+#include "../modunittest.h"   // (28.11.) Test-Knopf: Testgelaende
 #include "../display.h"
 #include "../intfac.h"
 #include "../modwzhd.h"
@@ -789,6 +790,9 @@ struct DesignPart
 {
 	std::string id, name, model, mount, size, ptype;
 	std::string walker;        // Antrieb: Lauf-Beine (walkerModel) - der Rumpf sitzt auf ihrer Huefte
+	bool ownLegs = false;      // (28.11.) Antrieb "Own Legs": unsichtbar, der Rumpf laeuft auf seinen eigenen (animierten) Beinen
+	bool walks = false;        // (28.11.) Verbundrumpf mit Lauf-Animation
+	float legLift = 0.f;       // (28.11.) Verbundrumpf: Hub mit "Own Legs" (tiefster Punkt auf dem Boden)
 	int kind = 0, power = 0, weight = 0, hp = 0, armour = 0, engine = 0, speed = 0, slots = 1, damage = 0, range = 0, firePause = 0, wsize = 2;
 	bool vtolWeapon = false, direct = true;
 	nlohmann::json extra;      // Rumpf: propulsionExtraModels
@@ -938,6 +942,7 @@ void loadParts()
 			case PK_PROP:
 				p.model = jsonStr(e, "model"); p.ptype = jsonStr(e, "type"); p.speed = jsonInt(e, "speed"); p.hp = jsonInt(e, "hitpointPctOfBody");
 				p.walker = jsonStr(e, "walkerModel");
+				p.ownLegs = jsonInt(e, "ownLegs") != 0;   // (28.11.)
 				break;
 			case PK_WEAPON:
 			{
@@ -990,7 +995,7 @@ void loadParts()
 		auto oneOf = [&](std::initializer_list<const char *> l) { for (const char *x : l) { if (p.id == x) { return true; } } return false; };
 		if (ends("-Scav") || ends("-SCAVS") || starts("Baba") || starts("Scav") || starts("scav")
 		    || oneOf({"Helicopter", "WreckBall"})) { p.origin = "Scavengers"; }   // Hubschrauber: Ultimate Scavengers; Abrissbirne am Scav-Bagger
-		else if (oneOf({"MechWalker", "AMS-AssaultGun", "AMS-Laser", "CollectiveLaserGunner", "MineFlail", "NukeTEL", "ShieldEmitterMobile"}))
+		else if (oneOf({"MechWalker", "OwnLegs", "AMS-AssaultGun", "AMS-Laser", "CollectiveLaserGunner", "MineFlail", "NukeTEL", "ShieldEmitterMobile"}))
 		{
 			p.origin = "Custom";   // eigene Bauten dieses Mods (Mech-Beine des Mechbauprojekts, AMS, Kollektiv-Schuetze, Minenraeumer, Atomrakete, Schild)
 		}
@@ -1055,6 +1060,8 @@ void refreshCompositeParts()
 		p.propM = modcompbody::partMatrix(d.parts[0]);   // (24.11.) Laufwerk unter dem Fahrgestell wie im Spiel
 		p.lift = d.drives.empty() ? modcompbody::liftOf(d) : 0.f;   // (27.11.) mit Antriebsplaetzen: stehen, wo sie gesetzt sind (wie im Spiel)
 		p.noProp = d.parts[0].body.rfind("SC_", 0) == 0;
+		p.walks = modcompbody::hasWalkAnim(d);   // (28.11.) "Own Legs"
+		p.legLift = modcompbody::legLiftOf(d);
 		for (const modcompbody::Drive &dr : d.drives)
 		{
 			if (p.drives.size() >= modcompbody::MAX_DRIVES) { break; }
@@ -1282,6 +1289,37 @@ int subOfCurrent(int tab)
 	return (t && t->kind != PK_WEAPON) ? 1 : 0;
 }
 
+/// (28.11.) hat der gewaehlte Rumpf eine Lauf-Animation (Verbundrumpf aus der Hull Forge)?
+bool bodyWalks()
+{
+	const DesignPart *b = partAt(s_ds.body);
+	return b != nullptr && b->walks;
+}
+
+/// (Wunsch 28.11. 17:34 "Own Legs ... nur fuer Rumpfe mit Lauf-Animation und gleich vorausgewaehlt"): beim Wechsel auf einen solchen Rumpf
+/// "Own Legs" waehlen; ein Rumpf ohne Lauf-Animation behaelt "Own Legs" nicht (sonst rutschte er ohne Fahrwerk)
+int s_ownLegsBody = -2;
+void fixOwnLegs()
+{
+	const DesignPart *p = partAt(s_ds.prop);
+	if (bodyWalks())
+	{
+		if (s_ds.body != s_ownLegsBody)
+		{
+			for (int i = 0; i < static_cast<int>(s_parts.size()); ++i) { if (s_parts[static_cast<size_t>(i)].kind == PK_PROP && s_parts[static_cast<size_t>(i)].ownLegs) { s_ds.prop = i; break; } }
+		}
+	}
+	else if (p != nullptr && p->ownLegs)
+	{
+		for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
+		{
+			const DesignPart &q = s_parts[static_cast<size_t>(i)];
+			if (q.kind == PK_PROP && !q.ownLegs && q.ptype != "Lift" && inFaction(q)) { s_ds.prop = i; break; }
+		}
+	}
+	s_ownLegsBody = s_ds.body;
+}
+
 std::vector<int> candidates(int tab)
 {
 	std::vector<int> out;
@@ -1289,8 +1327,16 @@ std::vector<int> candidates(int tab)
 	{
 		const DesignPart &p = s_parts[static_cast<size_t>(i)];
 		if (tab == 0 && p.kind == PK_BODY && inFaction(p) && inSub(0, p)) { out.push_back(i); }
-		else if (tab == 1 && p.kind == PK_PROP && inFaction(p) && (!flyOnlyBody() || p.ptype == "Lift") && inSub(1, p)) { out.push_back(i); }
+		else if (tab == 1 && p.kind == PK_PROP && inFaction(p) && (!flyOnlyBody() || p.ptype == "Lift") && inSub(1, p))
+		{
+			if (p.ownLegs && !bodyWalks()) { continue; }   // (28.11.) "Own Legs" nur fuer Rumpfe mit Lauf-Animation
+			out.push_back(i);
+		}
 		else if (tab == 2 && turretValid(s_ds.cur, p) && inSub(2, p)) { out.push_back(i); }
+	}
+	if (tab == 1)
+	{
+		std::stable_partition(out.begin(), out.end(), [](int a) { return s_parts[static_cast<size_t>(a)].ownLegs; });   // (28.11.) zuoberst
 	}
 	if (tab == 0)
 	{
@@ -1321,6 +1367,7 @@ std::string bodyTag(const DesignPart &p)
 /// Entwurf an Rumpf/Antrieb anpassen: Antrieb mit Modell, ungueltige Tuerme weg, hoechstens ein Bau-/Reparaturturm
 void fixTurrets()
 {
+	fixOwnLegs();   // (28.11.)
 	if (flyOnlyBody() && !vtolProp())
 	{
 		for (int i = 0; i < static_cast<int>(s_parts.size()); ++i)
@@ -1567,6 +1614,53 @@ void drawDrives(const DesignPart &b, const glm::mat4 &base)
 	}
 }
 
+// (Wunsch 28.11. 17:34) Animations-Vorschau im Einheiten-Designer: -1 aus, sonst Ablauf (Fahren/Stehen/Feuern)
+int s_prevClip = -1;
+uint32_t s_prevClipStart = 0;
+constexpr unsigned ID_D_ANIM = 4599880;   // + 0..2: Move / Stand / Fire
+constexpr unsigned ID_D_TEST = 4599884;   // (Wunsch 28.11. 17:34) Testgelaende
+
+/// Teil je Ebene des Vorschau-Modells (einmal je Rumpf berechnet)
+const std::vector<int> &levelParts(const modcompbody::Def &d)
+{
+	static std::string id;
+	static std::vector<int> lp;
+	static size_t parts = 0;
+	if (id != d.id || parts != d.parts.size()) { id = d.id; parts = d.parts.size(); lp = modcompbody::previewLevelParts(d); }
+	return lp;
+}
+
+/// Verbundrumpf mit Animation: Lage je Teil fuer den gewaehlten Ablauf; nullptr = keine Animation zu zeigen
+const modcompbody::Def *previewAnim(const DesignPart &b, std::vector<glm::mat4> &W)
+{
+	if (s_prevClip < 0 || b.id.rfind("CompBody", 0) != 0) { return nullptr; }
+	const modcompbody::Def *d = modcompbody::find(b.id);
+	if (d == nullptr || !modcompbody::hasAnim(*d)) { return nullptr; }
+	modcompbody::AnimCtx c;
+	const float t = static_cast<float>(realTime - s_prevClipStart) / 1000.f;
+	c.time = t;
+	if (s_prevClip == modcompbody::CLIP_MOVING) { c.moveW = 1.f; c.moveClock = t; }
+	else if (s_prevClip == modcompbody::CLIP_STANDING) { c.moveW = 0.f; c.standClock = t; }
+	else
+	{
+		const float period = std::max(1.2f, d->poseSeconds[modcompbody::CLIP_FIRING] + 0.4f);
+		c.fireAge = std::fmod(t, period);
+		c.fireW = c.fireAge < 0.15f ? 1.f : std::max(0.f, 1.f - (c.fireAge - 0.15f) / 0.5f);
+		c.fireClock = t; c.standClock = t;
+	}
+	modcompbody::evalAnim(*d, c, W);
+	return W.empty() ? nullptr : d;
+}
+
+/// hat der gewaehlte Rumpf eine Animation (dann zeigt die Vorschau die Knoepfe Move/Stand/Fire)?
+bool bodyAnimated()
+{
+	const DesignPart *b = partAt(s_ds.body);
+	if (b == nullptr || b->id.rfind("CompBody", 0) != 0) { return false; }
+	const modcompbody::Def *d = modcompbody::find(b->id);
+	return d != nullptr && modcompbody::hasAnim(*d);
+}
+
 class DesignView : public WIDGET
 {
 public:
@@ -1593,11 +1687,13 @@ public:
 		}
 		const iIMDShape *legs = (p != nullptr && !p->walker.empty()) ? shapeOf(p->walker) : nullptr;
 		if (p != nullptr && propL == nullptr && propR == nullptr && legs == nullptr) { propL = fallbackProp(*b, *p); }
+		const bool ownLegs = p != nullptr && p->ownLegs;   // (28.11.) unsichtbar - der Rumpf steht auf seinen eigenen Beinen
+		if (ownLegs) { propL = nullptr; propR = nullptr; legs = nullptr; }
 		const bool withDrives = !b->drives.empty();   // (27.11.) Antriebsplaetze statt des einen Laufwerks
 		if (withDrives) { propL = nullptr; propR = nullptr; legs = nullptr; }
 		glm::vec3 hip(0.f);
 		if (legs != nullptr && !legs->connectors.empty()) { hip = glm::vec3(legs->connectors[0].xzy()); }
-		const float lift = legs != nullptr ? 0.f : b->lift;   // Verbundrumpf mit Teilen unter dem Fahrgestell steht hoeher (wie im Spiel)
+		const float lift = legs != nullptr ? 0.f : (ownLegs ? b->legLift : b->lift);   // Verbundrumpf mit Teilen unter dem Fahrgestell steht hoeher (wie im Spiel)
 		const glm::vec3 bodyOff = legs != nullptr ? hip : glm::vec3(0.f, lift, 0.f);
 
 		// (Wunsch 18.11. 12:03 "Das Modell wird nicht richtig dargestellt": winzig und flach) Groesse aus der tatsaechlichen Projektion:
@@ -1642,13 +1738,33 @@ public:
 		const iIMDShape *firstProp = leftFirst ? propL : propR, *secondProp = leftFirst ? propR : propL;
 		if (legs) { drawShape(legs, base); }
 		if (firstProp) { drawShape(firstProp, propBase); }
-		drawShape(bs, bodyBase);
+		// (Wunsch 28.11. 17:34 "Vorschau-Knoepfe Move/Stand/Fire im Designer"): Verbundrumpf mit Animation - jede Ebene mit der Lage ihres Teils
+		std::vector<glm::mat4> animW;
+		const modcompbody::Def *animDef = previewAnim(*b, animW);
+		if (animDef != nullptr)
+		{
+			const std::vector<int> &lp = levelParts(*animDef);
+			size_t li = 0;
+			for (const iIMDShape *imd = bs; imd != nullptr; imd = imd->next.get(), ++li)
+			{
+				const int part = li < lp.size() ? lp[li] : -1;
+				const glm::mat4 m = (part >= 0 && static_cast<size_t>(part) < animW.size()) ? bodyBase * animW[static_cast<size_t>(part)] : bodyBase;
+				pie_Draw3DButton(imd, imd->getTeamColourForModel(0), m, glm::mat4(1.f));
+			}
+		}
+		else { drawShape(bs, bodyBase); }
 		std::vector<SlotMark> marks;
 		for (int s = 0; s < bodySlots(); ++s)
 		{
 			const DesignPart *t = partAt(s_ds.slot[s]);
-			glm::mat4 m = bodyBase;
-			glm::mat4 markAt = bodyBase * glm::translate(glm::vec3(0.f, static_cast<float>(bs->max.y), 0.f));
+			glm::mat4 slotBase = bodyBase;   // (28.11.) animiert: der Platz folgt seinem Teil
+			if (animDef != nullptr && s < static_cast<int>(animDef->mounts.size()))
+			{
+				const int mp = animDef->mounts[static_cast<size_t>(s)].part;
+				if (mp >= 0 && static_cast<size_t>(mp) < animW.size()) { slotBase = bodyBase * animW[static_cast<size_t>(mp)]; }
+			}
+			glm::mat4 m = slotBase;
+			glm::mat4 markAt = slotBase * glm::translate(glm::vec3(0.f, static_cast<float>(bs->max.y), 0.f));
 			if (!bs->connectors.empty())
 			{
 				const size_t ci = bs->connectors.size() > static_cast<size_t>(s) ? static_cast<size_t>(s) : 0;
@@ -1753,11 +1869,11 @@ void displaySlotEye(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 }
 } // namespace
 
-WzUnitDesignTitleUI::WzUnitDesignTitleUI(int fleetIndex) : fleet(fleetIndex)
+WzUnitDesignTitleUI::WzUnitDesignTitleUI(int fleetIndex, bool keepDesign) : fleet(fleetIndex)
 {
 	load();
 	loadParts();
-	defaultDesign();
+	if (!keepDesign || partAt(s_ds.body) == nullptr) { defaultDesign(); }
 }
 
 void WzUnitDesignTitleUI::start()
@@ -2022,6 +2138,20 @@ void WzUnitDesignTitleUI::build()
 		form->attach(eye);
 		eye->setTip(_("Show/hide all weapon slot markers"));
 	}
+	if (bodyAnimated())   // (28.11.) Animations-Vorschau
+	{
+		static const char *const lbl[3] = { "Move", "Stand", "Fire" };
+		static const char *const tip[3] = { "Play the hull's animation as if the unit moves", "Play the hull's animation as if the unit stands",
+		                                    "Play the hull's animation as if the unit fires" };
+		for (int k = 0; k < 3; ++k)
+		{
+			auto ab = wzTextButton(form, ID_D_ANIM + static_cast<unsigned>(k), 256 + k * 50, 298 - 28, 46, 22, lbl[k], tip[k]);
+			if (s_prevClip == k) { ab->setState(WBUT_CLICKLOCK); }
+		}
+	}
+	else { s_prevClip = -1; }
+	// (Wunsch 28.11. 17:34 "in den Unit Designer einen kleinen Button "Test"") oben rechts im Vorschaufenster: Einheit aufs Testgelaende
+	wzTextButton(form, ID_D_TEST, PANEL_W - 16 - 52, D_TOP + 6, 46, 22, "Test", "Try this unit right now on a small test range (targets ahead, enemy camps in the east)");
 
 	// ---- Werte
 	const DesignNumbers n = numbers();
@@ -2187,6 +2317,23 @@ TITLECODE WzUnitDesignTitleUI::run()
 	{
 		s_ds.curDrive = std::clamp(static_cast<int>(id - ID_D_DRIVE), 0, std::max(0, bodyDrives() - 1));
 		s_ds.page = 0;
+	}
+	else if (id == ID_D_TEST)   // (28.11.) Testgelaende: der Entwurf so, wie er gerade steht
+	{
+		nlohmann::json t;
+		std::string err;
+		if (designJson(t, err))
+		{
+			t["name"] = s_ds.name.empty() ? autoName() : s_ds.name;
+			if (modunittest::launch(t.dump(), fleet, err)) { return TITLECODE_CONTINUE; }
+		}
+		s_ds.info = err;
+	}
+	else if (id >= ID_D_ANIM && id < ID_D_ANIM + 3)   // (28.11.) Animations-Vorschau an/aus
+	{
+		const int k = static_cast<int>(id - ID_D_ANIM);
+		s_prevClip = s_prevClip == k ? -1 : k;
+		s_prevClipStart = realTime;
 	}
 	else if (id == ID_D_SLOTEYE)
 	{

@@ -526,7 +526,8 @@ static ComponentIterator propulsionIterator()
 	// (das Fahrwerk-Modell haengt am Rumpf: propulsionExtraModels) - deshalb hier KEIN Modell verlangen, nur je Antriebsart die beste Stufe
 	return uniqueIterator(all, [](const COMPONENT_STATS &a, const COMPONENT_STATS &b)
 	{
-		return static_cast<const PROPULSION_STATS &>(a).propulsionType == static_cast<const PROPULSION_STATS &>(b).propulsionType && a.pIMD == b.pIMD;
+		return static_cast<const PROPULSION_STATS &>(a).propulsionType == static_cast<const PROPULSION_STATS &>(b).propulsionType && a.pIMD == b.pIMD
+		       && static_cast<const PROPULSION_STATS &>(a).ownLegs == static_cast<const PROPULSION_STATS &>(b).ownLegs;   // MOD (28.11.) "Own Legs" eigener Eintrag
 	}, false);
 }
 
@@ -2171,6 +2172,12 @@ static bool intAddComponentButtons(ListTabWidget *compList, ComponentIterator co
 
 		// MOD (17.11. 15:46): Ruempfe anderer Fraktionen nicht anbieten (modfactech)
 		if (currStats.compType == COMP_BODY && !modfactech::bodyAllowed(selectedPlayer, &static_cast<BODY_STATS &>(currStats)))
+		{
+			return true;
+		}
+		// MOD (28.11.): "Own Legs" nur fuer Verbundrumpfe mit Lauf-Animation (sonst rutschte der Rumpf ohne Fahrwerk ueber den Boden)
+		if (currStats.compType == COMP_PROPULSION && static_cast<PROPULSION_STATS &>(currStats).ownLegs
+		    && !(sCurrDesign.asParts[COMP_BODY] != 0 && modcompbody::walks(sCurrDesign.asParts[COMP_BODY])))
 		{
 			return true;
 		}

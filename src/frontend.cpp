@@ -62,6 +62,7 @@
 #include "modfactech.h"
 #include "modfaction.h"
 #include "modfleetdesigner.h"
+#include "modunittest.h"
 #include "frontend.h"
 #include "group.h"
 #include "hci.h"
@@ -412,6 +413,12 @@ bool runTitleMenu()
 	if (modfleetdesigner::titleReturn())
 	{
 		changeTitleUI(std::make_shared<WzFleetTitleUI>());
+		return true;
+	}
+	// MOD (28.11.): zurueck vom Testgelaende -> wieder in den Einheiten-Designer, der Entwurf steht noch da
+	if (modunittest::titleReturn())
+	{
+		changeTitleUI(std::make_shared<WzUnitDesignTitleUI>(modunittest::returnFleet(), true));
 		return true;
 	}
 	// MOD (16.11. 18:00): waehrend das grosse Fraktionssymbol laeuft, ist das Menue ausgeblendet; ein Klick oder Esc beendet es sofort

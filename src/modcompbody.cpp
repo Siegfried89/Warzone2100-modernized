@@ -52,6 +52,8 @@ struct Slot
 	glm::mat4 prop = glm::mat4(1.f);
 	bool propShift = false;
 	float lift = 0.f;                                // (24.11.) Rumpf ueber das Laufwerk heben (Teile unter dem Fahrgestell)
+	float legLift = 0.f;                             // (28.11.) Antrieb "Own Legs": tiefster Punkt auf den Boden
+	bool walks = false;                              // (28.11.) hat eine Lauf-Animation
 	std::vector<size_t> partIdx;                     // Teil-Rumpfe (fuer die Verfuegbarkeit)
 	std::vector<float> yaw;                          // Blickrichtung je Anschluss (Grad)
 	std::vector<float> pitch, roll;                  // (27.11.) Neigung je Anschluss (Grad)
@@ -1151,6 +1153,8 @@ void applyStats(BODY_STATS &out, const Def &d, size_t slotIdx)
 	sl.propShift = (glm::length(d.parts[0].pos) > 1e-3f || glm::length(d.parts[0].rot) > 1e-3f || std::fabs(d.parts[0].scale - 1.f) > 1e-3f
 	               || glm::length(d.parts[0].stretch - glm::vec3(1.f)) > 1e-3f);
 	sl.lift = d.drives.empty() ? liftOf(d) : 0.f;   // (27.11.) Antriebsplaetze stehen da, wo sie gesetzt sind
+	sl.legLift = legLiftOf(d);                      // (28.11.) "Own Legs"
+	sl.walks = hasWalkAnim(d);
 	sl.driveM.clear(); sl.driveBody.clear();
 	for (const Drive &dr : d.drives)
 	{
@@ -1439,6 +1443,45 @@ float propLift(size_t bodyIdx)
 	return s_slots[bodyIdx - s_first].lift;
 }
 
+bool hasWalkAnim(const Def &d)
+{
+	if (d.poseCount[CLIP_MOVING] > 0)
+	{
+		for (const Part &p : d.parts) { if (!p.keys[CLIP_MOVING].empty()) { return true; } }
+	}
+	for (const Part &p : d.parts) { if (p.motion.type == MOT_LEG && p.motion.when == WHEN_MOVING) { return true; } }
+	return false;
+}
+
+float legLiftOf(const Def &d)
+{
+	float lowest = 1e9f;
+	for (const Part &p : d.parts)
+	{
+		const BodyInfo *b = bodyInfo(p.body);
+		const iIMDShape *m = (b != nullptr && b->model != nullptr) ? b->model->displayModel() : nullptr;
+		if (m == nullptr) { continue; }
+		const glm::mat4 pm = partMatrix(p);
+		for (int c = 0; c < 8; ++c)
+		{
+			const glm::vec4 v((c & 1) ? m->max.x : m->min.x, (c & 2) ? m->max.y : m->min.y, (c & 4) ? m->max.z : m->min.z, 1.f);
+			lowest = std::min(lowest, (pm * v).y);
+		}
+	}
+	return lowest > 1e8f ? 0.f : std::max(0.f, -lowest);
+}
+
+float legLift(size_t bodyIdx)
+{
+	if (!isComposite(bodyIdx)) { return 0.f; }
+	return s_slots[bodyIdx - s_first].legLift;
+}
+
+bool walks(size_t bodyIdx)
+{
+	return isComposite(bodyIdx) && s_slots[bodyIdx - s_first].walks;
+}
+
 float liftOf(const Def &d)
 {
 	// (Wunsch 24.11. 01:23 "alle Antriebe ... nicht sichtbar"): liegen Teile tiefer als das Fahrgestell (Teil 0), steckte das Laufwerk
@@ -1580,6 +1623,14 @@ void refreshDefs()
 	{
 		if (find(kv.first) == nullptr) { s_defs.push_back(kv.second); }
 	}
+}
+
+std::vector<int> previewLevelParts(const Def &d)
+{
+	std::vector<Vector3i> conns;
+	std::vector<int> lp;
+	buildPie(d, conns, &lp);
+	return lp;
 }
 
 std::string previewModel(const Def &d)

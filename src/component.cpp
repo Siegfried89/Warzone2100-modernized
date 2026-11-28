@@ -1403,7 +1403,8 @@ static bool displayCompObj(const DROID *psDroid, bool bButton, const glm::mat4& 
 	// MOD (24.11.): Verbundrumpf mit Teilen unter dem Fahrgestell steht hoeher, damit das Laufwerk unter dem untersten Teil sichtbar ist
 	if (!modWalker)
 	{
-		const float lift = modcompbody::propLift(psDroid->asBits[COMP_BODY]);
+		// (28.11.) Antrieb "Own Legs": der Rumpf steht mit seinem tiefsten Punkt (den Fuessen) auf dem Boden
+		const float lift = (psPropStats != nullptr && psPropStats->ownLegs) ? modcompbody::legLift(psDroid->asBits[COMP_BODY]) : modcompbody::propLift(psDroid->asBits[COMP_BODY]);
 		if (lift > 0.f) { modifiedModelMatrix *= glm::translate(glm::vec3(0.f, lift, 0.f)); }
 	}
 	if (shaking) { modifiedModelMatrix *= hullShake; }   // MOD: ab hier (Rumpf, Turm, Waffen) mit dem Rumpf-Wackeln

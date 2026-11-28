@@ -129,7 +129,7 @@ namespace modfleetsui { void shutdown(); }   // MOD (18.11.): Flotten-Sinnbilder
 class WzUnitDesignTitleUI: public WzTitleUI
 {
 public:
-	explicit WzUnitDesignTitleUI(int fleetIndex);
+	explicit WzUnitDesignTitleUI(int fleetIndex, bool keepDesign = false);   // keepDesign: zurueck vom Testgelaende (Entwurf bleibt)
 	virtual void start() override;
 	virtual TITLECODE run() override;
 	virtual void render() override;
