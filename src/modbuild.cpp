@@ -1048,7 +1048,7 @@ bool gateFromWall(unsigned player, const STRUCTURE *w, bool add)
 	if (w->pStructureType == nullptr || w->pStructureType->type != REF_WALL || w->pFunctionality == nullptr) { return false; }
 	const std::string id = w->pStructureType->id.toUtf8();
 	if (id.find("Pipeline") != std::string::npos) { return false; }
-	if (w->pFunctionality->wall.type != 0) { return false; }   // nur gerade Stuecke (keine Ecken, T-Stuecke, Kreuzungen)
+	if (!wallIsStraight(w)) { return false; }   // nur gerade Stuecke (keine Ecken, T-Stuecke, Kreuzungen)
 	const bool scav = id.find("BaBa") != std::string::npos || id.find("Baba") != std::string::npos;
 	STRUCTURE_STATS *gate = nullptr;
 	for (unsigned i = 0; i < numStructureStats; i++)
