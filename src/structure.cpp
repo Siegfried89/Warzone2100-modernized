@@ -1381,52 +1381,6 @@ static uint16_t wallType(WallOrientation orient)
 	return types[orient];
 }
 
-// MOD (Wunsch 28.11. 19:15 "Betonmauern mit den gelb-schwarzen Sicherheitsstreifen ... alle Verbindungsstuecke"): Mauersaetze mit 16 Modellen
-// haben eine Vorderseite (Pfeiler, Warnstreifen, Zaun) und hinten den Erdwall. Modell je Anschluss-Muster 0..15 (Bits wie WallOrientation),
-// gebaut fuer "waagerechte Mauer vorn Sueden, senkrechte vorn Westen"; die Drehung in Vierteln gegen den Uhrzeigersinn waehlt die Seiten:
-// jede Mauerlinie zeigt mit der Vorderseite vom Startpunkt ihres Besitzers weg (nach aussen). Nur Kartenwerte -> auf allen Rechnern gleich.
-// Alle anderen Mauern (4 Modelle) unveraendert.
-static WallOrientation wallRotCw(WallOrientation o)
-{
-	int r = 0;
-	if (o & WallConnectLeft) { r |= WallConnectUp; }
-	if (o & WallConnectUp) { r |= WallConnectRight; }
-	if (o & WallConnectRight) { r |= WallConnectDown; }
-	if (o & WallConnectDown) { r |= WallConnectLeft; }
-	return WallOrientation(r);
-}
-
-static bool wallHasFront(const STRUCTURE_STATS *psStats)
-{
-	return psStats != nullptr && psStats->type == REF_WALL && psStats->pIMD.size() >= 16;
-}
-
-static void wallFrontModel(unsigned player, Vector2i tile, WallOrientation orient, unsigned &type, uint16_t &dir)
-{
-	const Vector2i start = player < MAX_PLAYERS ? getPlayerStartPosition(static_cast<int>(player)) : Vector2i(0, 0);
-	const bool south = tile.y >= map_coord(start.y);   // waagerechte Linie suedlich vom Start: vorn Sueden, sonst Norden
-	const bool west = tile.x < map_coord(start.x);     // senkrechte Linie westlich vom Start: vorn Westen, sonst Osten
-	const int quarter = south ? (west ? 0 : 1) : (west ? 3 : 2);
-	WallOrientation model = orient;
-	for (int i = 0; i < quarter; ++i)
-	{
-		model = wallRotCw(model);
-	}
-	type = static_cast<unsigned>(model);
-	dir = static_cast<uint16_t>(DEG(90 * quarter));
-}
-
-bool wallIsStraight(const STRUCTURE *psStruct)
-{
-	if (psStruct == nullptr || psStruct->pFunctionality == nullptr) { return false; }
-	const unsigned t = psStruct->pFunctionality->wall.type;
-	if (wallHasFront(psStruct->pStructureType))
-	{
-		return t == 0 || t == 1 || t == 2 || t == 3 || t == 4 || t == 8 || t == 12;
-	}
-	return t == 0;
-}
-
 // look at where other walls are to decide what type of wall to build
 static WallOrientation structWallScan(bool aWallPresent[5][5], int x, int y)
 {
@@ -1562,15 +1516,7 @@ static WallOrientation structChooseWallType(WorldMapState& mapState, unsigned pl
 				WallOrientation scanType = structWallScan(aWallPresent, x, y);
 
 				// Got to change the wall
-				if (scanType != WallConnectNone && wallHasFront(psStruct->pStructureType))
-				{
-					unsigned type = 0; uint16_t dir = 0;
-					wallFrontModel(psStruct->player, map_coord(psStruct->pos.xy()), scanType, type, dir);
-					psStruct->pFunctionality->wall.type = type;
-					psStruct->rot.direction = dir;
-					psStruct->sDisplay.imd = psStruct->pStructureType->pIMD[std::min<unsigned>(type, psStruct->pStructureType->pIMD.size() - 1)];
-				}
-				else if (scanType != WallConnectNone)
+				if (scanType != WallConnectNone)
 				{
 					psStruct->pFunctionality->wall.type = wallType(scanType);
 					psStruct->rot.direction = wallDir(scanType);
@@ -2077,15 +2023,7 @@ STRUCTURE *buildStructureDir(GameWorld& world, STRUCTURE_STATS *pStructureType, 
 		if ((!FromSave || forceWallOrientation) && (pStructureType->type == REF_WALL || pStructureType->type == REF_GATE))
 		{
 			psBuilding->pFunctionality->wall.type = wallType(wallOrientation);
-			if (wallOrientation != WallConnectNone && wallHasFront(pStructureType))
-			{
-				unsigned type = 0; uint16_t dir = 0;
-				wallFrontModel(player, map_coord(psBuilding->pos.xy()), wallOrientation, type, dir);
-				psBuilding->pFunctionality->wall.type = type;
-				psBuilding->rot.direction = dir;
-				psBuilding->sDisplay.imd = pStructureType->pIMD[std::min<unsigned>(type, pStructureType->pIMD.size() - 1)];
-			}
-			else if (wallOrientation != WallConnectNone)
+			if (wallOrientation != WallConnectNone)
 			{
 				psBuilding->rot.direction = wallDir(wallOrientation);
 				psBuilding->sDisplay.imd = psBuilding->pStructureType->pIMD[std::min<unsigned>(psBuilding->pFunctionality->wall.type, psBuilding->pStructureType->pIMD.size() - 1)];
@@ -2382,14 +2320,7 @@ optional<STRUCTURE> buildBlueprint(WorldMapState& mapState, STRUCTURE_STATS cons
 	{
 		WallOrientation scanType = structChooseWallTypeBlueprint(mapState, map_coord(blueprint.pos.xy()));
 		unsigned type = wallType(scanType);
-		if (scanType != WallConnectNone && wallHasFront(blueprint.pStructureType))
-		{
-			uint16_t dir = 0;
-			wallFrontModel(blueprint.player, map_coord(blueprint.pos.xy()), scanType, type, dir);
-			blueprint.rot.direction = dir;
-			blueprint.sDisplay.imd = blueprint.pStructureType->pIMD[std::min<unsigned>(type, blueprint.pStructureType->pIMD.size() - 1)];
-		}
-		else if (scanType != WallConnectNone)
+		if (scanType != WallConnectNone)
 		{
 			blueprint.rot.direction = wallDir(scanType);
 			blueprint.sDisplay.imd = blueprint.pStructureType->pIMD[std::min<unsigned>(type, blueprint.pStructureType->pIMD.size() - 1)];
