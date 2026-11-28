@@ -143,6 +143,7 @@
 #include "moddesigner.h"
 #include "modhullforge.h" // MOD (23.11.): Rumpf-Baukasten
 #include "modfleetdesigner.h"
+#include "modunittest.h"
 #include "modunitstats.h"
 #include "qtscript.h"
 #include "chat.h"
@@ -783,6 +784,7 @@ void interfaceShutDown()
 	modoilui::shutdown();     // MOD (20.11.): Oel-Fenster
 	modpipelink::shutdown();  // MOD (23.11. 19:57)
 	modtutorial::shutdown();  // MOD (22.11.): Tutorial
+	modunittest::shutdown();  // MOD (28.11.): Testgelaende des Einheiten-Designers
 	modlayer::shutdown();    // MOD
 	modoil::reset();         // MOD
 	modwreck::reset();       // MOD
@@ -1296,6 +1298,7 @@ INT_RETVAL intRunWidgets()
 	modoilui::tick();      // MOD (20.11.): Oel-Fenster (Oelkreislauf)
 	modpipelink::tick();   // MOD (23.11. 19:57): Knopf "Mit naechstem Kraftwerk verbinden" am gewaehlten Oelturm
 	modtutorial::tick();   // MOD (22.11.): Tutorial (nur Herausforderung auf Wuestenland)
+	modunittest::tick();   // MOD (28.11.): Testgelaende (Test-Knopf im Einheiten-Designer)
 	moddesigner::tick();   // MOD: Combot-Designer
 	modhullforge::tick();  // MOD (23.11.): Rumpf-Baukasten + Verfuegbarkeit der Verbundrumpfe
 	modfleetdesigner::tick();   // MOD (17.11. 21:48): Einheiteneditor aus dem Flotten-Menue

@@ -36,6 +36,7 @@
 #include "../modfleetdesigner.h"
 #include "../modcompbody.h"
 #include "../modhullforge.h"
+#include "../modunittest.h"   // (28.11.) Test-Knopf: Testgelaende
 #include "../display.h"
 #include "../intfac.h"
 #include "../modwzhd.h"
@@ -1617,6 +1618,7 @@ void drawDrives(const DesignPart &b, const glm::mat4 &base)
 int s_prevClip = -1;
 uint32_t s_prevClipStart = 0;
 constexpr unsigned ID_D_ANIM = 4599880;   // + 0..2: Move / Stand / Fire
+constexpr unsigned ID_D_TEST = 4599884;   // (Wunsch 28.11. 17:34) Testgelaende
 
 /// Teil je Ebene des Vorschau-Modells (einmal je Rumpf berechnet)
 const std::vector<int> &levelParts(const modcompbody::Def &d)
@@ -1867,11 +1869,11 @@ void displaySlotEye(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 }
 } // namespace
 
-WzUnitDesignTitleUI::WzUnitDesignTitleUI(int fleetIndex) : fleet(fleetIndex)
+WzUnitDesignTitleUI::WzUnitDesignTitleUI(int fleetIndex, bool keepDesign) : fleet(fleetIndex)
 {
 	load();
 	loadParts();
-	defaultDesign();
+	if (!keepDesign || partAt(s_ds.body) == nullptr) { defaultDesign(); }
 }
 
 void WzUnitDesignTitleUI::start()
@@ -2148,6 +2150,8 @@ void WzUnitDesignTitleUI::build()
 		}
 	}
 	else { s_prevClip = -1; }
+	// (Wunsch 28.11. 17:34 "in den Unit Designer einen kleinen Button "Test"") oben rechts im Vorschaufenster: Einheit aufs Testgelaende
+	wzTextButton(form, ID_D_TEST, PANEL_W - 16 - 52, D_TOP + 6, 46, 22, "Test", "Try this unit right now on a small test range (targets ahead, enemy camps in the east)");
 
 	// ---- Werte
 	const DesignNumbers n = numbers();
@@ -2313,6 +2317,17 @@ TITLECODE WzUnitDesignTitleUI::run()
 	{
 		s_ds.curDrive = std::clamp(static_cast<int>(id - ID_D_DRIVE), 0, std::max(0, bodyDrives() - 1));
 		s_ds.page = 0;
+	}
+	else if (id == ID_D_TEST)   // (28.11.) Testgelaende: der Entwurf so, wie er gerade steht
+	{
+		nlohmann::json t;
+		std::string err;
+		if (designJson(t, err))
+		{
+			t["name"] = s_ds.name.empty() ? autoName() : s_ds.name;
+			if (modunittest::launch(t.dump(), fleet, err)) { return TITLECODE_CONTINUE; }
+		}
+		s_ds.info = err;
 	}
 	else if (id >= ID_D_ANIM && id < ID_D_ANIM + 3)   // (28.11.) Animations-Vorschau an/aus
 	{

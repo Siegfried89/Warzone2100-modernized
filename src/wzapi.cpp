@@ -89,6 +89,7 @@
 #include "hci/quickchat.h"
 #include "screens/guidescreen.h"
 #include "modfactech.h"   // MOD
+#include "modunittest.h"  // MOD (28.11.): Testgelaende ohne Sieg/Niederlage
 
 #include <list>
 #include <cmath>
@@ -2734,6 +2735,10 @@ bool wzapi::addGuideTopic(WZAPI_PARAMS(std::string guideTopicID, optional<int> s
 //--
 bool wzapi::gameOverMessage(WZAPI_PARAMS(bool gameWon, optional<bool> _showBackDrop, optional<bool> _showOutro))
 {
+	if (modunittest::active())
+	{
+		return true;   // MOD (28.11.): auf dem Testgelaende endet die Partie nicht (Einheit und Gegner kommen wieder)
+	}
 	int player = context.player();
 	const MESSAGE_TYPE msgType = MSG_MISSION;	// always
 	bool showBackDrop = _showBackDrop.value_or(true);
@@ -3777,6 +3782,10 @@ bool wzapi::setGameStoryLogPlayerDataValue(WZAPI_PARAMS(int player, std::string 
 //--
 bool wzapi::transformPlayerToSpectator(WZAPI_PARAMS(int player))
 {
+	if (modunittest::active())
+	{
+		return true;   // MOD (28.11.): Testgelaende - niemand wird Zuschauer
+	}
 	SCRIPT_ASSERT_PLAYER(false, context, player);
 	return makePlayerSpectator(static_cast<uint32_t>(player), false, false);
 }

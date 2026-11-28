@@ -148,6 +148,7 @@
 #include <deque>
 #include <set>
 #include "3rdparty/gsl_finally.h"
+#include "modunittest.h"   // MOD (28.11.): Testgelaende startet sofort
 
 #define MAP_PREVIEW_DISPLAY_TIME 2500	// number of milliseconds to show map in preview
 #define LOBBY_DISABLED_TAG       "lobbyDisabled"
@@ -6620,6 +6621,14 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 	{
 		// send it for each player that needs it
 		sendMap();
+	}
+
+	// MOD (Wunsch 28.11. 17:34): Test-Knopf im Einheiten-Designer - das Testgelaende startet ohne Halt in den Spieleinstellungen
+	if (NetPlay.isHost && modunittest::consumeAutostart())
+	{
+		sendReadyRequest(selectedPlayer, true);
+		startMultiplayerGame();
+		return TITLECODE_CONTINUE;
 	}
 
 	// update boxes?
