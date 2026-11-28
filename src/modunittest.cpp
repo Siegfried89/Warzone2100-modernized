@@ -84,14 +84,20 @@ std::vector<Slot> s_targets;
 std::vector<Group> s_groups;
 
 // ---------------------------------------------------------------- Aufstellen
+// Die Aufstellung steht in Kacheln der Original-Karte (128 Welteinheiten = DIST_TILE); die Viertel-Fassung (Feinraster, TILE_UNITS 64)
+// viertelt die Karte beim Laden - darum hier immer ueber Weltkoordinaten (Kachel * DIST_TILE) gehen, nie ueber world_coord().
+int wx(int tile) { return tile * DIST_TILE + DIST_TILE / 2; }   // Mitte einer Original-Kachel in Welteinheiten
+int coarse(int world) { return world / DIST_TILE; }
+
 const Vector2i OFF[] = {{0, 0}, {1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}, {2, 0}, {0, 2}, {-2, 0}, {0, -2},
                         {2, 1}, {1, 2}, {-2, 1}, {-1, 2}, {2, -1}, {1, -2}, {-2, -1}, {-1, -2}, {2, 2}, {-2, 2}, {2, -2}, {-2, -2}};
 constexpr int NOFF = static_cast<int>(sizeof(OFF) / sizeof(OFF[0]));
 
 bool tileFree(int x, int y)
 {
-	if (x < 2 || y < 2 || x >= gameWorld.map.width - 2 || y >= gameWorld.map.height - 2) { return false; }
-	return !TileIsOccupied(mapTile(gameWorld.map, x, y));
+	const int fx = map_coord(wx(x)), fy = map_coord(wx(y));
+	if (fx < 2 || fy < 2 || fx >= gameWorld.map.width - 2 || fy >= gameWorld.map.height - 2) { return false; }
+	return !TileIsOccupied(mapTile(gameWorld.map, fx, fy));
 }
 
 /// freies Feld nahe (cx, cy), ab dem k-ten Versatz; k zeigt danach auf den naechsten
@@ -124,8 +130,7 @@ DROID *spawnDroid(const nlohmann::json &t, unsigned player, int tx, int ty, uint
 	}
 	const bool oldMulti = bMultiMessages;
 	bMultiMessages = false;
-	DROID *d = buildDroid(gameWorld, &tmpl, static_cast<UDWORD>(world_coord(tx) + TILE_UNITS / 2), static_cast<UDWORD>(world_coord(ty) + TILE_UNITS / 2),
-	                      player, false, nullptr, Rotation(dir, 0, 0));
+	DROID *d = buildDroid(gameWorld, &tmpl, static_cast<UDWORD>(wx(tx)), static_cast<UDWORD>(wx(ty)), player, false, nullptr, Rotation(dir, 0, 0));
 	if (d != nullptr) { addDroid(d, gameWorld.objects.droids); }
 	bMultiMessages = oldMulti;
 	return d;
@@ -144,7 +149,7 @@ STRUCTURE *spawnStruct(const std::string &id, unsigned player, int tx, int ty)
 	STRUCTURE_STATS *st = &asStructureStats[static_cast<size_t>(idx)];
 	const uint16_t dir = static_cast<uint16_t>((faceTo(tx, ty, s_ux, s_uy) + DEG(45)) / DEG(90) * DEG(90));   // Gebaeude stehen rechtwinklig
 	const Vector2i size = st->size(dir);
-	const int x = world_coord(tx) + size.x * TILE_UNITS / 2, y = world_coord(ty) + size.y * TILE_UNITS / 2;
+	const int x = tx * DIST_TILE + size.x * TILE_UNITS / 2, y = ty * DIST_TILE + size.y * TILE_UNITS / 2;   // Grundflaeche in Feldern (je TILE_UNITS)
 	const bool oldMulti = bMultiMessages;
 	bMultiMessages = false;
 	STRUCTURE *s = buildStructureDir(gameWorld, st, static_cast<UDWORD>(x), static_cast<UDWORD>(y), dir, player, false, generateSynchronisedObjectId(), false, true, true);
@@ -228,7 +233,7 @@ DROID *spawnUnit()
 	{
 		const Vector2i p = freeTile(s_ux, s_uy, k);
 		bool taken = false;   // auch nicht auf eine andere Testeinheit
-		for (const DROID *o : gameWorld.objects.droids[selectedPlayer]) { if (o != nullptr && !o->died && map_coord(o->pos.x) == p.x && map_coord(o->pos.y) == p.y) { taken = true; } }
+		for (const DROID *o : gameWorld.objects.droids[selectedPlayer]) { if (o != nullptr && !o->died && coarse(o->pos.x) == p.x && coarse(o->pos.y) == p.y) { taken = true; } }
 		if (taken && k < NOFF) { continue; }
 		d = spawnDroid(s_design, selectedPlayer, p.x, p.y, s_udir);
 		break;
@@ -291,7 +296,7 @@ void setup()
 	if (d != nullptr)
 	{
 		SelectDroid(d);
-		setViewPos(static_cast<UDWORD>(s_ux + 3), static_cast<UDWORD>(s_uy), false);
+		setViewPos(static_cast<UDWORD>(map_coord(wx(s_ux + 3))), static_cast<UDWORD>(map_coord(wx(s_uy))), false);
 		addConsoleMessage(_("Test range: your unit is at the start - targets ahead, enemy camps in the east"), CENTRE_JUSTIFY, SYSTEM_MESSAGE);
 	}
 	else
@@ -328,10 +333,10 @@ void upkeep()
 /// alle Gegner losschicken: zur ersten Testeinheit (sonst zum Startplatz)
 void sendEnemies()
 {
-	int tx = s_ux, ty = s_uy;
+	int tx = wx(s_ux), ty = wx(s_uy);
 	for (const DROID *d : gameWorld.objects.droids[selectedPlayer])
 	{
-		if (d != nullptr && !d->died) { tx = map_coord(d->pos.x); ty = map_coord(d->pos.y); break; }
+		if (d != nullptr && !d->died) { tx = d->pos.x; ty = d->pos.y; break; }
 	}
 	int n = 0;
 	for (Group &g : s_groups)
@@ -340,7 +345,7 @@ void sendEnemies()
 		{
 			DROID *d = IdToDroid(gameWorld.objects, id, s_enemy);
 			if (d == nullptr || d->died) { continue; }
-			orderDroidLoc(d, DORDER_SCOUT, static_cast<UDWORD>(world_coord(tx) + TILE_UNITS / 2), static_cast<UDWORD>(world_coord(ty) + TILE_UNITS / 2), ModeImmediate);
+			orderDroidLoc(d, DORDER_SCOUT, static_cast<UDWORD>(tx), static_cast<UDWORD>(ty), ModeImmediate);
 			n++;
 		}
 	}
