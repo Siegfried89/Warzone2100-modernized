@@ -1018,6 +1018,7 @@ bool loadPropulsionStats(WzConfig &ini)
 		psStats->shieldEnergy = std::clamp(ini.value("shieldEnergy", 0).toInt(), 0, 90);   // MOD
 		psStats->alwaysFlying = ini.value("alwaysFlying", false).toBool();   // MOD: Schwebe-Antrieb (MF-Hoverjet)
 		psStats->hoverHeight = std::clamp(ini.value("hoverHeight", 0).toInt(), 0, 300);   // MOD: Schwebe-Antrieb (MF-Hoverjet)
+		psStats->ownLegs = ini.value("ownLegs", false).toBool();   // MOD (28.11.): Antrieb "Own Legs" (Rumpf laeuft auf den eigenen Beinen)
 		if (ini.contains("walkerModel"))   // MOD (23.11. 01:35): Lauf-Beine als Laufwerk (Verbundrumpfe auf Mech-Beinen)
 		{
 			psStats->walkerIMD = modelGet(ini.value("walkerModel").toWzString());

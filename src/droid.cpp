@@ -2562,7 +2562,8 @@ static void modWalkerHipTrans(const DROID *psDroid, Affine3F &af)
 	if (prop == nullptr || prop->walkerIMD == nullptr || prop->walkerIMD->connectors.empty())
 	{
 		// MOD (24.11.): Verbundrumpf ueber dem Laufwerk angehoben (modcompbody::propLift) - die Waffen mit
-		const float lift = modcompbody::propLift(psDroid->asBits[COMP_BODY]);
+		// (28.11.) Antrieb "Own Legs": der Rumpf steht mit seinem tiefsten Punkt (den Fuessen) auf dem Boden
+		const float lift = (prop != nullptr && prop->ownLegs) ? modcompbody::legLift(psDroid->asBits[COMP_BODY]) : modcompbody::propLift(psDroid->asBits[COMP_BODY]);
 		if (lift > 0.f) { af.Trans(0, -static_cast<int>(std::lround(lift)), 0); }
 		return;
 	}

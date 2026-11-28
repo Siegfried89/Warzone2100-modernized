@@ -200,6 +200,14 @@ const Def *find(const std::string &id);
 glm::mat4 partMatrix(const Part &p, bool withFlip = true);
 /// Hub des Rumpfes ueber dem Laufwerk (unterstes Teil sitzt auf dem Laufwerk wie sonst das Fahrgestell), siehe propLift
 float liftOf(const Def &d);
+/// (Wunsch 28.11. 17:34 "Own Legs"): hat der Rumpf eine Lauf-Animation (Posen beim Fahren oder ein Baustein, der beim Fahren laeuft)?
+bool hasWalkAnim(const Def &d);
+/// (28.11.) Hub fuer den Antrieb "Own Legs": der tiefste Punkt des Rumpfes steht auf dem Boden
+float legLiftOf(const Def &d);
+float legLift(size_t bodyIdx);
+bool walks(size_t bodyIdx);
+/// (28.11.) Teil je Ebene des Vorschau-Modells (previewModel) - fuer die animierte Vorschau im Einheiten-Designer
+std::vector<int> previewLevelParts(const Def &d);
 /// gespiegelte und/oder in fremder Textur gezeigte Fassung eines Rumpf-Modells fuer die Vorschau im Baukasten (Umlaufsinn richtig); nullptr = keine
 /// (zeichnen mit partMatrix(p, false))
 const iIMDShape *bakedShape(const std::string &bodyId, int flipMask, const std::string &texFrom);
