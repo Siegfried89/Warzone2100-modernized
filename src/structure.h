@@ -145,7 +145,6 @@ bool isBlueprintTooClose(STRUCTURE_STATS const *stats1, Vector2i pos1, uint16_t 
 bool validLocation(GameWorld& world, BASE_STATS *psStats, Vector2i pos, uint16_t direction, unsigned player, bool bCheckBuildQueue);
 
 bool isWall(STRUCTURE_TYPE type);                                    ///< Structure is a wall. Not completely sure it handles all cases.
-bool wallIsStraight(const STRUCTURE *psStruct);                        ///< MOD: gerades Mauerstueck (auch bei Mauersaetzen mit 16 Modellen)
 bool isBuildableOnWalls(STRUCTURE_TYPE type);                        ///< Structure can be built on walls. Not completely sure it handles all cases.
 
 void alignStructure(STRUCTURE *psBuilding, WorldMapState& mapState);
